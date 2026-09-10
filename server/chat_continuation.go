@@ -97,7 +97,7 @@ func (c *termCfg) projectContinuationTurns(id, key string, native []termTurn) ([
 	submissions := map[string]terminalInputReceipt{}
 	for i, t := range turns {
 		if t.Who == "user" {
-			if receipt, ok := receipts[hashTerminalText(t.Text)]; ok {
+			if receipt, ok := matchingInputReceipt(receipts, t.Text); ok {
 				turns[i].Text = receipt.Text
 				submissions[t.ID] = receipt
 			}

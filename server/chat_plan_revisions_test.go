@@ -33,6 +33,19 @@ func TestNativePlanRevisionRequiresMatchingSentInput(t *testing.T) {
 	if projected[1].PlanRevision == nil || projected[1].Native.ID != se.ID {
 		t.Fatal("native identity lost", projected)
 	}
+	// Codex records the input without its final line terminator. Restoring
+	// that exact LF must still bind to the persisted full submitted hash.
+	r.SubmittedHash = hashTerminalText(turns[0].Text + "\n")
+	if err := s.terminal.writeInputReceipt(se.ID, r); err != nil {
+		t.Fatal(err)
+	}
+	if len(s.nativePlanRevisions(se, turns)) != 1 {
+		t.Fatal("Codex final line terminator prevented receipt match")
+	}
+	turns[0].Text = "exact submitted instruction "
+	if len(s.nativePlanRevisions(se, turns)) != 0 {
+		t.Fatal("non-terminator whitespace change accepted")
+	}
 	turns[0].Text = "unmatched input"
 	if len(s.nativePlanRevisions(se, turns)) != 0 {
 		t.Fatal("unmatched input accepted")

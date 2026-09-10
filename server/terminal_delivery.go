@@ -54,6 +54,17 @@ func hashTerminalText(text string) string {
 	return hex.EncodeToString(sum[:])
 }
 
+// Codex may remove the final line terminator before recording an input. Match
+// only the exact recorded text or that text with one final LF restored; never
+// trim, fuzzy-match, or infer ownership from a submission ID in model text.
+func matchingInputReceipt(receipts map[string]terminalInputReceipt, text string) (terminalInputReceipt, bool) {
+	if r, ok := receipts[hashTerminalText(text)]; ok {
+		return r, true
+	}
+	r, ok := receipts[hashTerminalText(text+"\n")]
+	return r, ok
+}
+
 func (c *termCfg) continuationReceipts(id, source string) map[string]terminalInputReceipt {
 	out := map[string]terminalInputReceipt{}
 	entries, err := os.ReadDir(filepath.Join(c.regPath+".inputs", id))

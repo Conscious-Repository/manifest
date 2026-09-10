@@ -98,7 +98,7 @@ func (s *Server) nativePlanRevisions(se termSession, turns []termTurn) map[strin
 	for _, turn := range turns {
 		if turn.Who == "user" {
 			current = nil
-			if r, ok := receipts[hashTerminalText(turn.Text)]; ok && r.State == "sent" {
+			if r, ok := matchingInputReceipt(receipts, turn.Text); ok && r.State == "sent" {
 				current = &r
 			}
 			continue
