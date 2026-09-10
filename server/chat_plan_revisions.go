@@ -16,12 +16,13 @@ func (s *Server) planRevisionInstructions(refs []artifactContextRef) string {
 	for _, ref := range refs {
 		if a, ok := s.artifactReg.Get(ref.ID); ok && a.Provenance.Source == "task-plan" {
 			fmt.Fprintf(&out, "\nPlan revision workflow: only when the owner requests an edit, propose the full replacement in one fenced manifest-plan-revision JSON block with artifactId=%q, baseRevision=%q, and content (full Markdown string). Do not write the file directly or execute the plan. The owner can review and save this as a new reversible version in Chat. Keep explanatory text outside the block concise. A discussion or summary request does not call for a revision.\n", ref.ID, ref.Revision)
+			fmt.Fprintf(&out, "Format:\n```manifest-plan-revision\n{\"artifactId\":%q,\"baseRevision\":%q,\"content\":\"full replacement Markdown here\"}\n```\n", ref.ID, ref.Revision)
 		}
 	}
 	return out.String()
 }
 
-var planRevisionFence = regexp.MustCompile("(?s)```manifest-plan-revision[ \\t]*\\r?\\n(.*?)\\r?\\n```")
+var planRevisionFence = regexp.MustCompile("(?s)```(?:manifest-plan-revision|json)[ \\t]*\\r?\\n(.*?)\\r?\\n```")
 
 type chatPlanRevision struct {
 	ArtifactID   string `json:"artifactId"`

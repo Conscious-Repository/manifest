@@ -1414,7 +1414,7 @@ function chatPaintTurns(host, turns, ctx) {
     const wrap = el("div", "chat-turn chat-spirit");
     wrap.dataset.chatReadTurn=String(t.n);
     const planRevision=t.planRevision||ctx?.planRevisions?.find(p=>p.replyTurn===t.n);
-    chatTurnBlocks(t).forEach((b) => {if(planRevision&&b.t==="say")b={...b,text:(b.text||"").replace(/```manifest-plan-revision[^\n]*\n[\s\S]*?\n```/g,"").trim()};if(b.t!=="say"||b.text)wrap.append(chatBlockEl(b));});
+    chatTurnBlocks(t).forEach((b) => {if(planRevision&&b.t==="say")b={...b,text:(b.text||"").replace(/```(?:manifest-plan-revision|json)[ \t]*\r?\n[\s\S]*?\r?\n```/g,"").trim()};if(b.t!=="say"||b.text)wrap.append(chatBlockEl(b));});
     if(planRevision){
       const review=el("button","sprt-quiet","Review proposed plan revision");
       review.onclick=()=>chatOpenWorkingArtifact({plan:true,task:planRevision.task,revision:planRevision.baseRevision,proposal:planRevision,selectionKey:"chat:"+chatAgent+"/"+chatOpenId});wrap.append(review);

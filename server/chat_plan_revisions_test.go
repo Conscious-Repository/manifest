@@ -23,6 +23,9 @@ func TestPlanRevisionBoundToDeliveredVersion(t *testing.T) {
 	}
 	text := body(proposal)
 	got := s.chatPlanRevisions(sess, text)
+	if plain := s.chatPlanRevisions(sess, strings.ReplaceAll(text, "```manifest-plan-revision", "```json")); len(plain) != 1 {
+		t.Fatal("valid JSON-fenced proposal rejected", plain)
+	}
 	if len(got) != 1 || got[0].Task != task || got[0].ReplyTurn != 2 || got[0].Content != "Revised plan" {
 		t.Fatal(got)
 	}
