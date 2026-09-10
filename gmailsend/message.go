@@ -12,25 +12,26 @@ import (
 	"time"
 )
 
-// Message is one outbound text/plain email. Date and MessageID are filled
+// Message is one outbound email with a text/plain body and optional attachments. Date and MessageID are filled
 // when empty; a caller that sets both gets a byte-deterministic build,
 // which is what the tests pin.
 type Message struct {
-	From       string
-	FromName   string
-	To         []string
-	Cc         []string
-	Subject    string
-	Body       string
-	InReplyTo  string
-	References string
-	Date       time.Time
-	MessageID  string
+	From        string
+	FromName    string
+	To          []string
+	Cc          []string
+	Subject     string
+	Body        string
+	InReplyTo   string
+	References  string
+	Date        time.Time
+	MessageID   string
+	Attachments []Attachment
 }
 
 // Build renders the RFC 5322 message: From, To, Cc, Subject, Date,
 // Message-ID, MIME headers, In-Reply-To/References when threading, and a
-// text/plain UTF-8 body with CRLF line endings. Addresses are validated
+// text/plain UTF-8 body with CRLF line endings (multipart/mixed when files are attached). Addresses are validated
 // before anything is rendered — a malformed recipient never reaches the
 // wire.
 func Build(m Message) ([]byte, error) {
@@ -91,6 +92,16 @@ func Build(m Message) ([]byte, error) {
 		line("References", r)
 	}
 	line("MIME-Version", "1.0")
+	if len(m.Attachments) > 0 {
+		contentType, body, err := buildAttachments(m)
+		if err != nil {
+			return nil, err
+		}
+		line("Content-Type", contentType)
+		b.WriteString("\r\n")
+		b.Write(body)
+		return []byte(b.String()), nil
+	}
 	line("Content-Type", "text/plain; charset=\"UTF-8\"")
 	line("Content-Transfer-Encoding", "8bit")
 	b.WriteString("\r\n")
