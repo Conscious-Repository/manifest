@@ -63,7 +63,7 @@ func (s *Server) handleChatRelated(w http.ResponseWriter, r *http.Request) {
 					return
 				}
 				ok = true
-				source = agentchat.Session{Agent: origin.Agent, ID: origin.ID}
+				source = agentchat.Session{Agent: origin.Agent, ID: origin.ID, Origin: se.Origin}
 				for _, link := range s.terminalConversation(se).Links {
 					if link.Kind == "task" {
 						source.Task = link.ID
@@ -92,7 +92,12 @@ func (s *Server) handleChatRelated(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	if _, err = s.scopedArtifactContext(task, s.originArtifactScope(origin), b.Artifacts, nil); err != nil {
+	// Only the source’s persisted handoff grants inherited version access.
+	var handed []artifactContextRef
+	if source.Origin != nil {
+		handed = source.Origin.Artifacts
+	}
+	if _, err = s.scopedArtifactContext(task, s.originArtifactScope(origin), b.Artifacts, handed); err != nil {
 		httpError(w, err)
 		return
 	}

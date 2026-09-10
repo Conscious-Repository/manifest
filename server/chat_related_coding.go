@@ -64,7 +64,7 @@ func (s *Server) handleRelatedCodingChat(w http.ResponseWriter, r *http.Request,
 				return
 			}
 			ok = true
-			source = agentchat.Session{Agent: origin.Agent, ID: origin.ID, Title: parent.Name}
+			source = agentchat.Session{Agent: origin.Agent, ID: origin.ID, Title: parent.Name, Origin: parent.Origin}
 			if origin.Mode == "continue" {
 				timeline := s.terminalRootTimeline(r.Context(), parent, s.terminalPlanningChildren(parent), s.terminalCodingContinuations(r.Context(), parent))
 				origin.Context, origin.HistoryOmitted = timelineContinuationContext(s.terminalConversation(parent).Key, timeline)
@@ -94,7 +94,12 @@ func (s *Server) handleRelatedCodingChat(w http.ResponseWriter, r *http.Request,
 		httpError(w, errBadRequest("the coding handoff supports one selected artifact version at a time"))
 		return
 	}
-	if _, err := s.scopedArtifactContext(origin.Task, s.originArtifactScope(origin), origin.Artifacts, nil); err != nil {
+	// Only the source’s persisted handoff grants inherited version access.
+	var handed []artifactContextRef
+	if source.Origin != nil {
+		handed = source.Origin.Artifacts
+	}
+	if _, err := s.scopedArtifactContext(origin.Task, s.originArtifactScope(origin), origin.Artifacts, handed); err != nil {
 		httpError(w, err)
 		return
 	}
