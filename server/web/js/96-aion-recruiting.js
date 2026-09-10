@@ -116,9 +116,9 @@ async function loadRecruitingSources() {
 
 // recSourcesPost: every sources route answers with the run list, and only a
 // route that wrote a record (accept) adds the board view.
-async function recSourcesPost(url, body, okMsg) {
+async function recSourcesPost(url, body, okMsg, method) {
   try {
-    const r = await fetchJSONRetry("POST", url, body || {}); // survives a deploy-window 502
+    const r = await fetchJSONRetry(method || "POST", url, body || {}); // survives a deploy-window 502
     if (!r.ok) throw new Error(await r.text());
     const out = await r.json();
     if (out.runs) recRuns = out.runs;
@@ -1868,6 +1868,39 @@ function recUntil(iso) {
   return h < 48 ? "in " + Math.max(1, h) + "h" : "in " + Math.round(h / 24) + "d";
 }
 
+// recRunDelete — the owner's verdict that a sweep was a bust. Arm-then-confirm
+// through the library's armedDelete (no native dialog), and the armed label
+// names what is at stake: a run with accepted drafts says so, because those
+// records STAY on the board (a record archives, never deletes) and the reader
+// should not expect them to vanish. What goes is the cache and the passes made
+// in this run — a pass is a decision about this search, and a search the owner
+// has just called a bust does not get to keep suppressing people. No undo: a
+// run cannot be put back without a second call to someone else's API, so the
+// disarm window and the label are the protection, not a toast with a way
+// back (contrast recPlaceDelete). The toast after reports what the server
+// says went, never what the client assumed.
+function recRunDelete(run, cls) {
+  const kept = (run.counts || {}).accepted || 0;
+  const del = armedDelete("delete",
+    kept ? "delete run · keeps " + kept + " on the board?" : "delete this run?",
+    async () => {
+      const out = await recSourcesPost("/api/aion/recruiting/sources/run/" + encodeURIComponent(run.id), {}, "", "DELETE");
+      if (!out) return; // the error toast and repaint already happened; the button is back
+      const gone = out.deleted || {};
+      delete recRunOpen[run.id];
+      if (recSourceRunFocus === run.id) recSourceRunFocus = "";
+      if (recSourceRunFilter === run.id) recClearSourceFilters();
+      const bits = ["deleted " + (gone.source || run.source) + " run"];
+      if (gone.passesLifted) bits.push(gone.passesLifted + (gone.passesLifted === 1 ? " pass" : " passes") + " lifted");
+      if (gone.recordsKept) bits.push(gone.recordsKept + (gone.recordsKept === 1 ? " record stays" : " records stay") + " on the board");
+      showToast(bits.join(" · "));
+      renderAion();
+    });
+  del.title = "delete this run now — its cache goes and the passes made in it are lifted; nothing accepted is touched";
+  if (cls) del.classList.add(cls);
+  return del;
+}
+
 function recRunCard(run) {
   const scope = run.scope || {};
   const c = run.counts || {};
@@ -1911,6 +1944,7 @@ function recRunCard(run) {
       { pinned: !run.pinned }, run.pinned ? "run unpinned" : "run pinned");
   };
   head.append(pin);
+  head.append(recRunDelete(run, "rec-run-del"));
   card.append(head);
 
   const counts = el("div", "rec-run-counts");
@@ -3863,7 +3897,10 @@ function paintSourceReview(main) {
       el("div", "rec-background-text", scope.query || fields.seed_url || fields.work || fields.repo || fields.feed_url || selectedRun.source));
     const allSearches = el("button", "rec-linkish", "All search results");
     allSearches.onclick = () => { recClearSourceFilters(); if (recPaint) recPaint(); };
-    context.append(allSearches); main.append(context);
+    // the search under review is the subject here, so its delete stays visible
+    const acts = el("div", "rec-search-context-acts");
+    acts.append(allSearches, recRunDelete(selectedRun));
+    context.append(acts); main.append(context);
   }
   const bar = el("div", "rec-toolbar");
   const search = el("input", "pp-in rec-search");

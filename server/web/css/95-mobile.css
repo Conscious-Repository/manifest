@@ -395,6 +395,7 @@
   .tdo-row .tdo-tether { opacity: 1; visibility: visible; }
   .tdo-right .uw-x { visibility: visible; }
   .focus-row.empty .focus-placeholder { opacity: 1; }
+  .rec-run-pin, .rec-run-del { opacity: 1; }
 }
 
 /* ================= REAL ESTATE phone shapes (RE spec §8) ================= */

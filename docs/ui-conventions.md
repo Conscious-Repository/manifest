@@ -340,6 +340,19 @@ search results and search history, and unboxed resume text. Preserve visible act
 controls and a quiet selected-row marker. Search-result links open the review queue
 scoped to that search; Search history remains available as a separate mode.
 
+### Deleting a run (owner, 2026-09-10)
+
+A bust sweep deletes; it does not wait for the D14 sweep. The gesture is the
+library's `armedDelete` (arm, then confirm within 4s; no native dialog), placed
+beside pin on the run row and beside "All search results" when the review
+queue is scoped to one search. The armed label names what stays when something
+does ("delete run · keeps 2 on the board?"). What goes is the run's cache and
+the passes made inside that run; a pass inherited from an earlier run and any
+accepted record stay (`recruiting.RunStore.Delete`). There is no undo toast: a
+run cannot be put back without a second call to someone else's API, so the
+disarm window is the protection. The toast afterwards repeats the server's
+report of what went, never the client's guess.
+
 ### Real Estate property navigation (2026-09-07)
 
 Preserve the owner's Backlog layout. Property destinations open the property work

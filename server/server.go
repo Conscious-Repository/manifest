@@ -541,6 +541,9 @@ func (s *Server) Handler() http.Handler {
 				// undo a pass: the draft returns to `new` (Phase 3)
 				mux.HandleFunc("POST /api/aion/recruiting/sources/unreject/{run}/{draft}", s.handleRecruitingSourceUnreject)
 				mux.HandleFunc("POST /api/aion/recruiting/sources/pin/{run}", s.handleRecruitingSourcePin)
+				// drop a bust run now: its cache and the passes made in it go,
+				// accepted records stay (a record archives, never deletes)
+				mux.HandleFunc("DELETE /api/aion/recruiting/sources/run/{run}", s.handleRecruitingSourceDelete)
 				// ask the other public indexes about this exact name (lookup.go)
 				mux.HandleFunc("POST /api/aion/recruiting/sources/lookup/{run}/{draft}", s.handleRecruitingSourceLookup)
 			}

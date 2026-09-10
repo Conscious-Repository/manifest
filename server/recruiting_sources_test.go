@@ -439,3 +439,43 @@ func keys(m map[string]json.RawMessage) []string {
 	}
 	return out
 }
+
+// DELETE drops the run now: the listing forgets it, the payload reports what
+// went and what stayed, no board view rides along, and a second delete — or
+// a POST at the same path — is refused rather than silently absorbed.
+func TestRecruitingSourceDeleteDropsTheRun(t *testing.T) {
+	_, mux := testRecruitingSourcesServer(t)
+	run := startRun(t, mux, sourcesRunBody)
+	// only the DELETE verb deletes: a POST at the same path is refused and
+	// the run is still listed afterwards
+	if w := sourcesDo(t, mux, http.MethodPost, "/api/aion/recruiting/sources/run/"+run.ID, ""); w.Code < http.StatusBadRequest {
+		t.Errorf("POST at the delete path answered %d", w.Code)
+	}
+	if kept := decodeSources(t, sourcesDo(t, mux, http.MethodGet, "/api/aion/recruiting/sources/runs", "")); len(kept.Runs) != 1 {
+		t.Fatalf("a POST at the delete path removed the run")
+	}
+	p := decodeSources(t, sourcesDo(t, mux, http.MethodDelete, "/api/aion/recruiting/sources/run/"+run.ID, ""))
+	if len(p.Runs) != 0 {
+		t.Fatalf("the run survived its delete: %+v", p.Runs)
+	}
+	if _, has := p.Raw["view"]; has {
+		t.Errorf("delete answered with a board view")
+	}
+	var gone recruiting.RunDeletion
+	if err := json.Unmarshal(p.Raw["deleted"], &gone); err != nil || gone.ID != run.ID || gone.Source != "manual" {
+		t.Fatalf("deleted: %v %+v", err, gone)
+	}
+	if gone.PassesLifted != 0 || gone.RecordsKept != 0 {
+		t.Errorf("a fresh run has nothing to lift or keep: %+v", gone)
+	}
+	listed := decodeSources(t, sourcesDo(t, mux, http.MethodGet, "/api/aion/recruiting/sources/runs", ""))
+	if len(listed.Runs) != 0 {
+		t.Errorf("the listing still holds the deleted run")
+	}
+	if w := sourcesDo(t, mux, http.MethodDelete, "/api/aion/recruiting/sources/run/"+run.ID, ""); w.Code != http.StatusBadRequest {
+		t.Errorf("a second delete answered %d", w.Code)
+	}
+	if w := sourcesDo(t, mux, http.MethodDelete, "/api/aion/recruiting/sources/run/nope", ""); w.Code != http.StatusBadRequest {
+		t.Errorf("delete of an unknown run answered %d", w.Code)
+	}
+}

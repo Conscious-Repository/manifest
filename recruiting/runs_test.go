@@ -479,6 +479,100 @@ func TestAdapterSetContactIsDropped(t *testing.T) {
 	}
 }
 
+// ---- delete: the owner's verdict on a bust run ----
+
+// Delete takes exactly what the run made and nothing it inherited: the cache
+// directory goes, the pass recorded IN this run is lifted, a pass an earlier
+// run recorded (so the draft arrived suppressed) stands, and the record an
+// accept wrote stays in the vault. An unknown id — and the same id twice —
+// is an error, never a quiet success.
+func TestDeleteRunDropsTheCacheAndOnlyItsOwnPasses(t *testing.T) {
+	early := &fakeAdapter{id: "fake", drafts: []sources.CandidateDraft{citedDraft("Casey Lin", "C1")}}
+	rs, store, vault := testRunStore(t, early)
+	// an EARLIER run passes on Casey — that stone belongs to it
+	first := mustRun(t, rs, RunRequest{Source: "fake", Query: "coil"})
+	if _, err := rs.Reject(first.ID, "d1", "wrong field", testNow); err != nil {
+		t.Fatal(err)
+	}
+	// the bust run: Ana accepted, Bo passed here, Casey arrives already suppressed
+	early.drafts = []sources.CandidateDraft{citedDraft("Ana Ruiz", "A1"), citedDraft("Bo Park", "B1"), citedDraft("Casey Lin", "C1")}
+	bust := mustRun(t, rs, RunRequest{Source: "fake", Query: "coil"})
+	if got := bust.Drafts[2].Status; got != DraftRejected || !strings.HasPrefix(bust.Drafts[2].Reason, suppressedReason) {
+		t.Fatalf("Casey should arrive suppressed by the earlier pass: %+v", bust.Drafts[2])
+	}
+	if _, _, err := rs.Accept(bust.ID, "d1", testNow); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := rs.Reject(bust.ID, "d2", "", testNow); err != nil {
+		t.Fatal(err)
+	}
+	if n := len(store.PassedSet()); n != 2 {
+		t.Fatalf("two stones expected before the delete, have %d", n)
+	}
+	before := snapshot(t, vault)
+
+	gone, err := rs.Delete(bust.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if gone.ID != bust.ID || gone.Source != "fake" || gone.PassesLifted != 1 || gone.RecordsKept != 1 {
+		t.Fatalf("deletion report: %+v", gone)
+	}
+	// the cache directory is gone, the earlier run is not
+	if _, err := os.Stat(filepath.Join(rs.Root(), bust.ID)); !os.IsNotExist(err) {
+		t.Errorf("the run directory survived: %v", err)
+	}
+	if _, err := rs.Get(bust.ID); err == nil {
+		t.Error("a deleted run still loads")
+	}
+	have := map[string]bool{}
+	for _, run := range rs.Runs(testNow) {
+		have[run.ID] = true
+	}
+	if have[bust.ID] || !have[first.ID] {
+		t.Errorf("listing after delete: %v", have)
+	}
+	// the vault: only passed.md moved — Bo's stone lifted, Casey's standing,
+	// Ana's record untouched
+	assertOnlyChanged(t, "the vault after deleting a run", before, snapshot(t, vault), "passed.md")
+	stones := store.PassedSet()
+	if _, ok := stones[PassedKey("fake", "B1", "Bo Park")]; ok {
+		t.Error("the pass made in the deleted run still suppresses Bo")
+	}
+	if _, ok := stones[PassedKey("fake", "C1", "Casey Lin")]; !ok {
+		t.Error("the earlier run's pass on Casey was lifted by deleting a run that only inherited it")
+	}
+	if names := candidateNames(store); len(names) != 1 || names[0] != "Ana Ruiz" {
+		t.Errorf("accepted record after delete: %v", names)
+	}
+	// Bo can be offered again by the next sweep; Casey still cannot
+	early.drafts = []sources.CandidateDraft{citedDraft("Bo Park", "B1"), citedDraft("Casey Lin", "C1")}
+	next := mustRun(t, rs, RunRequest{Source: "fake", Query: "coil"})
+	if next.Drafts[0].Status != DraftNew || next.Drafts[1].Status != DraftRejected {
+		t.Errorf("after the delete, the next sweep saw Bo %s and Casey %s", next.Drafts[0].Status, next.Drafts[1].Status)
+	}
+
+	// a delete that finds nothing is an error, not a quiet success
+	if _, err := rs.Delete(bust.ID); err == nil {
+		t.Error("deleting the same run twice reported success")
+	}
+	if _, err := rs.Delete("nope"); err == nil {
+		t.Error("deleting an unknown run reported success")
+	}
+	if _, err := rs.Delete("../" + first.ID); err == nil {
+		t.Error("a path-shaped id was accepted")
+	}
+}
+
+// candidateNames lists the board's record names, in slug order.
+func candidateNames(store *Store) []string {
+	var out []string
+	for _, slug := range store.CandidateSlugs() {
+		out = append(out, store.LoadCandidate(slug).Get("name"))
+	}
+	return out
+}
+
 // ---- the cache on disk ----
 
 // A run is a search for named people: its directories are 0700 and its

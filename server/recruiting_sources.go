@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -14,9 +15,9 @@ import (
 
 // The source-run surface (plan §4.9, Phase 3a): run one adapter over one
 // explicit scope, review the draft queue, accept or reject ONE draft at a
-// time, pin a run's cache. Every route lives inside server.go's
-// `if s.recruiting != nil` block beside the other recruiting routes and, like
-// them, is never mounted on the portal listener.
+// time, pin a run's cache — or delete a bust run outright. Every route lives
+// inside server.go's `if s.recruiting != nil` block beside the other
+// recruiting routes and, like them, is never mounted on the portal listener.
 //
 // There is deliberately no accept-all route. A route that accepted a whole
 // run would turn a search result into vault PII in one click; the
@@ -300,5 +301,32 @@ func (s *Server) handleRecruitingSourcePin(w http.ResponseWriter, r *http.Reques
 	}
 	out := s.runsPayload(false)
 	out["run"] = run
+	writeJSON(w, out)
+}
+
+// DELETE /api/aion/recruiting/sources/run/{run} — drop one run now. The
+// owner's verdict that a sweep was a bust, not the D14 clock's: the cache
+// goes, the passes made inside it are lifted, and accepted records stay on
+// the board (a record archives, never deletes — recruiting.RunStore.Delete).
+// The payload says exactly what went and what stayed, so the client never
+// claims more than happened; no board view rides along because no record
+// moved. The deletion is ledgered like every other recruiting decision.
+func (s *Server) handleRecruitingSourceDelete(w http.ResponseWriter, r *http.Request) {
+	if !s.recruitingRunsReady(w) {
+		return
+	}
+	runID := r.PathValue("run")
+	gone, err := s.recruitingRuns.Delete(runID)
+	if err != nil {
+		httpError(w, err)
+		return
+	}
+	s.ledger(ledger.Entry{Source: "recruiting", Kind: "recruiting.run.deleted", Actor: "owner",
+		Object: ledger.Object{Kind: "run", ID: runID},
+		Text: ledger.Snip("deleted "+gone.Source+" run "+runID+" — "+strconv.Itoa(gone.PassesLifted)+" passes lifted, "+
+			strconv.Itoa(gone.RecordsKept)+" accepted records kept", 280),
+		Meta: map[string]any{"run": runID, "source": gone.Source, "passesLifted": gone.PassesLifted, "recordsKept": gone.RecordsKept}})
+	out := s.runsPayload(false)
+	out["deleted"] = gone
 	writeJSON(w, out)
 }

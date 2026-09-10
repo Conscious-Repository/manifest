@@ -310,7 +310,7 @@ func (r *RunStore) ExecuteTracked(ctx context.Context, req RunRequest, now time.
 		entry := Draft{ID: "d" + strconv.Itoa(i+1), Status: DraftNew, Draft: d}
 		if p, ok := suppressed[PassedKey(d.SourceID, d.ExternalID, d.Name)]; ok {
 			entry.Status = DraftRejected
-			entry.Reason = "passed " + p.At
+			entry.Reason = suppressedReason + p.At
 			if p.Reason != "" {
 				entry.Reason += " — " + p.Reason
 			}
@@ -606,6 +606,85 @@ func (r *RunStore) Pin(runID string, pinned bool) (Run, error) {
 		return Run{}, err
 	}
 	return r.project(run, nil), nil
+}
+
+// suppressedReason prefixes the Reason of a draft Execute rejected on the
+// owner's behalf because a tombstone from an EARLIER run already covered the
+// person. Delete reads it back to tell a pass made in this run from one it
+// inherited — the same string the queue shows as "passed <date>".
+const suppressedReason = "passed "
+
+// RunDeletion is what Delete reports: what went, and what deliberately stayed.
+type RunDeletion struct {
+	ID           string `json:"id"`
+	Source       string `json:"source"`
+	PassesLifted int    `json:"passesLifted"`
+	RecordsKept  int    `json:"recordsKept"`
+}
+
+// Delete removes one run NOW — the owner's verdict that a sweep was a bust,
+// rather than the D14 clock's. "Delete the cheap things, archive the people"
+// (owner, 2026-09-05): a run is a cache of a search, re-runnable in one
+// click, so it cuts. It takes with it exactly what the run itself made — the
+// cache directory, and the passed tombstones the owner recorded INSIDE this
+// run. A pass is "a decision about this search" (the queue says so on the
+// button), and a search the owner has just called a bust does not get to
+// keep suppressing people from the next one. A tombstone an earlier run
+// wrote — the draft arrived already suppressed — belongs to that run and
+// stays. Accepted drafts are vault records by now, and a record archives,
+// never deletes; Delete counts them so the caller can say they stayed. An
+// unknown id is an error, not a no-op: a delete that reports success without
+// deleting is how a UI starts lying (mutate.go).
+//
+// Tombstones lift before the directory goes: a failure there leaves the run
+// visible and every fact intact, whereas the other order could lose the cache
+// and leave a stone standing with nothing that explains it.
+func (r *RunStore) Delete(runID string) (RunDeletion, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	run, err := r.load(runID)
+	if err != nil {
+		return RunDeletion{}, err
+	}
+	out := RunDeletion{ID: run.ID, Source: run.Source}
+	tombstones := r.store.PassedSet()
+	for _, d := range run.Drafts {
+		switch d.Status {
+		case DraftAccepted:
+			out.RecordsKept++
+		case DraftRejected:
+			if !passedHere(d, tombstones) {
+				continue
+			}
+			if err := r.store.RemovePassed(PassedKey(d.Draft.SourceID, d.Draft.ExternalID, d.Draft.Name)); err != nil {
+				return RunDeletion{}, err
+			}
+			out.PassesLifted++
+		}
+	}
+	if err := os.RemoveAll(r.dir(run.ID)); err != nil {
+		return RunDeletion{}, err
+	}
+	return out, nil
+}
+
+// passedHere reports whether a rejected draft's tombstone is the one THIS run
+// wrote: not a suppression inherited at execute time, and dated the day the
+// draft was decided — Reject stamps the draft and the stone from one clock.
+// A stone refreshed by a later pass elsewhere carries that day instead and
+// stays; a draft or stone with no date falls back to the reason alone.
+func passedHere(d Draft, tombstones map[string]Passed) bool {
+	if d.Status != DraftRejected || strings.HasPrefix(d.Reason, suppressedReason) {
+		return false
+	}
+	p, ok := tombstones[PassedKey(d.Draft.SourceID, d.Draft.ExternalID, d.Draft.Name)]
+	if !ok {
+		return false
+	}
+	if p.At == "" || d.DecidedAt.IsZero() {
+		return true
+	}
+	return p.At == d.DecidedAt.UTC().Format("2006-01-02")
 }
 
 // Get loads one run.
