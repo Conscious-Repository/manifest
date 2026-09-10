@@ -173,8 +173,7 @@ type Server struct {
 	// The send-only Gmail client behind …/recruiting/outreach (Phase 5).
 	// Nil is the unconfigured posture: the probe answers sendCapable:false
 	// and every send refuses (recruiting_outreach.go). Never a poller.
-	gmailSend    *gmailsend.Client
-	oodaMailSend *gmailsend.Client
+	gmailSend *gmailsend.Client
 	// hosts is the read-only config.json projection behind Settings › Hosts
 	// & paths (settings.go). Nil until main.go wires it; paths only.
 	hosts *HostsInfo
@@ -782,10 +781,6 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/settings/gmail-send/connect/start", s.handleSettingsGmailSendStart)
 	mux.HandleFunc("POST /api/settings/gmail-send/connect/finish", s.handleSettingsGmailSendFinish)
 	mux.HandleFunc("POST /api/settings/gmail-send/disconnect", s.handleSettingsGmailSendDisconnect)
-	mux.HandleFunc("GET /api/settings/gmail-send/{domain}", s.handleDomainMailStatus)
-	mux.HandleFunc("POST /api/settings/gmail-send/{domain}/connect/start", s.handleSettingsGmailSendStart)
-	mux.HandleFunc("POST /api/settings/gmail-send/{domain}/connect/finish", s.handleSettingsGmailSendFinish)
-	mux.HandleFunc("POST /api/settings/gmail-send/{domain}/disconnect", s.handleSettingsGmailSendDisconnect)
 	mux.HandleFunc("GET /api/agents/hermes", s.handleAgentsHermes) // the Alfred card (~/.hermes projection)
 	// AGENTS › Alfred on the board (plan Phase 4, hermes_cron.go): the cron
 	// fires for RUNS, one fire's narration, and the D5 controls (pause /
