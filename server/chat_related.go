@@ -92,11 +92,7 @@ func (s *Server) handleChatRelated(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	if len(b.Artifacts) > 0 && task == "" {
-		httpError(w, errBadRequest("a task is required for artifact context"))
-		return
-	}
-	if _, err = s.taskArtifactContext(task, b.Artifacts); err != nil {
+	if _, err = s.scopedArtifactContext(task, s.originArtifactScope(origin), b.Artifacts, nil); err != nil {
 		httpError(w, err)
 		return
 	}

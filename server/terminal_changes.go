@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"manifest/artifacts"
 	"net/http"
 	"os"
 	"os/exec"
@@ -11,6 +12,38 @@ import (
 	"strings"
 	"time"
 )
+
+func (s *Server) handleTermChangesSnapshot(w http.ResponseWriter, r *http.Request) {
+	se, ok := s.termRow(w, r)
+	if !ok {
+		return
+	}
+	if s.artifactReg == nil || se.Device != "" || se.Cwd == "" {
+		http.Error(w, "working-folder snapshot unavailable", http.StatusBadRequest)
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
+	defer cancel()
+	content, err := workingChanges(ctx, se.Cwd)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusUnprocessableEntity)
+		return
+	}
+	content = "Snapshot of runtime " + se.ID + " (" + se.Kind + "). Captured bytes do not change after this review.\n\n" + content
+	task := ""
+	for _, link := range s.terminalConversation(se).Links {
+		if link.Kind == "task" {
+			task = link.ID
+		}
+	}
+	result, err := s.artifactReg.Put(artifacts.Put{Kind: artifacts.KindReport, Title: "Working-folder changes", Harness: se.Kind, Ref: "artifacts/runtime/" + se.ID + "/changes.diff", Content: []byte(content), Actor: "owner", At: time.Now(), Provenance: artifacts.Provenance{Source: "runtime-changes", Task: task, Run: se.ID, Session: s.runtimeArtifactScope(se)}})
+	if err != nil {
+		httpError(w, err)
+		return
+	}
+	s.artifactEvent(result, "owner")
+	writeJSON(w, map[string]any{"id": result.Artifact.ID, "revision": result.Artifact.Head, "task": task, "discuss": true})
+}
 
 // Bound subprocess output without allowing Git external diff/textconv programs.
 type changeOutput struct {
@@ -48,7 +81,7 @@ func workingChanges(ctx context.Context, cwd string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	diff, err := run("diff", "--no-ext-diff", "--no-textconv", "--no-color", "HEAD", "--")
+	diff, err := run("diff", "--no-ext-diff", "--no-textconv", "--no-color", strings.TrimSpace(head), "--")
 	if err != nil {
 		return "", err
 	}

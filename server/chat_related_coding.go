@@ -90,15 +90,11 @@ func (s *Server) handleRelatedCodingChat(w http.ResponseWriter, r *http.Request,
 			return
 		}
 	}
-	if len(origin.Artifacts) > 0 && origin.Task == "" {
-		httpError(w, errBadRequest("a task is required for artifact context"))
-		return
-	}
 	if len(origin.Artifacts) > 1 {
 		httpError(w, errBadRequest("the coding handoff supports one selected artifact version at a time"))
 		return
 	}
-	if _, err := s.taskArtifactContext(origin.Task, origin.Artifacts); err != nil {
+	if _, err := s.scopedArtifactContext(origin.Task, s.originArtifactScope(origin), origin.Artifacts, nil); err != nil {
 		httpError(w, err)
 		return
 	}

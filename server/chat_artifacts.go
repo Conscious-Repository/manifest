@@ -99,6 +99,68 @@ func (s *Server) saveTaskPlanVersion(id, text, expected string) error {
 
 type artifactContextRef = agentchat.ArtifactReference
 
+func (s *Server) runtimeArtifactScope(se termSession) string {
+	if o := se.Origin; o != nil && o.Mode == "continue" {
+		if o.Backend == "terminal" {
+			return terminalConversation(termSession{ID: o.ID, Kind: o.Agent}).Key
+		}
+		return agentConversation("hermes", o.Agent, o.ID, "private", "").Key
+	}
+	return terminalConversation(se).Key
+}
+
+func privateArtifactScope(sess agentchat.Session) string {
+	if o := sess.Origin; o != nil && o.Mode == "continue" && o.Backend == "terminal" {
+		return terminalConversation(termSession{ID: o.ID, Kind: o.Agent}).Key
+	}
+	return sessionConversation(sess).Key
+}
+
+func (s *Server) originArtifactScope(o agentchat.Origin) string {
+	if o.Backend == "terminal" && s.terminal != nil {
+		if se, ok := s.terminal.find(o.ID); ok {
+			return s.runtimeArtifactScope(se)
+		}
+	}
+	if s.agentChat != nil {
+		if se, _, _, ok := s.agentChat.store.Get(o.Agent, o.ID); ok {
+			return privateArtifactScope(se)
+		}
+	}
+	return ""
+}
+
+// A standalone conversation can discuss its own snapshot without inventing a
+// task. Related conversations receive only versions explicitly handed to them.
+func (s *Server) scopedArtifactContext(task, scope string, refs, handed []artifactContextRef) (string, error) {
+	if len(refs) == 0 {
+		return "", nil
+	}
+	if s.artifactReg == nil || len(refs) > 8 {
+		return "", errBadRequest("artifact context unavailable")
+	}
+	for _, ref := range refs {
+		allowed := false
+		if a, ok := s.artifactReg.Get(ref.ID); ok && a.Provenance.Source == "runtime-changes" {
+			allowed = scope != "" && a.Provenance.Session == scope
+			for _, h := range handed {
+				if h == ref {
+					allowed = true
+				}
+			}
+		}
+		if !allowed {
+			if task == "" {
+				return "", errBadRequest("artifact is not linked to this conversation")
+			}
+			if _, err := s.taskArtifactContext(task, []artifactContextRef{ref}); err != nil {
+				return "", err
+			}
+		}
+	}
+	return s.retainedArtifactContext(refs)
+}
+
 // Resolve exact, explicitly selected versions before accepting a message. No
 // basename matching, implicit directory attachment, or silent truncation.
 func (s *Server) taskArtifactContext(taskID string, refs []artifactContextRef) (string, error) {

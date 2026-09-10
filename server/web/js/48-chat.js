@@ -1275,7 +1275,7 @@ function chatHead(s) {
     const model=recipient.model||chatRosterEntry(recipient.agent)?.model||"";
     const to=el("button","sprt-quiet chat-head-sub","To "+chatAgentLabel(recipient.agent)+(model?" · "+shortModel(model):""));
     to.title="Choose who receives your next message";to.onclick=()=>chatChooseRecipient(s);head.append(to);
-    if(recipient.backend==="terminal"){const native=(s.continuations||[]).find(v=>v.id===recipient.id);if(native)head.append(terminalStateDot(native));}
+    if(recipient.backend==="terminal"){const native=(s.continuations||[]).find(v=>v.id===recipient.id);if(native){head.append(terminalStateDot(native));if(native.cwd)head.append(chatChangesButton(native));}}
   }else head.append(el("span", "sprt-sub chat-head-sub", sub.filter(Boolean).join(" · ")));
   // portal runs are metered in the agent's own ledger, not per thread
   const meta = [fmtWhen(s.updated || s.created)];
@@ -2313,8 +2313,7 @@ function chatTermHead(o) {
   if(selectedRuntime||se.launchPhase!=="draft")head.append(raw);
   const reviewRuntime=selectedRuntime||se;
   if(!se.device&&reviewRuntime.cwd){
-    const changes=el("button","sprt-quiet","Changes");changes.title="Read current Git changes in this runtime's working folder";
-    changes.onclick=()=>chatOpenAttachment({name:"Working-folder changes.txt",notice:"Read-only Git review · shared working tree · not attached to your message",openLabel:"Open current changes ↗",errorLabel:"Changes unavailable; inspect the working folder in Terminal."},chatTermBase(reviewRuntime.id)+"/changes");head.append(changes);
+    head.append(chatChangesButton(reviewRuntime));
   }
   const kill = chatTermEndIsKill(se);
   if (!se.boardBrief || kill) acts.append(armedDelete(kill ? "✕ end" : "forget", kill ? "end — sure?" : "forget — sure?", () => chatTermEnd(se)));
@@ -2788,6 +2787,11 @@ function chatOpenAttachment(file,href){
   const shell=document.querySelector(".chat-shell");shell.classList.add("has-artifact");
   chatWorkspace=attachmentWorkspace(shell,file,href,()=>{shell.classList.remove("has-artifact");chatWorkspace=null;});
 }
+function chatChangesButton(runtime){
+  const button=el("button","sprt-quiet","Changes");button.title="Capture current Git changes in this runtime's working folder";
+  button.onclick=async()=>{const route=chatRouteVersion;button.disabled=true;try{const snapshot=await postJSONOk(chatTermBase(runtime.id)+"/changes/snapshot",{});if(route===chatRouteVersion)chatOpenWorkingArtifact({...snapshot,selectionKey:"chat:"+chatAgent+"/"+chatOpenId});}catch(e){showToast(e.message||"Could not capture working-folder changes.");}finally{button.disabled=false;}};
+  return button;
+}
 function chatOpenWorkingArtifact(spec) {
   chatCloseWorkspace();
   const taskID = spec.task || chatTaskID;
@@ -2802,8 +2806,8 @@ function chatOpenWorkingArtifact(spec) {
     load, revision:spec.revision,proposal:spec.proposal,
     save:spec.plan ? (text,expectedRevision)=>postJSONOk("/api/tasks/plan",{id:taskID,text,expectedRevision}):null,
     onClose:()=>{shell.classList.remove("has-artifact");chatWorkspace=null;},
-    onDiscuss: taskID && (key.startsWith("task:") || chatRosterEntry(chatAgent)?.durableSend || chatIsTerm()) ? ref=>{
-      chatArtifactSelections.set(key,{...ref,task:taskID});
+    onDiscuss: (taskID||spec.discuss) && (key.startsWith("task:") || chatRosterEntry(chatAgent)?.durableSend || chatIsTerm()) ? ref=>{
+      chatArtifactSelections.set(key,{...ref,task:taskID,discuss:!!spec.discuss});
       if(key.startsWith("chat:"))chatRenderArtifactContext(taskID,key);
       if(key.startsWith("chat:"))chatCaptureSyncedDraft(key.slice(5));
       else if(key.startsWith("task:"))todoSaveArtifactSelection(taskID);
@@ -2821,7 +2825,7 @@ function chatRenderArtifactContext(taskID,key,host){
  const row=el("div","chat-artifact-context");
  const open=el("button","sprt-quiet","Discussing: "+ref.title+" · v"+ref.version);
  open.onclick=()=>{
-   const spec={id:ref.id,revision:ref.revision,task:taskID,selectionKey:key};
+   const spec={id:ref.id,revision:ref.revision,task:taskID,discuss:ref.discuss,selectionKey:key};
    if(key.startsWith("task:")&&!location.hash.startsWith("#/chat/task/")){chatPendingWorkspace=spec;location.hash=chatTaskThreadHash(taskID);}
    else chatOpenWorkingArtifact(spec);
  };

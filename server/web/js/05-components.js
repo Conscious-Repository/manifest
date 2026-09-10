@@ -730,6 +730,8 @@ function artifactWorkspace(mount, options) {
       media.src = contentURL; media.title = title.textContent; media.alt = title.textContent;
       body.append(media);
       notice.textContent = "Preview only. This file has not been sent to the agent.";
+    } else if(ext==="diff"){
+      body.append(el("pre","",current.content||""));
     } else {
       try { body.append(renderMarkdown(current.content || "", "", {readOnly:true})); }
       catch(e) { body.textContent = current.content || ""; }

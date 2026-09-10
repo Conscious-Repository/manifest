@@ -70,8 +70,19 @@ func TestHermesTurnSurvivesRestart(t *testing.T) {
 	if err := os.WriteFile(hang, nil, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { _ = os.Remove(hang) }) // let the orphaned stub exit
 	old.UseHermes(hermesStub(t, hang), "web")
+	// The simulated dead process still has a real goroutine in this test.
+	// Release and join its final write before TempDir removes the shared files.
+	t.Cleanup(func() {
+		closed := privateCount(old, id, actTurnClosed)
+		_ = os.Remove(hang)
+		waitFor(t, "the simulated old worker to finish cleanup", func() bool {
+			old.hermes.mu.Lock()
+			_, running := old.hermes.running[id]
+			old.hermes.mu.Unlock()
+			return !running && privateCount(old, id, actTurnClosed) > closed
+		})
+	})
 	if _, ok := old.pinTaskID(id); !ok {
 		t.Fatal("pin")
 	}

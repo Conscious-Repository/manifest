@@ -269,11 +269,15 @@ func (s *Server) handleTermInput(w http.ResponseWriter, r *http.Request) {
 					linked = true
 				}
 			}
-			if !linked || b.Key != "" {
+			if (b.Task != "" && !linked) || b.Key != "" {
 				httpError(w, errBadRequest("artifact context requires a message and this coding chat's linked task"))
 				return
 			}
-			context, err := s.taskArtifactContext(b.Task, b.Artifacts)
+			var handed []artifactContextRef
+			if se.Origin != nil {
+				handed = se.Origin.Artifacts
+			}
+			context, err := s.scopedArtifactContext(b.Task, s.runtimeArtifactScope(se), b.Artifacts, handed)
 			if err != nil {
 				httpError(w, err)
 				return

@@ -581,10 +581,11 @@ func (s *Server) agentChatSendTo(agent, id, requestID, text string, files []thre
 				return agentchat.Delivery{}, errBadRequest("task is not linked to this conversation")
 			}
 		}
-		if len(refs) > 0 && ctx.Task == "" {
-			return agentchat.Delivery{}, errBadRequest("associate a task before selecting its artifacts")
+		var handed []artifactContextRef
+		if sess.Origin != nil {
+			handed = sess.Origin.Artifacts
 		}
-		if _, err := s.taskArtifactContext(ctx.Task, refs); err != nil {
+		if _, err := s.scopedArtifactContext(ctx.Task, privateArtifactScope(sess), refs, handed); err != nil {
 			return agentchat.Delivery{}, err
 		}
 	}
