@@ -1343,6 +1343,11 @@ function chatHead(s) {
     to.title="Choose who receives your next message";to.onclick=()=>chatChooseRecipient(s);head.append(to);
     if(recipient.backend==="terminal"){const native=(s.continuations||[]).find(v=>v.id===recipient.id);if(native){head.append(terminalStateDot(native));if(native.cwd)head.append(chatChangesButton(native));}}
   }else head.append(el("span", "sprt-sub chat-head-sub", sub.filter(Boolean).join(" · ")));
+  if(["kairos-private","zeck-private"].includes(agent)){
+    const share=el("button","sprt-quiet",s.sharing?"Recover sharing":"Share…");
+    share.onclick=()=>CHAT_SHARE.open({agent,id:s.id,title:s.title,onShared:conversation=>{location.hash=conversation.route;}});
+    head.append(share);
+  }
   // portal runs are metered in the agent's own ledger, not per thread
   const meta = [fmtWhen(s.updated || s.created)];
   if (!portal) meta.push("$" + (s.spentUsd || 0).toFixed(4) + (s.ceilingUsd ? " / $" + s.ceilingUsd.toFixed(2) : ""));
@@ -1558,6 +1563,7 @@ function renderChatTranscript(d) {
 
   const turnNumbers = new Set(parseChatTurns(d.body || "").filter(t => t.who !== "user" && t.who !== "system").map(t => t.n));
   (d.operations || []).filter(item => !turnNumbers.has(Number(item.record.turn) + 1)).forEach(item => host.append(manifestOperationCard(item)));
+  (d.sharedOperations || []).forEach(item => host.append(manifestOperationCard(item)));
   appendTaskApprovals(host, d);
   chatPaintCodingResults(host,d.codingResults);
   (d.queued || []).forEach((q) => {
@@ -1642,6 +1648,7 @@ function chatMentionOptions(prefix) {
 function renderChatComposer(session) {
   const host = document.getElementById("chatComposer");
   if (!host) return;
+  if(session?.sharing && session.sharing.state!=="shared"){host.replaceChildren(el("p","chat-load-error","Sharing is awaiting recovery. Use Recover sharing above to finish, then continue in the team conversation."));return;}
   const draftKey = (chatAgent || "spirits") + "/" + (chatOpenId || "new");
   const nativeRecipient = () => chatRecipients.get(draftKey)?.backend === "terminal";
   const syncAttach = () => {
@@ -1904,7 +1911,7 @@ function renderChatComposer(session) {
 // there runs the server's chatSweep over the agent's run reports.
 
 function chatTranscriptSignature(d) {
-  return JSON.stringify((d.session.deliveries || []).map(x=>[x.id,x.state,x.userTurn,x.replyTurn])) + "|" + d.session.updated + "|" + d.session.status + "|" + (d.queued || []).length + "|" + JSON.stringify((d.operations || []).map(x => [x.record.operationId, x.record.status, x.record.result])) + "|" + JSON.stringify(d.proposals || []) + "|" + JSON.stringify(d.codingResults || [])+"|"+JSON.stringify(d.continuations||[]);
+  return JSON.stringify((d.session.deliveries || []).map(x=>[x.id,x.state,x.userTurn,x.replyTurn])) + "|" + d.session.updated + "|" + d.session.status + "|" + (d.queued || []).length + "|" + JSON.stringify((d.operations || []).map(x => [x.record.operationId, x.record.status, x.record.result])) + "|" + JSON.stringify(d.session.sharing || null) + "|" + JSON.stringify(d.sharedOperations || []) + "|" + JSON.stringify(d.proposals || []) + "|" + JSON.stringify(d.codingResults || [])+"|"+JSON.stringify(d.continuations||[]);
 }
 function ensureChatPoll(session, queued) {
   const active = session && (session.status === "thinking" || session.shared || queued > 0 || (chatAgent && !chatIsPortal()));

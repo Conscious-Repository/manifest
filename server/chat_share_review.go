@@ -58,6 +58,16 @@ func (s *Server) handleChatShareReview(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
+	if sess.Sharing != nil {
+		_, review, err := s.storedChatShare(agent, id)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusConflict)
+			return
+		}
+		w.Header().Set("Cache-Control", "no-store")
+		writeJSON(w, review)
+		return
+	}
 	review := s.chatShareReview(r.Context(), sess, body, s.codingContinuations(r.Context(), sess))
 	// A root writer may have completed while files/native history were read.
 	// Do not offer a review assembled around an already superseded source.

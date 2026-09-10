@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"manifest/agentchat"
+	"manifest/approvals"
 	"manifest/artifacts"
 	"manifest/chatthreads"
 	"manifest/threads"
@@ -273,5 +274,72 @@ func TestRawTerminalHandleRetainsShareFence(t *testing.T) {
 	}
 	if _, err := f.s.terminalForHandle(runtime); err == nil {
 		t.Fatal("ambiguous handle selected an arbitrary source")
+	}
+}
+
+func TestShareReviewRecoveryReturnsOriginalEnvelope(t *testing.T) {
+	f := publicationFixture(t, "kairos-private")
+	request := chatShareRequest{"review-recovery-fixture", f.review.Revision}
+	target := filepath.Join(f.teamDir, "chat.json")
+	if err := os.WriteFile(target, []byte("corrupt target"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	result, err := f.publish(request)
+	if err == nil || result.State != "prepared" {
+		t.Fatal(result, err)
+	}
+	path := "/api/agents/chat/" + f.agent + "/sessions/" + f.id + "/share-review"
+	code, out := agentChatJSON(t, f.s, "GET", path, nil)
+	if code != 200 || out["revision"] != f.review.Revision {
+		t.Fatal(code, out)
+	}
+	raw, _ := json.Marshal(out)
+	var got chatShareReview
+	if err = json.Unmarshal(raw, &got); err != nil {
+		t.Fatal(err)
+	}
+	if len(got.Blockers) != 0 || got.Session.Sharing != nil || got.Body != f.review.Body {
+		t.Fatal("recovery substituted a current or blocked review")
+	}
+}
+
+func TestSharedOwnerChatRetainsTaskAndCanonicalApproval(t *testing.T) {
+	f := publicationFixture(t, "kairos-private")
+	if err := f.s.agentChat.store.SetTask(f.agent, f.id, "inbox/share-fixture"); err != nil {
+		t.Fatal(err)
+	}
+	store := approvals.NewStore(filepath.Join(t.TempDir(), "artifacts"))
+	f.s.UseApprovals(store)
+	proposal, err := store.Propose(approvals.Proposal{Type: "approval", Agent: "kairos-private", Action: "Review [todo:: inbox/share-fixture]", Body: "Original decision evidence"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	source, body, _, _ := f.s.agentChat.store.Get(f.agent, f.id)
+	f.review = f.s.chatShareReview(context.Background(), source, body, f.s.codingContinuations(context.Background(), source))
+	if _, err = f.publish(chatShareRequest{"owner-context-fixture", f.review.Revision}); err != nil {
+		t.Fatal(err)
+	}
+	thread := f.s.chat.Threads()[0].ID
+	path := "/api/agents/chat/kairos/sessions/" + thread
+	code, out := agentChatJSON(t, f.s, "GET", path, nil)
+	if code != 200 {
+		t.Fatal(code, out)
+	}
+	session := out["session"].(map[string]any)
+	if session["task"] != "inbox/share-fixture" {
+		t.Fatal("lost task backlink", session)
+	}
+	raw, _ := json.Marshal(out["proposals"])
+	var rows []approvalRow
+	if err = json.Unmarshal(raw, &rows); err != nil || len(rows) != 1 || rows[0].ID != proposal.ID {
+		t.Fatal("lost canonical decision", string(raw), err)
+	}
+	if err = store.Confirm(proposal.ID); err != nil {
+		t.Fatal(err)
+	}
+	code, out = agentChatJSON(t, f.s, "GET", path, nil)
+	raw, _ = json.Marshal(out["proposals"])
+	if code != 200 || json.Unmarshal(raw, &rows) != nil || len(rows) != 0 {
+		t.Fatal("feed decision did not settle shared owner chat", out)
 	}
 }

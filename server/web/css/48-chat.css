@@ -402,3 +402,18 @@ button.chat-attach-chip { min-height: 44px; max-width: 100%; background: transpa
 .chat-workstream-dialog input, .chat-workstream-dialog select, .chat-workstream-dialog button { font: inherit; color: var(--text); background: var(--surface-panel); border: 1px solid var(--line); border-radius: 4px; min-height: 44px; padding: 8px 12px; }
 .chat-workstream-dialog button[type="submit"] { border-color: var(--accent); }
 .chat-workstream-dialog h3 { margin: 0; }
+
+.chat-share-dialog { width: min(760px, calc(100vw - 24px)); max-height: calc(100dvh - 24px); overflow: auto; }
+.chat-share-dialog > h3, .chat-share-dialog > p { margin-bottom: 16px; }
+.chat-share-body { display: grid; gap: 16px; min-width: 0; }
+.chat-share-section { border-top: 1px solid var(--line); padding-top: 12px; }
+.chat-share-section summary { cursor: pointer; min-height: 32px; }
+.chat-share-section pre { white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; max-height: 45dvh; overflow-y: auto; }
+.chat-share-files { padding-left: 20px; margin: 0; overflow-wrap: anywhere; }
+.chat-share-consent { display: flex; align-items: flex-start; gap: 12px; line-height: 1.5; }
+.chat-share-dialog .chat-share-consent input { flex: 0 0 20px; width: 20px; min-height: 20px; margin-top: 3px; }
+.chat-share-status { margin-block: 20px !important; }
+.chat-share-blocker { border-left: 2px solid var(--accent); padding-left: 12px; }
+.chat-share-dialog .chat-workstream-actions { flex-wrap: wrap; }
+
+.chat-share-files a { color: var(--accent); }

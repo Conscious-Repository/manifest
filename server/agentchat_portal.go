@@ -134,6 +134,7 @@ func portalChatDomainLabel(domain string) string {
 // portalChatSession is the rail/header projection of one thread — the
 // Hermes-family Session keys, so the renderer reads it unchanged.
 type portalChatSession struct {
+	Task     string  `json:"task,omitempty"` // owner cockpit only; not a portal task-access grant
 	Shared   bool    `json:"shared,omitempty"`
 	ID       string  `json:"id"`
 	Agent    string  `json:"agent"`
@@ -403,6 +404,13 @@ func (s *Server) handlePortalChatSession(ag *chatAgent, w http.ResponseWriter, r
 			http.Error(w, err.Error(), http.StatusConflict)
 			return
 		}
+		// This is the owner's cockpit endpoint. Retain the original task and
+		// canonical decisions without granting these private surfaces to portals.
+		ownerSession := out["session"].(portalChatSession)
+		ownerSession.Task = review.Session.Task
+		out["session"] = ownerSession
+		out["sharedOperations"] = s.chatOperations(review.Session.ID)
+		out["proposals"] = s.chatTaskProposals(review.Session)
 		out["continuations"] = views
 		out["timeline"] = conversationTimeline(agentchat.Session{Agent: ag.Name, ID: t.ID, Created: t.Created.Format(time.RFC3339)}, body, views)
 	}
