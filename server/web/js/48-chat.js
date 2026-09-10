@@ -2302,6 +2302,11 @@ function chatTermHead(o) {
   raw.title = "the raw pane (xterm) in the Terminal tab";
   raw.onclick = () => chatTermOpenInTerminal(selectedRuntime||se);
   if(selectedRuntime||se.launchPhase!=="draft")head.append(raw);
+  const reviewRuntime=selectedRuntime||se;
+  if(!se.device&&reviewRuntime.cwd){
+    const changes=el("button","sprt-quiet","Changes");changes.title="Read current Git changes in this runtime's working folder";
+    changes.onclick=()=>chatOpenAttachment({name:"Working-folder changes.txt",notice:"Read-only Git review · shared working tree · not attached to your message",openLabel:"Open current changes ↗",errorLabel:"Changes unavailable; inspect the working folder in Terminal."},chatTermBase(reviewRuntime.id)+"/changes");head.append(changes);
+  }
   const kill = chatTermEndIsKill(se);
   if (!se.boardBrief || kill) acts.append(armedDelete(kill ? "✕ end" : "forget", kill ? "end — sure?" : "forget — sure?", () => chatTermEnd(se)));
   details.append(acts);

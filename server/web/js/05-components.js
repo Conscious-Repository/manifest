@@ -592,14 +592,17 @@ function attachmentWorkspace(mount,file,href,onClose){
   const pane=el("aside","artifact-workspace");pane.setAttribute("aria-label","Attachment preview");
   const head=el("div","artifact-workspace-head"),title=el("strong","artifact-workspace-title",file.name);
   const back=el("button","sprt-quiet","Back to chat"),controls=el("div","artifact-workspace-controls");
-  const download=el("a","sprt-quiet","Open / download original ↗");download.href=href;download.target="_blank";download.rel="noopener";
-  const notice=el("div","artifact-workspace-notice","Original attachment · read-only"),body=el("div","artifact-workspace-body","Loading…");body.tabIndex=0;notice.setAttribute("role","status");
+  const download=el("a","sprt-quiet",file.openLabel||"Open / download original ↗");download.href=href;download.target="_blank";download.rel="noopener";
+  const notice=el("div","artifact-workspace-notice",file.notice||"Original attachment · read-only"),body=el("div","artifact-workspace-body","Loading…");body.tabIndex=0;notice.setAttribute("role","status");
   let blobURL=null,closed=false;const abort=new AbortController();
   back.onclick=()=>{closed=true;abort.abort();if(blobURL)URL.revokeObjectURL(blobURL);pane.remove();onClose?.();};
   head.append(title,back);controls.append(download);pane.append(head,controls,notice,body);mount.append(pane);
   (async()=>{
     try{
-      const response=await fetch(href,{signal:abort.signal});if(!response.ok)throw new Error("Attachment unavailable ("+response.status+")");
+      const response=await fetch(href,{signal:abort.signal});if(!response.ok){
+        if(file.errorLabel){const reader=response.body?.getReader();const chunk=reader?await reader.read():null;await reader?.cancel();const reason=chunk?.value?new TextDecoder().decode(chunk.value.slice(0,500)).trim():"";throw new Error(reason||file.errorLabel);}
+        throw new Error("Attachment unavailable ("+response.status+")");
+      }
       const mime=(response.headers.get("Content-Type")||"").split(";")[0].trim().toLowerCase();
       const text=/\.(md|txt|csv|tsv|json|yaml|yml|log|go|js|ts|py|css)$/i.test(file.name)||mime.startsWith("text/");
       const media=["application/pdf","image/png","image/jpeg","image/gif","image/webp"].includes(mime);
