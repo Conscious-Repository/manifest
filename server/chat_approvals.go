@@ -30,6 +30,16 @@ func (s *Server) chatTaskProposals(sess agentchat.Session) []approvalRow {
 	return s.linkedTaskProposals(map[string]bool{approvals.TypeManifestOperation: true}, s.chatTaskMatcher(sess))
 }
 
+func (s *Server) terminalTaskProposals(se termSession) []approvalRow {
+	tasks := map[string]bool{}
+	for _, link := range s.terminalConversation(se).Links {
+		if link.Kind == "task" {
+			tasks[link.ID] = true
+		}
+	}
+	return s.linkedTaskProposals(map[string]bool{approvals.TypeManifestOperation: true}, func(task string) bool { return tasks[task] })
+}
+
 func (s *Server) chatTaskMatcher(sess agentchat.Session) func(string) bool {
 	matched := map[string]bool{}
 	return func(task string) bool {

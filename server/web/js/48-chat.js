@@ -2186,6 +2186,7 @@ async function loadChatTermSession(id) {
     planningTimeline:d.planningTimeline,
     planningRecipients:d.planningRecipients||[],
     planRevisions:d.planRevisions||{},
+    proposals:d.proposals||[],
     codingRecipients:d.codingRecipients||[],
     planningOperations:d.planningOperations||[],
     related:d.related||[],
@@ -2358,6 +2359,7 @@ function chatTermPaintTurns() {
   if(o.planningTimeline)chatPaintTurns(body,o.planningTimeline,null);
   else chatTermPaintLines(body, o.turns);
   for(const operation of o.planningOperations||[])body.append(manifestOperationCard(operation));
+  appendTaskApprovals(body,o);
   if (!(o.planningTimeline||o.turns).length) {
     body.append(el("div", "chat-term-line chat-term-sys", o.se.launchPhase === "draft"
       ? "Review your draft below. Sending starts the coding session."
@@ -2579,10 +2581,11 @@ async function chatTermTail(o) {
   let d;
   try { d = await (await fetch(chatTermBase(o.id) + "/transcript?after=" + o.offset)).json(); } catch (e) { return; }
   if (chatTermOpen !== o) return;
-  const planningChanged=JSON.stringify([o.planningTimeline,o.planningOperations,o.planRevisions||{}])!==JSON.stringify([d.planningTimeline,d.planningOperations,d.planRevisions||{}]);
+  const planningChanged=JSON.stringify([o.planningTimeline,o.planningOperations,o.planRevisions||{},o.proposals||[]])!==JSON.stringify([d.planningTimeline,d.planningOperations,d.planRevisions||{},d.proposals||[]]);
   o.planningTimeline=d.planningTimeline;
   o.planningOperations=d.planningOperations;
   o.planRevisions=d.planRevisions||{};
+  o.proposals=d.proposals||[];
   const turns = d.turns || [];
   if (d.offset < o.offset) { // the file was replaced/truncated: the reply is the whole projection
     o.turns = turns;

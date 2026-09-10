@@ -46,7 +46,7 @@ listeners.wheel();scrollHost.scrollTop=75;listeners.scroll();assert.equal(saves,
 // the reader's position, while Latest continues to follow appended output.
 const terminalHost={scrollTop:740};
 const terminalBody={set innerHTML(value){terminalHost.scrollTop=0;}};
-Object.assign(ctx,{document:{getElementById:id=>id==='chatTermTurns'?terminalBody:terminalHost},chatTermOpen:{turns:[{id:'record-1',who:'user',text:'hello'}]},chatStick:false,chatTermPaintLines:()=>{},chatPin:()=>{if(ctx.chatStick)terminalHost.scrollTop=2000;}});
+Object.assign(ctx,{document:{getElementById:id=>id==='chatTermTurns'?terminalBody:terminalHost},chatTermOpen:{turns:[{id:'record-1',who:'user',text:'hello'}]},chatStick:false,chatTermPaintLines:()=>{},appendTaskApprovals:()=>{},chatPin:()=>{if(ctx.chatStick)terminalHost.scrollTop=2000;}});
 vm.runInContext(src.slice(src.indexOf('function chatTermPaintTurns()'),src.indexOf('\nfunction ',src.indexOf('function chatTermPaintTurns()')+1)),ctx);
 ctx.chatTermPaintTurns();assert.equal(terminalHost.scrollTop,740);
 ctx.chatStick=true;ctx.chatTermPaintTurns();assert.equal(terminalHost.scrollTop,2000);
@@ -84,4 +84,8 @@ assert.equal(ctx.chatHasCanonicalParent({origin:{mode:'continue',agent:'alfred',
  await tail.chatTermRequestFinalTail(root);assert.equal(paints,2);
  response={...response,planningOperations:[{record:{operationId:'same-decision',status:'rejected'}}]};
  await tail.chatTermRequestFinalTail(root);assert.equal(paints,3,'decision changes repaint without new native messages');
+ response={...response,proposals:[{id:'shared-task-approval',body:'Review draft'}]};
+ await tail.chatTermRequestFinalTail(root);assert.equal(paints,4,'task approvals repaint without native output');
+ response={...response,proposals:[]};
+ await tail.chatTermRequestFinalTail(root);assert.equal(paints,5,'settled task approval is removed without native output');
 })().catch(e=>{console.error(e);process.exitCode=1});

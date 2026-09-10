@@ -52,6 +52,7 @@ func (s *Server) handleTermTranscript(w http.ResponseWriter, r *http.Request) {
 		"codingRecipients":   s.terminalCodingContinuations(r.Context(), se),
 		"planningOperations": s.terminalPlanningOperations(se),
 		"planRevisions":      s.nativePlanRevisions(se, full.Turns),
+		"proposals":          s.terminalTaskProposals(se),
 		"live":               live, "offset": tr.Offset, "kind": se.Kind, "agentState": ob.AgentState, "connectivity": ob.Connectivity, "process": ob.Process,
 	})
 }

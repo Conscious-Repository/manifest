@@ -1,11 +1,35 @@
 package server
 
 import (
+	"manifest/agentchat"
 	"manifest/approvals"
 	"manifest/threads"
 	"path/filepath"
 	"testing"
 )
+
+func TestCodingChatProjectsOnlyLinkedTaskApprovals(t *testing.T) {
+	store := approvals.NewStore(filepath.Join(t.TempDir(), "artifacts"))
+	s := &Server{approvals: store}
+	se := termSession{ID: "abcdef123456", Kind: "codex", Origin: &agentchat.Origin{Task: "inbox/electricians", Agent: "alfred", ID: "source"}}
+	p, err := store.Propose(approvals.Proposal{Type: "approval", Agent: "alfred", Action: "Review draft [todo:: inbox/electricians]", Body: "Exact recipients and draft"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	rows := s.terminalTaskProposals(se)
+	if len(rows) != 1 || rows[0].ID != p.ID || rows[0].Body != p.Body {
+		t.Fatalf("coding chat lost shared proposal: %+v", rows)
+	}
+	if len(s.terminalTaskProposals(termSession{ID: se.ID, Kind: se.Kind, Name: "electricians"})) != 0 {
+		t.Fatal("title inferred a task link")
+	}
+	if err := store.Confirm(p.ID); err != nil {
+		t.Fatal(err)
+	}
+	if len(s.terminalTaskProposals(se)) != 0 || len(s.taskProposals(se.Origin.Task)) != 0 || len(s.approvalRows(nil)) != 0 {
+		t.Fatal("Feed decision did not settle coding chat and task")
+	}
+}
 
 func TestCanonicalChatProjectsLinkedTaskApprovalsAndSettlesWithFeed(t *testing.T) {
 	s, chats, _ := agentChatFixture(t, echoStub)
