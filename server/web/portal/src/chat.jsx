@@ -113,8 +113,9 @@ function ChatView({ me, goalsIndex, items, filter, openItem, w, seed, onSeedUsed
         if(ctx.some(x=>!x.startsWith('file/')))throw Error('Only files can be attached to a terminal message. Remove the other context chips first.');
         await shared.send(draft.trim(),ctx.map(x=>x.slice(5)));
       } else {
-        const result=await post('api/chat/ask',{thread:thread.id,text:draft.trim(),ritual:rt,context:ctx.slice()});
+        const result=await post('api/chat/ask',{thread:thread.id,text:draft.trim(),ritual:rt,context:shared.teamContext(ctx)});
         if(!result.ok)return;
+        shared.filesConfirmed();
       }
       setDraft(current=>current===sentDraft?'':current);setCtx([]);load();shared.refresh();
     } catch(e) {setErr(e.message || 'Send not confirmed. Your draft is retained.');}

@@ -97,6 +97,16 @@
         if(scope===generation.current&&seq===fileRequest.current)setPreview({file,href,text});
       }catch(e){if(scope===generation.current&&seq===fileRequest.current)setPreview({file,href,note:e.message});}
     }
+    function teamContext(context=[]) {
+      if(!shared)return context.slice();
+      if(pending)throw Error('Resolve the pending terminal delivery before sending another message.');
+      return [...new Set([...context,...selected.map(hash=>'file/'+hash)])];
+    }
+    function filesConfirmed() {
+      // Clear only the versions included in this send, in its original thread.
+      // A later selection or navigation must not be reset by an old response.
+      setSelections(all=>({...all,[id]:(all[id]||[]).filter(hash=>!selected.includes(hash))}));
+    }
     function controls(team, classes, onConfirmed) {
       if(!shared)return null;
       const h=React.createElement;
@@ -111,7 +121,7 @@
             h('p',{role:'status'},currentScreen.value.process==='not-started'?'Send a message to start this agent.':currentScreen.value.live?'Live terminal screen':currentScreen.value.process==='stopped'?'Terminal stopped. Send a message to resume.':'Terminal is reconnecting…'),
             currentScreen.value.lines?.length>0&&h('pre',{'aria-label':'Terminal screen',style:{whiteSpace:'pre',overflow:'auto',maxWidth:'100%',maxHeight:'45vh',padding:'10px 0',fontSize:13,lineHeight:1.4}},currentScreen.value.lines.join('\n')))),
           ...[['Escape','\x1b'],['Enter','\r'],['↑','\x1b[A'],['↓','\x1b[B'],['Interrupt','\x03']].map(([label,key])=>h('button',{key,type:'button',disabled:recovering||!!pending,onClick:()=>keypress(key,label),style:{minHeight:44,minWidth:44,margin:4},'aria-label':'Terminal '+label},label))),
-        native && files.length>0 && h('details',null,h('summary',null,'Files'+(selected.length?' · '+selected.length+' selected':'')),
+        files.length>0 && h('details',null,h('summary',null,'Files'+(selected.length?' · '+selected.length+' selected':'')),
           ...files.map(file=>h('div',{key:file.hash,style:{display:'flex',gap:8,alignItems:'center',flexWrap:'wrap',padding:'6px 0'}},
             h('label',null,h('input',{type:'checkbox',checked:selected.includes(file.hash),disabled:!!pending||recovering,onChange:e=>setSelections(all=>({...all,[id]:e.target.checked?[...selected,file.hash]:selected.filter(hash=>hash!==file.hash)}))}),' Discuss'),
             h('button',{type:'button',onClick:()=>openFile(file),style:{maxWidth:'100%',whiteSpace:'normal',overflowWrap:'anywhere',textAlign:'left'}},file.name)))),
@@ -124,7 +134,7 @@
         pending && h('details',null,h('summary',null,pending.key?'Terminal control awaiting confirmation':'Message awaiting confirmation'),h('p',{style:{whiteSpace:'pre-wrap'}},pending.label||pending.key||pending.text),
           h('button',{type:'button',disabled:recovering,onClick:async()=>{const scope=generation.current;setRecovering(true);try{const sent=await submit(pending);if(scope===generation.current && onConfirmed && !pending.key)onConfirmed(sent);}catch(e){if(scope===generation.current)setError(e.message);}finally{if(scope===generation.current)setRecovering(false);}}},recovering?'Checking…':pending.key?'Check saved control':'Retry saved message')));
     }
-    return {shared,ready:!shared||!!value,messages:value?value.messages:stored,terminals,recipient,native,send,refresh,controls};
+    return {shared,ready:!shared||!!value,messages:value?value.messages:stored,terminals,recipient,native,send,refresh,controls,teamContext,filesConfirmed};
   }
   window.SHARED_CHAT={useThread};
 })();

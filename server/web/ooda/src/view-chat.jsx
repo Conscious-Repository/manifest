@@ -99,7 +99,10 @@ function ViewChat({ data }) {
       if(shared.native) {
         if(ctx.some(x=>!x.startsWith('file/')))throw Error('Only files can be attached to a terminal message. Remove the other context chips first.');
         await shared.send(body,ctx.map(x=>x.slice(5)));
-      } else await postJSON("/api/chat/ask", { thread: sel, text: body, ritual, context: ctx });
+      } else {
+        await postJSON("/api/chat/ask", { thread: sel, text: body, ritual, context: shared.teamContext(ctx) });
+        shared.filesConfirmed();
+      }
       // the grounding chips belonged to THAT message — the next one starts
       // clean, or asking again silently re-attaches a property the user no
       // longer sees themselves holding

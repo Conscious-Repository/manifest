@@ -7,7 +7,7 @@ assert.equal(fs.readFileSync(modulePath,'utf8'),fs.readFileSync(path.join(__dirn
  try{
   const page=await browser.newPage({viewport:{width:390,height:844}});
   const errors=[];page.on('pageerror',e=>errors.push(e.message));
-  let attempts=[],releaseA=null,holdA=false,holdScreen=false,releaseScreen=null;
+  let attempts=[],teamAttempts=[],releaseA=null,holdA=false,holdScreen=false,releaseScreen=null;
   await page.route('http://localhost:7341/**',async route=>{
    const url=new URL(route.request().url());
    if(url.pathname==='/'){await route.fulfill({contentType:'text/html',body:'<main id="root"></main>'});return;}
@@ -18,6 +18,7 @@ assert.equal(fs.readFileSync(modulePath,'utf8'),fs.readFileSync(path.join(__dirn
    }
    if(url.pathname.endsWith('/screen')){if(holdScreen)await new Promise(resolve=>releaseScreen=resolve);await route.fulfill({json:{live:true,process:'running',lines:['Allow this command?','> Yes','  No','<script>literal screen text</script>','long screen row '+ 'x'.repeat(200)]}});return;}
    if(url.pathname.startsWith('/api/chat/attach/')){await route.fulfill({contentType:'text/plain',body:'EXACT_PLAN_CONTENT'});return;}
+   if(url.pathname==='/api/chat/ask'){teamAttempts.push(route.request().postDataJSON());await route.fulfill({json:{ok:true}});return;}
    if(url.pathname.endsWith('/input')){
     const body=route.request().postDataJSON();attempts.push(body);
     await route.fulfill({status:attempts.length===1?202:200,json:{delivery:{id:body.requestId,state:attempts.length===1?'unconfirmed':'sent'}}});return;
@@ -37,23 +38,34 @@ assert.equal(fs.readFileSync(modulePath,'utf8'),fs.readFileSync(path.join(__dirn
      return h('div',null,h('button',{onClick:()=>{setID(id==='a'?'b':'a');setText('');setStatus('');}},'Switch thread'),
       h('button',{onClick:shared.refresh},'Refresh'),shared.controls('Kairos','',sent=>setStatus('Recovered '+sent)),
       ...shared.messages.map(m=>h('p',{key:m.id},m.text)),h('textarea',{'aria-label':'Message',value:text,onChange:e=>setText(e.target.value)}),
-      h('button',{onClick:async()=>{try{await shared.send(text);setText('');setStatus('Sent');}catch(e){setStatus(e.message);}}},'Send'),h('p',{role:'status'},status));
+      h('button',{onClick:async()=>{try{if(shared.native){await shared.send(text);}else{await fetch('/api/chat/ask',{method:'POST',body:JSON.stringify({text,context:shared.teamContext([])})});shared.filesConfirmed();}setText('');setStatus('Sent');}catch(e){setStatus(e.message);}}},'Send'),h('p',{role:'status'},status));
     }
     ReactDOM.createRoot(document.getElementById('root')).render(React.createElement(Harness));
    });
    await page.getByText('History a',{exact:true}).waitFor();
   }
   await mount();
-  await page.getByLabel('Message recipient').selectOption('0123456789abcdef');
+  await page.getByLabel('Message recipient').selectOption('team');
   await page.getByText('Files',{exact:true}).click();
   await page.getByRole('button',{name:'plan.md',exact:true}).click();
   await page.getByText('EXACT_PLAN_CONTENT',{exact:true}).waitFor();
+  await page.getByRole('checkbox').check();
+  await page.getByLabel('Message',{exact:true}).fill('Discuss this plan with Kairos');
+  await page.getByRole('button',{name:'Send',exact:true}).click();
+  await page.getByText('Sent',{exact:true}).waitFor();
+  assert.deepEqual(teamAttempts,[{text:'Discuss this plan with Kairos',context:['file/'+'f'.repeat(64)]}]);
+  assert.equal(await page.getByRole('checkbox').isChecked(),false,'team send left a stale file selection');
+  await page.getByLabel('Message recipient').selectOption('0123456789abcdef');
   await page.getByRole('checkbox').check();
   await page.getByLabel('Message',{exact:true}).fill('Keep this instruction');
   await page.getByRole('button',{name:'Send',exact:true}).click();
   await page.getByText(/Delivery is unconfirmed/).waitFor();
   assert.equal(await page.getByLabel('Message',{exact:true}).inputValue(),'Keep this instruction','uncertain send lost draft');
   assert.equal(attempts.length,1);assert.deepEqual(attempts[0].files,['f'.repeat(64)]);
+  await page.getByLabel('Message recipient').selectOption('team');
+  await page.getByRole('button',{name:'Send',exact:true}).click();
+  await page.getByText('Resolve the pending terminal delivery before sending another message.',{exact:true}).waitFor();
+  assert.equal(teamAttempts.length,1,'team send bypassed pending terminal recovery');
   await mount(); // browser navigation/reload retains the exact request
   await page.getByText('Message awaiting confirmation',{exact:true}).click();
   await page.getByRole('button',{name:'Retry saved message'}).click();
@@ -78,7 +90,13 @@ assert.equal(fs.readFileSync(modulePath,'utf8'),fs.readFileSync(path.join(__dirn
   releaseA();releaseScreen();await page.waitForTimeout(100);
   assert.equal(await page.getByLabel("Terminal screen",{exact:true}).count(),0,"late screen crossed thread boundary");
   assert.equal(await page.getByText('History a',{exact:true}).count(),0,'late response crossed thread boundary');
+  await page.addScriptTag({url:'https://unpkg.com/@babel/standalone@7.29.0/babel.min.js'});
+  for(const relative of ['portal/src/chat.jsx','ooda/src/view-chat.jsx']) {
+    const source=fs.readFileSync(path.join(__dirname,'../web',relative),'utf8');
+    assert.ok(source.includes('context:shared.teamContext(ctx)')||source.includes('context: shared.teamContext(ctx)'),relative+' must send the selected files');
+    await page.evaluate(source=>Babel.transform(source,{presets:['react']}).code,source);
+  }
   assert.deepEqual(errors,[]);
-  console.log('Shared portal chat: delivery recovery, literal live screen, phone bounds, and transcript/screen thread-switch isolation passed at 390px.');
+  console.log('Shared portal chat: exact files for team and native agents, delivery recovery, literal live screen, phone bounds, and transcript/screen thread-switch isolation passed at 390px.');
  }finally{await browser.close();}
 })().catch(e=>{console.error(e);process.exitCode=1;});
