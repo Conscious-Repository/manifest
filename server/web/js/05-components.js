@@ -646,6 +646,16 @@ function artifactLineChanges(before,after){
   return out;
 }
 
+function artifactDiffView(before,after,label){
+  const changes=artifactLineChanges(before,after);
+  const added=changes.filter(x=>x.kind==="added").length,removed=changes.filter(x=>x.kind==="removed").length;
+  const view=el("div","artifact-diff-review");
+  view.append(el("p","artifact-diff-summary",added||removed?`${added} lines added · ${removed} lines removed`:"No text changes."));
+  const diff=el("pre","artifact-diff");diff.setAttribute("aria-label",label);
+  for(const line of changes)diff.append(el("span","artifact-diff-"+line.kind,(line.kind==="added"?"+ ":line.kind==="removed"?"− ":"  ")+line.text));
+  view.append(diff);return view;
+}
+
 // A shared, version-aware workspace. The caller owns placement and discussion
 // context; opening it never navigates, edits a file, or starts an agent.
 const artifactEditDrafts = new Map();
@@ -736,12 +746,7 @@ function artifactWorkspace(mount, options) {
         try{
           const old=await fetchJSON(url(current,previous.hash));
           if(ticket!==generation||!pane.isConnected)return;
-          const changes=artifactLineChanges(old.content||"",versionText);
-          const added=changes.filter(x=>x.kind==="added").length,removed=changes.filter(x=>x.kind==="removed").length;
-          const summary=el("p","artifact-diff-summary",added||removed?`${added} lines added · ${removed} lines removed` : "No text changes.");
-          const diff=el("pre","artifact-diff");diff.setAttribute("aria-label",`Changes from version ${previous.n} to version ${selectedNumber}`);
-          for(const line of changes)diff.append(el("span","artifact-diff-"+line.kind,(line.kind==="added"?"+ ":line.kind==="removed"?"− ":"  ")+line.text));
-          body.replaceChildren(summary,diff);
+          body.replaceChildren(artifactDiffView(old.content||"",versionText,`Changes from version ${previous.n} to version ${selectedNumber}`));
           compare.textContent="Back to preview";compare.onclick=render;
         }catch(e){if(ticket===generation)notice.textContent="Could not compare versions: "+e.message;}
         finally{compare.disabled=false;}
@@ -780,6 +785,19 @@ function artifactWorkspace(mount, options) {
     const save = el("button", "sprt-quiet", restore ? "Save restored version" : "Save new version");
     const remember=()=>editState?.set({...editState.value||started,text:input.value});
     input.addEventListener("input",remember);
+    const review=el("button","sprt-quiet","Review changes");
+    let reviewing=false;
+    review.onclick=async()=>{
+      if(reviewing){body.replaceChildren(input);review.textContent="Review changes";reviewing=false;input.focus();return;}
+      remember();const ticket=generation;review.disabled=true;
+      try{
+        const base=await fetchJSON(url(current,started.baseRevision));
+        if(ticket!==generation||!pane.isConnected||!editing)return;
+        body.replaceChildren(artifactDiffView(base.content||"",input.value,"Unsaved changes from starting revision"));
+        reviewing=true;review.textContent="Edit text";
+      }catch(e){if(ticket===generation&&pane.isConnected)notice.textContent="Could not compare the starting revision: "+e.message;}
+      finally{review.disabled=false;}
+    };
     const cancel = el("button", "sprt-quiet", "Back to preview"); cancel.onclick = ()=>{remember();render();};
     const discard=el("button","sprt-quiet","Discard draft");
     discard.onclick=async()=>{
@@ -791,7 +809,7 @@ function artifactWorkspace(mount, options) {
       if(editState?.conflict){notice.textContent="Resolve the draft conflict before saving a version.";return;}
       const submitted=editState?.value||{...started,text:input.value};
       if(submitted.artifact!==current.id || !/^[0-9a-f]{64}$/.test(submitted.baseRevision||"")){notice.textContent="This draft has no valid starting revision. Keep its text and review the latest version before saving.";return;}
-      save.disabled = true;input.disabled=true;discard.disabled=true;
+      save.disabled = true;input.disabled=true;discard.disabled=true;review.disabled=true;
       try {
         await opts.save(submitted.text, submitted.baseRevision);
         if(editState&&chatStateEqual(editState.value,submitted)){editState.set(null);await editState.flush();}
@@ -799,9 +817,9 @@ function artifactWorkspace(mount, options) {
         await show(a,a.head);
         notice.textContent = "New version saved. Execution has not started.";
       } catch(e) { notice.textContent = e.message; }
-      finally { save.disabled = false;input.disabled=false;discard.disabled=false; }
+      finally { save.disabled = false;input.disabled=false;discard.disabled=false;review.disabled=false; }
     };
-    controls.append(save,cancel,discard); chatRenderStateNotice(recovery,editState);input.focus();
+    controls.append(save,review,cancel,discard); chatRenderStateNotice(recovery,editState);input.focus();
   }
   (async () => { try {
     const a = await opts.load(); await show(a,opts.revision || a.head);
