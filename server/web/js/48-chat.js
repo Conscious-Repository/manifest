@@ -180,7 +180,7 @@ function chatRefreshCurrentDraft(){
  }).catch(()=>{}).finally(()=>chatRecoveryRefreshes.delete(key));
  chatRecoveryRefreshes.set(key,job);return job;
 }
-window.addEventListener("focus",()=>{chatRefreshCurrentDraft();chatLoadPins().then(renderChatInboxRows);});
+window.addEventListener("focus",()=>{chatRefreshCurrentDraft();Promise.all([chatLoadPins(),chatLoadWorkstreams()]).then(()=>{chatRenderWorkstreamFilter();renderChatInboxRows();});});
 document.addEventListener("visibilitychange",()=>{if(!document.hidden)chatRefreshCurrentDraft();});
 window.addEventListener("pagehide",()=>{chatSaveDraft();for(const state of chatSyncedDrafts.values())if(state.dirty)state.flush();});
 function showChat(h) {
@@ -460,7 +460,7 @@ async function loadChatRoster() {
 // Load conversation summaries together so the inbox can sort across agents.
 async function loadChatSessions() {
   const agents = chatRoster.filter(a => !chatIsTerm(a.name)).map(a => a.name);
-  await Promise.all([chatLoadPins(),...["", ...agents].map(async agent => {
+  await Promise.all([chatLoadPins(),chatLoadWorkstreams(),...["", ...agents].map(async agent => {
     try {
       const res = await fetch(chatBaseFor(agent));
       if (!res.ok) return; // retain the last good directory during an outage
@@ -531,12 +531,56 @@ async function chatSetPinned(key,pinned){
   }
   throw Error("Pinned chats changed on another device. Try again.");
 }
+let chatWorkstreams={groups:{},members:{}},chatWorkstreamsRevision=-1,chatWorkstreamFilter="all";
+const chatWorkstreamURL="/api/chat/state/inbox/workstreams";
+function chatApplyWorkstreams(state){
+  if(state.key!=="inbox"||state.slot!=="workstreams"||!Number.isSafeInteger(state.revision)||state.revision<chatWorkstreamsRevision)return;
+  chatWorkstreamsRevision=state.revision;chatWorkstreams={groups:state.value?.groups||{},members:state.value?.members||{}};
+}
+async function chatLoadWorkstreams(){try{const r=await fetch(chatWorkstreamURL,{cache:"no-store"});if(r.ok)chatApplyWorkstreams(await r.json());}catch(e){}}
+function chatWorkstreamMember(key){const id=chatWorkstreams.members[key];return chatWorkstreams.groups[id]?id:"";}
+function chatRenderWorkstreamFilter(){
+  const select=document.getElementById("chatWorkstreamFilter");if(!select||document.activeElement===select)return;
+  select.replaceChildren();
+  [["all","All workstreams"],["standalone","Standalone chats"],...Object.entries(chatWorkstreams.groups).sort((a,b)=>a[1].localeCompare(b[1]))].forEach(([id,label])=>{const o=el("option","",label);o.value=id;select.append(o);});
+  if(!["all","standalone"].includes(chatWorkstreamFilter)&&!chatWorkstreams.groups[chatWorkstreamFilter])chatWorkstreamFilter="all";
+  select.value=chatWorkstreamFilter;
+}
+async function chatSaveWorkstream(key,expected,id,name){
+  const newID="ws-"+crypto.randomUUID();
+  for(let attempt=0;attempt<3;attempt++){
+    const r=await fetch(chatWorkstreamURL,{cache:"no-store"});if(!r.ok)throw Error("Could not load workstreams.");
+    const state=await r.json();if(state.key!=="inbox"||state.slot!=="workstreams"||!Number.isSafeInteger(state.revision))throw Error("Invalid workstream state.");
+    const groups={...state.value?.groups},members={...state.value?.members};
+    if((members[key]||"")!==expected)throw Error("This chat’s workstream changed on another device. Close and reopen this choice.");
+    let selected=id;
+    if(name){selected=Object.keys(groups).find(k=>groups[k].toLowerCase()===name.toLowerCase())||newID;groups[selected]=groups[selected]||name;}
+    if(selected&&!groups[selected])throw Error("That workstream is no longer available.");
+    if(selected)members[key]=selected;else delete members[key];
+    const saved=await fetch(chatWorkstreamURL,{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify({revision:state.revision,value:{groups,members}})});
+    if(saved.status===409)continue;if(!saved.ok)throw Error("Workstream change was not saved.");
+    chatApplyWorkstreams(await saved.json());return;
+  }
+  throw Error("Workstreams changed on another device. Try again.");
+}
+function chatChooseWorkstream(entry){
+  const key=chatInboxKey(entry),expected=chatWorkstreams.members[key]||"";
+  const dialog=el("dialog","chat-workstream-dialog"),form=el("form",""),title=el("h3","","Workstream");
+  const select=document.createElement("select");select.setAttribute("aria-label","Choose workstream");
+  [["","Standalone chat"],...Object.entries(chatWorkstreams.groups).sort((a,b)=>a[1].localeCompare(b[1])),["new","New workstream…"]].forEach(([id,label])=>{const o=el("option","",label);o.value=id;select.append(o);});select.value=expected;
+  const name=document.createElement("input");name.placeholder="Workstream name";name.setAttribute("aria-label","Workstream name");name.maxLength=80;name.hidden=true;
+  select.onchange=()=>{name.hidden=select.value!=="new";if(!name.hidden)name.focus();};
+  const error=el("p","",""),actions=el("div","chat-workstream-actions"),cancel=el("button","sprt-quiet","Cancel"),save=el("button","","Save");error.setAttribute("role","alert");cancel.type="button";cancel.onclick=()=>dialog.close();save.type="submit";actions.append(cancel,save);
+  form.append(title,el("p","",entry.session.title||entry.session.name||"Chat"),select,name,error,actions);
+  form.onsubmit=async e=>{e.preventDefault();const creating=select.value==="new",label=name.value.trim();if(creating&&!label){error.textContent="Enter a workstream name.";name.focus();return;}save.disabled=true;try{await chatSaveWorkstream(key,expected,creating?"":select.value,creating?label:"");dialog.close();chatRenderWorkstreamFilter();renderChatInboxRows();}catch(e){error.textContent=e.message;}finally{save.disabled=false;}};
+  dialog.append(form);dialog.addEventListener("close",()=>dialog.remove(),{once:true});document.body.append(dialog);dialog.showModal();select.focus();
+}
 function chatInboxEntries() {
   const entries = chatSessions.map(session => ({agent: "", session}));
   chatRoster.filter(a => !chatIsTerm(a.name)).forEach(agent => (chatAgentSessions[agent.name] || []).filter(session=>!chatHasNativeParent(session)).forEach(session => entries.push({agent: agent.name, session})));
   if (chatTermEnabled) Object.keys(chatTermKinds).forEach(agent => chatTermList(agent).filter(session=>!chatHasCanonicalParent(session)&&!chatHasNativeParent(session)).forEach(session => entries.push({agent, session, terminal: true})));
   const query = chatSearchQuery.trim().toLowerCase();
-  return entries.filter(entry => (chatInboxFilter === "all" || entry.agent === chatInboxFilter || (entry.terminal&&[...(chatAgentSessions[chatInboxFilter]||[]),...chatTermSessions.filter(s=>s.kind===chatInboxFilter)].some(s=>s.origin?.mode==="continue"&&s.origin?.backend==="terminal"&&s.origin?.id===entry.session.id&&s.origin?.agent===entry.agent)))
+  return entries.filter(entry => (chatWorkstreamFilter==="all"||(chatWorkstreamFilter==="standalone"?!chatWorkstreamMember(chatInboxKey(entry)):chatWorkstreamMember(chatInboxKey(entry))===chatWorkstreamFilter)) && (chatInboxFilter === "all" || entry.agent === chatInboxFilter || (entry.terminal&&[...(chatAgentSessions[chatInboxFilter]||[]),...chatTermSessions.filter(s=>s.kind===chatInboxFilter)].some(s=>s.origin?.mode==="continue"&&s.origin?.backend==="terminal"&&s.origin?.id===entry.session.id&&s.origin?.agent===entry.agent)))
     && [entry.session.title, entry.session.name, entry.session.cwd, chatAgentLabel(entry.agent), entry.session.spirit].filter(Boolean).join(" ").toLowerCase().includes(query))
     .sort((a, b) => {
       const pinned=Number(chatPins[chatInboxKey(b)]===true)-Number(chatPins[chatInboxKey(a)]===true);if(pinned)return pinned;
@@ -549,7 +593,7 @@ function renderChatInboxRows() {
   if (!host) return;
   host.replaceChildren();
   const entries = chatInboxEntries();
-  if (!entries.length) { host.append(emptyRow(chatSearchQuery ? "No matching conversations" : "No conversations yet")); return; }
+  if (!entries.length) { host.append(emptyRow(chatSearchQuery || chatWorkstreamFilter!=="all" || chatInboxFilter!=="all" ? "No matching conversations" : "No conversations yet")); return; }
   entries.forEach(entry => {
     const row = entry.terminal ? chatTermRow(entry.session) : chatRailRow(entry.session, entry.agent);
     row.classList.toggle("open", entry.agent === chatAgent && entry.session.id === chatOpenId);
@@ -560,6 +604,9 @@ function renderChatInboxRows() {
     pin.onclick=async e=>{e.stopPropagation();pin.disabled=true;try{await chatSetPinned(key,!pinned);renderChatInboxRows();}catch(error){showToast(error.message);}finally{pin.disabled=false;}};
     pin.onkeydown=e=>e.stopPropagation();
     (row.querySelector(".chat-rail-top")||row).append(pin);
+    const group=chatWorkstreamMember(key),workstream=el("button","sprt-quiet chat-workstream-link",group?chatWorkstreams.groups[group]:"Workstream…");
+    workstream.setAttribute("aria-label","Change workstream for "+(entry.session.title||entry.session.name||entry.session.id));
+    workstream.onclick=e=>{e.stopPropagation();chatChooseWorkstream(entry);};workstream.onkeydown=e=>e.stopPropagation();(meta||row).append(workstream);
     row.onclick = () => { location.hash = entry.agent ? "#/chat/a/" + encodeURIComponent(entry.agent) + "/" + encodeURIComponent(entry.session.id) : "#/chat/" + encodeURIComponent(entry.session.id); };
     host.append(row);
   });
@@ -583,10 +630,12 @@ function renderChatRail() {
     });
     select.value = chatInboxFilter;
     select.onchange = () => { chatInboxFilter = select.value; renderChatInboxRows(); };
-    controls.append(search, select);
+    const workstreams=document.createElement("select");workstreams.id="chatWorkstreamFilter";workstreams.className="chat-inbox-filter";workstreams.setAttribute("aria-label","Filter chats by workstream");workstreams.onchange=()=>{chatWorkstreamFilter=workstreams.value;renderChatInboxRows();};
+    controls.append(search, select, workstreams);
     host.append(controls, el("div", "chat-inbox-rows"));
     host.lastChild.id = "chatInboxRows";
   }
+  chatRenderWorkstreamFilter();
   renderChatInboxRows();
 }
 

@@ -176,3 +176,27 @@ func TestArtifactEditsKeepTheirBaseAndStaySeparateFromChat(t *testing.T) {
 		t.Fatal("stale editor restored discarded draft", err)
 	}
 }
+
+func TestWorkstreamsPersistWithConflictAndIndependentPins(t *testing.T) {
+	root := t.TempDir()
+	s := New(root)
+	original := json.RawMessage(`{"groups":{"ws-one":"Manifest"},"members":{"agent:alfred/chat":"ws-one"}}`)
+	saved, err := s.Write("inbox", "workstreams", 0, original)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reopened, err := New(root).Read("inbox", "workstreams")
+	if err != nil || !bytes.Equal(saved.Value, reopened.Value) {
+		t.Fatal(reopened, err)
+	}
+	if _, err = s.Write("inbox", "workstreams", 0, json.RawMessage(`{"groups":{},"members":{}}`)); !errors.Is(err, ErrConflict) {
+		t.Fatal("stale membership accepted", err)
+	}
+	if _, err = s.Write("inbox", "workstreams", saved.Revision, json.RawMessage(`{"groups":{"ws-one":"Manifest"},"members":{}}`)); err != nil {
+		t.Fatal(err)
+	}
+	pins, err := s.Read("inbox", "pins")
+	if err != nil || pins.Revision != 0 {
+		t.Fatal("membership affected pins", pins, err)
+	}
+}

@@ -390,3 +390,15 @@ button.chat-attach-chip { min-height: 44px; max-width: 100%; background: transpa
 @media (hover: hover) { .chat-inbox-pin { opacity: 0; } .chat-rail-row:hover .chat-inbox-pin, .chat-rail-row:focus-within .chat-inbox-pin, .chat-inbox-pin[aria-pressed="true"] { opacity: 1; } }
 @media (pointer: coarse) { .chat-inbox-pin { min-height: 44px; } }
 .chat-head button.chat-head-sub { font-size:var(--fs-md); min-height:44px; }
+
+.chat-workstream-link { margin-left: auto; flex-shrink: 1; max-width: 50%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--fs-sm); min-height: 32px; }
+.chat-workstream-dialog { color: var(--text); background: var(--surface-panel); border: 1px solid var(--line); padding: 24px; width: min(420px, calc(100vw - 32px)); box-sizing: border-box; }
+.chat-workstream-dialog::backdrop { background: #03121ccc; }
+.chat-workstream-dialog form { display: grid; gap: 16px; min-width: 0; }
+.chat-workstream-dialog input, .chat-workstream-dialog select { width: 100%; min-width: 0; box-sizing: border-box; }
+.chat-workstream-dialog p { margin: 0; overflow-wrap: anywhere; }
+.chat-workstream-actions { display: flex; justify-content: flex-end; gap: 12px; }
+@media (pointer: coarse) { .chat-workstream-link { min-height: 44px; } }
+.chat-workstream-dialog input, .chat-workstream-dialog select, .chat-workstream-dialog button { font: inherit; color: var(--text); background: var(--surface-panel); border: 1px solid var(--line); border-radius: 4px; min-height: 44px; padding: 8px 12px; }
+.chat-workstream-dialog button[type="submit"] { border-color: var(--accent); }
+.chat-workstream-dialog h3 { margin: 0; }
