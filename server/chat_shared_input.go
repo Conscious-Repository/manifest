@@ -50,7 +50,7 @@ func sharedInputFingerprint(b terminalInput, scope *sharedTerminalInputScope) st
 
 // Build context only from the shared thread and its approved runtime set.
 // Task links and sibling sessions do not silently expand a portal's access.
-func (s *Server) sharedInputContext(ctx context.Context, scope *sharedTerminalInputScope, refs []artifactContextRef) (string, string, int, error) {
+func (s *Server) sharedInputContext(ctx context.Context, scope *sharedTerminalInputScope, refs []artifactContextRef, files ...string) (string, string, int, error) {
 	review, err := s.sharedConversationReview(scope.Agent, scope.Thread)
 	if err != nil {
 		return "", "", 0, err
@@ -88,7 +88,11 @@ func (s *Server) sharedInputContext(ctx context.Context, scope *sharedTerminalIn
 	source := agentchat.Session{Agent: scope.Agent.Name, ID: thread.ID, Created: thread.Created.Format("2006-01-02T15:04:05Z07:00")}
 	key := agentConversation("portal", scope.Agent.Name, thread.ID, "team:"+scope.Agent.Domain, "").Key
 	text, omitted := timelineContinuationContext(key, conversationTimeline(source, body, views))
-	return text + attached, key, omitted, nil
+	fileContext, _, err := s.sharedSelectedFiles(scope.Agent, scope.Thread, review, files)
+	if err != nil {
+		return "", "", 0, err
+	}
+	return text + attached + fileContext, key, omitted, nil
 }
 
 // Owner cockpit routes keep their original terminal identity after sharing.

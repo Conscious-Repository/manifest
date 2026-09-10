@@ -1315,6 +1315,19 @@ function chatUserTurn(text) {
 // chatHead — the thread head in the .sprt-head anatomy every detail head
 // follows: title (inline-rename target: dblclick or ✎) · sub (who · model) ·
 // meta (fmtWhen(updated) · charge) · trailing actions (☐ task ↗ · delete).
+function chatSharedFilePicker(session,agent){
+  const key=agent+"/"+session.id,base=chatAttachBase(),dialog=el("dialog","chat-workstream-dialog"),list=el("div","");
+  dialog.append(el("h3","","Conversation files"),list);
+  for(const file of session.sharedFiles||[]){
+    const row=el("p",""),open=el("button","sprt-quiet",file.name),discuss=el("button","sprt-quiet","Discuss");
+    open.onclick=()=>{dialog.close();if(chatDraftKey===key)chatOpenAttachment(file,base+"/"+file.hash);};
+    discuss.onclick=()=>{if(chatDraftKey!==key){dialog.close();return;}if(!chatPendingFiles.some(f=>f.hash===file.hash))chatPendingFiles.push(file);chatSaveDraft();dialog.close();renderChatComposer(chatCurSession);};
+    row.append(open,discuss);list.append(row);
+  }
+  const close=el("button","sprt-quiet","Close");close.onclick=()=>dialog.close();dialog.append(close);
+  dialog.addEventListener("close",()=>dialog.remove(),{once:true});document.body.append(dialog);dialog.showModal();
+}
+
 function chatHead(s) {
   const who = s.spirit || (s.agent ? chatAgentLabel(s.agent) : "");
   const portal = chatIsPortal();
@@ -1347,6 +1360,10 @@ function chatHead(s) {
     const share=el("button","sprt-quiet",s.sharing?"Recover sharing":"Share…");
     share.onclick=()=>CHAT_SHARE.open({agent,id:s.id,title:s.title,onShared:conversation=>{location.hash=conversation.route;}});
     head.append(share);
+  }
+  if(s.shared && s.sharedFiles?.length){
+    const files=el("button","sprt-quiet","Files");
+    files.onclick=()=>chatSharedFilePicker(s,agent);head.append(files);
   }
   // portal runs are metered in the agent's own ledger, not per thread
   const meta = [fmtWhen(s.updated || s.created)];
@@ -1477,6 +1494,11 @@ function chatPaintTurns(host, turns, ctx) {
         open.onclick=()=>chatOpenWorkingArtifact({id:ref.id,revision:ref.revision,task:receipt.context.task,selectionKey:"chat:"+chatAgent+"/"+chatOpenId});
         row.append(open);
       }
+      for(const file of t.submission?.files||[]){
+        const open=el("button","chat-attach-chip",file.name),href=chatFileHref(file.hash);
+        open.title="Open the exact file sent with this message";
+        open.onclick=()=>chatOpenAttachment(file,href);row.append(open);
+      }
       host.append(row);
       return;
     }
@@ -1551,7 +1573,7 @@ function renderChatTranscript(d) {
   const s = d.session;
   const activeTask=chatConversationTasks.get("chat:"+chatAgent+"/"+s.id);
   if(activeTask)s.task=activeTask;
-  s.related=d.related||[];s.handoffBody=d.body||"";s.continuations=d.continuations||[];
+  s.related=d.related||[];s.handoffBody=d.body||"";s.continuations=d.continuations||[];s.sharedFiles=d.sharedFiles||[];
   chatCurSession = s;
   chatLastUpdated = chatTranscriptSignature(d);
   const who = s.spirit || (s.agent ? chatAgentLabel(s.agent) : "");
@@ -1653,7 +1675,7 @@ function renderChatComposer(session) {
   const nativeRecipient = () => chatRecipients.get(draftKey)?.backend === "terminal";
   const syncAttach = () => {
     const btn = host.querySelector(".chat-attach");
-    if (btn) btn.hidden = nativeRecipient() || !chatAgent || (chatIsTerm()&&chatRecipients.get(draftKey)?.backend!=="hermes");
+    if (btn) btn.hidden = (nativeRecipient()&&!session?.shared) || !chatAgent || (chatIsTerm()&&chatRecipients.get(draftKey)?.backend!=="hermes");
     const rit = host.querySelector(".chat-ritual");
     if (rit) {
       rit.hidden = !chatIsPortal() || nativeRecipient();
@@ -1823,9 +1845,9 @@ function renderChatComposer(session) {
     }
     if(chosenRecipient?.backend==="terminal"){
       try{
-        if(files.length)throw new Error("File uploads are not supported by this coding continuation yet. Remove the attachment or choose a planning agent.");
+        if(files.length&&!session?.shared)throw new Error("File uploads are not supported by this coding continuation yet. Remove the attachment or choose a planning agent.");
         const url=chatTermBase(chosenRecipient.id)+"/input";
-        const item=chatRememberDelivery(draftKey,chosenRecipient.agent,url,{text,conversationAgent:sendAgent,conversationId:sendSession,task:selected?.task||session?.task||"",artifacts:selected?[{id:selected.id,revision:selected.revision}]:[]});
+        const item=chatRememberDelivery(draftKey,chosenRecipient.agent,url,{text,...(files.length?{files:files.map(f=>f.hash)}:{}),conversationAgent:sendAgent,conversationId:sendSession,task:selected?.task||session?.task||"",artifacts:selected?[{id:selected.id,revision:selected.revision}]:[]});
         await chatDeliverRemembered(item);acceptedDraft();
         if(sendRoute===chatRouteVersion)await refetchChatSession(sendSession);
       }catch(e){showToast(e.message||"Send not confirmed. Your draft is retained.");}
@@ -1911,7 +1933,7 @@ function renderChatComposer(session) {
 // there runs the server's chatSweep over the agent's run reports.
 
 function chatTranscriptSignature(d) {
-  return JSON.stringify((d.session.deliveries || []).map(x=>[x.id,x.state,x.userTurn,x.replyTurn])) + "|" + d.session.updated + "|" + d.session.status + "|" + (d.queued || []).length + "|" + JSON.stringify((d.operations || []).map(x => [x.record.operationId, x.record.status, x.record.result])) + "|" + JSON.stringify(d.session.sharing || null) + "|" + JSON.stringify(d.sharedOperations || []) + "|" + JSON.stringify(d.proposals || []) + "|" + JSON.stringify(d.codingResults || [])+"|"+JSON.stringify(d.continuations||[]);
+  return JSON.stringify((d.session.deliveries || []).map(x=>[x.id,x.state,x.userTurn,x.replyTurn])) + "|" + d.session.updated + "|" + d.session.status + "|" + (d.queued || []).length + "|" + JSON.stringify((d.operations || []).map(x => [x.record.operationId, x.record.status, x.record.result])) + "|" + JSON.stringify(d.session.sharing || null) + "|" + JSON.stringify(d.sharedOperations || []) + "|" + JSON.stringify(d.proposals || []) + "|" + JSON.stringify(d.codingResults || [])+"|"+JSON.stringify(d.continuations||[])+"|"+JSON.stringify(d.sharedFiles||[]);
 }
 function ensureChatPoll(session, queued) {
   const active = session && (session.status === "thinking" || session.shared || queued > 0 || (chatAgent && !chatIsPortal()));

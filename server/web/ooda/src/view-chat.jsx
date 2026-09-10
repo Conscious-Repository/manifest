@@ -97,8 +97,8 @@ function ViewChat({ data }) {
     try {
       if(shared.shared && (!shared.ready || !shared.recipient)) throw Error('Choose the agent for this message.');
       if(shared.native) {
-        if(ctx.length)throw Error('Remove the context chips before sending to this terminal.');
-        await shared.send(body);
+        if(ctx.some(x=>!x.startsWith('file/')))throw Error('Only files can be attached to a terminal message. Remove the other context chips first.');
+        await shared.send(body,ctx.map(x=>x.slice(5)));
       } else await postJSON("/api/chat/ask", { thread: sel, text: body, ritual, context: ctx });
       // the grounding chips belonged to THAT message — the next one starts
       // clean, or asking again silently re-attaches a property the user no
@@ -298,7 +298,7 @@ function ViewChat({ data }) {
             </div>
             {/* attach is quieter and separate: the file becomes a context chip
                 above and rides the send you were going to make anyway */}
-            <div className="ooda-attach-row" style={{display:shared.native?"none":undefined}}>
+            <div className="ooda-attach-row">
               <label className="ooda-attach" title={window.CHAT_ACTIONS.attach.hint}>
                 {attaching ? "…" : window.CHAT_ACTIONS.attach.label}
                 <input type="file" accept={window.CHAT_ACTIONS.attach.accept}

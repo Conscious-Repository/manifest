@@ -75,6 +75,7 @@ func sharedHistoryMessages(review chatShareReview, thread string, stored []chatt
 			raw, _ := json.Marshal(turn)
 			m := chatthreads.Message{ID: "native-" + hashTerminalText(thread + "\x00" + key)[:24], Thread: thread, Kind: kind, Author: author, AuthName: name, Text: text, At: ts, Source: &chatthreads.MessageSource{Conversation: sessionConversation(review.Session).Key, Turn: key, TimestampKnown: known, Record: raw}}
 			if receipt, ok := v.Submissions[turn.ID]; ok {
+				m.Files = append(m.Files, receipt.Files...)
 				for _, ref := range receipt.Artifacts {
 					for _, file := range review.Files {
 						if ref.ID == file.ArtifactID && ref.Revision == file.Hash {
@@ -117,5 +118,5 @@ func (s *Server) sharedConversationHistory(ag *chatAgent, w http.ResponseWriter,
 		}
 	}
 	w.Header().Set("Cache-Control", "no-store")
-	writeJSON(w, map[string]any{"thread": thread, "messages": sharedHistoryMessages(review, thread, ag.Store.Messages(thread), views), "terminals": views, "warnings": warnings})
+	writeJSON(w, map[string]any{"thread": thread, "messages": sharedHistoryMessages(review, thread, ag.Store.Messages(thread), views), "terminals": views, "warnings": warnings, "files": s.sharedConversationFiles(ag, thread, review)})
 }

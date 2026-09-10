@@ -110,8 +110,8 @@ function ChatView({ me, goalsIndex, items, filter, openItem, w, seed, onSeedUsed
     try {
       if(shared.shared && (!shared.ready || !shared.recipient)) throw Error('Choose the agent for this message.');
       if(shared.native) {
-        if(ctx.length)throw Error('Remove the context chips before sending to this terminal.');
-        await shared.send(draft.trim());
+        if(ctx.some(x=>!x.startsWith('file/')))throw Error('Only files can be attached to a terminal message. Remove the other context chips first.');
+        await shared.send(draft.trim(),ctx.map(x=>x.slice(5)));
       } else {
         const result=await post('api/chat/ask',{thread:thread.id,text:draft.trim(),ritual:rt,context:ctx.slice()});
         if(!result.ok)return;
@@ -436,7 +436,7 @@ function ChatView({ me, goalsIndex, items, filter, openItem, w, seed, onSeedUsed
                         marginLeft:auto in the same row, which on any real width
                         wrapped it onto its own line already, floated oddly far
                         from everything it relates to. */}
-                    <div style={{ display: shared.native ? 'none' : 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap',
+                    <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap',
                       marginTop: 10, paddingTop: 10, borderTop: '1px solid var(--line,#3a3a3a)' }}>
                       <label className="v2-btn v2-hoveraccent"
                         style={{ color: 'var(--ink-faint,#888)', padding: '4px 13px',

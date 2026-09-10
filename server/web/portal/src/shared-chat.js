@@ -15,7 +15,8 @@
     const id = thread && thread.id || '', shared = !!(thread && thread.sharedSource && !thread.archived);
     const [snapshot,setSnapshot] = React.useState(null), [error,setError] = React.useState('');
     const [recipients,setRecipients] = React.useState({}), [pending,setPending] = React.useState(null), [recovering,setRecovering] = React.useState(false);
-    const generation = React.useRef(0), latest = React.useRef(0);
+    const [selections,setSelections]=React.useState({}),[preview,setPreview]=React.useState(null);
+    const generation = React.useRef(0), latest = React.useRef(0), fileRequest=React.useRef(0);
     const storage = 'manifest.shared-input.v1.' + (identity && identity.email || 'member') + '.' + id;
     const refresh = React.useCallback(async () => {
       if (!shared) return;
@@ -26,7 +27,7 @@
       } catch(e) {if(scope === generation.current && seq === latest.current)setError(e.message || 'Connection interrupted.');}
     },[id,shared]);
     React.useEffect(() => {
-      generation.current++;setSnapshot(null);setError('');setPending(null);setRecovering(false);
+      generation.current++;setSnapshot(null);setError('');setPending(null);setRecovering(false);setPreview(null);
       if (!shared) return;
       try {const value=JSON.parse(localStorage.getItem(storage)||'null');if(value && value.thread===id)setPending(value);}catch(e){setError('Saved delivery could not be read. Do not resend until its status is checked.');}
       refresh();
@@ -37,23 +38,47 @@
     const terminals=value && value.terminals || [];
     const recipient=recipients[id] || (value && !terminals.length ? 'team' : '');
     const native=terminals.find(t=>t.id===recipient);
+    const files=value && value.files || [], selected=selections[id]||[];
     const save=value=>{if(value)localStorage.setItem(storage,JSON.stringify(value));else localStorage.removeItem(storage);setPending(value);};
     async function submit(saved) {
       const scope=generation.current;
-      const result=await request('/api/chat/threads/'+encodeURIComponent(id)+'/terminals/'+encodeURIComponent(saved.terminal)+'/input',{text:saved.text,requestId:saved.requestId});
+      const result=await request('/api/chat/threads/'+encodeURIComponent(id)+'/terminals/'+encodeURIComponent(saved.terminal)+'/input',{...(saved.key?{key:saved.key}:{text:saved.text}),...(saved.files?.length?{files:saved.files}:{}),requestId:saved.requestId});
       if(!result.delivery || result.delivery.id!==saved.requestId || result.delivery.state!=='sent')throw Error('Delivery is unconfirmed. Check the terminal before sending anything else; retrying this saved message checks the same receipt.');
       const current=JSON.parse(localStorage.getItem(storage)||'null');
       if(current && current.requestId===saved.requestId)localStorage.removeItem(storage);
-      if(scope===generation.current){setPending(current && current.requestId!==saved.requestId ? current : null);refresh();}
+      if(scope===generation.current){setPending(current && current.requestId!==saved.requestId ? current : null);setSelections(all=>({...all,[id]:[]}));refresh();}
       return saved.text;
     }
-    async function send(text) {
+    async function send(text,contextFiles=[]) {
       if(!value || !recipient)throw Error('Choose the agent for this message.');
       if(!native)throw Error('Choose a shared terminal agent.');
+      const hashes=[...new Set([...selected,...contextFiles])].sort();
       let saved=JSON.parse(localStorage.getItem(storage)||'null');
-      if(saved && (saved.thread!==id || saved.terminal!==native.id || saved.text!==text))throw Error('A previous message still needs confirmation. Resolve the saved message first.');
-      if(!saved){saved={thread:id,terminal:native.id,text,requestId:crypto.randomUUID()};save(saved);}
+      if(saved && (saved.thread!==id || saved.terminal!==native.id || saved.text!==text || saved.key || JSON.stringify(saved.files||[])!==JSON.stringify(hashes)))throw Error('A previous message still needs confirmation. Resolve the saved message first.');
+      if(!saved){saved={thread:id,terminal:native.id,text,...(hashes.length?{files:hashes}:{}),requestId:crypto.randomUUID()};save(saved);}
       return submit(saved);
+    }
+    async function keypress(key,label){
+      if(!native||recovering)return;
+      const scope=generation.current;setRecovering(true);
+      try{
+        if(localStorage.getItem(storage))throw Error('Resolve the pending message or key before sending another control.');
+        const saved={thread:id,terminal:native.id,key,label,requestId:crypto.randomUUID()};save(saved);await submit(saved);
+      }catch(e){if(scope===generation.current)setError(e.message);}
+      finally{if(scope===generation.current)setRecovering(false);}
+    }
+    async function openFile(file){
+      const scope=generation.current,seq=++fileRequest.current;
+      const href='/api/chat/attach/'+encodeURIComponent(file.hash);
+      setPreview({file,href,loading:true});
+      try{
+        if(/\.(pdf|png|jpe?g|webp|gif)$/i.test(file.name)){setPreview({file,href,embedded:true});return;}
+        if(file.size>256000||!(/\.(txt|md|markdown|csv|tsv|json|ya?ml|log|js|jsx|ts|tsx|py|go|css|html|xml|sql|sh)$/i.test(file.name))){setPreview({file,href,note:'Open or download this file to view its complete contents.'});return;}
+        const response=await fetch(href,{credentials:'same-origin'});
+        if(!response.ok)throw Error('File could not load.');
+        const text=await response.text();
+        if(scope===generation.current&&seq===fileRequest.current)setPreview({file,href,text});
+      }catch(e){if(scope===generation.current&&seq===fileRequest.current)setPreview({file,href,note:e.message});}
     }
     function controls(team, classes, onConfirmed) {
       if(!shared)return null;
@@ -64,10 +89,20 @@
           h('option',{value:'team'},team+' · team agent'),
           ...terminals.map(t=>h('option',{key:t.id,value:t.id},t.agent+(t.model?' · '+t.model:'')+' · '+t.id.slice(-6))))),
         native && h('span',{style:{marginLeft:10,fontSize:12}},native.agentState==='not-started'?'Ready to start':native.process==='running'?'Running':native.process==='stopped'?'Stopped · resumes on send':'Status unavailable'),
+        native && h('details',null,h('summary',null,'Terminal controls'),
+          ...[['Escape','\x1b'],['Enter','\r'],['↑','\x1b[A'],['↓','\x1b[B'],['Interrupt','\x03']].map(([label,key])=>h('button',{key,type:'button',disabled:recovering||!!pending,onClick:()=>keypress(key,label),style:{minHeight:44,minWidth:44,margin:4},'aria-label':'Terminal '+label},label))),
+        native && files.length>0 && h('details',null,h('summary',null,'Files'+(selected.length?' · '+selected.length+' selected':'')),
+          ...files.map(file=>h('div',{key:file.hash,style:{display:'flex',gap:8,alignItems:'center',flexWrap:'wrap',padding:'6px 0'}},
+            h('label',null,h('input',{type:'checkbox',checked:selected.includes(file.hash),disabled:!!pending||recovering,onChange:e=>setSelections(all=>({...all,[id]:e.target.checked?[...selected,file.hash]:selected.filter(hash=>hash!==file.hash)}))}),' Discuss'),
+            h('button',{type:'button',onClick:()=>openFile(file),style:{maxWidth:'100%',whiteSpace:'normal',overflowWrap:'anywhere',textAlign:'left'}},file.name)))),
+        preview && h('section',{style:{padding:'12px 0'}},h('strong',null,preview.file.name),
+          h('button',{type:'button',onClick:()=>{fileRequest.current++;setPreview(null);},style:{marginLeft:12}},'Close file'),
+          h('a',{href:preview.href,target:'_blank',rel:'noopener',style:{marginLeft:12}},'Open file'),
+          preview.loading?h('p',null,'Loading file…'):preview.embedded?h('iframe',{title:preview.file.name,src:preview.href,style:{display:'block',width:'100%',height:350,border:0},sandbox:''}):preview.note?h('p',null,preview.note):h('pre',{style:{whiteSpace:'pre-wrap',overflowWrap:'anywhere',maxHeight:350,overflow:'auto'}},preview.text)),
         error && h('div',{role:'alert'},error),
         ...(value && value.warnings || []).map((warning,i)=>h('div',{key:i,role:'status'},warning)),
-        pending && h('details',null,h('summary',null,'Message awaiting confirmation'),h('p',{style:{whiteSpace:'pre-wrap'}},pending.text),
-          h('button',{type:'button',disabled:recovering,onClick:async()=>{const scope=generation.current;setRecovering(true);try{const sent=await submit(pending);if(scope===generation.current && onConfirmed)onConfirmed(sent);}catch(e){if(scope===generation.current)setError(e.message);}finally{if(scope===generation.current)setRecovering(false);}}},recovering?'Checking…':'Retry saved message')));
+        pending && h('details',null,h('summary',null,pending.key?'Terminal control awaiting confirmation':'Message awaiting confirmation'),h('p',{style:{whiteSpace:'pre-wrap'}},pending.label||pending.key||pending.text),
+          h('button',{type:'button',disabled:recovering,onClick:async()=>{const scope=generation.current;setRecovering(true);try{const sent=await submit(pending);if(scope===generation.current && onConfirmed && !pending.key)onConfirmed(sent);}catch(e){if(scope===generation.current)setError(e.message);}finally{if(scope===generation.current)setRecovering(false);}}},recovering?'Checking…':pending.key?'Check saved control':'Retry saved message')));
     }
     return {shared,ready:!shared||!!value,messages:value?value.messages:stored,terminals,recipient,native,send,refresh,controls};
   }

@@ -14,8 +14,9 @@ assert.equal(fs.readFileSync(modulePath,'utf8'),fs.readFileSync(path.join(__dirn
    if(url.pathname.endsWith('/conversation')){
     const id=url.pathname.split('/')[4];
     if(id==='a'&&holdA)await new Promise(resolve=>releaseA=resolve);
-    await route.fulfill({json:{thread:id,messages:[{id:id+'-msg',text:'History '+id}],terminals:[{id:'0123456789abcdef',agent:'codex',model:'astra',process:'running'}],warnings:[]}});return;
+    await route.fulfill({json:{thread:id,messages:[{id:id+'-msg',text:'History '+id}],terminals:[{id:'0123456789abcdef',agent:'codex',model:'astra',process:'running'}],warnings:[],files:[{hash:'f'.repeat(64),name:'plan.md',size:24}]}});return;
    }
+   if(url.pathname.startsWith('/api/chat/attach/')){await route.fulfill({contentType:'text/plain',body:'EXACT_PLAN_CONTENT'});return;}
    if(url.pathname.endsWith('/input')){
     const body=route.request().postDataJSON();attempts.push(body);
     await route.fulfill({status:attempts.length===1?202:200,json:{delivery:{id:body.requestId,state:attempts.length===1?'unconfirmed':'sent'}}});return;
@@ -43,17 +44,26 @@ assert.equal(fs.readFileSync(modulePath,'utf8'),fs.readFileSync(path.join(__dirn
   }
   await mount();
   await page.getByLabel('Message recipient').selectOption('0123456789abcdef');
+  await page.getByText('Files',{exact:true}).click();
+  await page.getByRole('button',{name:'plan.md',exact:true}).click();
+  await page.getByText('EXACT_PLAN_CONTENT',{exact:true}).waitFor();
+  await page.getByRole('checkbox').check();
   await page.getByLabel('Message',{exact:true}).fill('Keep this instruction');
   await page.getByRole('button',{name:'Send',exact:true}).click();
   await page.getByText(/Delivery is unconfirmed/).waitFor();
   assert.equal(await page.getByLabel('Message',{exact:true}).inputValue(),'Keep this instruction','uncertain send lost draft');
-  assert.equal(attempts.length,1);
+  assert.equal(attempts.length,1);assert.deepEqual(attempts[0].files,['f'.repeat(64)]);
   await mount(); // browser navigation/reload retains the exact request
   await page.getByText('Message awaiting confirmation',{exact:true}).click();
   await page.getByRole('button',{name:'Retry saved message'}).click();
   await page.getByText('Recovered Keep this instruction',{exact:true}).waitFor();
   assert.equal(attempts.length,2);assert.deepEqual(attempts[0],attempts[1],'retry changed request identity/body');
   assert.equal(await page.evaluate(()=>Object.keys(localStorage).filter(k=>k.startsWith('manifest.shared-input.')).length),0);
+  await page.getByLabel('Message recipient').selectOption('0123456789abcdef');
+  await page.getByText('Terminal controls',{exact:true}).click();
+  await page.getByRole('button',{name:'Terminal Escape',exact:true}).click();
+  await page.waitForFunction(()=>Object.keys(localStorage).filter(k=>k.startsWith('manifest.shared-input.')).length===0);
+  assert.equal(attempts[2].key,'\x1b');assert.equal(attempts[2].text,undefined);
   // A slow old-thread read must never replace the selected conversation.
   holdA=true;await page.getByRole('button',{name:'Refresh',exact:true}).click();
   for(let i=0;i<100&&!releaseA;i++)await new Promise(r=>setTimeout(r,10));

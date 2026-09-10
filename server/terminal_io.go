@@ -191,7 +191,7 @@ func (s *Server) handleTermInput(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "supervision unavailable for this backend; nothing sent", http.StatusBadRequest)
 		return
 	}
-	if len(b.Artifacts) > 0 && se.backend() != "herdr" {
+	if (len(b.Artifacts) > 0 || len(b.Files) > 0) && se.backend() != "herdr" {
 		httpError(w, errBadRequest("artifact context is unavailable for this terminal backend; nothing sent"))
 		return
 	}
@@ -219,7 +219,7 @@ func (s *Server) handleTermInput(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 		}
-		if shared != nil && (!agentchat.ValidRequestID(b.RequestID) || b.Task != "" || b.ConversationAgent != "" || b.ConversationID != "" || (b.Text != "" && b.Key != "") || (b.Key != "" && len(b.Artifacts) != 0)) {
+		if shared != nil && (!agentchat.ValidRequestID(b.RequestID) || b.Task != "" || b.ConversationAgent != "" || b.ConversationID != "" || (b.Text != "" && b.Key != "") || (b.Key != "" && (len(b.Artifacts) != 0 || len(b.Files) != 0))) {
 			http.Error(w, "shared input requires a request ID and one message or key; private task/session selectors are not accepted", http.StatusBadRequest)
 			return
 		}
@@ -255,8 +255,12 @@ func (s *Server) handleTermInput(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 		}
+		if shared == nil && len(b.Files) > 0 {
+			httpError(w, errBadRequest("file selection requires a shared conversation"))
+			return
+		}
 		if shared != nil && b.Key == "" {
-			context, key, omitted, err := s.sharedInputContext(r.Context(), shared, b.Artifacts)
+			context, key, omitted, err := s.sharedInputContext(r.Context(), shared, b.Artifacts, b.Files...)
 			if err != nil {
 				if errors.Is(err, errSharedConversationAccess) {
 					http.Error(w, errSharedConversationAccess.Error(), http.StatusForbidden)
@@ -266,6 +270,16 @@ func (s *Server) handleTermInput(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			continuationContext = &terminalInputReceipt{Text: ownerText, ContextSource: key, ContextHash: hashTerminalText(context), HistoryOmitted: omitted}
+			review, err := s.sharedConversationReview(shared.Agent, shared.Thread)
+			if err != nil {
+				httpError(w, err)
+				return
+			}
+			_, continuationContext.Files, err = s.sharedSelectedFiles(shared.Agent, shared.Thread, review, b.Files)
+			if err != nil {
+				httpError(w, err)
+				return
+			}
 			b.Text = context + "\n\nCurrent team member instruction from " + shared.Email + " (submission " + b.RequestID + "):\n" + ownerText
 		}
 		if shared == nil && se.Origin != nil && se.Origin.Mode == "continue" && se.Origin.Backend == "terminal" && b.Key == "" {
@@ -359,6 +373,7 @@ func (s *Server) handleTermInput(w http.ResponseWriter, r *http.Request) {
 			if continuationContext != nil {
 				receipt.Text, receipt.ContextSource = continuationContext.Text, continuationContext.ContextSource
 				receipt.ContextHash, receipt.HistoryOmitted = continuationContext.ContextHash, continuationContext.HistoryOmitted
+				receipt.Files = continuationContext.Files
 			}
 			return s.terminal.writeInputReceipt(se.ID, *receipt)
 		}
