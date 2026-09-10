@@ -534,9 +534,9 @@ async function chatSetPinned(key,pinned){
 function chatInboxEntries() {
   const entries = chatSessions.map(session => ({agent: "", session}));
   chatRoster.filter(a => !chatIsTerm(a.name)).forEach(agent => (chatAgentSessions[agent.name] || []).filter(session=>!chatHasNativeParent(session)).forEach(session => entries.push({agent: agent.name, session})));
-  if (chatTermEnabled) Object.keys(chatTermKinds).forEach(agent => chatTermList(agent).filter(session=>!chatHasCanonicalParent(session)).forEach(session => entries.push({agent, session, terminal: true})));
+  if (chatTermEnabled) Object.keys(chatTermKinds).forEach(agent => chatTermList(agent).filter(session=>!chatHasCanonicalParent(session)&&!chatHasNativeParent(session)).forEach(session => entries.push({agent, session, terminal: true})));
   const query = chatSearchQuery.trim().toLowerCase();
-  return entries.filter(entry => (chatInboxFilter === "all" || entry.agent === chatInboxFilter || (entry.terminal&&(chatAgentSessions[chatInboxFilter]||[]).some(s=>s.origin?.mode==="continue"&&s.origin?.backend==="terminal"&&s.origin?.id===entry.session.id&&s.origin?.agent===entry.agent)))
+  return entries.filter(entry => (chatInboxFilter === "all" || entry.agent === chatInboxFilter || (entry.terminal&&[...(chatAgentSessions[chatInboxFilter]||[]),...chatTermSessions.filter(s=>s.kind===chatInboxFilter)].some(s=>s.origin?.mode==="continue"&&s.origin?.backend==="terminal"&&s.origin?.id===entry.session.id&&s.origin?.agent===entry.agent)))
     && [entry.session.title, entry.session.name, entry.session.cwd, chatAgentLabel(entry.agent), entry.session.spirit].filter(Boolean).join(" ").toLowerCase().includes(query))
     .sort((a, b) => {
       const pinned=Number(chatPins[chatInboxKey(b)]===true)-Number(chatPins[chatInboxKey(a)]===true);if(pinned)return pinned;
@@ -2178,6 +2178,7 @@ async function loadChatTermSession(id) {
     conversation:d.conversation,
     planningTimeline:d.planningTimeline,
     planningRecipients:d.planningRecipients||[],
+    codingRecipients:d.codingRecipients||[],
     planningOperations:d.planningOperations||[],
     related:d.related||[],
     id, se, turns: d.turns || [], offset: d.offset || 0, title: d.title || "", cost: d.cost || 0,
@@ -2262,12 +2263,14 @@ function chatTermHead(o) {
   const status = el("span", "sprt-sub chat-head-sub", chatTermKinds[se.kind] + " · " + (se.backend === "herdr" ? terminalStateLabel(se) : o.live ? "running" : "stopped"));
   status.title = sub.join(" · ");
   head.append(status);
-  if(se.backend==="herdr"&&se.origin?.mode!=="continue"&&chatRoster.some(a=>a.enabled&&a.durableSend)){
+  if(se.backend==="herdr"&&se.origin?.mode!=="continue"&&(chatTermEnabled||chatRoster.some(a=>a.enabled&&a.durableSend))){
     const recipient=chatRecipients.get(se.kind+"/"+se.id);
     const to=el("button","sprt-quiet chat-head-sub","To "+chatAgentLabel(recipient?.agent||se.kind));
     to.onclick=()=>chatChooseTerminalRecipient(o);head.append(to);
     const planning=(o.planningRecipients||[]).find(p=>p.id===recipient?.id&&p.agent===recipient?.agent);
     if(planning?.status==="thinking")head.append(el("span","chat-head-sub",chatAgentLabel(planning.agent)+" is working"));
+    const coding=(o.codingRecipients||[]).find(p=>p.id===recipient?.id&&p.agent===recipient?.agent);
+    if(coding)head.append(el("span","chat-head-sub",chatAgentLabel(coding.agent)+" · "+(coding.agentState||coding.process||"unknown")));
   }
   const meta = [fmtWhen(se.lastUsed)];
   if (o.cost) meta.push("$" + o.cost.toFixed(2));
@@ -2577,6 +2580,7 @@ async function chatTermTail(o) {
   if(planningChanged)chatTermPaintTurns();
   let headDirty = false;
   if(JSON.stringify(o.planningRecipients)!==JSON.stringify(d.planningRecipients||[])){o.planningRecipients=d.planningRecipients||[];headDirty=true;}
+  if(JSON.stringify(o.codingRecipients)!==JSON.stringify(d.codingRecipients||[])){o.codingRecipients=d.codingRecipients||[];headDirty=true;}
   if (d.title && d.title !== o.title) { o.title = d.title; headDirty = true; }
   if (d.cost && d.cost !== o.cost) { o.cost = d.cost; headDirty = true; }
   if (o.se.backend !== "herdr" && !!d.live !== o.live) { o.live = !!d.live; headDirty = true; renderChatComposer(chatTermComposerSession()); chatTermPaintStrip(); }
@@ -3004,8 +3008,13 @@ function chatChooseTerminalRecipient(source){
     const pick=document.createElement("select");pick.className="pp-in";pick.setAttribute("aria-label","Next message recipient");
     const native=document.createElement("option");native.value="native";native.textContent=chatAgentLabel(se.kind)+(se.model?" · "+shortModel(se.model):"");pick.append(native);
     chatRoster.filter(a=>a.enabled&&a.durableSend).forEach(a=>{const option=document.createElement("option");option.value=a.name;option.textContent=a.label+(a.model?" · "+shortModel(a.model):"");pick.append(option);});
-    pick.value=current?.backend==="hermes"?current.agent:"native";
+    if(chatTermEnabled)Object.entries(chatTermKinds).forEach(([kind,label])=>{const option=document.createElement("option");option.value="terminal:"+kind;option.textContent=label+" · separate runtime";pick.append(option);});
+    pick.value=current?.backend==="terminal"?"terminal:"+current.agent:current?.backend==="hermes"?current.agent:"native";
     body.append(el("p","","Continue in this conversation with its attributed history, or start a separate related chat. This does not interrupt work already running."),pick);
+    const cwd=document.createElement("input");cwd.className="pp-in";cwd.setAttribute("aria-label","Continuation working folder");
+    const model=document.createElement("input");model.className="pp-in";model.setAttribute("aria-label","Continuation coding model");model.placeholder="Installed default";
+    const fields=el("div","");const folderLabel=el("label","","Working folder on metis"),modelLabel=el("label","","Model (optional)");folderLabel.append(cwd);modelLabel.append(model);fields.append(folderLabel,modelLabel);body.append(fields);
+    const sync=()=>{fields.hidden=!pick.value.startsWith("terminal:");const prior=(source.codingRecipients||[]).filter(p=>p.agent===pick.value.slice(9)).at(-1);cwd.value=prior?.cwd||se.cwd||"";model.value=prior?.model||"";};pick.onchange=sync;sync();
     const status=el("p","");status.setAttribute("role","status");body.append(status);
     const here=el("button","sprt-quiet","Continue here"),cancel=el("button","sprt-quiet","Cancel"),related=el("button","sprt-quiet","Start related chat");
     cancel.onclick=close;
@@ -3014,18 +3023,18 @@ function chatChooseTerminalRecipient(source){
       try{
         let recipient=null;
         if(pick.value!=="native"){
-          const agent=pick.value,entry=chatRosterEntry(agent);
-          let child=(source.planningRecipients||[]).find(p=>p.agent===agent);
+          const coding=pick.value.startsWith("terminal:"),agent=coding?pick.value.slice(9):pick.value,entry=chatRosterEntry(agent);
+          let child=coding?(source.codingRecipients||[]).find(p=>p.agent===agent&&p.cwd===cwd.value.trim()&&(!model.value.trim()||p.model===model.value.trim())):(source.planningRecipients||[]).find(p=>p.agent===agent);
           if(!child){
-            const payload={agent,model:entry?.model||"",mode:"continue",title:se.name||se.kind,task};
+            const payload={agent,model:coding?model.value.trim():entry?.model||"",mode:"continue",title:se.name||se.kind,task,...(coding?{backend:"terminal",cwd:cwd.value.trim()}:{})};
             const storageKey="manifest.nativeContinue.v1."+key,signature=JSON.stringify(payload);
             let saved;try{saved=JSON.parse(localStorage.getItem(storageKey)||"null");}catch(e){}
             const requestId=saved?.signature===signature?saved.requestId:crypto.randomUUID();
             localStorage.setItem(storageKey,JSON.stringify({signature,requestId}));
             child=await postJSONOk("/api/terminal/"+encodeURIComponent(se.kind)+"/session/"+encodeURIComponent(se.id)+"/related",{...payload,requestId});
-            child.model=payload.model;localStorage.removeItem(storageKey);
+            if(!coding)child.model=payload.model;localStorage.removeItem(storageKey);
           }
-          recipient={backend:"hermes",agent,id:child.id,model:child.model||entry?.model||""};
+          recipient={backend:coding?"terminal":"hermes",agent,id:child.id,model:child.model||entry?.model||""};
         }
         if(recipient)chatRecipients.set(key,recipient);else chatRecipients.delete(key);
         if(route===chatRouteVersion&&chatDraftKey===key){chatCaptureSyncedDraft(key);close();await chatTermRequestFinalTail(source);chatTermRepaintHead();renderChatComposer(chatTermComposerSession());}

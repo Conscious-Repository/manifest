@@ -26,8 +26,8 @@ func (s *Server) handleRelatedCodingChat(w http.ResponseWriter, r *http.Request,
 		httpError(w, errBadRequest("invalid related coding chat request"))
 		return
 	}
-	if b.Mode != "" && (b.Mode != "continue" || origin.Backend != "") {
-		httpError(w, errBadRequest("coding continuation requires a private planning conversation"))
+	if b.Mode != "" && b.Mode != "continue" {
+		httpError(w, errBadRequest("unsupported coding continuation mode"))
 		return
 	}
 	origin.Mode = b.Mode
@@ -59,8 +59,16 @@ func (s *Server) handleRelatedCodingChat(w http.ResponseWriter, r *http.Request,
 	if origin.Backend == "terminal" {
 		ok = false
 		if parent, found := s.terminal.find(origin.ID); found && parent.Kind == origin.Agent && parent.Device == "" {
+			if origin.Mode == "continue" && parent.Origin != nil && parent.Origin.Mode == "continue" {
+				httpError(w, errBadRequest("continue from the original conversation instead"))
+				return
+			}
 			ok = true
-			source = agentchat.Session{Agent: origin.Agent, ID: origin.ID}
+			source = agentchat.Session{Agent: origin.Agent, ID: origin.ID, Title: parent.Name}
+			if origin.Mode == "continue" {
+				timeline := s.terminalRootTimeline(r.Context(), parent, s.terminalPlanningChildren(parent), s.terminalCodingContinuations(r.Context(), parent))
+				origin.Context, origin.HistoryOmitted = timelineContinuationContext(s.terminalConversation(parent).Key, timeline)
+			}
 			for _, link := range s.terminalConversation(parent).Links {
 				if link.Kind == "task" {
 					source.Task = link.ID
@@ -72,7 +80,7 @@ func (s *Server) handleRelatedCodingChat(w http.ResponseWriter, r *http.Request,
 		http.NotFound(w, r)
 		return
 	}
-	if origin.Mode == "continue" {
+	if origin.Mode == "continue" && origin.Backend == "" {
 		origin.Context, origin.HistoryOmitted = codingContinuationContext(source, sourceBody)
 	}
 	if origin.Task != "" && origin.Task != source.Task {

@@ -58,19 +58,27 @@ type codingContinuationView struct {
 // Project only explicitly continued native sessions. Neither shared task IDs
 // nor ordinary related origins authorize sibling history to enter this view.
 func (s *Server) codingContinuations(ctx context.Context, source agentchat.Session) []codingContinuationView {
+	return s.codingContinuationsFor(ctx, "", source.Agent, source.ID, sessionConversation(source).Key)
+}
+
+func (s *Server) terminalCodingContinuations(ctx context.Context, source termSession) []codingContinuationView {
+	return s.codingContinuationsFor(ctx, "terminal", source.Kind, source.ID, s.terminalConversation(source).Key)
+}
+
+func (s *Server) codingContinuationsFor(ctx context.Context, backend, agent, id, key string) []codingContinuationView {
 	out := []codingContinuationView{}
 	if s.terminal == nil {
 		return out
 	}
 	for _, se := range s.terminal.load() {
 		o := se.Origin
-		if o == nil || o.Mode != "continue" || o.Backend != "" || o.Agent != source.Agent || o.ID != source.ID || se.Device != "" || !isCodingAgent(se.Kind) {
+		if o == nil || o.Mode != "continue" || o.Backend != backend || o.Agent != agent || o.ID != id || se.Device != "" || !isCodingAgent(se.Kind) {
 			continue
 		}
 		se, tr, ob, _ := s.projectTerminalTranscript(ctx, se, 0)
 		// Never modify the native parser cache. Only an exact submitted-text hash
 		// permits the canonical view to show the owner's text without its envelope.
-		turns, submissions := s.terminal.projectContinuationTurns(se.ID, sessionConversation(source).Key, tr.Turns)
+		turns, submissions := s.terminal.projectContinuationTurns(se.ID, key, tr.Turns)
 		out = append(out, codingContinuationView{ID: se.ID, Agent: se.Kind, Model: se.Model, Cwd: se.Cwd, Created: se.CreatedAt, Conversation: s.terminalConversation(se), Turns: turns, Process: ob.Process, AgentState: ob.AgentState, Connectivity: ob.Connectivity, HistoryOmitted: o.HistoryOmitted, Submissions: submissions})
 	}
 	sort.Slice(out, func(i, j int) bool {
@@ -168,7 +176,7 @@ func logicalContinuationContext(source agentchat.Session, body string, views []c
 	return timelineContinuationContext(sessionConversation(source).Key, turns)
 }
 
-// Native-root conversations include only explicit planning continuations. Never
+// Native-root conversations include only explicit continuations. Never
 // turn ordinary related chats or task membership into implicit shared context.
 func (s *Server) terminalPlanningChildren(root termSession) []agentchat.Session {
 	if s.agentChat == nil {
@@ -188,12 +196,18 @@ func (s *Server) terminalPlanningChildren(root termSession) []agentchat.Session 
 
 func (s *Server) terminalPlanningTimeline(ctx context.Context, root termSession) ([]conversationTimelineTurn, bool) {
 	children := s.terminalPlanningChildren(root)
-	if len(children) == 0 {
+	coding := s.terminalCodingContinuations(ctx, root)
+	if len(children) == 0 && len(coding) == 0 {
 		return nil, false
 	}
+	return s.terminalRootTimeline(ctx, root, children, coding), true
+}
+
+func (s *Server) terminalRootTimeline(ctx context.Context, root termSession, children []agentchat.Session, coding []codingContinuationView) []conversationTimelineTurn {
 	_, tr, _, _ := s.projectTerminalTranscript(ctx, root, 0)
 	turns, submissions := s.terminal.projectContinuationTurns(root.ID, s.terminalConversation(root).Key, tr.Turns)
-	timeline := conversationTimeline(agentchat.Session{}, "", []codingContinuationView{{ID: root.ID, Agent: root.Kind, Model: root.Model, Created: root.CreatedAt, Conversation: s.terminalConversation(root), Turns: turns, Submissions: submissions}})
+	views := append([]codingContinuationView{{ID: root.ID, Agent: root.Kind, Model: root.Model, Created: root.CreatedAt, Conversation: s.terminalConversation(root), Turns: turns, Submissions: submissions}}, coding...)
+	timeline := conversationTimeline(agentchat.Session{}, "", views)
 	for _, child := range children {
 		fresh, body, _, ok := s.agentChat.store.Get(child.Agent, child.ID)
 		if !ok {
@@ -205,7 +219,7 @@ func (s *Server) terminalPlanningTimeline(ctx context.Context, root termSession)
 		}
 	}
 	sort.SliceStable(timeline, func(i, j int) bool { return timeline[i].orderTime.Before(timeline[j].orderTime) })
-	return timeline, true
+	return timeline
 }
 
 func timelineContinuationContext(key string, turns []conversationTimelineTurn) (string, int) {

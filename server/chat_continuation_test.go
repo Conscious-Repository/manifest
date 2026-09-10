@@ -45,6 +45,55 @@ func TestContinuationRetainsExactDeliveryContext(t *testing.T) {
 	}
 }
 
+func TestNativeCodingContinuationCreationAndProjection(t *testing.T) {
+	s, _, _ := agentChatFixture(t, echoStub)
+	s.terminal = &termCfg{regPath: filepath.Join(t.TempDir(), "terminals.json"), defaultWd: t.TempDir(), claudeProjects: t.TempDir()}
+	root := termSession{ID: "abcdef123456", Kind: "claude", Backend: "herdr", LaunchPhase: "active", Started: true, Cwd: s.terminal.defaultWd, ResumeID: "01234567-abcd", Name: "Native root"}
+	s.terminal.upsert(root)
+	path := s.terminal.transcriptPath(root)
+	os.MkdirAll(filepath.Dir(path), 0700)
+	raw := []byte(`{"type":"assistant","timestamp":"2026-09-09T12:00:00Z","message":{"role":"assistant","content":[{"type":"text","text":"NATIVE_HANDOFF_CONTEXT"}]}}` + "\n")
+	if err := os.WriteFile(path, raw, 0600); err != nil {
+		t.Fatal(err)
+	}
+	endpoint := "/api/terminal/claude/session/" + root.ID + "/related"
+	payload := map[string]any{"backend": "terminal", "agent": "codex", "mode": "continue", "requestId": "native-coding-001"}
+	code, out := agentChatJSON(t, s, "POST", endpoint, payload)
+	if code != 200 {
+		t.Fatal(code, out)
+	}
+	child, _ := s.terminal.find(out["id"].(string))
+	if !child.isDraft() || child.Origin.Backend != "terminal" || !strings.Contains(child.Origin.Context, "NATIVE_HANDOFF_CONTEXT") {
+		t.Fatal(child)
+	}
+	code, retry := agentChatJSON(t, s, "POST", endpoint, payload)
+	if code != 200 || retry["id"] != child.ID {
+		t.Fatal(code, retry)
+	}
+	payload["mode"] = ""
+	payload["requestId"] = "native-coding-related"
+	if code, out := agentChatJSON(t, s, "POST", endpoint, payload); code != 200 {
+		t.Fatal(code, out)
+	}
+	views := s.terminalCodingContinuations(context.Background(), root)
+	if len(views) != 1 || views[0].ID != child.ID {
+		t.Fatal(views)
+	}
+	timeline, found := s.terminalPlanningTimeline(context.Background(), root)
+	if !found || len(timeline) != 1 || timeline[0].Native.ID != root.ID {
+		t.Fatal(timeline)
+	}
+	payload["mode"] = "continue"
+	payload["requestId"] = "native-nested-001"
+	if code, _ := agentChatJSON(t, s, "POST", "/api/terminal/codex/session/"+child.ID+"/related", payload); code != 400 {
+		t.Fatal("nested continuation accepted", code)
+	}
+	after, _ := os.ReadFile(path)
+	if string(after) != string(raw) {
+		t.Fatal("native history changed")
+	}
+}
+
 func TestTerminalRootPlanningContinuationContext(t *testing.T) {
 	s, st, _ := agentChatFixture(t, echoStub)
 	s.terminal = &termCfg{regPath: filepath.Join(t.TempDir(), "terminals.json"), defaultWd: t.TempDir(), claudeProjects: t.TempDir()}
@@ -104,6 +153,63 @@ func TestTerminalRootPlanningContinuationContext(t *testing.T) {
 	code, retry := agentChatJSON(t, s, "POST", endpoint, payload)
 	if code != 200 || retry["id"] != id {
 		t.Fatal("creation retry lost identity", code, retry)
+	}
+}
+
+func TestNativeContinuationInputUsesRootAndDoesNotReplay(t *testing.T) {
+	s, st, _ := agentChatFixture(t, echoStub)
+	s.terminal = &termCfg{regPath: filepath.Join(t.TempDir(), "terminals.json"), defaultWd: t.TempDir(), claudeProjects: t.TempDir()}
+	root := termSession{ID: "abcdef123456", Kind: "codex", Backend: "herdr", LaunchPhase: "draft", Cwd: s.terminal.defaultWd}
+	s.terminal.upsert(root)
+	endpoint := "/api/terminal/codex/session/" + root.ID + "/related"
+	code, planning := agentChatJSON(t, s, "POST", endpoint, map[string]any{"agent": "alfred", "mode": "continue", "requestId": "native-input-plan"})
+	if code != 200 {
+		t.Fatal(code, planning)
+	}
+	st.AppendTurn("alfred", planning["id"].(string), "alfred", "ROOT_PLANNING_CONTEXT", 0)
+	code, out := agentChatJSON(t, s, "POST", endpoint, map[string]any{"agent": "claude", "backend": "terminal", "mode": "continue", "requestId": "native-input-child"})
+	if code != 200 {
+		t.Fatal(code, out)
+	}
+	childID := out["id"].(string)
+	var prompts []string
+	h := herdrFixture(t, func(c net.Conn, r herdrFixtureRequest) {
+		switch r.Method {
+		case "session.snapshot":
+			herdrFixtureSnapshot(c, "idle", 2)
+		case "workspace.create":
+			herdrFixtureReply(c, map[string]any{"root_pane": herdrFixturePane("unknown", 1)})
+		case "pane.send_input":
+			herdrFixtureReply(c, map[string]any{})
+		case "pane.read":
+			herdrFixtureReply(c, map[string]any{"read": map[string]any{"text": "❯"}})
+		case "agent.prompt":
+			prompts = append(prompts, r.Params["text"].(string))
+			herdrFixtureReply(c, map[string]any{})
+		default:
+			t.Errorf("unexpected %s", r.Method)
+		}
+	})
+	h.server, s.terminal.herdr = s, h
+	input := "/api/terminal/session/" + childID + "/input"
+	payload := map[string]any{"text": "Build this", "requestId": "native-input-001", "conversationAgent": "codex", "conversationId": root.ID}
+	if code, out := agentChatJSON(t, s, "POST", input, payload); code != 200 {
+		t.Fatal(code, out)
+	}
+	if len(prompts) != 1 || !strings.Contains(prompts[0], "ROOT_PLANNING_CONTEXT") || !strings.Contains(prompts[0], "Build this") {
+		t.Fatal(prompts)
+	}
+	if code, out := agentChatJSON(t, s, "POST", input, payload); code != 200 || len(prompts) != 1 {
+		t.Fatal("replayed", code, out)
+	}
+	receipt, err := s.terminal.readInputReceipt(childID, "native-input-001")
+	if err != nil || receipt.ContextSource != s.terminalConversation(root).Key || receipt.Text != "Build this" {
+		t.Fatal(receipt, err)
+	}
+	s.terminal.remove(root.ID)
+	payload["requestId"] = "native-input-002"
+	if code, _ := agentChatJSON(t, s, "POST", input, payload); code != 400 || len(prompts) != 1 {
+		t.Fatal("missing root accepted", code)
 	}
 }
 

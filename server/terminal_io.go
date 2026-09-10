@@ -41,6 +41,7 @@ func (s *Server) handleTermTranscript(w http.ResponseWriter, r *http.Request) {
 		"related":            s.terminalRelatedChats(se),
 		"planningTimeline":   planningTimeline,
 		"planningRecipients": s.terminalPlanningChildren(se),
+		"codingRecipients":   s.terminalCodingContinuations(r.Context(), se),
 		"planningOperations": s.terminalPlanningOperations(se),
 		"live":               live, "offset": tr.Offset, "kind": se.Kind, "agentState": ob.AgentState, "connectivity": ob.Connectivity, "process": ob.Process,
 	})
@@ -205,7 +206,23 @@ func (s *Server) handleTermInput(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 		}
-		if se.Origin != nil && se.Origin.Mode == "continue" && b.Key == "" {
+		if se.Origin != nil && se.Origin.Mode == "continue" && se.Origin.Backend == "terminal" && b.Key == "" {
+			root, found := s.terminal.find(se.Origin.ID)
+			if !found || root.Kind != se.Origin.Agent || root.Device != "" || (root.Origin != nil && root.Origin.Mode == "continue") {
+				httpError(w, errBadRequest("source conversation unavailable"))
+				return
+			}
+			if b.RequestID == "" {
+				httpError(w, errBadRequest("continuation messages require a request ID"))
+				return
+			}
+			timeline, _ := s.terminalPlanningTimeline(r.Context(), root)
+			key := s.terminalConversation(root).Key
+			context, omitted := timelineContinuationContext(key, timeline)
+			continuationContext = &terminalInputReceipt{Text: ownerText, ContextSource: key, ContextHash: hashTerminalText(context), HistoryOmitted: omitted}
+			b.Text = context + "\n\nCurrent owner instruction (submission " + b.RequestID + "):\n" + ownerText
+		}
+		if se.Origin != nil && se.Origin.Mode == "continue" && se.Origin.Backend == "" && b.Key == "" {
 			if b.RequestID == "" {
 				httpError(w, errBadRequest("continuation messages require a request ID"))
 				return
