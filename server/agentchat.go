@@ -228,7 +228,14 @@ func (s *Server) agentChatRoster(ctx context.Context) []agentChatRosterEntry {
 		if !agentchat.ValidAgent(name) || isCodingAgent(name) {
 			continue
 		}
-		out = append(out, agentChatRosterEntry{Name: name, Label: name, Backend: "hermes", DurableSend: true, Profile: name,
+		label := name
+		switch name {
+		case "kairos-private":
+			label = "Kairos · private"
+		case "zeck-private":
+			label = "Zeck · private"
+		}
+		out = append(out, agentChatRosterEntry{Name: name, Label: label, Backend: "hermes", DurableSend: true, Profile: name,
 			Model: p.Model, Enabled: enabled, Sessions: len(s.agentChat.store.List(name)), Description: descs[name]})
 	}
 	sort.SliceStable(out[1:], func(i, j int) bool { return out[1+i].Name < out[1+j].Name })

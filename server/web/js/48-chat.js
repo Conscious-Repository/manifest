@@ -63,7 +63,11 @@ function chatHash(id) {
 // "open task ↗" escape back to TASKS for the record itself.
 function chatTaskThreadHash(id) { return "#/chat/task/" + encodeURIComponent(id); }
 function chatSectionHash(agent) { return agent ? "#/chat/a/" + encodeURIComponent(agent) : "#/chat/spirits"; }
-function chatNewHash() { return chatAgent ? "#/chat/a/" + encodeURIComponent(chatAgent) + "/new" : "#/chat/new"; }
+function chatPrivateCreationAgent(agent){
+  if(["kairos","zeck"].includes(agent))return agent+"-private";
+  return agent;
+}
+function chatNewHash() { const agent=chatPrivateCreationAgent(chatAgent);return agent ? "#/chat/a/" + encodeURIComponent(agent) + "/new" : "#/chat/new"; }
 function chatCurrentSessions() {
   if (chatIsTerm()) return chatTermList(chatAgent);
   return chatAgent ? (chatAgentSessions[chatAgent] || []) : chatSessions;
@@ -232,6 +236,9 @@ function showChat(h) {
   renderChatHeadActions();
   loadChatRoster().then(async () => {
     if (routeVersion !== chatRouteVersion || els.chatView.hidden) return;
+    if(!restore && chatLanding && chatPrivateCreationAgent(chatAgent)!==chatAgent){
+      location.replace("#/chat/a/"+encodeURIComponent(chatPrivateCreationAgent(chatAgent))+"/new");return;
+    }
     if (restore) {
       // bare #/chat → the remembered section, else ALFRED when it can take a
       // turn, else spirits (the pre-Phase-1 behaviour)
@@ -495,7 +502,7 @@ function renderChatHeadActions() {
     const picker = document.createElement("select");
     picker.className = "chat-new-picker"; picker.setAttribute("aria-label", "Choose an agent for a new chat");
     const prompt = el("option", "", "Choose an agent…"); prompt.value = "pick"; picker.append(prompt);
-    [...chatRoster.filter(a => !chatIsTerm(a.name)).map(a => [a.name, a.label]), ...(chatTermEnabled ? Object.entries(chatTermKinds) : []), ["", "Spirits"]].forEach(([value, label]) => {
+    [...chatRoster.filter(a => !chatIsTerm(a.name) && chatPrivateCreationAgent(a.name)===a.name).map(a => [a.name, a.label]), ...(chatTermEnabled ? Object.entries(chatTermKinds) : []), ["", "Spirits"]].forEach(([value, label]) => {
       const option = el("option", "", label); option.value = value; picker.append(option);
     });
     picker.onchange = () => { if (picker.value === "pick") return; location.hash = picker.value ? "#/chat/a/" + encodeURIComponent(picker.value) + "/new" : "#/chat/new"; picker.remove(); };

@@ -36,7 +36,7 @@ func TestPortalChatKairosInTheCockpit(t *testing.T) {
 	// create + first send in one call: a REAL order lands in the kairos spool
 	// carrying the [chat::] token, the persona, and the ask protocol
 	code, r = agentChatJSON(t, srv, "POST", "/api/agents/chat/kairos/sessions",
-		map[string]any{"text": "@kairos::brief what's the setback?", "context": []string{"aion:" + item}})
+		map[string]any{"audience": "team", "text": "@kairos::brief what's the setback?", "context": []string{"aion:" + item}})
 	if code != 200 || r["status"] != "thinking" {
 		t.Fatalf("create: %d %+v", code, r)
 	}
@@ -71,7 +71,7 @@ func TestPortalChatKairosInTheCockpit(t *testing.T) {
 	if code != 409 {
 		t.Fatalf("second send while active must be 409, got %d", code)
 	}
-	code, _ = agentChatJSON(t, srv, "POST", "/api/agents/chat/kairos/sessions", map[string]any{"text": "new thread while busy"})
+	code, _ = agentChatJSON(t, srv, "POST", "/api/agents/chat/kairos/sessions", map[string]any{"audience": "team", "text": "new thread while busy"})
 	if code != 409 {
 		t.Fatalf("create-with-send while active must be 409, got %d", code)
 	}

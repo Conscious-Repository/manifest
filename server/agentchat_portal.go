@@ -109,7 +109,7 @@ func (s *Server) portalChatRoster() []agentChatRosterEntry {
 			}
 		}
 		out = append(out, agentChatRosterEntry{
-			Name: ag.Name, Label: ag.Display, Backend: "portal", Domain: ag.Domain,
+			Name: ag.Name, Label: ag.Display + " · team", Backend: "portal", Domain: ag.Domain,
 			Description: portalAgentDescription(ag),
 			Enabled:     enabled, Sessions: n, Busy: enabled && s.chatBusy(ag), Personas: intents,
 		})
@@ -315,14 +315,19 @@ func (s *Server) handlePortalChatSessions(ag *chatAgent, w http.ResponseWriter, 
 // behind.
 func (s *Server) handlePortalChatSessionCreate(ag *chatAgent, w http.ResponseWriter, r *http.Request) {
 	var b struct {
-		Title   string            `json:"title"`
-		Text    string            `json:"text"`
-		Ritual  string            `json:"ritual"`
-		Context []string          `json:"context"`
-		Files   []threads.FileRef `json:"files"`
+		Audience string            `json:"audience"`
+		Title    string            `json:"title"`
+		Text     string            `json:"text"`
+		Ritual   string            `json:"ritual"`
+		Context  []string          `json:"context"`
+		Files    []threads.FileRef `json:"files"`
 	}
 	if err := decode(r, &b); err != nil {
 		httpError(w, err)
+		return
+	}
+	if b.Audience != "team" {
+		httpError(w, errBadRequest("new "+ag.Display+" conversations start privately; use "+ag.Name+"-private, or explicitly choose the team audience"))
 		return
 	}
 	sending := strings.TrimSpace(b.Text) != "" || len(b.Files) > 0
