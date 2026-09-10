@@ -170,6 +170,7 @@ func TestOnePoolNeverLeaksAcrossPortals(t *testing.T) {
 		t.Fatalf("ooda resolved an aion artifact: %d", w2.Code)
 	}
 	// and an unowned hash in a context list is silently not context
+	_, _ = srv.chat.CreateThread("th/z", "Attachment scope", "", chatthreads.Identity{ID: "b@a.io", Name: "B"}, time.Now())
 	if err := srv.AionChatAsk("th/z", "x", "ask", []string{"file/" + strings.Repeat("a", 64)},
 		"b@a.io", "B"); err != nil {
 		t.Fatal(err)

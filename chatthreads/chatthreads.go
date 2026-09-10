@@ -123,8 +123,6 @@ type Pending struct {
 	At      time.Time `json:"at"`
 }
 
-const maxChatLen = 6000
-
 type state struct {
 	Threads  []Thread             `json:"threads"`
 	Messages map[string][]Message `json:"messages"`
@@ -257,13 +255,11 @@ func (s *Store) Messages(threadID string) []Message {
 	return append([]Message(nil), s.read().Messages[threadID]...)
 }
 
-// AddMessage appends a message to a thread.
+// AddMessage appends the complete message. Request limits belong at ingress;
+// persistence must not silently shorten agent replies or reviewed context.
 func (s *Store) AddMessage(m Message, now time.Time) (Message, error) {
 	if strings.TrimSpace(m.Text) == "" && len(m.Props) == 0 {
 		return Message{}, errors.New("empty message")
-	}
-	if len(m.Text) > maxChatLen {
-		m.Text = m.Text[:maxChatLen]
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()

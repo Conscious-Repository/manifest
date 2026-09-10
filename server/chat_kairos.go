@@ -176,6 +176,10 @@ func (s *Server) spoolChatOrder(ag *chatAgent, threadID, threadTitle, ritual, in
 	if h == nil || h.Spirits == nil {
 		return "", errBadRequest(ag.Name + " is not configured")
 	}
+	history, err := s.chatOrderHistory(ag, threadID)
+	if err != nil {
+		return "", err
+	}
 	orderID := fmt.Sprintf("%d", time.Now().UnixNano())
 	var b strings.Builder
 	// The correlation token goes FIRST. sweepAgent matches it to route the
@@ -191,6 +195,7 @@ func (s *Server) spoolChatOrder(ag *chatAgent, threadID, threadTitle, ritual, in
 		b.WriteString(" (thread: " + threadTitle + ")")
 	}
 	b.WriteString(".\n")
+	b.WriteString(history)
 	if ctx := s.resolveChatContext(contextIDs); ctx != "" {
 		b.WriteString(ctx)
 	}
@@ -214,6 +219,9 @@ func (s *Server) spoolChatOrder(ag *chatAgent, threadID, threadTitle, ritual, in
 		}
 	} else {
 		b.WriteString(chatAskProtocol)
+	}
+	if b.Len() > spirits.MaxRequestChars {
+		return "", errBadRequest("Message and selected context exceed the agent request limit; shorten the message or remove context and retry.")
 	}
 	if err := h.Spirits.SpoolRunNow(ag.Name, ritual, b.String(), ""); err != nil {
 		return "", err
