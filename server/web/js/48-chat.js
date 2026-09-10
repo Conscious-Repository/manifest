@@ -170,8 +170,18 @@ function chatRenderStateNotice(host,state){
   }else{const retry=el("button","sprt-quiet","Retry sync");retry.onclick=()=>state.refresh();row.append(retry);}
   host.prepend(row);
 }
-window.addEventListener("focus",()=>{if(chatDraftKey)chatSyncedDrafts.get(chatDraftKey)?.refresh();chatLoadPins().then(renderChatInboxRows);});
-document.addEventListener("visibilitychange",()=>{if(!document.hidden&&chatDraftKey)chatSyncedDrafts.get(chatDraftKey)?.refresh();});
+const chatRecoveryRefreshes=new Map();
+function chatRefreshCurrentDraft(){
+ const key=chatDraftKey,state=chatSyncedDrafts.get(key);if(!state)return Promise.resolve();
+ if(chatRecoveryRefreshes.has(key))return chatRecoveryRefreshes.get(key);
+ const job=Promise.resolve().then(async()=>{
+  await state.refresh();await chatLoadDeliveryRecovery(key);await chatReconcileAcceptedDrafts(key);
+  const host=document.getElementById("chatComposer");if(chatDraftKey===key&&host)chatRenderDeliveryNotice(host,key);
+ }).catch(()=>{}).finally(()=>chatRecoveryRefreshes.delete(key));
+ chatRecoveryRefreshes.set(key,job);return job;
+}
+window.addEventListener("focus",()=>{chatRefreshCurrentDraft();chatLoadPins().then(renderChatInboxRows);});
+document.addEventListener("visibilitychange",()=>{if(!document.hidden)chatRefreshCurrentDraft();});
 window.addEventListener("pagehide",()=>{chatSaveDraft();for(const state of chatSyncedDrafts.values())if(state.dirty)state.flush();});
 function showChat(h) {
   chatCloseWorkspace();
