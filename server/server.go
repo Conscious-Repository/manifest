@@ -174,11 +174,6 @@ type Server struct {
 	// Nil is the unconfigured posture: the probe answers sendCapable:false
 	// and every send refuses (recruiting_outreach.go). Never a poller.
 	gmailSend *gmailsend.Client
-	// mailSenders is every outbound account keyed by correspondence domain
-	// (gmailsend.Registry): the recruiting client under its domain plus the
-	// OODA/personal accounts. A send for an unmapped domain refuses; nothing
-	// falls back to the recruiting account (recruiting_outreach.go).
-	mailSenders *gmailsend.Registry
 	// hosts is the read-only config.json projection behind Settings › Hosts
 	// & paths (settings.go). Nil until main.go wires it; paths only.
 	hosts *HostsInfo

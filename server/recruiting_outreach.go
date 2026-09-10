@@ -3,7 +3,6 @@ package server
 import (
 	"context"
 	"errors"
-	"log"
 	"net/http"
 	"strings"
 	"time"
@@ -34,55 +33,18 @@ import (
 // dataDir (gmailsend.TokenPath), never the vault, never config.json, and
 // no response here has a slot for it.
 
-// UseMailSenders wires the by-domain sender registry (main.go builds it from
-// GMAIL_SEND_SENDERS + config.json mailSenders). Call before UseGmailSend so
-// the recruiting client joins the same registry under its own domain.
-func (s *Server) UseMailSenders(r *gmailsend.Registry) { s.mailSenders = r }
+// UseGmailSend wires the send-only client (beside UseAshbySync). Nil leaves
+// the routes mounted in the unconfigured posture.
+func (s *Server) UseGmailSend(c *gmailsend.Client) { s.gmailSend = c }
 
-// UseGmailSend wires the RECRUITING send-only client (beside UseAshbySync)
-// and registers it under its own domain (aion.bio for the default sender).
-// Nil leaves the routes mounted in the unconfigured posture.
-func (s *Server) UseGmailSend(c *gmailsend.Client) {
-	s.gmailSend = c
-	if c == nil {
-		return
-	}
-	if s.mailSenders == nil {
-		s.mailSenders = gmailsend.NewRegistry()
-	}
-	if err := s.mailSenders.Register("", c); err != nil {
-		log.Printf("recruiting sender %s: %v", c.Sender(), err)
-	}
-}
+// gmailOutreachSender adapts gmailsend.Client to recruiting.OutreachSender.
+// It is the whole of what the recruiting store can do with Gmail.
+type gmailOutreachSender struct{ c *gmailsend.Client }
 
-// mailSender resolves the account for a correspondence domain through the
-// registry. Every outbound route goes through here; an unmapped domain is
-// gmailsend.ErrNoSender, never the recruiting client.
-func (s *Server) mailSender(domain string) (*gmailsend.Client, error) {
-	if s.mailSenders == nil {
-		return nil, gmailsend.ErrNoSender
-	}
-	return s.mailSenders.ForDomain(domain)
-}
-
-// gmailOutreachSender adapts the registry to recruiting.OutreachSender for
-// ONE domain (the recruiting sender's own). It is the whole of what the
-// recruiting store can do with Gmail: every send names that domain and the
-// recruiting From, so the registry can only ever pick the recruiting account
-// — or refuse.
-type gmailOutreachSender struct {
-	reg    *gmailsend.Registry
-	from   string
-	domain string
-}
-
-func (g gmailOutreachSender) Sender() string { return g.from }
-func (g gmailOutreachSender) SendCapable() bool {
-	c, err := g.reg.ForDomain(g.domain)
-	return err == nil && strings.EqualFold(c.Sender(), g.from) && c.SendCapable()
-}
+func (g gmailOutreachSender) Sender() string    { return g.c.Sender() }
+func (g gmailOutreachSender) SendCapable() bool { return g.c.SendCapable() }
 func (g gmailOutreachSender) Send(ctx context.Context, m recruiting.OutreachMessage) (recruiting.OutreachSendRef, error) {
-	ref, err := g.reg.Send(ctx, g.domain, gmailsend.Message{From: g.from, To: m.To, Subject: m.Subject, Body: m.Body})
+	ref, err := g.c.Send(ctx, gmailsend.Message{To: m.To, Subject: m.Subject, Body: m.Body})
 	if err != nil {
 		return recruiting.OutreachSendRef{}, err
 	}
@@ -91,11 +53,10 @@ func (g gmailOutreachSender) Send(ctx context.Context, m recruiting.OutreachMess
 
 // outreachSender is nil in the unconfigured posture (no client wired).
 func (s *Server) outreachSender() recruiting.OutreachSender {
-	if s.gmailSend == nil || s.mailSenders == nil {
+	if s.gmailSend == nil {
 		return nil
 	}
-	from := s.gmailSend.Sender()
-	return gmailOutreachSender{reg: s.mailSenders, from: from, domain: gmailsend.Domain(from)}
+	return gmailOutreachSender{s.gmailSend}
 }
 
 func (s *Server) outreachSenderAddr() string {
@@ -130,8 +91,7 @@ func outreachError(w http.ResponseWriter, err error, readiness recruiting.Outrea
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusConflict)
 		writeJSON(w, map[string]any{"error": err.Error(), "readiness": readiness})
-	case errors.Is(err, gmailsend.ErrUnconfigured), errors.Is(err, gmailsend.ErrNoSendScope),
-		errors.Is(err, gmailsend.ErrSenderMismatch), errors.Is(err, gmailsend.ErrNoSender):
+	case errors.Is(err, gmailsend.ErrUnconfigured), errors.Is(err, gmailsend.ErrNoSendScope), errors.Is(err, gmailsend.ErrSenderMismatch):
 		http.Error(w, err.Error(), http.StatusConflict)
 	case strings.HasPrefix(err.Error(), "gmail send:"):
 		http.Error(w, err.Error(), http.StatusBadGateway)

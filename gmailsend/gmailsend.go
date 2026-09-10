@@ -1,9 +1,6 @@
 // Package gmailsend is Manifest's ONE outbound-mail capability: a send-only
-// Gmail client, one From address per Client (recruiting outreach, Phase 5 of
-// the AION scout plan, §4.8), with a Registry that maps each correspondence
-// domain (aion.bio, ooda.group, a personal domain) to ITS OWN Client and
-// refuses — never substitutes — when a domain has none (registry.go). It is
-// deliberately separate from gmailauth —
+// Gmail client for exactly one From address (recruiting outreach, Phase 5 of
+// the AION scout plan, §4.8). It is deliberately separate from gmailauth —
 // whose token is minted at gmail.readonly and only ever at gmail.readonly —
 // so the send grant is its own consent, its own token file, and revocable
 // on its own.
@@ -49,9 +46,7 @@ const SendScope = "https://www.googleapis.com/auth/gmail.send"
 // SendURL is the Gmail messages.send endpoint.
 const SendURL = "https://gmail.googleapis.com/gmail/v1/users/me/messages/send"
 
-// DefaultSender is the RECRUITING From address when GMAIL_SEND_FROM is unset.
-// It is a default for that one client only: Registry never falls back to it
-// for any other domain.
+// DefaultSender is the one From address when GMAIL_SEND_FROM is unset.
 const DefaultSender = "ben@aion.bio"
 
 // ErrUnconfigured: no token has been minted (or the OAuth client is absent).

@@ -15,7 +15,6 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"sort"
 	"strings"
 	"time"
 
@@ -499,50 +498,14 @@ func main() {
 	// ASHBY_WEBHOOK_SECRET in the environment. Absent, the receiver fails
 	// closed (503, nothing processed); nothing logs or echoes it.
 	srv.UseAshbyWebhookSecret(os.Getenv("ASHBY_WEBHOOK_SECRET"))
-	// Approval-gated Gmail outreach (Phase 5): a SEND-ONLY client for the
-	// recruiting From address (GMAIL_SEND_FROM, default ben@aion.bio). The
-	// OAuth client is the shared one (GMAIL_OAUTH_CLIENT, as gmailauth reads
-	// it); the send token is its own file under dataDir (GMAIL_SEND_TOKEN
+	// Approval-gated Gmail outreach (Phase 5): a SEND-ONLY client for exactly
+	// one From address (GMAIL_SEND_FROM, default ben@aion.bio). The OAuth
+	// client is the shared one (GMAIL_OAUTH_CLIENT, as gmailauth reads it);
+	// the send token is its own file under dataDir (GMAIL_SEND_TOKEN
 	// override) — never the engine's read-only GMAIL_TOKEN, never the vault,
 	// never config.json. Absent, the probe answers sendCapable:false and
 	// every send refuses. Nothing logs or echoes the token.
-	//
-	// Sender accounts BY DOMAIN (owner decision 2026-09-10): OODA and personal
-	// correspondence send from their OWN accounts, mapped domain → From by
-	// GMAIL_SEND_SENDERS ("ooda.group=ben@ooda.group …") and config.json
-	// mailSenders, each with its own token (<dataDir>/gmail-send/<from>.json).
-	// A domain with no mapping has no sender — the send fails loud; nothing
-	// ever falls back to the recruiting account.
-	recruitingSender := gmailsend.New(os.Getenv("GMAIL_SEND_FROM"), gmailsend.TokenPath(cfg.DataDir))
-	mailSenders := gmailsend.NewRegistry()
-	if err := mailSenders.Register("", recruitingSender); err != nil {
-		log.Printf("mail sender %s: %v", recruitingSender.Sender(), err)
-	}
-	senderSpecs, err := gmailsend.ParseSenders(os.Getenv("GMAIL_SEND_SENDERS"))
-	if err != nil {
-		log.Printf("GMAIL_SEND_SENDERS: %v (its senders are NOT registered)", err)
-	}
-	configDomains := make([]string, 0, len(cfg.MailSenders))
-	for domain := range cfg.MailSenders {
-		configDomains = append(configDomains, domain)
-	}
-	sort.Strings(configDomains)
-	for _, domain := range configDomains {
-		sp, err := gmailsend.NewSenderSpec(domain, cfg.MailSenders[domain])
-		if err != nil {
-			log.Printf("config mailSenders[%s]: %v (not registered)", domain, err)
-			continue
-		}
-		senderSpecs = append(senderSpecs, sp)
-	}
-	for _, sp := range senderSpecs {
-		c := gmailsend.New(sp.From, gmailsend.SenderTokenPath(cfg.DataDir, sp.From))
-		if err := mailSenders.Register(sp.Domain, c); err != nil {
-			log.Printf("mail sender for %s: %v", sp.Domain, err)
-		}
-	}
-	srv.UseMailSenders(mailSenders)
-	srv.UseGmailSend(recruitingSender)
+	srv.UseGmailSend(gmailsend.New(os.Getenv("GMAIL_SEND_FROM"), gmailsend.TokenPath(cfg.DataDir)))
 	srv.UseTasks(tasksStore)
 	srv.UseSticky(filepath.Join(cfg.DataDir, "sticky.md")) // ⌘I floating post-it (scratch, never the vault)
 	srv.UseCapture(capture.NewStore(cfg.DataDir))          // the tray (cmd-ctr Stage; dataDir until promoted)
