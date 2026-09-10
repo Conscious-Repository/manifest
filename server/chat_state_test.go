@@ -34,10 +34,14 @@ func TestPortalCannotAccessOwnerDrafts(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, key := range []string{"conversation-0123456789abcdef0123456789abcdef", "landing-0123456789abcdef0123456789abcdef"} {
+	for _, key := range []string{"conversation-0123456789abcdef0123456789abcdef", "landing-0123456789abcdef0123456789abcdef", "inbox"} {
+		slot := "draft"
+		if key == "inbox" {
+			slot = "pins"
+		}
 		for _, method := range []string{"GET", "PUT"} {
 			w := httptest.NewRecorder()
-			h.ServeHTTP(w, httptest.NewRequest(method, "/api/chat/state/"+key+"/draft", strings.NewReader(`{"revision":0,"value":{"text":"private"}}`)))
+			h.ServeHTTP(w, httptest.NewRequest(method, "/api/chat/state/"+key+"/"+slot, strings.NewReader(`{"revision":0,"value":{"text":"private"}}`)))
 			if w.Code == 200 {
 				t.Fatal("portal exposed private draft", method)
 			}

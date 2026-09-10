@@ -386,4 +386,7 @@ button.chat-attach-chip { min-height: 44px; max-width: 100%; background: transpa
 .chat-draft-preview { flex-basis: 100%; }
 .chat-draft-preview p { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 12rem; overflow: auto; }
 .chat-context-attribution { font-size:var(--fs-sm); color:var(--muted); margin-top:var(--sp-4); }
+.chat-inbox-pin { min-height: 32px; flex: none; font-size: var(--fs-sm); }
+@media (hover: hover) { .chat-inbox-pin { opacity: 0; } .chat-rail-row:hover .chat-inbox-pin, .chat-rail-row:focus-within .chat-inbox-pin, .chat-inbox-pin[aria-pressed="true"] { opacity: 1; } }
+@media (pointer: coarse) { .chat-inbox-pin { min-height: 44px; } }
 .chat-head button.chat-head-sub { font-size:var(--fs-md); min-height:44px; }

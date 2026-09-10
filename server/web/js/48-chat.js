@@ -169,7 +169,7 @@ function chatRenderStateNotice(host,state){
   }else{const retry=el("button","sprt-quiet","Retry sync");retry.onclick=()=>state.refresh();row.append(retry);}
   host.prepend(row);
 }
-window.addEventListener("focus",()=>{if(chatDraftKey)chatSyncedDrafts.get(chatDraftKey)?.refresh();});
+window.addEventListener("focus",()=>{if(chatDraftKey)chatSyncedDrafts.get(chatDraftKey)?.refresh();chatLoadPins().then(renderChatInboxRows);});
 document.addEventListener("visibilitychange",()=>{if(!document.hidden&&chatDraftKey)chatSyncedDrafts.get(chatDraftKey)?.refresh();});
 window.addEventListener("pagehide",()=>{chatSaveDraft();for(const state of chatSyncedDrafts.values())if(state.dirty)state.flush();});
 function showChat(h) {
@@ -449,14 +449,14 @@ async function loadChatRoster() {
 // Load conversation summaries together so the inbox can sort across agents.
 async function loadChatSessions() {
   const agents = chatRoster.filter(a => !chatIsTerm(a.name)).map(a => a.name);
-  await Promise.all(["", ...agents].map(async agent => {
+  await Promise.all([chatLoadPins(),...["", ...agents].map(async agent => {
     try {
       const res = await fetch(chatBaseFor(agent));
       if (!res.ok) return; // retain the last good directory during an outage
       const rows = (await res.json()).sessions || [];
       if (agent) chatAgentSessions[agent] = rows; else chatSessions = rows;
     } catch (e) {}
-  }));
+  })]);
 }
 
 async function chatSpiritList() {
@@ -498,6 +498,28 @@ function renderChatHeadActions() {
 
 let chatSearchQuery = "";
 let chatInboxFilter = "all";
+let chatPins={};
+let chatPinsRevision=-1;
+const chatPinURL="/api/chat/state/inbox/pins";
+function chatInboxKey(entry){return (entry.terminal?"terminal":entry.agent?"agent":"spirit")+":"+entry.agent+"/"+entry.session.id;}
+function chatApplyPins(state){
+  if(state.key!=="inbox"||state.slot!=="pins"||!Number.isSafeInteger(state.revision)||state.revision<0||state.revision<chatPinsRevision)return;
+  chatPinsRevision=state.revision;chatPins=state.value?.pins||{};
+}
+async function chatLoadPins(){try{const r=await fetch(chatPinURL,{cache:"no-store"});if(r.ok)chatApplyPins(await r.json());}catch(e){}}
+async function chatSetPinned(key,pinned){
+  // Read/merge/CAS keeps another device's pins instead of overwriting its list.
+  for(let attempt=0;attempt<3;attempt++){
+    const r=await fetch(chatPinURL,{cache:"no-store"});if(!r.ok)throw Error("Could not load pinned chats.");
+    const state=await r.json();if(state.key!=="inbox"||state.slot!=="pins"||!Number.isSafeInteger(state.revision))throw Error("Invalid pin state.");
+    const pins={...state.value?.pins};if(pinned)pins[key]=true;else delete pins[key];
+    const saved=await fetch(chatPinURL,{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify({revision:state.revision,value:{...state.value,pins}})});
+    if(saved.status===409)continue;
+    if(!saved.ok)throw Error("Pin change was not saved. Try again.");
+    chatApplyPins(await saved.json());return;
+  }
+  throw Error("Pinned chats changed on another device. Try again.");
+}
 function chatInboxEntries() {
   const entries = chatSessions.map(session => ({agent: "", session}));
   chatRoster.filter(a => !chatIsTerm(a.name)).forEach(agent => (chatAgentSessions[agent.name] || []).filter(session=>!chatHasNativeParent(session)).forEach(session => entries.push({agent: agent.name, session})));
@@ -506,6 +528,7 @@ function chatInboxEntries() {
   return entries.filter(entry => (chatInboxFilter === "all" || entry.agent === chatInboxFilter || (entry.terminal&&(chatAgentSessions[chatInboxFilter]||[]).some(s=>s.origin?.mode==="continue"&&s.origin?.backend==="terminal"&&s.origin?.id===entry.session.id&&s.origin?.agent===entry.agent)))
     && [entry.session.title, entry.session.name, entry.session.cwd, chatAgentLabel(entry.agent), entry.session.spirit].filter(Boolean).join(" ").toLowerCase().includes(query))
     .sort((a, b) => {
+      const pinned=Number(chatPins[chatInboxKey(b)]===true)-Number(chatPins[chatInboxKey(a)]===true);if(pinned)return pinned;
       const time = entry => Date.parse(entry.session.updated || entry.session.lastUsed || entry.session.created || "") || 0;
       return time(b) - time(a);
     });
@@ -521,6 +544,11 @@ function renderChatInboxRows() {
     row.classList.toggle("open", entry.agent === chatAgent && entry.session.id === chatOpenId);
     const meta = row.querySelector(".chat-rail-meta");
     if (meta) meta.prepend(el("span", "chat-inbox-agent", entry.terminal ? chatTermKinds[entry.agent] : entry.agent ? chatAgentLabel(entry.agent) : entry.session.spirit || "Spirits"));
+    const key=chatInboxKey(entry),pinned=chatPins[key]===true;
+    const pin=el("button","sprt-quiet chat-inbox-pin",pinned?"Unpin":"Pin");pin.setAttribute("aria-label",(pinned?"Unpin ":"Pin ")+(entry.session.title||entry.session.name||entry.session.id));pin.setAttribute("aria-pressed",String(pinned));
+    pin.onclick=async e=>{e.stopPropagation();pin.disabled=true;try{await chatSetPinned(key,!pinned);renderChatInboxRows();}catch(error){showToast(error.message);}finally{pin.disabled=false;}};
+    pin.onkeydown=e=>e.stopPropagation();
+    (row.querySelector(".chat-rail-top")||row).append(pin);
     row.onclick = () => { location.hash = entry.agent ? "#/chat/a/" + encodeURIComponent(entry.agent) + "/" + encodeURIComponent(entry.session.id) : "#/chat/" + encodeURIComponent(entry.session.id); };
     host.append(row);
   });

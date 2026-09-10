@@ -12,6 +12,25 @@ import (
 
 const testKey = "conversation-0123456789abcdef0123456789abcdef"
 
+func TestInboxPinsPersistIndependently(t *testing.T) {
+	root := t.TempDir()
+	s := New(root)
+	saved, err := s.Write("inbox", "pins", 0, json.RawMessage(`{"pins":{"terminal:codex/native":true}}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	read, err := New(root).Read("inbox", "pins")
+	if err != nil || !bytes.Equal(read.Value, saved.Value) {
+		t.Fatal(read, err)
+	}
+	if _, err = s.Write("inbox", "pins", 0, json.RawMessage(`{"pins":{}}`)); !errors.Is(err, ErrConflict) {
+		t.Fatal("stale pin write accepted", err)
+	}
+	if _, err = s.Read("inbox", "draft"); !errors.Is(err, ErrInvalid) {
+		t.Fatal("pins created a draft slot", err)
+	}
+}
+
 func TestLandingDraftIsPrivateStateWithoutConversation(t *testing.T) {
 	root := t.TempDir()
 	s := New(root)
