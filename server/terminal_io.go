@@ -41,7 +41,7 @@ func (s *Server) handleTermTranscript(w http.ResponseWriter, r *http.Request) {
 			full, _ = readTranscript(se.Kind, path, 0)
 		}
 	}
-	if o := se.Origin; o != nil && o.Mode == "continue" && o.Backend == "" {
+	if o := se.Origin; o != nil && o.Mode == "continue" && (o.Backend == "" || o.Backend == "portal") {
 		tr.Turns, _ = s.projectConversationNativeTurns(se, agentConversation("hermes", o.Agent, o.ID, "private", "").Key, tr.Turns)
 	}
 	planningTimeline, _ := s.terminalPlanningTimeline(r.Context(), se)

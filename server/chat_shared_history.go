@@ -38,6 +38,24 @@ func (s *Server) sharedNativeViews(ctx context.Context, ag *chatAgent, thread st
 		v.Conversation = agentConversation("portal", ag.Name, thread, "team:"+ag.Domain, "")
 		views = append(views, v)
 	}
+	if s.terminal != nil {
+		rows, err := s.terminal.loadChecked()
+		if err != nil {
+			return nil, err
+		}
+		for _, se := range rows {
+			if !directSharedTerminal(se, ag, thread) {
+				continue
+			}
+			if _, err := s.sharedTerminal(ag, thread, se.ID); err != nil {
+				return nil, err
+			}
+			v := s.projectCodingContinuation(ctx, se, agentConversation("portal", ag.Name, thread, "team:"+ag.Domain, "").Key)
+			v.Cwd = ""
+			v.Conversation = agentConversation("portal", ag.Name, thread, "team:"+ag.Domain, "")
+			views = append(views, v)
+		}
+	}
 	return views, nil
 }
 

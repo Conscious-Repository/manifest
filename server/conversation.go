@@ -107,6 +107,14 @@ func terminalConversation(se termSession) conversationDescriptor {
 	d.Links = append(d.Links, conversationLink{"execution", se.ID, "terminal.registry"})
 	if o := se.Origin; o != nil {
 		origin := agentConversation("hermes", o.Agent, o.ID, "private", o.Task)
+		if o.Backend == "portal" && o.Mode == "continue" && (o.Agent == "kairos" || o.Agent == "zeck") {
+			domain := "aion"
+			if o.Agent == "zeck" {
+				domain = "ooda"
+			}
+			d.Scope = "team:" + domain
+			origin = agentConversation("portal", o.Agent, o.ID, d.Scope, "")
+		}
 		if o.Backend == "terminal" {
 			origin = terminalConversation(termSession{ID: o.ID, Kind: o.Agent})
 		}

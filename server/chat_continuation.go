@@ -99,6 +99,9 @@ func (s *Server) projectCodingContinuation(ctx context.Context, se termSession, 
 }
 
 func (s *Server) projectConversationNativeTurns(se termSession, key string, native []termTurn) ([]termTurn, map[string]terminalInputReceipt) {
+	if o := se.Origin; o != nil && o.Backend == "portal" && o.Mode == "continue" {
+		key = agentConversation("portal", o.Agent, o.ID, "", "").Key
+	}
 	turns, submissions := s.terminal.projectContinuationTurns(se.ID, key, native)
 	if o := se.Origin; o != nil && o.Backend == "" && s.agentChat != nil {
 		if source, _, _, ok := s.agentChat.store.Get(o.Agent, o.ID); ok && source.Sharing != nil && source.Sharing.State == "shared" {

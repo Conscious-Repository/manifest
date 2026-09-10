@@ -31,6 +31,9 @@ func (s *Server) handleChatRelated(w http.ResponseWriter, r *http.Request) {
 	task := strings.TrimSpace(b.Task)
 	origin := agentchat.Origin{Agent: r.PathValue("agent"), ID: r.PathValue("id"), Task: task, Prompt: b.Prompt, Artifacts: b.Artifacts}
 	origin.Backend = r.PathValue("originBackend")
+	if b.Backend == "terminal" && (origin.Agent == "kairos" || origin.Agent == "zeck") {
+		origin.Backend = "portal"
+	}
 	if b.Backend == "terminal" {
 		s.handleRelatedCodingChat(w, r, b, origin)
 		return

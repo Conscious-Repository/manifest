@@ -21,6 +21,7 @@ func (s *Server) handleRelatedCodingChat(w http.ResponseWriter, r *http.Request,
 		return
 	}
 	validSource := origin.Backend == "" && agentchat.ValidAgent(origin.Agent) && agentchat.ValidID(origin.ID)
+	validSource = validSource || origin.Backend == "portal" && (origin.Agent == "kairos" || origin.Agent == "zeck")
 	validSource = validSource || origin.Backend == "terminal" && isCodingAgent(origin.Agent) && termIDRe.MatchString(origin.ID)
 	if !validSource || !isCodingAgent(b.Agent) || !agentchat.ValidRequestID(b.RequestID) {
 		httpError(w, errBadRequest("invalid related coding chat request"))
@@ -29,6 +30,19 @@ func (s *Server) handleRelatedCodingChat(w http.ResponseWriter, r *http.Request,
 	if b.Mode != "" && b.Mode != "continue" {
 		httpError(w, errBadRequest("unsupported coding continuation mode"))
 		return
+	}
+	// Adding a runtime after publication is a new explicit owner action. A
+	// task/title match never expands the shared runtime set.
+	if origin.Backend == "portal" {
+		ag, _ := s.portalChatAgent(origin.Agent)
+		if _, err := s.sharedConversationReview(ag, origin.ID); err != nil {
+			http.Error(w, errSharedConversationAccess.Error(), http.StatusForbidden)
+			return
+		}
+		if b.Mode != "continue" || origin.Task != "" || len(origin.Artifacts) > 0 || origin.Prompt != "" {
+			httpError(w, errBadRequest("add a terminal to this shared conversation without private task, handoff or artifact selectors"))
+			return
+		}
 	}
 	shareAgent, shareID := origin.Agent, origin.ID
 	if origin.Backend == "terminal" {
@@ -57,7 +71,11 @@ func (s *Server) handleRelatedCodingChat(w http.ResponseWriter, r *http.Request,
 	sum := sha256.Sum256(raw)
 	signature := hex.EncodeToString(sum[:])
 	reply := func(se termSession) {
-		writeJSON(w, map[string]any{"id": se.ID, "agent": se.Kind, "model": se.Model, "cwd": se.Cwd, "conversation": s.terminalConversation(se)})
+		conversation := s.terminalConversation(se)
+		if shared := s.terminalSharedConversation(se); shared != nil {
+			conversation = *shared
+		}
+		writeJSON(w, map[string]any{"id": se.ID, "agent": se.Kind, "model": se.Model, "cwd": se.Cwd, "conversation": conversation})
 	}
 	fail := func(err error) {
 		if errors.Is(err, agentchat.ErrRequestConflict) {
@@ -75,6 +93,12 @@ func (s *Server) handleRelatedCodingChat(w http.ResponseWriter, r *http.Request,
 		return
 	}
 	source, sourceBody, _, ok := s.agentChat.store.Get(origin.Agent, origin.ID)
+	if origin.Backend == "portal" {
+		ag, _ := s.portalChatAgent(origin.Agent)
+		thread, found := portalChatThread(ag, origin.ID)
+		ok = found
+		source = agentchat.Session{Agent: origin.Agent, ID: origin.ID, Title: thread.Title}
+	}
 	if origin.Backend == "terminal" {
 		ok = false
 		if parent, found := s.terminal.find(origin.ID); found && parent.Kind == origin.Agent && parent.Device == "" {

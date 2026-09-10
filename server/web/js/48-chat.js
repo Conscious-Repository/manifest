@@ -1361,6 +1361,9 @@ function chatHead(s) {
     share.onclick=()=>CHAT_SHARE.open({agent,id:s.id,title:s.title,onShared:conversation=>{location.hash=conversation.route;}});
     head.append(share);
   }
+  if(s.shared && chatTermEnabled){
+    const add=el("button","sprt-quiet","Add coding agent");add.onclick=()=>chatAddSharedTerminal(s,agent);head.append(add);
+  }
   if(s.shared && s.sharedFiles?.length){
     const files=el("button","sprt-quiet","Files");
     files.onclick=()=>chatSharedFilePicker(s,agent);head.append(files);
@@ -1836,7 +1839,7 @@ function renderChatComposer(session) {
       try{
         const target=chosenRecipient;
         const url=chatBaseFor(target.agent)+"/"+encodeURIComponent(target.id)+"/messages";
-        await chatDeliverRemembered(chatRememberDelivery(draftKey,target.agent,url,{text,files,recipient:{agent:target.agent,model:target.model},task:selected?.task||session?.task||"",artifacts:selected?[{id:selected.id,revision:selected.revision}]:[]}));
+        await chatDeliverRemembered(chatRememberDelivery(draftKey,target.agent,url,{text,files,recipient:{agent:target.agent,model:target.model},task:session?.shared?"":selected?.task||session?.task||"",artifacts:selected?[{id:selected.id,revision:selected.revision}]:[]}));
         acceptedDraft();
         if(sendRoute===chatRouteVersion&&chatTermOpen)await chatTermRequestFinalTail(chatTermOpen);
       }catch(e){showToast(e.message||"Send not confirmed. Your draft is retained.");}
@@ -1847,7 +1850,7 @@ function renderChatComposer(session) {
       try{
         if(files.length&&!session?.shared)throw new Error("File uploads are not supported by this coding continuation yet. Remove the attachment or choose a planning agent.");
         const url=chatTermBase(chosenRecipient.id)+"/input";
-        const item=chatRememberDelivery(draftKey,chosenRecipient.agent,url,{text,...(files.length?{files:files.map(f=>f.hash)}:{}),conversationAgent:sendAgent,conversationId:sendSession,task:selected?.task||session?.task||"",artifacts:selected?[{id:selected.id,revision:selected.revision}]:[]});
+        const item=chatRememberDelivery(draftKey,chosenRecipient.agent,url,{text,...(files.length?{files:files.map(f=>f.hash)}:{}),conversationAgent:sendAgent,conversationId:sendSession,task:session?.shared?"":selected?.task||session?.task||"",artifacts:selected?[{id:selected.id,revision:selected.revision}]:[]});
         await chatDeliverRemembered(item);acceptedDraft();
         if(sendRoute===chatRouteVersion)await refetchChatSession(sendSession);
       }catch(e){showToast(e.message||"Send not confirmed. Your draft is retained.");}
@@ -3081,6 +3084,34 @@ function chatRenderDeliveryNotice(host,scope){
   row.append(label,check);if(!item.accepted)row.append(retry);notice.append(row);
  });
  host.prepend(notice);
+}
+
+function chatAddSharedTerminal(session,agent){
+  const key=agent+"/"+session.id,storage="manifest.sharedTerminal.v1."+key;
+  let saved;try{saved=JSON.parse(localStorage.getItem(storage)||"null");}catch(e){}
+  reviewDialog("Add coding agent",({body,actions,close})=>{
+    body.append(el("p","","This agent joins the shared conversation. The team can read its replies and direct it. It starts working when you send a message."));
+    const kind=document.createElement("select");kind.className="pp-in";kind.setAttribute("aria-label","Coding agent");
+    Object.entries(chatTermKinds).forEach(([value,label])=>{const o=document.createElement("option");o.value=value;o.textContent=label;kind.append(o);});
+    if(saved?.payload?.agent)kind.value=saved.payload.agent;
+    const cwd=document.createElement("input"),model=document.createElement("input");cwd.className=model.className="pp-in";
+    cwd.value=saved?.payload?.cwd||chatRecall("manifest.chatTermCwd."+kind.value)||"";model.value=saved?.payload?.model||"";
+    cwd.placeholder="Default home folder";model.placeholder="Installed default";
+    for(const [label,input] of [["Agent",kind],["Working folder on Metis",cwd],["Model (optional)",model]]){const field=el("label","",label);input.setAttribute("aria-label",label);field.append(input);body.append(field);}
+    const status=el("p","");status.setAttribute("role","status");body.append(status);
+    const add=el("button","sprt-quiet","Add to shared conversation"),cancel=el("button","sprt-quiet","Cancel");cancel.onclick=close;actions.append(cancel,add);
+    add.onclick=async()=>{
+      const payload={agent:kind.value,backend:"terminal",mode:"continue",title:saved?.payload?.title||session.title||"Shared conversation",cwd:cwd.value.trim(),model:model.value.trim()};
+      const signature=JSON.stringify(payload),requestId=saved?.signature===signature?saved.requestId:crypto.randomUUID();
+      try{
+        saved={payload,signature,requestId};localStorage.setItem(storage,JSON.stringify(saved));add.disabled=true;
+        const result=await postJSONOk(chatBaseFor(agent)+"/"+encodeURIComponent(session.id)+"/related",{...payload,requestId});
+        if(!result.id)throw Error("Creation was not confirmed. Retry to recover the same session.");
+        localStorage.removeItem(storage);chatRecipients.set(key,{backend:"terminal",agent:result.agent,id:result.id,model:result.model});close();
+        if(chatAgent===agent&&chatOpenId===session.id){chatCaptureSyncedDraft(key);await refetchChatSession(session.id);}
+      }catch(e){status.textContent=e.message||"Could not add the agent. Retry safely.";}finally{add.disabled=false;}
+    };
+  });
 }
 
 function chatStartRelated(source,targetAgent){

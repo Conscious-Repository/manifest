@@ -100,6 +100,18 @@ func (s *Server) sharedInputContext(ctx context.Context, scope *sharedTerminalIn
 // Caller holds the session input mutex and rereads the current registry row.
 func (s *Server) ownerSharedTerminalInput(se termSession, b *terminalInput) (*sharedTerminalInputScope, error) {
 	o := se.Origin
+	if o != nil && o.Backend == "portal" {
+		ag, _ := s.portalChatAgent(o.Agent)
+		if _, err := s.sharedTerminal(ag, o.ID, se.ID); err != nil {
+			return nil, err
+		}
+		if b.Task != "" || (b.ConversationAgent != "" || b.ConversationID != "") && (b.ConversationAgent != o.Agent || b.ConversationID != o.ID) {
+			return nil, errSharedConversationAccess
+		}
+		b.ConversationAgent, b.ConversationID = "", ""
+		email, name := s.portalChatIdentity()
+		return &sharedTerminalInputScope{ag, o.ID, se.ID, email, name}, nil
+	}
 	if o == nil || o.Mode != "continue" || o.Backend != "" || s.agentChat == nil {
 		return nil, nil
 	}

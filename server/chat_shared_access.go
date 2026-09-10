@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"manifest/agentchat"
 	"manifest/artifacts"
 	"net/http"
 	"strconv"
@@ -79,6 +80,9 @@ func (s *Server) sharedTerminalRead(ag *chatAgent, w http.ResponseWriter, r *htt
 	}
 	_, transcript, observation, live := s.projectTerminalTranscript(r.Context(), se, after)
 	key := agentConversation("hermes", se.Origin.Agent, se.Origin.ID, "private", "").Key
+	if se.Origin.Backend == "portal" {
+		key = agentConversation("portal", ag.Name, r.PathValue("thread"), "team:"+ag.Domain, "").Key
+	}
 	turns, submissions := s.projectConversationNativeTurns(se, key, transcript.Turns)
 	w.Header().Set("Cache-Control", "no-store")
 	writeJSON(w, map[string]any{
@@ -99,6 +103,9 @@ func (s *Server) sharedTerminal(ag *chatAgent, threadID, terminalID string) (ter
 	review, err := s.sharedConversationReview(ag, threadID)
 	if err != nil {
 		return termSession{}, err
+	}
+	if se, exists, e := s.terminal.findChecked(terminalID); e == nil && exists && directSharedTerminal(se, ag, threadID) {
+		return se, nil
 	}
 	for _, included := range review.Continuations {
 		if included.ID != terminalID || !isCodingAgent(included.Agent) {
@@ -161,8 +168,23 @@ func validStoredShareReview(payload []byte) bool {
 	return revision != "" && artifacts.Hash(unsigned) == revision
 }
 
+// A direct portal origin is written only by the owner's explicit add-terminal
+// action, whose durable creation signature distinguishes it from guessed links.
+func directSharedTerminal(se termSession, ag *chatAgent, thread string) bool {
+	o := se.Origin
+	return ag != nil && o != nil && o.Backend == "portal" && o.Mode == "continue" && o.Agent == ag.Name && o.ID == thread && o.Task == "" && len(o.Artifacts) == 0 && o.Prompt == "" && se.Device == "" && isCodingAgent(se.Kind) && agentchat.ValidRequestID(se.CreateRequest) && artifacts.ValidHash(se.CreateSignature)
+}
+
 func (s *Server) terminalSharedConversation(se termSession) *conversationDescriptor {
 	o := se.Origin
+	if o != nil && o.Backend == "portal" {
+		ag, _ := s.portalChatAgent(o.Agent)
+		if _, err := s.sharedTerminal(ag, o.ID, se.ID); err != nil {
+			return nil
+		}
+		d := agentConversation("portal", ag.Name, o.ID, "team:"+ag.Domain, "")
+		return &d
+	}
 	if o == nil || o.Backend != "" || o.Mode != "continue" || s.agentChat == nil {
 		return nil
 	}
