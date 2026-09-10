@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"manifest/agentchat"
 	"net"
 	"os"
@@ -27,6 +28,68 @@ func TestCodingContinuationSnapshotRetainsAuthorsAndDisclosesOmission(t *testing
 	text, omitted = codingContinuationContext(source, long)
 	if omitted != 1 || len(text) > agentChatWindowChars {
 		t.Fatal("unbounded context or silent truncation", omitted, len(text))
+	}
+}
+
+func TestTerminalRootPlanningContinuationContext(t *testing.T) {
+	s, st, _ := agentChatFixture(t, echoStub)
+	s.terminal = &termCfg{regPath: filepath.Join(t.TempDir(), "terminals.json"), defaultWd: t.TempDir(), claudeProjects: t.TempDir()}
+	root := termSession{ID: "abcdef123456", Kind: "claude", Backend: "herdr", LaunchPhase: "active", Started: true, Cwd: s.terminal.defaultWd, ResumeID: "01234567-abcd"}
+	path := s.terminal.transcriptPath(root)
+	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+		t.Fatal(err)
+	}
+	raw := []byte(`{"type":"assistant","timestamp":"2026-09-09T12:00:00Z","message":{"role":"assistant","content":[{"type":"text","text":"NATIVE_RESULT_ALPHA"}]}}` + "\n")
+	if err := os.WriteFile(path, raw, 0600); err != nil {
+		t.Fatal(err)
+	}
+	s.terminal.upsert(root)
+	endpoint := "/api/terminal/claude/session/" + root.ID + "/related"
+	payload := map[string]any{"agent": "alfred", "mode": "continue", "requestId": "native-root-continue-001", "title": "Planning continuation"}
+	code, out := agentChatJSON(t, s, "POST", endpoint, payload)
+	if code != 200 {
+		t.Fatal(code, out)
+	}
+	id := out["id"].(string)
+	child, body, _, _ := st.Get("alfred", id)
+	if child.Origin.Mode != "continue" || child.Turns != 0 || body != "" {
+		t.Fatal("creation dispatched or lost identity", child)
+	}
+	st.AppendTurn("alfred", id, "user", "Review that result", 0)
+	payload["mode"] = ""
+	payload["requestId"] = "native-root-related-002"
+	code, other := agentChatJSON(t, s, "POST", endpoint, payload)
+	if code != 200 {
+		t.Fatal(code, other)
+	}
+	st.AppendTurn("alfred", other["id"].(string), "user", "RELATED_MUST_STAY_PRIVATE", 0)
+	child, body, _, _ = st.Get("alfred", id)
+	prompt := s.composeAgentChatPrompt("alfred", child, body)
+	if !strings.Contains(prompt, "NATIVE_RESULT_ALPHA") || !strings.Contains(prompt, `author "agent:claude"`) || !strings.Contains(prompt, "Current owner instruction:\nReview that result") || strings.Contains(prompt, "RELATED_MUST_STAY_PRIVATE") {
+		t.Fatal(prompt)
+	}
+	timeline, found := s.terminalPlanningTimeline(context.Background(), root)
+	if !found || len(timeline) != 2 || !strings.HasPrefix(fmt.Sprint(timeline[1].N), "chat:alfred/"+id+":") {
+		t.Fatal(timeline)
+	}
+	code, projected := agentChatJSON(t, s, "GET", "/api/terminal/session/"+root.ID+"/transcript?after=999999", nil)
+	if code != 200 || len(projected["planningTimeline"].([]any)) != 2 {
+		t.Fatal("incremental native offset hid logical history", code, projected)
+	}
+	after, _ := os.ReadFile(path)
+	if string(after) != string(raw) {
+		t.Fatal("native source changed")
+	}
+	_, afterBody, _, _ := st.Get("alfred", id)
+	if afterBody != body {
+		t.Fatal("planning history changed")
+	}
+	payload["mode"] = "continue"
+	payload["requestId"] = "native-root-continue-001"
+	s.terminal.remove(root.ID)
+	code, retry := agentChatJSON(t, s, "POST", endpoint, payload)
+	if code != 200 || retry["id"] != id {
+		t.Fatal("creation retry lost identity", code, retry)
 	}
 }
 

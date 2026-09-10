@@ -77,9 +77,9 @@ type Origin struct {
 }
 
 func validOrigin(o Origin) bool {
-	if o.Mode != "" {
+	if o.Mode != "" && (o.Mode != "continue" || o.Backend != "terminal") {
 		return false
-	} // Continuations are owned by the coding adapter.
+	}
 	if o.Backend == "" {
 		return ValidAgent(o.Agent) && ValidID(o.ID)
 	}

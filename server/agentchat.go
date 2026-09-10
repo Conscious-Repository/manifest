@@ -639,6 +639,15 @@ func (s *Server) runAgentChatTurn(agent, id, requestID string) error {
 	executionSession.Model = recipient.Model
 	who := "agent:" + recipient.Agent
 	obj := ledger.Object{Kind: ledger.ObjSession, ID: id}
+	if o := executionSession.Origin; o != nil && o.Mode == "continue" && o.Backend == "terminal" {
+		if s.terminal == nil {
+			return errors.New("originating coding conversation is unavailable")
+		}
+		root, ok := s.terminal.find(o.ID)
+		if !ok || root.Kind != o.Agent || root.Device != "" {
+			return errors.New("originating coding conversation is unavailable")
+		}
+	}
 	prompt, omitted := s.composeAgentChatPromptWindow(recipient.Agent, executionSession, body)
 	if err := st.RecordHistoryOmission(agent, id, requestID, omitted); err != nil {
 		return err
@@ -702,6 +711,13 @@ func (s *Server) composeAgentChatPromptWindow(agent string, sess agentchat.Sessi
 	logical := ""
 	if views := s.codingContinuations(context.Background(), sess); len(views) > 0 {
 		logical, start = logicalContinuationContext(sess, body, views)
+	}
+	if o := sess.Origin; o != nil && o.Mode == "continue" && o.Backend == "terminal" && s.terminal != nil {
+		if root, ok := s.terminal.find(o.ID); ok && root.Kind == o.Agent && root.Device == "" {
+			if timeline, found := s.terminalPlanningTimeline(context.Background(), root); found {
+				logical, start = timelineContinuationContext(s.terminalConversation(root).Key, timeline)
+			}
+		}
 	}
 
 	var b strings.Builder

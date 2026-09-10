@@ -150,6 +150,44 @@ func conversationTimeline(source agentchat.Session, body string, views []codingC
 
 func logicalContinuationContext(source agentchat.Session, body string, views []codingContinuationView) (string, int) {
 	turns := conversationTimeline(source, body, views)
+	return timelineContinuationContext(sessionConversation(source).Key, turns)
+}
+
+// Native-root conversations include only explicit planning continuations. Never
+// turn ordinary related chats or task membership into implicit shared context.
+func (s *Server) terminalPlanningTimeline(ctx context.Context, root termSession) ([]conversationTimelineTurn, bool) {
+	if s.agentChat == nil {
+		return nil, false
+	}
+	var children []agentchat.Session
+	for _, agent := range s.agentChat.store.Agents() {
+		for _, child := range s.agentChat.store.List(agent) {
+			o := child.Origin
+			if o != nil && o.Mode == "continue" && o.Backend == "terminal" && o.Agent == root.Kind && o.ID == root.ID {
+				children = append(children, child)
+			}
+		}
+	}
+	if len(children) == 0 {
+		return nil, false
+	}
+	_, tr, _, _ := s.projectTerminalTranscript(ctx, root, 0)
+	timeline := conversationTimeline(agentchat.Session{}, "", []codingContinuationView{{ID: root.ID, Agent: root.Kind, Model: root.Model, Created: root.CreatedAt, Conversation: s.terminalConversation(root), Turns: tr.Turns}})
+	for _, child := range children {
+		_, body, _, ok := s.agentChat.store.Get(child.Agent, child.ID)
+		if !ok {
+			continue
+		}
+		for _, turn := range conversationTimeline(child, body, nil) {
+			turn.N = fmt.Sprintf("chat:%s/%s:%v", child.Agent, child.ID, turn.N)
+			timeline = append(timeline, turn)
+		}
+	}
+	sort.SliceStable(timeline, func(i, j int) bool { return timeline[i].orderTime.Before(timeline[j].orderTime) })
+	return timeline, true
+}
+
+func timelineContinuationContext(key string, turns []conversationTimelineTurn) (string, int) {
 	parts := make([]string, len(turns))
 	for i, t := range turns {
 		text := t.Text
@@ -177,5 +215,5 @@ func logicalContinuationContext(source agentchat.Session, body string, views []c
 		total += len(parts[i])
 		start = i
 	}
-	return fmt.Sprintf("Read-only conversation context from %s. Original source IDs and authors follow. Tool traces and attachment contents are excluded unless selected separately. %d earlier turns omitted.\n%s", sessionConversation(source).Key, start, strings.Join(parts[start:], "")), start
+	return fmt.Sprintf("Read-only conversation context from %s. Original source IDs and authors follow. Tool traces and attachment contents are excluded unless selected separately. %d earlier turns omitted.\n%s", key, start, strings.Join(parts[start:], "")), start
 }

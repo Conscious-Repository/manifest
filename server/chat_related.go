@@ -35,10 +35,11 @@ func (s *Server) handleChatRelated(w http.ResponseWriter, r *http.Request) {
 		s.handleRelatedCodingChat(w, r, b, origin)
 		return
 	}
-	if b.Backend != "" || b.Mode != "" {
+	if b.Backend != "" || (b.Mode != "" && (b.Mode != "continue" || origin.Backend != "terminal")) {
 		httpError(w, errBadRequest("unsupported related chat backend"))
 		return
 	}
+	origin.Mode = b.Mode
 	accepted, found, recoverErr := s.agentChat.store.RecoverRelatedCreation(b.Agent, b.Title, b.Model, b.RequestID, origin)
 	if recoverErr != nil {
 		if errors.Is(recoverErr, agentchat.ErrRequestConflict) {
@@ -57,6 +58,10 @@ func (s *Server) handleChatRelated(w http.ResponseWriter, r *http.Request) {
 		ok = false
 		if s.terminal != nil {
 			if se, found := s.terminal.find(origin.ID); found && se.Kind == origin.Agent && se.Device == "" {
+				if origin.Mode == "continue" && se.Origin != nil && se.Origin.Mode == "continue" {
+					httpError(w, errBadRequest("continue from the original conversation instead"))
+					return
+				}
 				ok = true
 				source = agentchat.Session{Agent: origin.Agent, ID: origin.ID}
 				for _, link := range s.terminalConversation(se).Links {
