@@ -195,9 +195,9 @@ func parseClaudeTranscript(r io.Reader, base ...int64) termTranscript {
 			if json.Unmarshal(rec.Message, &m) != nil {
 				return
 			}
-			blocks, text := claudeContent(m.Content)
+			blocks, text := claudeContent(m.Content, rec.Type == "user")
 			if rec.Type == "user" {
-				if text != "" && !claudeNoiseRe.MatchString(text) {
+				if strings.TrimSpace(text) != "" && !claudeNoiseRe.MatchString(text) {
 					b.user(rec.Timestamp, text)
 				}
 				for _, bl := range blocks {
@@ -205,7 +205,7 @@ func parseClaudeTranscript(r io.Reader, base ...int64) termTranscript {
 						_, rt := claudeContent(bl.Content)
 						b.result(rec.Timestamp, bl.ToolUseID, rt, bl.IsError)
 					} else if bl.Type == "text" && strings.TrimSpace(bl.Text) != "" && !claudeNoiseRe.MatchString(bl.Text) {
-						b.user(rec.Timestamp, strings.TrimSpace(bl.Text))
+						b.user(rec.Timestamp, bl.Text)
 					}
 				}
 				return
@@ -234,7 +234,10 @@ var claudeNoiseRe = regexp.MustCompile(`^\s*<(command-name|command-message|local
 // claudeContent splits a content field: a bare string → text; an array →
 // its blocks, with the text blocks' text also joined for convenience when
 // the array is nothing but text (a user turn with pasted parts).
-func claudeContent(raw json.RawMessage) ([]claudeBlock, string) {
+func claudeContent(raw json.RawMessage, preserve ...bool) ([]claudeBlock, string) {
+	// Owner text participates in exact delivery-receipt matching. Keep its
+	// whitespace as recorded; formatting cleanup belongs to the renderer.
+	keep := len(preserve) > 0 && preserve[0]
 	raw = bytes.TrimSpace(raw)
 	if len(raw) == 0 {
 		return nil, ""
@@ -242,7 +245,10 @@ func claudeContent(raw json.RawMessage) ([]claudeBlock, string) {
 	if raw[0] == '"' {
 		var s string
 		_ = json.Unmarshal(raw, &s)
-		return nil, strings.TrimSpace(s)
+		if !keep {
+			s = strings.TrimSpace(s)
+		}
+		return nil, s
 	}
 	var blocks []claudeBlock
 	if json.Unmarshal(raw, &blocks) != nil {
@@ -256,6 +262,9 @@ func claudeContent(raw json.RawMessage) ([]claudeBlock, string) {
 			break
 		}
 		if t := strings.TrimSpace(bl.Text); t != "" {
+			if keep {
+				t = bl.Text
+			}
 			parts = append(parts, t)
 		}
 	}

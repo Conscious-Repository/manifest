@@ -10,6 +10,20 @@ import (
 	"testing"
 )
 
+func TestClaudeOwnerTextPreservesReceiptBytes(t *testing.T) {
+	text := "  selected plan instruction\n```json\n{}\n```\n"
+	for _, content := range []any{text, []map[string]string{{"type": "text", "text": text}}} {
+		line, err := json.Marshal(map[string]any{"type": "user", "message": map[string]any{"role": "user", "content": content}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		tr := parseClaudeTranscript(strings.NewReader(string(line) + "\n"))
+		if len(tr.Turns) != 1 || tr.Turns[0].Text != text {
+			t.Fatalf("owner receipt bytes changed: %+v", tr.Turns)
+		}
+	}
+}
+
 func TestTerminalTurnIdentitySurvivesTailAndAppend(t *testing.T) {
 	for _, kind := range []string{"claude", "codex"} {
 		t.Run(kind, func(t *testing.T) {
