@@ -30,6 +30,25 @@ func (s *Server) handleRelatedCodingChat(w http.ResponseWriter, r *http.Request,
 		httpError(w, errBadRequest("unsupported coding continuation mode"))
 		return
 	}
+	shareAgent, shareID := origin.Agent, origin.ID
+	if origin.Backend == "terminal" {
+		if source, ok := s.terminal.find(origin.ID); ok {
+			shareAgent, shareID = s.terminalShareSource(source)
+		}
+	}
+	release, err := s.chatShareMutation(shareAgent, shareID)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusConflict)
+		return
+	}
+	defer release()
+	if b.Mode == "continue" && privateShareSource(shareAgent, shareID) && s.agentChat != nil {
+		if source, _, _, ok := s.agentChat.store.Get(shareAgent, shareID); ok && source.Sharing != nil {
+			http.Error(w, "Continue with an existing shared terminal from the team conversation; this source's reviewed runtime set is already shared.", http.StatusConflict)
+			return
+		}
+	}
+
 	origin.Mode = b.Mode
 	raw, _ := json.Marshal(struct {
 		Agent, Title, Model, Cwd string

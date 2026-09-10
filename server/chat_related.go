@@ -39,6 +39,13 @@ func (s *Server) handleChatRelated(w http.ResponseWriter, r *http.Request) {
 		httpError(w, errBadRequest("unsupported related chat backend"))
 		return
 	}
+	release, gateErr := s.chatShareMutation(origin.Agent, origin.ID)
+	if gateErr != nil {
+		http.Error(w, gateErr.Error(), http.StatusConflict)
+		return
+	}
+	defer release()
+
 	origin.Mode = b.Mode
 	accepted, found, recoverErr := s.agentChat.store.RecoverRelatedCreation(b.Agent, b.Title, b.Model, b.RequestID, origin)
 	if recoverErr != nil {

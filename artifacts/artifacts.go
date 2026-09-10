@@ -204,7 +204,14 @@ func (s *Store) Add(domain string, e Entry) error {
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	list := s.load(domain)
+	list := []Entry{}
+	raw, err := os.ReadFile(s.indexPath(domain))
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	if err == nil && json.Unmarshal(raw, &list) != nil {
+		return errors.New("artifact index is unreadable; existing access records were preserved")
+	}
 	for _, x := range list {
 		if x.Hash == e.Hash && x.Thread == e.Thread && x.ByEmail == e.ByEmail {
 			return nil

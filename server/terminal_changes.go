@@ -18,6 +18,12 @@ func (s *Server) handleTermChangesSnapshot(w http.ResponseWriter, r *http.Reques
 	if !ok {
 		return
 	}
+	release, allowed := s.guardTerminalShare(w, se)
+	if !allowed {
+		return
+	}
+	defer release()
+
 	if s.artifactReg == nil || se.Device != "" || se.Cwd == "" {
 		http.Error(w, "working-folder snapshot unavailable", http.StatusBadRequest)
 		return

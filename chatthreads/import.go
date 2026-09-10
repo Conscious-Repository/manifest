@@ -16,28 +16,10 @@ var ErrImportConflict = errors.New("team thread already exists with different im
 // All attachment references must already resolve in the destination domain.
 // Exact retries recover even if writing activity.log failed after state commit.
 func (s *Store) ImportSharedThread(thread Thread, messages []Message, now time.Time) (Thread, error) {
-	if thread.ID == "" || thread.ImportSource == "" || thread.ImportRevision == "" || thread.ImportFingerprint != "" || thread.Created.IsZero() {
-		return Thread{}, errors.New("invalid shared conversation import")
-	}
-	seen := map[string]bool{}
-	for _, m := range messages {
-		if m.ID == "" || m.Thread != thread.ID || m.Author == "" || m.At.IsZero() || seen[m.ID] {
-			return Thread{}, errors.New("invalid imported message identity")
-		}
-		seen[m.ID] = true
-	}
-	bytes, err := json.Marshal(struct {
-		Thread   Thread
-		Messages []Message
-	}{thread, messages})
+	fingerprint, err := sharedImportFingerprint(thread, messages)
 	if err != nil {
 		return Thread{}, err
 	}
-	if len(bytes) > 8*1024*1024 {
-		return Thread{}, errors.New("conversation exceeds the sharing import limit")
-	}
-	sum := sha256.Sum256(bytes)
-	fingerprint := hex.EncodeToString(sum[:])
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	st := state{Messages: map[string][]Message{}}
@@ -65,4 +47,35 @@ func (s *Store) ImportSharedThread(thread Thread, messages []Message, now time.T
 	st.Messages[thread.ID] = append([]Message(nil), messages...)
 	err = s.write(st, Entry{TS: now.UTC(), Actor: thread.By, Action: "thread-share", Payload: map[string]any{"thread": thread.ID, "source": thread.ImportSource, "revision": thread.ImportRevision, "messages": len(messages)}})
 	return thread, err
+}
+
+// ValidateSharedImport checks the exact import representation without writing.
+// Publication callers use this before fencing the private source.
+func ValidateSharedImport(thread Thread, messages []Message) error {
+	_, err := sharedImportFingerprint(thread, messages)
+	return err
+}
+func sharedImportFingerprint(thread Thread, messages []Message) (string, error) {
+	if thread.ID == "" || thread.ImportSource == "" || thread.ImportRevision == "" || thread.ImportFingerprint != "" || thread.Created.IsZero() {
+		return "", errors.New("invalid shared conversation import")
+	}
+	seen := map[string]bool{}
+	for _, m := range messages {
+		if m.ID == "" || m.Thread != thread.ID || m.Author == "" || m.At.IsZero() || seen[m.ID] {
+			return "", errors.New("invalid imported message identity")
+		}
+		seen[m.ID] = true
+	}
+	bytes, err := json.Marshal(struct {
+		Thread   Thread
+		Messages []Message
+	}{thread, messages})
+	if err != nil {
+		return "", err
+	}
+	if len(bytes) > 8*1024*1024 {
+		return "", errors.New("conversation exceeds the sharing import limit")
+	}
+	sum := sha256.Sum256(bytes)
+	return hex.EncodeToString(sum[:]), nil
 }

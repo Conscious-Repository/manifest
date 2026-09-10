@@ -122,6 +122,17 @@ func (s *Server) handleTermLiveClose(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), 400)
 		return
 	}
+	se, err := s.terminalForHandle(id)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusConflict)
+		return
+	}
+	release, allowed := s.guardTerminalShare(w, se)
+	if !allowed {
+		return
+	}
+	defer release()
+
 	if err = s.terminal.herdr.Close(r.Context(), id); err != nil {
 		http.Error(w, err.Error(), 502)
 		return

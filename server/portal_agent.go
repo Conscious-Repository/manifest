@@ -261,6 +261,12 @@ func (s *Server) chatAskFor(ag *chatAgent, thread, text, ritual string, context 
 	if ag == nil {
 		return errBadRequest("chat is not configured")
 	}
+	if t, ok := portalChatThread(ag, thread); ok && t.SharedSource != nil {
+		if _, err := s.sharedConversationReview(ag, thread); err != nil {
+			return errBadRequest("Conversation sharing is not complete or this thread is archived; recover the share before sending.")
+		}
+	}
+
 	ritual = strings.TrimSpace(ritual)
 	if ritual != "ask" && ritual != "delegate" {
 		ritual = "ask"

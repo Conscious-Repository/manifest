@@ -60,10 +60,11 @@ import (
 var webFiles embed.FS
 
 type Server struct {
-	chatState  *chatstate.Store
-	svc        *daily.Service
-	goals      *goals.Store
-	tasksStore *tasks.Store // the third surface — vault-root `tasks.md` (nilable)
+	chatShareWriters sync.Map // source identity -> writer/publication RWMutex
+	chatState        *chatstate.Store
+	svc              *daily.Service
+	goals            *goals.Store
+	tasksStore       *tasks.Store // the third surface — vault-root `tasks.md` (nilable)
 	// ownerInitials identify "me" in the unified todo projection (stage 4):
 	// empty/"me"/containing-these-initials owners are mine.
 	ownerInitials string
@@ -603,6 +604,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/agents/chat/{agent}/delivery", s.handleAgentChatDelivery)
 	mux.HandleFunc("GET /api/agents/chat/{agent}/sessions/{id}", s.portalChatRoute(s.handlePortalChatSession, s.handleAgentChatSession))
 	mux.HandleFunc("GET /api/agents/chat/{agent}/sessions/{id}/share-review", s.handleChatShareReview)
+	mux.HandleFunc("GET /api/agents/chat/{agent}/sessions/{id}/share", s.handleChatShareStatus)
+	mux.HandleFunc("POST /api/agents/chat/{agent}/sessions/{id}/share", s.handleChatSharePublish)
 	mux.HandleFunc("POST /api/agents/chat/{agent}/sessions/{id}/related", s.handleChatRelated)
 	mux.HandleFunc("POST /api/terminal/{agent}/session/{id}/related", s.handleTerminalChatRelated)
 	mux.HandleFunc("POST /api/agents/chat/{agent}/sessions/{id}/coding-result", s.handleChatCodingResult)

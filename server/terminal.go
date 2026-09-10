@@ -744,6 +744,12 @@ func (s *Server) handleTermKill(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "no such session", http.StatusNotFound)
 		return
 	}
+	release, allowed := s.guardTerminalShare(w, se)
+	if !allowed {
+		return
+	}
+	defer release()
+
 	if err := s.closeTerm(r.Context(), se); err != nil {
 		http.Error(w, err.Error(), http.StatusBadGateway)
 		return
@@ -795,6 +801,16 @@ func (s *Server) handleTermDelete(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "no such session", http.StatusNotFound)
 		return
 	}
+	release, allowed := s.guardTerminalShare(w, se)
+	if !allowed {
+		return
+	}
+	defer release()
+	if s.terminalSharedConversation(se) != nil {
+		http.Error(w, "Shared conversations retain their terminal history; stop this session instead of forgetting it.", http.StatusConflict)
+		return
+	}
+
 	if se.BoardBrief != "" {
 		http.Error(w, "work-order session links belong to board history and cannot be forgotten", http.StatusConflict)
 		return
@@ -1042,7 +1058,11 @@ func (s *Server) handleTermWS(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, e.Error(), 502)
 			return
 		}
-		se = termSession{Backend: "herdr", Runtime: runtime}
+		se, e = s.terminalForHandle(runtime)
+		if e != nil {
+			http.Error(w, e.Error(), http.StatusConflict)
+			return
+		}
 		ok = true
 	} else if !ok || !termIDRe.MatchString(id) {
 		http.Error(w, "no such session", 404)
@@ -1052,6 +1072,12 @@ func (s *Server) handleTermWS(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "unsupported terminal backend", http.StatusServiceUnavailable)
 		return
 	}
+	release, allowed := s.guardTerminalShare(w, se)
+	if !allowed {
+		return
+	}
+	defer release()
+
 	cols, rows := clampDim(r.URL.Query().Get("c"), 120), clampDim(r.URL.Query().Get("r"), 32)
 	if se.isDraft() {
 		http.Error(w, "send the first message from chat to start this draft", http.StatusConflict)

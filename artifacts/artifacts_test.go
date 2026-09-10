@@ -194,3 +194,18 @@ func TestListIsNewestFirst(t *testing.T) {
 		t.Fatalf("empty domain returned %d", len(got))
 	}
 }
+
+func TestAddPreservesCorruptDomainIndex(t *testing.T) {
+	s, _ := store(t)
+	path := s.indexPath("aion")
+	if err := os.WriteFile(path, []byte("broken index"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	err := s.Add("aion", Entry{Ref: Ref{Hash: Hash([]byte("new")), Name: "new.txt"}})
+	if err == nil {
+		t.Fatal("corrupt index was replaced")
+	}
+	if raw, _ := os.ReadFile(path); string(raw) != "broken index" {
+		t.Fatal("prior access records were lost")
+	}
+}

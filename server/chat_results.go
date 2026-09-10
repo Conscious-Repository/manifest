@@ -73,6 +73,13 @@ func (s *Server) handleChatCodingResult(w http.ResponseWriter, r *http.Request) 
 		http.Error(w, "artifact registry unavailable", http.StatusServiceUnavailable)
 		return
 	}
+	release, gateErr := s.chatShareMutation(r.PathValue("agent"), r.PathValue("id"))
+	if gateErr != nil {
+		http.Error(w, gateErr.Error(), http.StatusConflict)
+		return
+	}
+	defer release()
+
 	var b struct{ Agent, Run, Hash string }
 	if err := decode(r, &b); err != nil {
 		httpError(w, err)

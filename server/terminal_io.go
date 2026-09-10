@@ -164,6 +164,12 @@ func (s *Server) handleTermInput(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	release, allowed := s.guardTerminalShare(w, se)
+	if !allowed {
+		return
+	}
+	defer release()
+
 	if se.Device != "" {
 		http.Error(w, "input is metis-local only", http.StatusBadRequest)
 		return
