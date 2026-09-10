@@ -107,10 +107,75 @@
       // A later selection or navigation must not be reset by an old response.
       setSelections(all=>({...all,[id]:(all[id]||[]).filter(hash=>!selected.includes(hash))}));
     }
+    const [plan,setPlan]=React.useState(null), [planBusy,setPlanBusy]=React.useState(false), [planError,setPlanError]=React.useState('');
+    const planSeq=React.useRef(0);
+    const planKey=pid=>'manifest.shared-plan.v1.'+(identity?.email||'member')+'.'+id+'.'+pid;
+    const currentPlan=plan?.thread===id?plan:null;
+    React.useEffect(()=>{planSeq.current++;setPlan(null);setPlanBusy(false);setPlanError('');},[id,shared]);
+    function keepDraft(next){
+      try{localStorage.setItem(planKey(next.id),JSON.stringify({draft:next.draft,expected:next.expected,uncertain:!!next.uncertain}));return true;}
+      catch(e){setPlanError('Draft could not be stored on this device. Copy your text before leaving.');return false;}
+    }
+    async function openPlan(pid,revision){
+      const scope=generation.current,seq=++planSeq.current;
+      setPlanBusy(true);setPlanError('');
+      try{
+        const data=await request('/api/chat/threads/'+encodeURIComponent(id)+'/plans/'+encodeURIComponent(pid)+(revision?'?revision='+encodeURIComponent(revision):''));
+        if(scope!==generation.current||seq!==planSeq.current)return;
+        const saved=JSON.parse(localStorage.getItem(planKey(pid))||'null');
+        setPlan({thread:id,...data,draft:saved?.draft??data.content,expected:saved?.expected??data.head,uncertain:!!saved?.uncertain});
+      }catch(e){if(scope===generation.current&&seq===planSeq.current)setPlanError(e.message||'Plan could not load. Your saved draft is retained.');}
+      finally{if(scope===generation.current&&seq===planSeq.current)setPlanBusy(false);}
+    }
+    async function savePlan(){
+      if(!currentPlan||planBusy||currentPlan.uncertain)return;
+      const p=currentPlan,scope=generation.current,seq=++planSeq.current;
+      // Persist uncertainty BEFORE the request: navigation or a lost response
+      // must never silently turn a save into an automatic retry.
+      if(!keepDraft({...p,uncertain:true}))return;
+      setPlan({...p,uncertain:true});setPlanBusy(true);setPlanError('');
+      try{
+        const data=await request('/api/chat/threads/'+encodeURIComponent(id)+'/plans/'+encodeURIComponent(p.id),{content:p.draft,expectedRevision:p.expected});
+        // A successful response may show a later external edit. Keep the draft
+        // until its normalized bytes match the authoritative head.
+        if(data.content.trim()!==p.draft.trim())throw Error('The working plan changed again. Reload and compare your retained draft.');
+        const retained=JSON.parse(localStorage.getItem(planKey(p.id))||'null');
+        if(retained?.draft===p.draft&&retained?.expected===p.expected)localStorage.removeItem(planKey(p.id));
+        if(scope===generation.current&&seq===planSeq.current){setPlan({thread:id,...data,draft:data.content,expected:data.head,uncertain:false});setPlanError('Saved to the original plan.');refresh();}
+      }catch(e){if(scope===generation.current&&seq===planSeq.current)setPlanError((e.message||'Save not confirmed.')+' Your draft is retained. Reload current and compare before saving again.');}
+      finally{if(scope===generation.current&&seq===planSeq.current)setPlanBusy(false);}
+    }
+    function planPanel(){
+      const p=currentPlan,h=React.createElement;
+      if(!p)return null;
+      const dirty=p.draft!==p.content;
+      return h('section',{className:'shared-plan-panel','aria-label':'Original plan editor'},
+        h('h2',null,'Plan · original working plan'),
+        h('button',{type:'button',onClick:()=>{planSeq.current++;setPlan(null);setPlanBusy(false);}},'Return to conversation'),
+        h('p',null,'Edits update the original plan for everyone. Saving creates a reversible version and does not run the plan.'),
+        h('label',null,'Version ',h('select',{'aria-label':'Plan version',value:p.revision,disabled:planBusy,onChange:e=>openPlan(p.id,e.target.value)},...p.versions.map(v=>h('option',{key:v.n,value:v.hash},'Version '+v.n+(v.hash===p.head?' · current':'')+' · '+v.actor)))),
+        h('pre',{'aria-label':'Selected plan bytes',style:{whiteSpace:'pre-wrap',overflowWrap:'anywhere',maxHeight:'24vh',overflow:'auto'}},p.content),
+        h('button',{type:'button',disabled:planBusy||!!pending,onClick:()=>{setSelections(all=>({...all,[id]:[...new Set([...(all[id]||[]),p.file.hash])]}));setPlan(null);setPlanError('Selected exact plan version for your next message.');}},'Discuss this version'),
+        p.revision!==p.head&&h('button',{type:'button',disabled:planBusy,onClick:()=>{const next={...p,draft:p.content};if(keepDraft(next))setPlan(next);}},'Restore as new version'),
+        h('label',{style:{display:'block',marginTop:16}},'Edit original plan',h('textarea',{'aria-label':'Edit original plan',value:p.draft,disabled:planBusy,onChange:e=>{const next={...p,draft:e.target.value};setPlan(next);keepDraft(next);},style:{display:'block',width:'100%',boxSizing:'border-box',minHeight:240}})),
+        h('details',null,h('summary',null,'Compare selected version and draft'),h('p',null,'Selected version is shown above. Draft to save:'),h('pre',{style:{whiteSpace:'pre-wrap',overflowWrap:'anywhere'}},p.draft)),
+        (p.expected!==p.head||p.uncertain)&&h('p',{role:'status'},'Review required. Your draft may differ from the current original. Reload current to check whether it saved.'),
+        h('button',{type:'button',disabled:planBusy,onClick:()=>openPlan(p.id)},'Reload current'),
+        h('button',{type:'button',disabled:planBusy||p.revision!==p.head,onClick:()=>{const next={...p,expected:p.head,uncertain:false};if(keepDraft(next))setPlan(next);}},'Use current as save base'),
+        h('button',{type:'button',disabled:planBusy||p.uncertain||p.expected!==p.head,onClick:savePlan},planBusy?'Saving…':'Save new version'),
+        h('button',{type:'button',disabled:planBusy,onClick:()=>{localStorage.removeItem(planKey(p.id));setPlan({...p,draft:p.content,expected:p.head,uncertain:false});}},'Discard draft'),
+        dirty&&h('p',null,'Draft retained on this device.'),
+        planError&&h('p',{role:'alert'},planError));
+    }
+
     function controls(team, classes, onConfirmed) {
       if(!shared)return null;
       const h=React.createElement;
       return h('div',{style:{padding:'10px 0',borderBottom:'1px solid var(--line, #38505c)',overflowWrap:'anywhere'}},
+        h('style',null,'@media(min-width:1000px){.shared-plan-open{margin-right:min(42vw,644px)}}.shared-plan-panel{position:fixed;z-index:100;right:12px;top:70px;bottom:12px;width:min(40vw,620px);box-sizing:border-box;overflow:auto;padding:20px;background:var(--bg,#16232c);color:var(--ink,#eee);border:1px solid var(--line,#567)}.shared-plan-panel button{min-height:44px;margin:4px}.shared-plan-panel select{max-width:100%}@media(max-width:999px){.shared-plan-panel{inset:0;width:100%;padding:16px}}'),
+        ...(value?.plans||[]).map((p,i)=>h('button',{key:p.id,type:'button',disabled:planBusy,onClick:()=>openPlan(p.id)},'Edit original plan'+(value.plans.length>1?' '+(i+1):''))),
+        !currentPlan&&planError&&h('p',{role:'status'},planError),
+        planPanel(),
         h('label',null,'To ',h('select',{className:classes,value:recipient,disabled:recovering,onChange:e=>setRecipients(current=>({...current,[id]:e.target.value})), 'aria-label':'Message recipient'},
           h('option',{value:''},value?'Choose agent…':'Loading agents…'),
           h('option',{value:'team'},team+' · team agent'),
@@ -134,7 +199,7 @@
         pending && h('details',null,h('summary',null,pending.key?'Terminal control awaiting confirmation':'Message awaiting confirmation'),h('p',{style:{whiteSpace:'pre-wrap'}},pending.label||pending.key||pending.text),
           h('button',{type:'button',disabled:recovering,onClick:async()=>{const scope=generation.current;setRecovering(true);try{const sent=await submit(pending);if(scope===generation.current && onConfirmed && !pending.key)onConfirmed(sent);}catch(e){if(scope===generation.current)setError(e.message);}finally{if(scope===generation.current)setRecovering(false);}}},recovering?'Checking…':pending.key?'Check saved control':'Retry saved message')));
     }
-    return {shared,ready:!shared||!!value,messages:value?value.messages:stored,terminals,recipient,native,send,refresh,controls,teamContext,filesConfirmed};
+    return {planOpen:!!currentPlan,shared,ready:!shared||!!value,messages:value?value.messages:stored,terminals,recipient,native,send,refresh,controls,teamContext,filesConfirmed};
   }
   window.SHARED_CHAT={useThread};
 })();

@@ -18,14 +18,17 @@ import (
 var errPlanRevision = errors.New("the plan changed since you opened it; review the latest version before saving")
 
 func (s *Server) snapshotTaskPlan(id, text, note string) (artifacts.Artifact, error) {
+	return s.snapshotTaskPlanAs(id, text, note, "owner")
+}
+func (s *Server) snapshotTaskPlanAs(id, text, note, actor string) (artifacts.Artifact, error) {
 	if s.artifactReg == nil {
 		return artifacts.Artifact{}, errors.New("artifact versions unavailable")
 	}
 	// Keep an empty plan representable without changing the registry's nonempty contract.
 	content := strings.TrimSpace(text) + "\n"
-	res, err := s.artifactReg.Put(artifacts.Put{Kind: artifacts.KindPlan, Title: "Plan", Harness: "vault", Ref: s.todoPlans.rel(id) + "#plan", Content: []byte(content), Actor: "owner", Note: note, Provenance: artifacts.Provenance{Source: "task-plan", Task: id}})
+	res, err := s.artifactReg.Put(artifacts.Put{Kind: artifacts.KindPlan, Title: "Plan", Harness: "vault", Ref: s.todoPlans.rel(id) + "#plan", Content: []byte(content), Actor: actor, Note: note, Provenance: artifacts.Provenance{Source: "task-plan", Task: id}})
 	if err == nil {
-		s.artifactEvent(res, "owner")
+		s.artifactEvent(res, actor)
 	}
 	return res.Artifact, err
 }
@@ -64,6 +67,9 @@ func (s *Server) handleTaskPlanWorkspace(w http.ResponseWriter, r *http.Request)
 // saveTaskPlanVersion checks against the live section, retaining the old bytes
 // BEFORE changing the file. Restoring is an ordinary new version, never a rewind.
 func (s *Server) saveTaskPlanVersion(id, text, expected string) error {
+	return s.saveTaskPlanVersionAs(id, text, expected, "owner", "Saved plan revision", nil)
+}
+func (s *Server) saveTaskPlanVersionAs(id, text, expected, actor, note string, authorize func() error) error {
 	if expected == "" {
 		return errBadRequest("expected plan revision is required")
 	}
@@ -71,6 +77,11 @@ func (s *Server) saveTaskPlanVersion(id, text, expected string) error {
 		return errors.New("plan versions unavailable")
 	}
 	err := s.vault.ReplaceSectionCapChecked("todo-plans", s.todoPlans.rel(id), "plan", text, func(raw []byte) error {
+		if authorize != nil {
+			if err := authorize(); err != nil {
+				return err
+			}
+		}
 		fm, body := mdfm.Split(string(raw))
 		if record.Unquote(fm["todo"]) != id {
 			return errors.New("plan identity mismatch")
@@ -87,8 +98,12 @@ func (s *Server) saveTaskPlanVersion(id, text, expected string) error {
 	}
 	// Re-read under the same lock as observers. If an external edit intervenes,
 	// retain the requested version and let the next workspace read observe latest.
+	// This is not a cross-file transaction: a crash after the vault replacement
+	// can leave the new content without this actor receipt. A later GET observes
+	// actual vault bytes; callers must retain uncertain drafts and never replay
+	// against a newly observed base without explicit review.
 	return s.vault.UpdateCap("todo-plans", s.todoPlans.rel(id), func(raw []byte) ([]byte, error) {
-		if _, err := s.snapshotTaskPlan(id, text, "Saved plan revision"); err != nil {
+		if _, err := s.snapshotTaskPlanAs(id, text, note, actor); err != nil {
 			return nil, err
 		}
 		_, body := mdfm.Split(string(raw))

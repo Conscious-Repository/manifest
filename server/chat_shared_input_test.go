@@ -15,17 +15,24 @@ import (
 )
 
 func sharedInputFixture(t *testing.T, uncertain bool, prepare ...func(*chatShareReview, termSession, *Server)) (*Server, termSession, string, *atomic.Int32) {
+	return sharedInputDomainFixture(t, uncertain, "kairos", prepare...)
+}
+
+func sharedInputDomainFixture(t *testing.T, uncertain bool, agent string, prepare ...func(*chatShareReview, termSession, *Server)) (*Server, termSession, string, *atomic.Int32) {
 	t.Helper()
 	s, se, sends := terminalReceiptFixture(t, uncertain)
 	private, store, _ := agentChatFixture(t, echoStub)
 	s.agentChat = private.agentChat
 	team, _ := chatFixture(t)
 	s.chat = team.chat
-	id, err := store.Create("kairos-private", "kairos-private", "Shared code", "")
+	if agent == "zeck" {
+		s.oodaChat = team.chat
+	}
+	id, err := store.Create(agent+"-private", agent+"-private", "Shared code", "")
 	if err != nil {
 		t.Fatal(err)
 	}
-	source, body, _, _ := store.Get("kairos-private", id)
+	source, body, _, _ := store.Get(agent+"-private", id)
 	se.Origin = &agentchat.Origin{Mode: "continue", Agent: source.Agent, ID: source.ID}
 	if err := s.terminal.upsertChecked(se); err != nil {
 		t.Fatal(err)
@@ -42,7 +49,7 @@ func sharedInputFixture(t *testing.T, uncertain bool, prepare ...func(*chatShare
 	review.Revision = hashTerminalText(string(unsigned))
 	payload, _ := json.Marshal(review)
 	thread := chatthreads.Thread{ID: "team-input-one", Created: time.Now().UTC(), ImportSource: sessionConversation(source).Key, ImportRevision: review.Revision, SharedSource: &chatthreads.SharedSource{Agent: source.Agent, ID: source.ID}}
-	if _, _, err := store.BeginReviewedShare(source.Agent, source.ID, "shared-input-consent", review.SourceRevision, "kairos", thread.ID, payload); err != nil {
+	if _, _, err := store.BeginReviewedShare(source.Agent, source.ID, "shared-input-consent", review.SourceRevision, agent, thread.ID, payload); err != nil {
 		t.Fatal(err)
 	}
 	msg := chatthreads.Message{ID: "shared-initial", Thread: thread.ID, Kind: "ask", Author: "member@aion.bio", AuthName: "Member", At: thread.Created, Text: "TEAM_CONTEXT_MARKER"}

@@ -157,7 +157,7 @@ function ViewChat({ data }) {
   const props = (data.portfolio && data.portfolio.properties) || [];
 
   return (
-    <div className="ooda-split">
+    <div className={"ooda-split"+(shared.planOpen ? " shared-plan-open" : "")}>
       <div className="ooda-list">
         {noAgent && !shared.native ? (
           <div className="ooda-stale">zeck is not configured on this box yet — threads still work</div>

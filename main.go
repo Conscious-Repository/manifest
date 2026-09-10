@@ -1028,6 +1028,7 @@ func main() {
 		portalOpts.ChatConversation = srv.AionChatConversation
 		portalOpts.ChatTerminalRead = srv.AionChatTerminalRead
 		portalOpts.ChatTerminalScreen = srv.AionChatTerminalScreen
+		portalOpts.ChatPlan = srv.AionChatPlan
 		portalOpts.ChatTerminalInput = srv.AionChatTerminalInput
 		portalOpts.ChatThread = srv.AionChatThread
 		portalOpts.ChatAsk = srv.AionChatAsk
@@ -1168,6 +1169,7 @@ func main() {
 				oodaOpts.ChatConversation = srv.OodaChatConversation
 				oodaOpts.ChatTerminalRead = srv.OodaChatTerminalRead
 				oodaOpts.ChatTerminalScreen = srv.OodaChatTerminalScreen
+				oodaOpts.ChatPlan = srv.OodaChatPlan
 				oodaOpts.ChatTerminalInput = srv.OodaChatTerminalInput
 				oodaOpts.ChatThread = srv.OodaChatThread
 				oodaOpts.ChatAsk = srv.OodaChatAsk

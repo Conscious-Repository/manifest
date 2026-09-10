@@ -176,7 +176,7 @@ function ChatView({ me, goalsIndex, items, filter, openItem, w, seed, onSeedUsed
   };
 
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: wide ? 'minmax(0,1fr) 244px' : 'minmax(0,1fr)',
+    <div className={shared.planOpen ? 'shared-plan-open' : ''} style={{ display: 'grid', gridTemplateColumns: wide ? 'minmax(0,1fr) 244px' : 'minmax(0,1fr)',
       gap: '0 26px', alignItems: 'start' }}>
       {/* ── thread column ── */}
       <div style={{ display: 'flex', flexDirection: 'column', minHeight: 'calc(100vh - 150px)', minWidth: 0 }}>

@@ -91,6 +91,7 @@ type PortalOptions struct {
 	ChatConversation   func(w http.ResponseWriter, r *http.Request)
 	ChatTerminalRead   func(w http.ResponseWriter, r *http.Request)
 	ChatTerminalScreen func(w http.ResponseWriter, r *http.Request)
+	ChatPlan           func(w http.ResponseWriter, r *http.Request, memberEmail, memberName string)
 	ChatTerminalInput  func(w http.ResponseWriter, r *http.Request, memberEmail, memberName string)
 }
 
@@ -191,6 +192,10 @@ func PortalHandler(opt PortalOptions) (http.Handler, error) {
 			}
 			if opt.ChatConversation != nil {
 				mux.HandleFunc("GET /api/chat/threads/{thread}/conversation", api.handleChatConversation)
+			}
+			if opt.ChatPlan != nil {
+				mux.HandleFunc("GET /api/chat/threads/{thread}/plans/{plan}", api.handleChatPlan)
+				mux.HandleFunc("POST /api/chat/threads/{thread}/plans/{plan}", api.handleChatPlan)
 			}
 			if opt.ChatTerminalScreen != nil {
 				mux.HandleFunc("GET /api/chat/threads/{thread}/terminals/{terminal}/screen", api.handleChatTerminalScreen)
@@ -1229,4 +1234,12 @@ func liveOrNil(l PortalLive) PortalLive {
 		return nil
 	}
 	return l
+}
+
+func (p *portalAPI) handleChatPlan(w http.ResponseWriter, r *http.Request) {
+	id, ok := p.identify(w, r)
+	if !ok {
+		return
+	}
+	p.opt.ChatPlan(w, r, id.Email, id.Name)
 }

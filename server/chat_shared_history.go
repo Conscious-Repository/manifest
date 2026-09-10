@@ -136,5 +136,5 @@ func (s *Server) sharedConversationHistory(ag *chatAgent, w http.ResponseWriter,
 		}
 	}
 	w.Header().Set("Cache-Control", "no-store")
-	writeJSON(w, map[string]any{"thread": thread, "messages": sharedHistoryMessages(review, thread, ag.Store.Messages(thread), views), "terminals": views, "warnings": warnings, "files": s.sharedConversationFiles(ag, thread, review)})
+	writeJSON(w, map[string]any{"thread": thread, "messages": sharedHistoryMessages(review, thread, ag.Store.Messages(thread), views), "terminals": views, "warnings": warnings, "files": s.sharedConversationFiles(ag, thread, review), "plans": s.sharedPlans(review)})
 }
