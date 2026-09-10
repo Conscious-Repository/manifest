@@ -104,7 +104,8 @@ chatTermPaintTurns = () => {};
  assert.ok(reads>=beforePending+2,'stop during read must queue another final tail');
 })().catch(err=>{console.error(err);process.exitCode=1;});
 `
-	cmd := exec.Command(node, "-e", script)
+	cmd := exec.Command(node, "-")
+	cmd.Stdin = strings.NewReader(script)
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("terminal browser fixture: %v\n%s", err, out)
 	}

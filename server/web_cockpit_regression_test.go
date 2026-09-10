@@ -2,6 +2,7 @@ package server
 
 import (
 	"os/exec"
+	"strings"
 	"testing"
 )
 
@@ -30,7 +31,9 @@ global.els={chatView:{hidden:false}};
  await pending;
  assert.equal(paints,0,'a previous conversation must not replace the current transcript');
 })().catch(e=>{console.error(e);process.exit(1);});`
-	if out, err := exec.Command(node, "-e", script).CombinedOutput(); err != nil {
+	cmd := exec.Command(node, "-")
+	cmd.Stdin = strings.NewReader(script)
+	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("%v\n%s", err, out)
 	}
 }
@@ -56,7 +59,9 @@ global.document={getElementById(){return null;},querySelector(){return null;}};
  resolve({id:'one'});await first;
  assert.equal(termCreating,false);
 })().catch(e=>{console.error(e);process.exit(1);});`
-	if out, err := exec.Command(node, "-e", script).CombinedOutput(); err != nil {
+	cmd := exec.Command(node, "-")
+	cmd.Stdin = strings.NewReader(script)
+	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("%v\n%s", err, out)
 	}
 }
@@ -82,7 +87,9 @@ chatSearchQuery='';chatInboxFilter='alfred';assert.equal(chatInboxEntries().leng
 assert.equal(chatInboxEntries()[0].session.title,'Plan');
 chatInboxFilter='all';chatSearchQuery='missing';assert.equal(chatInboxEntries().length,0);
 `
-	if out, err := exec.Command(node, "-e", script).CombinedOutput(); err != nil {
+	cmd := exec.Command(node, "-")
+	cmd.Stdin = strings.NewReader(script)
+	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("%v\n%s", err, out)
 	}
 }
@@ -104,7 +111,9 @@ assert.equal(chatDrafts.get('codex/one').text,'Draft for first session');
 assert.equal(chatDrafts.get('claude/two').text,'Draft for second session');
 assert.equal(chatDrafts.get('codex/one').files[0].hash,'first');
 `
-	if out, err := exec.Command(node, "-e", script).CombinedOutput(); err != nil {
+	cmd := exec.Command(node, "-")
+	cmd.Stdin = strings.NewReader(script)
+	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("%v\n%s", err, out)
 	}
 }

@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestClaudeOwnerTextPreservesReceiptBytes(t *testing.T) {
@@ -64,6 +65,12 @@ func TestTerminalTurnIdentitySurvivesTailAndAppend(t *testing.T) {
 			}
 			changed := strings.ReplaceAll(line, "hello", "other")
 			if err := os.WriteFile(path, []byte(changed+line+line), 0600); err != nil {
+				t.Fatal(err)
+			}
+			// Explicitly advance the cache key on filesystems where rapid writes
+			// can share the same mtime tick (the rewrite preserves file size).
+			stamp := time.Now().Add(time.Second)
+			if err := os.Chtimes(path, stamp, stamp); err != nil {
 				t.Fatal(err)
 			}
 			replaced, _ := readTranscript(kind, path, 0)
