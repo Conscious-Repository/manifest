@@ -107,12 +107,13 @@ func TestAllToolsOverMCPAndNoVaultEffects(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(list.Tools) != 22 {
+	if len(list.Tools) != 23 {
 		t.Fatalf("got %d tools", len(list.Tools))
 	}
 	person := Ref{"graph", "manifest", "person", "ada"}
 	lab := Ref{"graph", "manifest", "org", "lab"}
 	cases := map[string]any{
+		"email.prepare":     EmailInput{Domain: "ooda", To: []string{"fixture@example.com"}, Subject: "Plans", Body: "Review", IdempotencyKey: "mcp-mail-fixture"},
 		"capabilities.list": Object{}, "entity.resolve": ResolveInput{Query: "Ada Example"}, "entity.get": person, "sources.list": Object{}, "source_run.get": RunInput{run.ID}, "graph.neighbors": NeighborsInput{Ref: person, To: &lab},
 		"source_run.prepare":       SourceInput{Request: recruiting.RunRequest{Source: "web", Query: "imaging", Max: 999}, Seed: &lab},
 		"candidate_accept.prepare": DraftInput{RunID: run.ID, DraftID: "d1"}, "candidate_reject.prepare": DraftInput{RunID: run.ID, DraftID: "d1", Reason: "not this role"},

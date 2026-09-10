@@ -334,6 +334,9 @@ func (a *Adapter) Execute(ctx context.Context, id string) (Object, error) {
 	if err != nil {
 		return nil, err
 	}
+	if o.Tool == "email.prepare" {
+		return a.executeEmail(ctx, o)
+	}
 	if o.Status == "executing" { // Crash recovery never reruns an ambiguous external effect.
 		o.Error = "execution interrupted; reconciled files below; owner takeover required (no automatic retry)"
 		a.reconcile(o)

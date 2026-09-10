@@ -877,11 +877,11 @@ function buildPortalActions(p, acts, wrap) {
     const x = p.extra || {};
     if (!x.hasCreds && !x.sendCapable) { dim("add credentials first"); return; }
     acts.append(pillLight(x.sendCapable ? "reconnect" : "connect", () => connectFlow(wrap, {
-      startUrl: "/api/settings/gmail-send/connect/start", finishUrl: "/api/settings/gmail-send/connect/finish",
+      startUrl: (x.base||"/api/settings/gmail-send")+"/connect/start", finishUrl: (x.base||"/api/settings/gmail-send")+"/connect/finish",
       onDone: (row) => { showToast(row.state === "open" ? "Sender connected" : "Connected, but not send-capable — " + (row.err || ""), null, "info"); replaceRow(wrap, row); },
     })));
     if (x.sendCapable || p.state === "degraded") {
-      acts.append(armedPill("disconnect", "disconnect — outreach sends stop?", () => portalAction("/api/settings/gmail-send/disconnect", wrap)));
+      acts.append(armedPill("disconnect", "disconnect — outreach sends stop?", () => portalAction((x.base||"/api/settings/gmail-send")+"/disconnect", wrap)));
     }
     return;
   }

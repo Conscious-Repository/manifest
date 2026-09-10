@@ -179,7 +179,8 @@ type Server struct {
 	// The send-only Gmail client behind …/recruiting/outreach (Phase 5).
 	// Nil is the unconfigured posture: the probe answers sendCapable:false
 	// and every send refuses (recruiting_outreach.go). Never a poller.
-	gmailSend *gmailsend.Client
+	gmailSend   *gmailsend.Client
+	mailSenders *gmailsend.Registry
 	// hosts is the read-only config.json projection behind Settings › Hosts
 	// & paths (settings.go). Nil until main.go wires it; paths only.
 	hosts *HostsInfo
@@ -790,6 +791,10 @@ func (s *Server) Handler() http.Handler {
 	// and process state; never a secret value (settings.go).
 	mux.HandleFunc("GET /api/settings/hosts", s.handleSettingsHosts)
 	mux.HandleFunc("GET /api/settings/connections", s.handleSettingsConnections)
+	mux.HandleFunc("POST /api/email/prepare", s.handleEmailPrepare)
+	mux.HandleFunc("POST /api/settings/mail/{domain}/connect/start", s.handleMailConnectStart)
+	mux.HandleFunc("POST /api/settings/mail/{domain}/connect/finish", s.handleMailConnectFinish)
+	mux.HandleFunc("POST /api/settings/mail/{domain}/disconnect", s.handleMailDisconnect)
 	mux.HandleFunc("POST /api/settings/gmail-send/connect/start", s.handleSettingsGmailSendStart)
 	mux.HandleFunc("POST /api/settings/gmail-send/connect/finish", s.handleSettingsGmailSendFinish)
 	mux.HandleFunc("POST /api/settings/gmail-send/disconnect", s.handleSettingsGmailSendDisconnect)

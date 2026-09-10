@@ -29,6 +29,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -110,7 +111,7 @@ func New(from, tokenPath string) *Client {
 	if from == "" {
 		from = DefaultSender
 	}
-	return &Client{from: from, tokenPath: tokenPath, endpoint: SendURL}
+	return &Client{from: from, tokenPath: tokenPath, endpoint: "https://gmail.googleapis.com/gmail/v1/users/" + url.PathEscape(from) + "/messages/send"}
 }
 
 // UseEndpoint swaps the send endpoint and transport (tests bind httptest).
@@ -309,7 +310,7 @@ type Ref struct {
 }
 
 // Send builds the RFC 5322 message, base64url-encodes it, and POSTs it to
-// users/me/messages/send. It refuses before any network call when the
+// the explicitly configured mailbox. It refuses before any network call when the
 // sender is not connected, the token lacks gmail.send, or the message's
 // From is not the one allowed sender.
 func (c *Client) Send(ctx context.Context, msg Message) (Ref, error) {

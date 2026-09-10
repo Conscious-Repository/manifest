@@ -1660,6 +1660,13 @@ function manifestOperationCard(item) {
   card.dataset.approvalId = a.id;
   card.append(el("strong", "", a.action + (target ? " · " + target : "") + " · " + o.status));
   card.append(el("p", "", o.policy === "standing_authorization" ? "Standing authorization · no approval needed" : "Human approval · shared with FEED"));
+  if(p.email){
+    const m=p.email;
+    card.append(el("p","","From: "+m.from),el("p","","To: "+(m.to||[]).join(", ")));
+    if(m.cc?.length)card.append(el("p","","Cc: "+m.cc.join(", ")));
+    const body=el("pre","chat-email-body",m.body);body.style.whiteSpace="pre-wrap";body.style.overflowWrap="anywhere";card.append(el("strong","",m.subject),body);
+    for(const f of m.attachments||[]){const file=el("a","",f.name);file.href="/api/agents/chat/"+(p.domain==="ooda"?"zeck":"kairos")+"/attach/"+encodeURIComponent(f.hash);file.target="_blank";file.rel="noopener";file.title="Exact attachment · "+f.hash;const line=el("p","");line.append(file);card.append(line);}
+  }
   if (p.edge) {
     const edge = p.edge;
     card.append(el("p", "", (edge.from.kind + ":" + edge.from.id) + " → " + edge.kind + " → " + (edge.to.kind + ":" + edge.to.id)));

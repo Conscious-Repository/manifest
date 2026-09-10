@@ -50,6 +50,7 @@ prepared single accepts retain their strict snapshot checks.
 
 | Tool | Contract |
 | --- | --- |
+| `email.prepare` | Prepare an immutable email for owner review in Chat and Feed. Specify the correspondence domain (aion or ooda) for external recipients. Personal is unavailable. Never sends; execution requires owner approval. Attachments are exact content-addressed files owned by that domain. |
 | `capabilities.list` | Read the versioned tools, generated input schemas, domain vocabulary and source scopes. |
 | `entity.resolve` | Resolve title, canonical ID or slug, then partial title/ID/slug with match provenance across recruiting people, seeds/labs, roles and registered graph entities. Multiple matches require an explicit choice; never guess. |
 | `entity.get` | Read a canonical entity, evidence/provenance and content revision. |

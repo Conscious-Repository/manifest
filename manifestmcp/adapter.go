@@ -13,6 +13,7 @@ import (
 	"github.com/google/jsonschema-go/jsonschema"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"manifest/approvals"
+	"manifest/gmailsend"
 	"manifest/graph"
 	"manifest/record"
 	"manifest/recruiting"
@@ -22,6 +23,9 @@ const Version = "2.2.0"
 
 type Object map[string]any
 type Adapter struct {
+	Mail     *gmailsend.Registry
+	mailSend func(context.Context, gmailsend.Message) (gmailsend.Ref, error) // fixtures only
+
 	Conversation, Turn string // trusted per-process chat context from the runner
 	Approvals          *approvals.Store
 	Vault, Root        string
@@ -40,7 +44,7 @@ func New(vault, data, system string) (*Adapter, error) {
 		return nil, err
 	}
 	runs.RegisterDefaults()
-	return &Adapter{Vault: vault, Root: r.Root(), Data: data, System: system, Records: r, Runs: runs, Graph: graph.NewStore(vault, filepath.Join(system, "graph"), nil)}, nil
+	return &Adapter{Mail: gmailsend.NewRegistry(data), Vault: vault, Root: r.Root(), Data: data, System: system, Records: r, Runs: runs, Graph: graph.NewStore(vault, filepath.Join(system, "graph"), nil)}, nil
 }
 func revision(v any) string {
 	b, _ := json.Marshal(v)
@@ -141,6 +145,7 @@ func (a *Adapter) get(r Ref) (Entity, error) {
 func (a *Adapter) Server() *mcp.Server {
 	s := mcp.NewServer(&mcp.Implementation{Name: "manifest", Version: Version}, nil)
 	a.Tools = nil
+	add(a, s, "email.prepare", "Prepare an immutable email for owner review in Chat and Feed. Specify the correspondence domain (aion or ooda) for external recipients. Personal is unavailable. Never sends; execution requires owner approval. Attachments are exact content-addressed files owned by that domain.", a.emailPrepare)
 	add(a, s, "capabilities.list", "Read the versioned tools, generated input schemas, domain vocabulary and source scopes.", func(_ struct{}) (Object, error) {
 		return Object{"tools": a.Tools, "version": Version, "sources": a.Runs.Sources(), "vocabulary": a.Graph.Vocabulary()}, nil
 	})

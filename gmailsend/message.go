@@ -35,6 +35,11 @@ type Message struct {
 // before anything is rendered — a malformed recipient never reaches the
 // wire.
 func Build(m Message) ([]byte, error) {
+	for _, value := range append([]string{m.From, m.FromName, m.Subject, m.MessageID, m.InReplyTo, m.References}, append(append([]string{}, m.To...), m.Cc...)...) {
+		if strings.ContainsAny(value, "\r\n") {
+			return nil, errors.New("email headers cannot contain line breaks")
+		}
+	}
 	from := strings.TrimSpace(m.From)
 	if from == "" {
 		return nil, errors.New("a message needs a From address")

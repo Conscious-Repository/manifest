@@ -13,6 +13,9 @@ import (
 // during provider outages. FEED pending files are recoverable projections.
 func (s *Server) UseManifestOperations(a *manifestmcp.Adapter) {
 	s.manifestOperations = a
+	if s.mailSenders != nil {
+		a.Mail = s.mailSenders
+	}
 	a.Approvals = s.approvals
 	if s.approvals != nil {
 		s.approvals.WithOperationDecision(func(id, decision string) error {

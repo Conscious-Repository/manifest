@@ -71,7 +71,7 @@ func (a *Adapter) Observe() ([]*OperationRecord, error) {
 		if err != nil {
 			return nil, err
 		}
-		if o.Status == "pending_approval" || o.Status == "approved" {
+		if o.Tool != "email.prepare" && (o.Status == "pending_approval" || o.Status == "approved") {
 			var p struct {
 				RunID      string `json:"runId"`
 				RunVersion string `json:"runVersion"`
@@ -130,6 +130,12 @@ func (a *Adapter) Regenerate(id string) (Object, error) {
 		err = decode(input, &q)
 		if err == nil {
 			out, err = a.batchAcceptPrepare(q)
+		}
+	case "email.prepare":
+		var q EmailInput
+		err = decode(input, &q)
+		if err == nil {
+			out, err = a.emailPrepare(q)
 		}
 	case "network_person.prepare":
 		var q PersonInput

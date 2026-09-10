@@ -201,6 +201,9 @@ func (s *Server) handleSettingsConnections(w http.ResponseWriter, _ *http.Reques
 	}
 	rows = append(rows, s.bankfeedConnectionRow())
 	rows = append(rows, s.gmailSendConnectionRow())
+	if s.mailSenders != nil {
+		rows = append(rows, s.mailConnectionRow("ooda"))
+	}
 	rows = append(rows, s.fundraisingConnectionRow())
 	rows = append(rows, envConnectionRow("ashby-api", "Ashby (API key)", "ASHBY_API_KEY",
 		"the private recruiting client — pushes candidates, syncs applicants"))
@@ -268,7 +271,7 @@ func (s *Server) bankfeedConnectionRow() panelRow {
 // carries gmail.send for the allowed From address, degraded when a token
 // exists but cannot send (wrong scope / wrong account), sealed otherwise.
 func (s *Server) gmailSendConnectionRow() panelRow {
-	row := panelRow{ID: "gmail-send", Name: "Gmail (send, recruiting)", Kind: "gmailsend", Masked: "oauth · gmail.send"}
+	row := panelRow{ID: "gmail-send", Name: "Email sending · AION", Kind: "gmailsend", Masked: "oauth · gmail.send"}
 	if s.gmailSend == nil {
 		row.State, row.Note = "sealed", "not wired"
 		return row
@@ -280,7 +283,7 @@ func (s *Server) gmailSendConnectionRow() panelRow {
 	}
 	switch {
 	case st.SendCapable:
-		row.State, row.Note = "open", "outreach sends as "+st.Sender+" · every send is approved by hand"
+		row.State, row.Note = "open", "sends as "+st.Sender+" · every send is approved by hand"
 	case st.Configured:
 		row.State, row.Err = "degraded", st.Detail
 	case !st.HasCreds:
