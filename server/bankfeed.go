@@ -53,10 +53,13 @@ func (s *Server) handleBankfeedClaim(w http.ResponseWriter, r *http.Request) {
 		httpError(w, fmt.Errorf("claim failed: %w", err))
 		return
 	}
-	s.writeBankfeedAccounts(w, r.Context())
+	s.writeBankfeedAccounts(w, r.Context(), true) // a fresh claim is a fresh listing
 }
 
-// handleBankfeedAccounts lists bridge accounts merged with their links.
+// handleBankfeedAccounts lists bridge accounts merged with their links. The
+// listing is the cached copy inside bankfeed.DefaultAccountsTTL (every panel
+// render used to be one bridge request — SimpleFIN's 24/day budget, notice
+// 2026-09-10); ?refresh=1 is the owner's explicit live fetch.
 func (s *Server) handleBankfeedAccounts(w http.ResponseWriter, r *http.Request) {
 	if !s.bankfeedOK(w) {
 		return
@@ -65,11 +68,22 @@ func (s *Server) handleBankfeedAccounts(w http.ResponseWriter, r *http.Request) 
 		writeJSON(w, map[string]any{"claimed": false, "accounts": []any{}})
 		return
 	}
-	s.writeBankfeedAccounts(w, r.Context())
+	s.writeBankfeedAccounts(w, r.Context(), isTruthy(r.URL.Query().Get("refresh")))
 }
 
-func (s *Server) writeBankfeedAccounts(w http.ResponseWriter, ctx context.Context) {
-	accounts, err := s.bankFeed.Accounts(ctx)
+func isTruthy(v string) bool {
+	switch strings.ToLower(strings.TrimSpace(v)) {
+	case "1", "true", "yes", "on":
+		return true
+	}
+	return false
+}
+
+// writeBankfeedAccounts answers with the listing plus asOf — the moment it was
+// really fetched from the bridge, so the panel can say "as of 09:12" and never
+// "live" for a cached copy.
+func (s *Server) writeBankfeedAccounts(w http.ResponseWriter, ctx context.Context, force bool) {
+	accounts, fetchedAt, err := s.bankFeed.Accounts(ctx, time.Now(), force)
 	if err != nil {
 		httpError(w, err)
 		return
@@ -87,7 +101,18 @@ func (s *Server) writeBankfeedAccounts(w http.ResponseWriter, ctx context.Contex
 		}
 		out = append(out, rr)
 	}
-	writeJSON(w, map[string]any{"claimed": true, "accounts": out})
+	writeJSON(w, map[string]any{
+		"claimed": true, "accounts": out,
+		"asOf":     fetchedAt.UTC().Format(time.RFC3339),
+		"lastSync": bankTimeOrEmpty(s.bankFeed.Store().LastSyncAt()),
+	})
+}
+
+func bankTimeOrEmpty(t time.Time) string {
+	if t.IsZero() {
+		return ""
+	}
+	return t.UTC().Format(time.RFC3339)
 }
 
 // handleBankfeedLink binds one bridge account to an entity's account row
@@ -126,18 +151,43 @@ func (s *Server) handleBankfeedLink(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, map[string]any{"ok": true})
 }
 
-// handleBankfeedSync is the SETTINGS "sync now" button.
+// handleBankfeedSync is the SETTINGS "sync now" button — the owner's explicit
+// ask, so it bypasses the sync window; rapid clicks still coalesce onto one
+// in-flight poll.
 func (s *Server) handleBankfeedSync(w http.ResponseWriter, r *http.Request) {
 	if !s.bankfeedOK(w) {
 		return
 	}
-	added, applied, err := s.bankFeedSync(r.Context())
+	res, err := s.bankFeedSync(r.Context(), true)
 	if err != nil {
 		httpError(w, err)
 		return
 	}
-	writeJSON(w, map[string]any{"added": added, "autoApplied": applied, "links": s.bankFeed.Store().Links()})
+	writeJSON(w, map[string]any{
+		"added": res.Added, "autoApplied": res.AutoApplied,
+		"skipped": res.Skipped, "coalesced": res.Coalesced,
+		"syncedAt": bankTimeOrEmpty(res.SyncedAt),
+		"links":    s.bankFeed.Store().Links(),
+	})
 }
+
+// bankSyncResult is one bankFeedSync outcome. Counts are only ever from a
+// poll that really happened: Skipped means no bridge request was made (the
+// window), Coalesced means this call rode on a poll another caller had in
+// flight and reports THAT poll's counts. SyncedAt is when the reported poll
+// reached the bridge.
+type bankSyncResult struct {
+	Added       int
+	AutoApplied int
+	Skipped     bool
+	Coalesced   bool
+	SyncedAt    time.Time
+}
+
+// bankFeedSyncWindow: an unforced sync (boot, ticker) is skipped when a poll
+// reached the bridge more recently than this — the SimpleFIN data cadence is
+// once a day, so a restart-heavy day must not turn into a poll per restart.
+const bankFeedSyncWindow = 6 * time.Hour
 
 // StartBankFeed launches the daily poll ticker (boot poll after a short warmup;
 // portals Start idiom). Call once from main; no-op when the feed is unwired.
@@ -153,12 +203,9 @@ func (s *Server) StartBankFeed(ctx context.Context) {
 		}
 		// log the boot sync ALWAYS — a silent zero was indistinguishable from
 		// a silent failure, which is how an 11-day bank-side auth outage went
-		// unnoticed (2026-08-31)
-		if added, applied, err := s.bankFeedSync(ctx); err != nil {
-			log.Printf("bankfeed: boot sync failed: %v", err)
-		} else {
-			log.Printf("bankfeed: boot sync — %d new row(s), %d auto-applied%s", added, applied, s.bankFeedHealthNote())
-		}
+		// unnoticed (2026-08-31). A skipped boot sync is logged as skipped,
+		// never as a zero-row sync.
+		s.logBankFeedSync(ctx, "boot sync")
 		t := time.NewTicker(24 * time.Hour)
 		defer t.Stop()
 		for {
@@ -166,14 +213,25 @@ func (s *Server) StartBankFeed(ctx context.Context) {
 			case <-ctx.Done():
 				return
 			case <-t.C:
-				if added, applied, err := s.bankFeedSync(ctx); err != nil {
-					log.Printf("bankfeed: sync failed: %v", err)
-				} else {
-					log.Printf("bankfeed: %d new row(s), %d auto-applied%s", added, applied, s.bankFeedHealthNote())
-				}
+				s.logBankFeedSync(ctx, "sync")
 			}
 		}
 	}()
+}
+
+// logBankFeedSync runs one UNFORCED sync (window applies) and journals what
+// actually happened.
+func (s *Server) logBankFeedSync(ctx context.Context, what string) {
+	res, err := s.bankFeedSync(ctx, false)
+	switch {
+	case err != nil:
+		log.Printf("bankfeed: %s failed: %v", what, err)
+	case res.Skipped:
+		log.Printf("bankfeed: %s skipped — last poll reached the bridge %s (window %s)",
+			what, res.SyncedAt.Format(time.RFC3339), bankFeedSyncWindow)
+	default:
+		log.Printf("bankfeed: %s — %d new row(s), %d auto-applied%s", what, res.Added, res.AutoApplied, s.bankFeedHealthNote())
+	}
 }
 
 // bankFeedHealthNote summarizes link errors for the sync log line — the
@@ -198,32 +256,58 @@ func (s *Server) bankFeedHealthNote() string {
 // bankFeedSync pulls every enabled link, ingests through the statement
 // workbench (same dedupe + vendor prefill as the CSV path), auto-applies
 // confident matches, and files one FEED digest per non-empty sync.
-func (s *Server) bankFeedSync(ctx context.Context) (added, autoApplied int, err error) {
+//
+// Request budget (SimpleFIN notice 2026-09-10): syncs are serialized, and
+//   - callers queued behind an in-flight poll ride on its result instead of
+//     polling again (boot + ticker + "sync now" clicks → one bridge request);
+//   - an UNFORCED sync is skipped outright when a poll reached the bridge
+//     within bankFeedSyncWindow (the stamp lives in bankfeed-cache, so a
+//     restart cannot forget it);
+//   - force (the owner's click) bypasses the window but never the coalescing.
+func (s *Server) bankFeedSync(ctx context.Context, force bool) (bankSyncResult, error) {
 	if !s.bankFeed.Claimed() {
-		return 0, 0, errBadRequest("no bank feed claimed yet")
+		return bankSyncResult{}, errBadRequest("no bank feed claimed yet")
 	}
+	// snapshot the poll generation BEFORE queueing on the mutex: if it moved
+	// by the time we hold the lock, a poll completed while we waited
+	gen := s.bankfeedGen.Load()
 	s.bankfeedMu.Lock()
 	defer s.bankfeedMu.Unlock()
-	hauls := s.bankFeed.FetchNew(ctx, time.Now())
+	if s.bankfeedGen.Load() != gen {
+		res := s.bankfeedLast
+		res.Coalesced = true
+		return res, nil
+	}
+	now := time.Now()
+	if !force {
+		if last := s.bankFeed.Store().LastSyncAt(); !last.IsZero() && now.Sub(last) < bankFeedSyncWindow {
+			return bankSyncResult{Skipped: true, SyncedAt: last}, nil
+		}
+	}
+	hauls := s.bankFeed.FetchNew(ctx, now)
+	res := bankSyncResult{SyncedAt: now}
+	defer func() {
+		s.bankfeedLast = res
+		s.bankfeedGen.Add(1)
+	}()
 	if len(hauls) == 0 {
-		return 0, 0, nil
+		return res, nil
 	}
 	_, vendorCat, vendorProp := s.reImport.Lookup("")
 	ledgerKeys := s.bankLedgerKeys()
 	var receipts []string
 	for _, haul := range hauls {
 		a := s.bankIngest(haul, ledgerKeys, vendorCat, vendorProp)
-		added += a
+		res.Added += a
 		if a == 0 {
 			continue
 		}
-		applied := s.bankAutoApply(haul.Link, vendorProp, &receipts)
-		autoApplied += applied
+		res.AutoApplied += s.bankAutoApply(haul.Link, vendorProp, &receipts)
 	}
-	if added > 0 || autoApplied > 0 {
-		s.bankFeedDigest(added, autoApplied, receipts)
+	if res.Added > 0 || res.AutoApplied > 0 {
+		s.bankFeedDigest(res.Added, res.AutoApplied, receipts)
 	}
-	return added, autoApplied, nil
+	return res, nil
 }
 
 // bankLedgerKeys is every ledger line across the portfolio — no double

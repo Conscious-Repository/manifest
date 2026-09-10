@@ -32,6 +32,14 @@ type cacheFile struct {
 	Cursors map[string]string          `json:"cursors"` // simplefinID → RFC3339 of newest posted
 	Seen    map[string]map[string]bool `json:"seen"`    // simplefinID → txn id set
 	Digests []Digest                   `json:"digests"`
+	// Request budget (SimpleFIN notice 2026-09-10: data refreshes once a day,
+	// at most 24 requests/day). The bridge's account listing is served from
+	// here until AccountsAt is older than the service TTL; SyncAt is when the
+	// last transaction poll actually reached the bridge, so boot + ticker +
+	// restarts cannot stack polls inside the sync window.
+	Accounts   []Account `json:"accounts,omitempty"`
+	AccountsAt string    `json:"accountsAt,omitempty"` // RFC3339
+	SyncAt     string    `json:"syncAt,omitempty"`     // RFC3339
 }
 
 func NewStore(dataDir string) *Store {
@@ -87,7 +95,53 @@ func (s *Store) SetAccessURL(url string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.feed.AccessURL = url
+	// a new claim is a new bridge view — whatever listing was cached belongs
+	// to the old access URL
+	s.cache.Accounts, s.cache.AccountsAt = nil, ""
+	s.saveCache()
 	return s.saveFeed()
+}
+
+// CachedAccounts returns the last bridge listing and when it was fetched
+// (zero time = never cached).
+func (s *Store) CachedAccounts() ([]Account, time.Time) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	at, err := time.Parse(time.RFC3339, s.cache.AccountsAt)
+	if err != nil {
+		return nil, time.Time{}
+	}
+	out := make([]Account, len(s.cache.Accounts))
+	copy(out, s.cache.Accounts)
+	return out, at
+}
+
+// SetCachedAccounts stores a listing that was ACTUALLY fetched at `at`.
+func (s *Store) SetCachedAccounts(accounts []Account, at time.Time) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.cache.Accounts = append([]Account(nil), accounts...)
+	s.cache.AccountsAt = at.UTC().Format(time.RFC3339)
+	s.saveCache()
+}
+
+// LastSyncAt is when the last transaction poll reached the bridge (zero =
+// never). Attempts count, not successes — the bridge's budget is requests.
+func (s *Store) LastSyncAt() time.Time {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	t, err := time.Parse(time.RFC3339, s.cache.SyncAt)
+	if err != nil {
+		return time.Time{}
+	}
+	return t
+}
+
+func (s *Store) SetLastSyncAt(at time.Time) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.cache.SyncAt = at.UTC().Format(time.RFC3339)
+	s.saveCache()
 }
 
 func (s *Store) Links() []Link {

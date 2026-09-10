@@ -261,6 +261,17 @@ async function toggleBankAccountsPanel(wrap) {
   await renderBankFeedPanel(form, ents);
 }
 
+// bankSyncToast words a /api/bankfeed/sync answer honestly: a coalesced call
+// rode on a poll already in flight (its counts are that poll's), a skipped
+// one never reached the bridge.
+function bankSyncToast(r) {
+  if (r.skipped) return "Sync skipped — the bridge was polled " + (r.syncedAt ? fmtWhen(r.syncedAt) : "recently");
+  return "Synced — " + (r.added || 0) + " new row(s)" +
+    (r.autoApplied ? " · " + r.autoApplied + " reconciled" : "") +
+    ((r.added || 0) > 0 ? " → $ tab" : "") +
+    (r.coalesced ? " (joined a sync already running)" : "");
+}
+
 // bankFeedRerender — the panel's own refresh after a link/unlink/backfill:
 // in place when it is open here, else the whole row list.
 async function bankFeedRerender() {
@@ -882,7 +893,7 @@ function buildPortalActions(p, acts, wrap) {
     acts.append(pillLight("sync now", async () => {
       try {
         const r = await postJSONOk("/api/bankfeed/sync", {});
-        showToast("Synced — " + (r.added || 0) + " new row(s)" + (r.autoApplied ? " · " + r.autoApplied + " reconciled" : "") + ((r.added || 0) > 0 ? " → $ tab" : ""));
+        showToast(bankSyncToast(r));
         reloadConnections();
       } catch (e) { showToast("Sync failed — " + (e.message || ""), null, "error"); }
     }));
@@ -1061,11 +1072,14 @@ async function renderGmailAccounts(form) {
 // ---- BANK FEED panel (moved from Properties › Settings, agents plan §5) — claim
 // once, then link each bridge account to the entity that owns it. dataDir keeps the machine linkage; the entity record's
 // accounts row flips not-connected → live through the normal entity save.
-async function renderBankFeedPanel(box, ents) {
+// The listing is the server's cached copy (SimpleFIN budgets 24 requests a
+// day and refreshes once a day — a render is not a bridge request); the strip
+// says when it was really fetched, and `refresh` is the owner's live fetch.
+async function renderBankFeedPanel(box, ents, refresh) {
   box.innerHTML = "";
   box.append(el("div", "pp-empty", "loading…"));
   let d = null;
-  try { d = await (await fetch("/api/bankfeed/accounts")).json(); } catch (e) {}
+  try { d = await (await fetch("/api/bankfeed/accounts" + (refresh ? "?refresh=1" : ""))).json(); } catch (e) {}
   box.innerHTML = "";
   if (!d) { box.append(el("div", "pp-empty", "Bank feed unavailable.")); return; }
 
@@ -1106,16 +1120,16 @@ async function renderBankFeedPanel(box, ents) {
   const nAcct = (d.accounts || []).length;
   const nLinked = (d.accounts || []).filter((a) => a.link).length;
   strip.append(el("span", "stmt-vendor",
-    nAcct + (nAcct === 1 ? " account" : " accounts") + " on the bridge · " + nLinked + " linked · daily sync"));
+    nAcct + (nAcct === 1 ? " account" : " accounts") + " on the bridge · " + nLinked + " linked · daily sync" +
+    (d.asOf ? " · balances as of " + fmtWhen(d.asOf) : "")));
   strip.append(pillLight("sync now", async () => {
     try {
       const r = await postJSONOk("/api/bankfeed/sync", {});
-      showToast("Synced — " + (r.added || 0) + " new row(s)" +
-        (r.autoApplied ? " · " + r.autoApplied + " reconciled" : "") +
-        ((r.added || 0) > 0 ? " → $ tab" : ""));
+      showToast(bankSyncToast(r));
       renderBankFeedPanel(box, ents);
     } catch (err) { showToast("Sync failed — " + (err.message || "")); }
   }));
+  strip.append(pillLight("refresh balances", () => renderBankFeedPanel(box, ents, true)));
   box.append(strip);
 
   if (!(d.accounts || []).length) {

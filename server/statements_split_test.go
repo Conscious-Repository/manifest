@@ -1,7 +1,6 @@
 package server
 
 import (
-	"context"
 	"encoding/json"
 	"net/http/httptest"
 	"os"
@@ -22,7 +21,7 @@ func TestSplitFilingWritesEveryTarget(t *testing.T) {
 		{ID: "t1", Posted: time.Now().AddDate(0, 0, -4), Amount: -10131, Description: "CHECK 108", Payee: "Tree Court"},
 	}}}
 	srv, vault, _ := bankFixture(t, bridge)
-	if _, _, err := srv.bankFeedSync(context.Background()); err != nil {
+	if _, _, err := syncNow(srv); err != nil {
 		t.Fatal(err)
 	}
 	rows, _ := srv.statements.List()
@@ -74,7 +73,7 @@ func TestOperatingCategoryFilesIntoOperatingLane(t *testing.T) {
 		{ID: "t2", Posted: time.Now().AddDate(0, 0, -2), Amount: 1750, Description: "RENT", Payee: "Tenant"},
 	}}}
 	srv, vault, _ := bankFixture(t, bridge)
-	if _, _, err := srv.bankFeedSync(context.Background()); err != nil {
+	if _, _, err := syncNow(srv); err != nil {
 		t.Fatal(err)
 	}
 	rows, _ := srv.statements.List()
@@ -126,7 +125,7 @@ func TestFilingErrorSurfaces(t *testing.T) {
 		{ID: "t1", Posted: time.Now().AddDate(0, 0, -1), Amount: -50, Description: "GAS", Payee: "QT"},
 	}}}
 	srv, _, _ := bankFixture(t, bridge)
-	if _, _, err := srv.bankFeedSync(context.Background()); err != nil {
+	if _, _, err := syncNow(srv); err != nil {
 		t.Fatal(err)
 	}
 	rows, _ := srv.statements.List()
@@ -151,7 +150,7 @@ func TestSplitRefusesZeroSlice(t *testing.T) {
 		{ID: "t1", Posted: time.Now().AddDate(0, 0, -4), Amount: -12750, Description: "CHECK 1001", Payee: "Twisted Brick"},
 	}}}
 	srv, vault, _ := bankFixture(t, bridge)
-	if _, _, err := srv.bankFeedSync(context.Background()); err != nil {
+	if _, _, err := syncNow(srv); err != nil {
 		t.Fatal(err)
 	}
 	rows, _ := srv.statements.List()
@@ -182,7 +181,7 @@ func TestCategoryRenameSweeps(t *testing.T) {
 		{ID: "t2", Posted: time.Now().AddDate(0, 0, -3), Amount: -80, Description: "CHECK 10", Payee: "Crew Co"},
 	}}}
 	srv, vault, _ := bankFixture(t, bridge)
-	if _, _, err := srv.bankFeedSync(context.Background()); err != nil {
+	if _, _, err := syncNow(srv); err != nil {
 		t.Fatal(err)
 	}
 	rows, _ := srv.statements.List()
@@ -245,7 +244,7 @@ func TestAcquisitionClassWritesToken(t *testing.T) {
 		{ID: "t1", Posted: time.Now().AddDate(0, 0, -2), Amount: -18297.84, Description: "WIRE OUT", Payee: "Title Co"},
 	}}}
 	srv, vault, _ := bankFixture(t, bridge)
-	if _, _, err := srv.bankFeedSync(context.Background()); err != nil {
+	if _, _, err := syncNow(srv); err != nil {
 		t.Fatal(err)
 	}
 	rows, _ := srv.statements.List()
@@ -287,7 +286,7 @@ func TestTransferMatchSuggestsAndLinksBothSides(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := srv.bankFeedSync(context.Background()); err != nil {
+	if _, _, err := syncNow(srv); err != nil {
 		t.Fatal(err)
 	}
 
@@ -367,7 +366,7 @@ func TestRefileEditsAndUnfilesWrittenRows(t *testing.T) {
 		{ID: "t1", Posted: time.Now().AddDate(0, 0, -4), Amount: -10131, Description: "CHECK 108", Payee: "Tree Court"},
 	}}}
 	srv, vault, _ := bankFixture(t, bridge)
-	if _, _, err := srv.bankFeedSync(context.Background()); err != nil {
+	if _, _, err := syncNow(srv); err != nil {
 		t.Fatal(err)
 	}
 	rows, _ := srv.statements.List()

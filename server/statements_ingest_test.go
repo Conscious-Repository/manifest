@@ -1,7 +1,6 @@
 package server
 
 import (
-	"context"
 	"strings"
 	"testing"
 	"time"
@@ -19,7 +18,7 @@ func TestCSVIngestDedupesAgainstTheBankFeed(t *testing.T) {
 		{ID: "t1", Posted: posted, Amount: -1075, Description: "MY CPA GUY", Payee: "My Cpa Guy"},
 	}}}
 	srv, _, _ := bankFixture(t, bridge)
-	if _, _, err := srv.bankFeedSync(context.Background()); err != nil {
+	if _, _, err := syncNow(srv); err != nil {
 		t.Fatal(err)
 	}
 	before, _ := srv.statements.List()
@@ -121,7 +120,7 @@ func TestIngestWarnsOnUnprovableOverlap(t *testing.T) {
 		{ID: "t1", Posted: posted, Amount: -937.21, Description: "AMEREN", Payee: "Ameren"},
 	}}}
 	srv, _, _ := bankFixture(t, bridge)
-	if _, _, err := srv.bankFeedSync(context.Background()); err != nil {
+	if _, _, err := syncNow(srv); err != nil {
 		t.Fatal(err)
 	}
 	_, res := doJSON(t, srv.handleStatementsIngest, "POST", "/api/realestate/statements/ingest",

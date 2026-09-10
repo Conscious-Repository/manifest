@@ -140,14 +140,22 @@ type NewTxns struct {
 	Txns []Txn
 }
 
+// DefaultAccountsTTL bounds how long a cached bridge listing is served before
+// Accounts goes back to the bridge. SimpleFIN refreshes bank data once a day
+// and budgets 24 requests/day (notice 2026-09-10); every SETTINGS/money-tab
+// render used to be one live call.
+const DefaultAccountsTTL = time.Hour
+
 // Service owns the store, cache, and provider.
 type Service struct {
 	store    *Store
 	provider Provider
+	// AccountsTTL overrides DefaultAccountsTTL (tests shrink it).
+	AccountsTTL time.Duration
 }
 
 func New(dataDir string, p Provider) *Service {
-	return &Service{store: NewStore(dataDir), provider: p}
+	return &Service{store: NewStore(dataDir), provider: p, AccountsTTL: DefaultAccountsTTL}
 }
 
 func (s *Service) Store() *Store { return s.store }
@@ -165,9 +173,28 @@ func (s *Service) Claim(ctx context.Context, setupToken string) error {
 	return s.store.SetAccessURL(url)
 }
 
-// Accounts lists the bridge accounts (live call).
-func (s *Service) Accounts(ctx context.Context) ([]Account, error) {
-	return s.provider.Accounts(ctx, s.store.AccessURL())
+// Accounts lists the bridge accounts. A listing fetched within AccountsTTL
+// of now is served from the cache without touching the bridge; force (the
+// owner's explicit refresh) or a stale/missing cache goes live. fetchedAt is
+// ALWAYS when the returned listing was really fetched — a caller can say
+// "as of 09:12" but never "live" for a cached copy. A failed live fetch is an
+// error (no silent fallback to stale data).
+func (s *Service) Accounts(ctx context.Context, now time.Time, force bool) (accounts []Account, fetchedAt time.Time, err error) {
+	ttl := s.AccountsTTL
+	if ttl <= 0 {
+		ttl = DefaultAccountsTTL
+	}
+	if !force {
+		if cached, at := s.store.CachedAccounts(); !at.IsZero() && now.Sub(at) < ttl && !now.Before(at) {
+			return cached, at, nil
+		}
+	}
+	accounts, err = s.provider.Accounts(ctx, s.store.AccessURL())
+	if err != nil {
+		return nil, time.Time{}, err
+	}
+	s.store.SetCachedAccounts(accounts, now)
+	return accounts, now, nil
 }
 
 // FetchAll pulls ONE link's entire history from the bridge (since epoch —
@@ -208,13 +235,22 @@ func (s *Service) FetchAll(ctx context.Context, simplefinID string, now time.Tim
 // FetchNew pulls every enabled link's unseen transactions. The cursor backs
 // up three days on every poll (banks repost/settle late); the seen-id set
 // makes the overlap free. Per-link errors land on the link (needs-reauth
-// overlay) without stopping the others.
+// overlay) without stopping the others. The store's SyncAt is stamped when
+// at least one link went to the bridge — attempts, not successes, are what
+// the bridge's request budget counts.
 func (s *Service) FetchNew(ctx context.Context, now time.Time) []NewTxns {
 	var out []NewTxns
+	polled := false
+	defer func() {
+		if polled {
+			s.store.SetLastSyncAt(now)
+		}
+	}()
 	for _, link := range s.store.Links() {
 		if !link.Enabled {
 			continue
 		}
+		polled = true
 		since := s.store.Cursor(link.SimplefinID)
 		if since.IsZero() {
 			since = now.AddDate(0, 0, -bridgeHistory) // the bridge's backfill window

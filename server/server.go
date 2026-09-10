@@ -16,6 +16,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"manifest/aion"
@@ -130,6 +131,10 @@ type Server struct {
 	// Bank feeds (SimpleFIN → statement workbench; bank-accounts plan). Nilable.
 	bankFeed   *bankfeed.Service
 	bankfeedMu sync.Mutex // one sync at a time (ticker vs sync-now button)
+	// poll generation + last result: callers queued behind an in-flight poll
+	// ride on it instead of polling the bridge again (SimpleFIN 24/day budget)
+	bankfeedGen  atomic.Uint64
+	bankfeedLast bankSyncResult // guarded by bankfeedMu
 	// Real estate (PROPERTIES tab over system/realestate/ records). Nilable.
 	realestate     *realestate.Service
 	realestateRoot string                // vault-relative records root (default "system/realestate")

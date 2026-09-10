@@ -92,7 +92,7 @@ func TestFetchNewDedupesAndFlagsErrors(t *testing.T) {
 		}
 	}
 
-	accounts, err := svc.Accounts(context.Background())
+	accounts, _, err := svc.Accounts(context.Background(), time.Now(), false)
 	if err != nil || len(accounts) != 2 {
 		t.Fatalf("accounts: %v %v", accounts, err)
 	}
@@ -131,6 +131,80 @@ func TestFetchNewDedupesAndFlagsErrors(t *testing.T) {
 	svc.FetchNew(context.Background(), now)
 	if l, _ := svc.Store().LinkFor("act-1"); l.LastError == "" {
 		t.Fatal("a failing sync must land on the link as lastError")
+	}
+}
+
+// countingProvider counts Accounts requests — the SimpleFIN budget is
+// requests/day (notice 2026-09-10), so the cache is measured in calls.
+type countingProvider struct {
+	calls int
+	list  []Account
+}
+
+func (c *countingProvider) Claim(_ context.Context, _ string) (string, error) { return "stub://a", nil }
+func (c *countingProvider) Accounts(_ context.Context, _ string) ([]Account, error) {
+	c.calls++
+	return c.list, nil
+}
+func (c *countingProvider) Transactions(_ context.Context, _, _ string, _, _ time.Time) ([]Txn, []string, error) {
+	return nil, nil, nil
+}
+
+// Accounts serves the cached listing inside the TTL (fetchedAt stays the
+// real fetch time), refetches once stale, honors force, survives a process
+// restart through bankfeed-cache, and forgets the listing on a new claim.
+func TestAccountsCachedWithinTTL(t *testing.T) {
+	prov := &countingProvider{list: []Account{{ID: "act-1", Name: "Checking", Balance: "10.00"}}}
+	dataDir := t.TempDir()
+	svc := New(dataDir, prov)
+	svc.AccountsTTL = time.Hour
+	if err := svc.Store().SetAccessURL("stub://a"); err != nil {
+		t.Fatal(err)
+	}
+	t0 := time.Date(2026, 9, 10, 9, 0, 0, 0, time.UTC)
+
+	got, at, err := svc.Accounts(context.Background(), t0, false)
+	if err != nil || len(got) != 1 || !at.Equal(t0) || prov.calls != 1 {
+		t.Fatalf("first call: %v at=%v err=%v calls=%d", got, at, err, prov.calls)
+	}
+	// 30 min later: cached, and the stamp is still the real fetch time
+	got, at, err = svc.Accounts(context.Background(), t0.Add(30*time.Minute), false)
+	if err != nil || len(got) != 1 || !at.Equal(t0) || prov.calls != 1 {
+		t.Fatalf("inside TTL: at=%v err=%v calls=%d (want cached, at=t0)", at, err, prov.calls)
+	}
+	// a restart reads the same cache — no fetch
+	svc2 := New(dataDir, prov)
+	svc2.AccountsTTL = time.Hour
+	if _, at, err := svc2.Accounts(context.Background(), t0.Add(45*time.Minute), false); err != nil || !at.Equal(t0) || prov.calls != 1 {
+		t.Fatalf("after restart: at=%v err=%v calls=%d (want cached)", at, err, prov.calls)
+	}
+	// stale → refetch
+	prov.list[0].Balance = "12.00"
+	got, at, err = svc.Accounts(context.Background(), t0.Add(2*time.Hour), false)
+	if err != nil || got[0].Balance != "12.00" || !at.Equal(t0.Add(2*time.Hour)) || prov.calls != 2 {
+		t.Fatalf("stale: %v at=%v err=%v calls=%d", got, at, err, prov.calls)
+	}
+	// force → refetch even though fresh
+	if _, _, err := svc.Accounts(context.Background(), t0.Add(2*time.Hour+time.Second), true); err != nil || prov.calls != 3 {
+		t.Fatalf("force: err=%v calls=%d", err, prov.calls)
+	}
+	// a new claim drops the cached listing
+	if err := svc.Store().SetAccessURL("stub://b"); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := svc.Accounts(context.Background(), t0.Add(2*time.Hour+2*time.Second), false); err != nil || prov.calls != 4 {
+		t.Fatalf("after re-claim: err=%v calls=%d (want a live fetch)", err, prov.calls)
+	}
+	// a poll stamps SyncAt only when a link actually went to the bridge
+	if !svc.Store().LastSyncAt().IsZero() {
+		t.Fatal("SyncAt stamped without any enabled link")
+	}
+	if err := svc.Store().Upsert(Link{SimplefinID: "act-1", EntitySlug: "e", AccountLabel: "l", Enabled: true}); err != nil {
+		t.Fatal(err)
+	}
+	svc.FetchNew(context.Background(), t0.Add(3*time.Hour))
+	if got := svc.Store().LastSyncAt(); !got.Equal(t0.Add(3 * time.Hour)) {
+		t.Fatalf("SyncAt = %v, want the poll time", got)
 	}
 }
 

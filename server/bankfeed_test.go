@@ -6,6 +6,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -16,17 +18,32 @@ import (
 	"manifest/vaultwriter"
 )
 
-// stubBridge implements bankfeed.Provider in-process (the §9.1 fake).
+// stubBridge implements bankfeed.Provider in-process (the §9.1 fake). It
+// counts bridge requests (the SimpleFIN budget is requests/day) and can hold
+// a Transactions call open so a second sync provably queues behind it.
 type stubBridge struct {
 	txns    map[string][]bankfeed.Txn
 	notices []string // the bridge's advisory `errors` array
+
+	acctCalls atomic.Int32
+	txnCalls  atomic.Int32
+	started   chan struct{} // receives once per Transactions call (when set)
+	block     chan struct{} // Transactions waits for close (when set)
 }
 
 func (s *stubBridge) Claim(_ context.Context, _ string) (string, error) { return "stub://access", nil }
 func (s *stubBridge) Accounts(_ context.Context, _ string) ([]bankfeed.Account, error) {
+	s.acctCalls.Add(1)
 	return []bankfeed.Account{{ID: "act-1", Name: "Checking ····4821", Org: "Midwest Bank"}}, nil
 }
 func (s *stubBridge) Transactions(_ context.Context, _, accountID string, start, end time.Time) ([]bankfeed.Txn, []string, error) {
+	s.txnCalls.Add(1)
+	if s.started != nil {
+		s.started <- struct{}{}
+	}
+	if s.block != nil {
+		<-s.block
+	}
 	// window-faithful like the real bridge: only [start, end) comes back
 	var out []bankfeed.Txn
 	for _, t := range s.txns[accountID] {
@@ -125,6 +142,167 @@ items: ["internet | expense | operating", "rent | income | operating", "windows 
 	return srv, vault, dataDir
 }
 
+// syncNow is the (added, applied, err) shape the ingest tests were written
+// against — FORCED, since the sync window would otherwise skip the immediate
+// re-syncs they probe (dedupe, paused links).
+func syncNow(srv *Server) (int, int, error) {
+	res, err := srv.bankFeedSync(context.Background(), true)
+	return res.Added, res.AutoApplied, err
+}
+
+// SimpleFIN's request budget (2026-09-10 notice: data once a day, ≤24
+// requests/day). An unforced sync inside the window makes NO bridge request
+// and says so; the owner's forced sync goes through; the window is read from
+// the persisted stamp, so a restart cannot forget it.
+func TestBankFeedSyncWindowSkipsUnforcedRepeats(t *testing.T) {
+	bridge := &stubBridge{txns: map[string][]bankfeed.Txn{"act-1": {
+		{ID: "t1", Posted: time.Now().AddDate(0, 0, -2), Amount: -10, Payee: "X"},
+	}}}
+	srv, _, dataDir := bankFixture(t, bridge)
+	// steady state: a cursor exists, so one poll is ONE bridge request (a
+	// cursor-less first poll walks the 90-day backfill in 30-day windows)
+	srv.bankFeed.Store().MarkSeen("act-1", nil, time.Now().AddDate(0, 0, -1))
+
+	// first sync after boot: nothing stamped yet → polls
+	res, err := srv.bankFeedSync(context.Background(), false)
+	if err != nil || res.Skipped || res.Added != 1 {
+		t.Fatalf("first unforced sync: %+v %v", res, err)
+	}
+	if n := bridge.txnCalls.Load(); n != 1 {
+		t.Fatalf("bridge polled %d times, want 1", n)
+	}
+	// inside the window: skipped, no request, no fabricated counts
+	res, err = srv.bankFeedSync(context.Background(), false)
+	if err != nil || !res.Skipped || res.Added != 0 || res.SyncedAt.IsZero() {
+		t.Fatalf("second unforced sync: %+v %v — want skipped with the poll stamp", res, err)
+	}
+	if n := bridge.txnCalls.Load(); n != 1 {
+		t.Fatalf("a skipped sync still hit the bridge (%d calls)", n)
+	}
+	// the owner's click bypasses the window
+	res, err = srv.bankFeedSync(context.Background(), true)
+	if err != nil || res.Skipped {
+		t.Fatalf("forced sync: %+v %v", res, err)
+	}
+	if n := bridge.txnCalls.Load(); n != 2 {
+		t.Fatalf("forced sync did not poll (%d calls)", n)
+	}
+	// a fresh process over the same dataDir inherits the stamp
+	svc2 := bankfeed.New(dataDir, bridge)
+	if last := svc2.Store().LastSyncAt(); last.IsZero() || time.Since(last) > time.Minute {
+		t.Fatalf("poll stamp not persisted: %v", last)
+	}
+	// once the window has passed, the ticker's unforced sync polls again
+	srv.bankFeed.Store().SetLastSyncAt(time.Now().Add(-bankFeedSyncWindow - time.Minute))
+	res, err = srv.bankFeedSync(context.Background(), false)
+	if err != nil || res.Skipped {
+		t.Fatalf("post-window sync: %+v %v", res, err)
+	}
+	if n := bridge.txnCalls.Load(); n != 3 {
+		t.Fatalf("post-window sync did not poll (%d calls)", n)
+	}
+	// the handler's sync-now is forced and reports the outcome shape
+	code, body := doJSON(t, srv.handleBankfeedSync, "POST", "/api/bankfeed/sync", "{}")
+	if code != 200 || body["skipped"] != false || body["syncedAt"] == "" {
+		t.Fatalf("sync handler: %d %v", code, body)
+	}
+	if n := bridge.txnCalls.Load(); n != 4 {
+		t.Fatalf("handler sync did not poll (%d calls)", n)
+	}
+}
+
+// Two syncs racing (boot poll vs "sync now", or a double click) make ONE
+// bridge request: the second waits for the first and reports its result as
+// coalesced, never polling again.
+func TestBankFeedSyncCoalescesConcurrentCalls(t *testing.T) {
+	bridge := &stubBridge{
+		txns:    map[string][]bankfeed.Txn{"act-1": {{ID: "t1", Posted: time.Now().AddDate(0, 0, -1), Amount: -7, Payee: "Y"}}},
+		started: make(chan struct{}, 4),
+		block:   make(chan struct{}),
+	}
+	srv, _, _ := bankFixture(t, bridge)
+	srv.bankFeed.Store().MarkSeen("act-1", nil, time.Now().AddDate(0, 0, -1)) // one window per poll
+
+	var wg sync.WaitGroup
+	results := make([]bankSyncResult, 2)
+	run := func(i int) {
+		defer wg.Done()
+		res, err := srv.bankFeedSync(context.Background(), true)
+		if err != nil {
+			t.Errorf("sync %d: %v", i, err)
+		}
+		results[i] = res
+	}
+	wg.Add(1)
+	go run(0)
+	<-bridge.started // the first poll is in flight at the bridge
+	wg.Add(1)
+	go run(1)
+	time.Sleep(150 * time.Millisecond) // the second is queued on the sync mutex
+	close(bridge.block)
+	wg.Wait()
+
+	if n := bridge.txnCalls.Load(); n != 1 {
+		t.Fatalf("two racing syncs made %d bridge requests, want 1", n)
+	}
+	if results[0].Coalesced || !results[1].Coalesced {
+		t.Fatalf("coalescing flags wrong: first=%+v second=%+v", results[0], results[1])
+	}
+	if results[1].Added != results[0].Added || results[1].SyncedAt != results[0].SyncedAt {
+		t.Fatalf("coalesced result must report the in-flight poll: %+v vs %+v", results[0], results[1])
+	}
+}
+
+// The account listing behind the SETTINGS/money panel is served from the
+// cache inside the TTL — a render is not a bridge request. ?refresh=1 is the
+// owner's live fetch, and every answer carries asOf (when it was REALLY
+// fetched), never an implied "live".
+func TestBankfeedAccountsHandlerServesCachedListing(t *testing.T) {
+	bridge := &stubBridge{txns: map[string][]bankfeed.Txn{}}
+	srv, _, _ := bankFixture(t, bridge)
+	bridge.acctCalls.Store(0) // the fixture's claim does not list accounts
+
+	get := func(q string) map[string]any {
+		t.Helper()
+		code, body := doJSON(t, srv.handleBankfeedAccounts, "GET", "/api/bankfeed/accounts"+q, "")
+		if code != 200 {
+			t.Fatalf("accounts %q: %d %v", q, code, body)
+		}
+		return body
+	}
+	first := get("")
+	if n := bridge.acctCalls.Load(); n != 1 {
+		t.Fatalf("first render: %d bridge calls, want 1", n)
+	}
+	asOf, _ := first["asOf"].(string)
+	if _, err := time.Parse(time.RFC3339, asOf); err != nil {
+		t.Fatalf("asOf missing/bad: %v", first["asOf"])
+	}
+	second := get("")
+	get("")
+	if n := bridge.acctCalls.Load(); n != 1 {
+		t.Fatalf("re-renders inside the TTL hit the bridge (%d calls)", n)
+	}
+	if second["asOf"] != asOf {
+		t.Fatalf("cached answer must keep the original fetch time: %v vs %v", second["asOf"], asOf)
+	}
+	if accts, _ := second["accounts"].([]any); len(accts) != 1 {
+		t.Fatalf("cached listing lost the accounts: %v", second["accounts"])
+	}
+	get("?refresh=1")
+	if n := bridge.acctCalls.Load(); n != 2 {
+		t.Fatalf("?refresh=1 did not go live (%d calls)", n)
+	}
+	// a fresh claim invalidates the cache → it answers with a live listing
+	code, _ := doJSON(t, srv.handleBankfeedClaim, "POST", "/api/bankfeed/claim", `{"token":"again"}`)
+	if code != 200 {
+		t.Fatalf("claim: %d", code)
+	}
+	if n := bridge.acctCalls.Load(); n != 3 {
+		t.Fatalf("claim must return a fresh listing (%d calls)", n)
+	}
+}
+
 func TestBankFeedSyncIngestsAutoAppliesAndDedupes(t *testing.T) {
 	day := func(s string) time.Time { d, _ := time.Parse("2006-01-02", s); return d }
 	bridge := &stubBridge{txns: map[string][]bankfeed.Txn{"act-1": {
@@ -134,7 +312,7 @@ func TestBankFeedSyncIngestsAutoAppliesAndDedupes(t *testing.T) {
 	}}}
 	srv, vault, dataDir := bankFixture(t, bridge)
 
-	added, applied, err := srv.bankFeedSync(context.Background())
+	added, applied, err := syncNow(srv)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -191,7 +369,7 @@ func TestBankFeedSyncIngestsAutoAppliesAndDedupes(t *testing.T) {
 	}
 
 	// re-sync is free — feed-level dedupe, no new rows, no double writes
-	added, applied, err = srv.bankFeedSync(context.Background())
+	added, applied, err = syncNow(srv)
 	if err != nil || added != 0 || applied != 0 {
 		t.Fatalf("re-sync: %d/%d/%v, want 0/0", added, applied, err)
 	}
@@ -222,7 +400,7 @@ func TestBankFeedSyncIngestsAutoAppliesAndDedupes(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	added, _, _ = srv.bankFeedSync(context.Background())
+	added, _, _ = syncNow(srv)
 	if added != 0 {
 		t.Fatalf("disabled link ingested %d row(s)", added)
 	}
@@ -237,7 +415,7 @@ func TestBankFeedNoAutoApplyOnAmountMismatch(t *testing.T) {
 	}}}
 	srv, vault, _ := bankFixture(t, bridge)
 
-	added, applied, err := srv.bankFeedSync(context.Background())
+	added, applied, err := syncNow(srv)
 	if err != nil || added != 1 || applied != 0 {
 		t.Fatalf("sync: %d/%d/%v, want 1 added, 0 applied", added, applied, err)
 	}
@@ -277,7 +455,7 @@ func TestBankFeedBackfillIngestsWithoutAutoApply(t *testing.T) {
 		t.Fatal("backfill must not write the ledger")
 	}
 	// the daily sync sees nothing new — backfill marked the ids seen
-	if added, _, _ := srv.bankFeedSync(context.Background()); added != 0 {
+	if added, _, _ := syncNow(srv); added != 0 {
 		t.Fatalf("sync re-hauled %d backfilled row(s)", added)
 	}
 }
@@ -290,7 +468,7 @@ func TestStatementsRowFilingGestureAutoApplies(t *testing.T) {
 		{ID: "t1", Posted: time.Now().AddDate(0, 0, -5), Amount: -321.09, Description: "SUPPLIES", Payee: "Ace Hardware"},
 	}}}
 	srv, vault, dataDir := bankFixture(t, bridge)
-	if _, _, err := srv.bankFeedSync(context.Background()); err != nil {
+	if _, _, err := syncNow(srv); err != nil {
 		t.Fatal(err)
 	}
 	rows, _ := srv.statements.List()
@@ -339,7 +517,7 @@ func TestBridgeAdvisorySurfacesAndClears(t *testing.T) {
 		{ID: "t1", Posted: time.Now().AddDate(0, 0, -20), Amount: -10, Payee: "Old"},
 	}}, notices: []string{"Connection to Central Bank Business may need attention. Auth required"}}
 	srv, _, _ := bankFixture(t, bridge)
-	if _, _, err := srv.bankFeedSync(context.Background()); err != nil {
+	if _, _, err := syncNow(srv); err != nil {
 		t.Fatal(err)
 	}
 	links := srv.bankFeed.Store().Links()
@@ -359,7 +537,7 @@ func TestBridgeAdvisorySurfacesAndClears(t *testing.T) {
 	}
 	// the bank fixes their side; the next sync clears health and the signal
 	bridge.notices = nil
-	if _, _, err := srv.bankFeedSync(context.Background()); err != nil {
+	if _, _, err := syncNow(srv); err != nil {
 		t.Fatal(err)
 	}
 	if links := srv.bankFeed.Store().Links(); links[0].LastError != "" {
@@ -390,7 +568,7 @@ func TestBankPendingRowsFeedTheGlobalFeed(t *testing.T) {
 		{ID: "t1", Posted: posted, Amount: -63.20, Description: "HOME DEPOT", Payee: "Home Depot X"},
 	}}}
 	srv, _, _ := bankFixture(t, bridge)
-	if _, _, err := srv.bankFeedSync(context.Background()); err != nil {
+	if _, _, err := syncNow(srv); err != nil {
 		t.Fatal(err)
 	}
 	rows := srv.bankPendingRows()
