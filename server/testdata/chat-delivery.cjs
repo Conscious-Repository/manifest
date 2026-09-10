@@ -32,7 +32,7 @@ global.fetchJSONRetry=async(method,url,payload)=>{
  assert.equal(chatReadDeliveryOutbox().length,1,'malformed acknowledgement must not discard text');
  global.fetchJSONRetry=async()=>({ok:false,status:400,text:async()=>'message too large'});
  await assert.rejects(()=>chatDeliverRemembered(intentional),e=>e.rejected===true);
- chatForgetDelivery(intentional);
+ await chatForgetDelivery(intentional);
  let cleared=0;const draft={text:'coding instruction',files:[]};
  let synced=false;
  chatSyncedDrafts.set('codex/new',{value:draft,reconcileSent:async value=>{assert.equal(value.text,draft.text);cleared++;return synced;}});

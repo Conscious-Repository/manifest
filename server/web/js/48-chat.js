@@ -125,7 +125,7 @@ async function chatPrepareLandingDraft(agent) {
 }
 async function chatPrepareDraft(descriptor,key,initial){
   if(!descriptor?.key || typeof ChatDraftState==="undefined")return;
-  if(chatSyncedDrafts.has(key)){await chatSyncedDrafts.get(key).refresh();await chatReconcileAcceptedDrafts(key);return;}
+  if(chatSyncedDrafts.has(key)){await chatSyncedDrafts.get(key).refresh();await chatLoadDeliveryRecovery(key);await chatReconcileAcceptedDrafts(key);return;}
   const state=new ChatDraftState(descriptor.key,(current,apply)=>{
     if(apply)chatApplySyncedDraft(key,current.value);
     if(chatDraftKey===key)chatRenderDraftNotice(document.getElementById("chatComposer"),key);
@@ -134,6 +134,7 @@ async function chatPrepareDraft(descriptor,key,initial){
   const local=chatDrafts.get(key);
   if(local && (local.text || local.files?.length))state.set({...local,selection:chatArtifactSelections.get("chat:"+key)||null,task:chatConversationTasks.get("chat:"+key)||""});
   await state.refresh();
+  await chatLoadDeliveryRecovery(key);
   await chatReconcileAcceptedDrafts(key);
   if(initial&&state.revision===0&&state.value===null&&!state.error){state.set(initial);}
   chatApplySyncedDraft(key,state.value);
@@ -1786,7 +1787,7 @@ function renderChatComposer(session) {
         showToast("Delivery is unconfirmed. Check status or retry the saved send.",null,"info");
         if(chatDraftKey===draftKey)chatRenderDeliveryNotice(host,draftKey);
       } else {
-        if(remembered)chatForgetDelivery(remembered);
+        if(remembered)await chatForgetDelivery(remembered);
         showToast("Send failed — " + (e.message || "error"));
         // The submitted text remains in the composer; preserve any newer edits.
       }
@@ -2822,6 +2823,49 @@ function chatReadDeliveryOutbox(){
  }catch(e){return [];}
 }
 function chatWriteDeliveryOutbox(items){localStorage.setItem(chatDeliveryStorageKey,JSON.stringify(items));}
+async function chatSaveDeliveryRecovery(item,remove=false){
+ const key=item.stateKey||chatSyncedDrafts.get(item.draftScope||item.scope)?.key;
+ if(!key)return; // Legacy/local-only composers have no synced state descriptor.
+ item.stateKey=key;
+ const url="/api/chat/state/"+encodeURIComponent(key)+"/deliveries";
+ for(let attempt=0;attempt<4;attempt++){
+  const r=await fetch(url,{cache:"no-store"});if(!r.ok)throw Error("Send recovery sync unavailable. Your message remains saved on this device.");
+  const state=await r.json();
+  if(state.key!==key||state.slot!=="deliveries"||!Number.isSafeInteger(state.revision)||state.revision<0)throw Error("Invalid send recovery state.");
+  const items={...state.value?.items};
+  if(remove)delete items[item.payload.requestId];else items[item.payload.requestId]={...item};
+  const value={items};
+  const saved=await fetch(url,{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify({revision:state.revision,value})});
+  if(saved.status===409)continue;
+  if(!saved.ok)throw Error("Send recovery sync unavailable. Your message remains saved on this device.");
+  const ack=await saved.json();
+  if(ack.key!==key||ack.slot!=="deliveries"||!Number.isSafeInteger(ack.revision)||ack.revision<state.revision||!chatStateEqual(ack.value,value))throw Error("Send recovery acknowledgement unavailable.");
+  return;
+ }
+ throw Error("Send recovery changed on another device. Try again.");
+}
+async function chatLoadDeliveryRecovery(scope){
+ const state=chatSyncedDrafts.get(scope);if(!state?.key)return;
+ try{
+  const r=await fetch("/api/chat/state/"+encodeURIComponent(state.key)+"/deliveries",{cache:"no-store"});if(!r.ok)return;
+  const remote=await r.json();if(remote.key!==state.key||remote.slot!=="deliveries")return;
+  const local=chatReadDeliveryOutbox(),ids=new Set(local.map(x=>x.payload.requestId));
+  for(const item of Object.values(remote.value?.items||{})){
+   if(!item?.payload?.requestId||(item.draftScope||item.scope)!==scope||item.stateKey!==state.key||ids.has(item.payload.requestId))continue;
+   local.push(item);ids.add(item.payload.requestId);
+  }
+  chatWriteDeliveryOutbox(local);
+  // Only read receipts. An absent or uncertain receipt never authorizes replay.
+  for(const item of chatReadDeliveryOutbox().filter(x=>(x.draftScope||x.scope)===scope&&!x.accepted)){
+   const path=chatIsTerminalDelivery(item)?item.url.replace(/\/input$/,"/delivery"):"/api/agents/chat/"+encodeURIComponent(item.agent)+"/delivery";
+   const receipt=await fetch(path+"?request="+encodeURIComponent(item.payload.requestId),{cache:"no-store"});if(!receipt.ok)continue;
+   const result=await receipt.json();
+   if(result.delivery?.id!==item.payload.requestId||!result.id)continue;
+   if(chatIsTerminalDelivery(item)&&result.delivery.state!=="sent")continue;
+   await chatAcceptDelivery(item,result);
+  }
+ }catch(e){/* Retain the local recovery record until sync is available. */}
+}
 function chatRememberDelivery(scope,agent,url,payload,draftScope=scope){
  const items=chatReadDeliveryOutbox(), signature=JSON.stringify(payload);
  const old=items.find(x=>x.scope===scope&&x.url===url&&x.signature===signature);
@@ -2829,15 +2873,15 @@ function chatRememberDelivery(scope,agent,url,payload,draftScope=scope){
  const item={scope,agent,url,signature,payload:{...payload,requestId:crypto.randomUUID()},draft:chatSyncedDrafts.get(draftScope)?.value||null,draftScope,at:new Date().toISOString()};
  items.push(item);chatWriteDeliveryOutbox(items);return item;
 }
-function chatForgetDelivery(item){chatWriteDeliveryOutbox(chatReadDeliveryOutbox().filter(x=>x.payload.requestId!==item.payload.requestId));}
+async function chatForgetDelivery(item){await chatSaveDeliveryRecovery(item,true);chatWriteDeliveryOutbox(chatReadDeliveryOutbox().filter(x=>x.payload.requestId!==item.payload.requestId));}
 async function chatAcceptDelivery(item,result){
  const items=chatReadDeliveryOutbox(),saved=items.find(x=>x.payload.requestId===item.payload.requestId);
  if(saved){saved.accepted=result;chatWriteDeliveryOutbox(items);}
  // Persist the acknowledgement before touching the draft. Recovery must only
  // reconcile state, never submit another runtime instruction.
- if(!item.draft){chatForgetDelivery(item);return result;}
+ if(!item.draft){await chatForgetDelivery(item);return result;}
  const state=chatSyncedDrafts.get(item.draftScope||item.scope);
- if(state&&await state.reconcileSent(item.draft))chatForgetDelivery(item);
+ if(state&&await state.reconcileSent(item.draft))await chatForgetDelivery(item);
  return result;
 }
 async function chatReconcileAcceptedDrafts(key){
@@ -2846,6 +2890,7 @@ async function chatReconcileAcceptedDrafts(key){
 async function chatDeliverRemembered(item){
  const accepted=item.accepted||chatReadDeliveryOutbox().find(x=>x.payload.requestId===item.payload.requestId)?.accepted;
  if(accepted)return chatAcceptDelivery(item,accepted);
+ await chatSaveDeliveryRecovery(item);
  const res=await fetchJSONRetry("POST",item.url,item.payload);
  if(!res.ok){const error=new Error((await res.text()).trim()||"Send failed");error.rejected=[400,413,422].includes(res.status);throw error;}
  const result=await res.json();
@@ -2855,7 +2900,7 @@ async function chatDeliverRemembered(item){
 }
 function chatRenderDeliveryNotice(host,scope){
  host.querySelector(".chat-delivery-notice")?.remove();
- const pending=chatReadDeliveryOutbox().filter(x=>x.scope===scope);if(!pending.length)return;
+ const pending=chatReadDeliveryOutbox().filter(x=>x.scope===scope||(x.draftScope||x.scope)===scope);if(!pending.length)return;
  const notice=el("div","chat-delivery-notice");notice.setAttribute("role","status");
  pending.forEach(item=>{
   const row=el("div","chat-delivery-row");

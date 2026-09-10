@@ -12,6 +12,24 @@ import (
 
 const testKey = "conversation-0123456789abcdef0123456789abcdef"
 
+func TestDeliveryRecoverySurvivesStoreReopen(t *testing.T) {
+	root := t.TempDir()
+	for _, key := range []string{testKey, "landing-0123456789abcdef0123456789abcdef"} {
+		value := json.RawMessage(`{"items":{"request-123":{"payload":{"requestId":"request-123","text":"pending"}}}}`)
+		written, err := New(root).Write(key, "deliveries", 0, value)
+		if err != nil {
+			t.Fatal(err)
+		}
+		read, err := New(root).Read(key, "deliveries")
+		if err != nil || !bytes.Equal(read.Value, written.Value) {
+			t.Fatal(read, err)
+		}
+		if _, err := New(root).Write(key, "deliveries", 0, json.RawMessage(`{"items":{}}`)); !errors.Is(err, ErrConflict) {
+			t.Fatal(err)
+		}
+	}
+}
+
 func TestInboxPinsPersistIndependently(t *testing.T) {
 	root := t.TempDir()
 	s := New(root)
