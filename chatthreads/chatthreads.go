@@ -80,15 +80,25 @@ type FileRef struct {
 
 // Thread is a named, rock-scoped, archivable conversation.
 type Thread struct {
-	ImportSource      string    `json:"import_source,omitempty"`
-	ImportRevision    string    `json:"import_revision,omitempty"`
-	ImportFingerprint string    `json:"import_fingerprint,omitempty"`
-	ID                string    `json:"id"`
-	Title             string    `json:"title"`
-	Rock              string    `json:"rock,omitempty"` // goal/rock id, "" = whole vault
-	Archived          bool      `json:"archived,omitempty"`
-	Created           time.Time `json:"created"`
-	By                string    `json:"by,omitempty"`
+	SharedSource      *SharedSource `json:"shared_source,omitempty"`
+	ImportSource      string        `json:"import_source,omitempty"`
+	ImportRevision    string        `json:"import_revision,omitempty"`
+	ImportFingerprint string        `json:"import_fingerprint,omitempty"`
+	ID                string        `json:"id"`
+	Title             string        `json:"title"`
+	Rock              string        `json:"rock,omitempty"` // goal/rock id, "" = whole vault
+	Archived          bool          `json:"archived,omitempty"`
+	Created           time.Time     `json:"created"`
+	By                string        `json:"by,omitempty"`
+}
+
+// SharedSource identifies the consent record for a converted private
+// conversation. It grants no access on its own: the server must verify the
+// source's completed share and exact reviewed envelope before exposing a
+// runtime or any private content through a team route.
+type SharedSource struct {
+	Agent string `json:"agent"`
+	ID    string `json:"id"`
 }
 
 // Pending is an in-flight run — the queue-attribution record, cleared on ingest.

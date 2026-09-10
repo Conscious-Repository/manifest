@@ -86,6 +86,9 @@ type PortalOptions struct {
 	// Both take the raw request so the handler owns streaming + sniffing.
 	ChatAttach    func(w http.ResponseWriter, r *http.Request, memberEmail, memberName string)
 	ChatAttachGet func(w http.ResponseWriter, r *http.Request, hash string)
+	// Conversation-scoped access to native sessions explicitly shared by the
+	// owner. Callback selection fixes the team; private terminal APIs stay absent.
+	ChatTerminalRead func(w http.ResponseWriter, r *http.Request)
 }
 
 // PortalHandler serves the AION portal as a standalone site, rooted at the
@@ -182,6 +185,9 @@ func PortalHandler(opt PortalOptions) (http.Handler, error) {
 			// native chat with kairos (chat-kairos handoff)
 			if opt.ChatThreads != nil {
 				mux.HandleFunc("GET /api/chat/threads", api.handleChatThreads)
+			}
+			if opt.ChatTerminalRead != nil {
+				mux.HandleFunc("GET /api/chat/threads/{thread}/terminals/{terminal}/transcript", api.handleChatTerminalRead)
 			}
 			if opt.ChatThread != nil {
 				mux.HandleFunc("POST /api/chat/thread", api.handleChatThread)
@@ -822,6 +828,13 @@ func (p *portalAPI) handleChatThreads(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, p.opt.ChatThreads())
+}
+
+func (p *portalAPI) handleChatTerminalRead(w http.ResponseWriter, r *http.Request) {
+	if _, ok := p.identify(w, r); !ok {
+		return
+	}
+	p.opt.ChatTerminalRead(w, r)
 }
 
 func (p *portalAPI) handleChatThread(w http.ResponseWriter, r *http.Request) {
