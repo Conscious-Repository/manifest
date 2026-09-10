@@ -136,6 +136,7 @@
 /* attachments on an agent-chat turn / pending in the composer */
 .chat-attach-chips { display: flex; flex-wrap: wrap; gap: var(--sp-3); margin-top: var(--sp-3); }
 .chat-attach-chip { display: inline-flex; align-items: center; gap: var(--sp-2); font-size: var(--fs-2xs); color: var(--base-40); border: 1px solid var(--line); border-radius: var(--radius); padding: var(--sp-1) var(--sp-3); text-decoration: none; }
+button.chat-attach-chip { min-height: 44px; max-width: 100%; background: transparent; text-align: left; white-space: normal; overflow-wrap: anywhere; }
 .chat-attach-x { border: 0; background: none; color: var(--base-30); cursor: pointer; font-size: var(--fs-2xs); padding: 0; line-height: 1; }
 .chat-attach-x:hover { color: var(--base-100); }
 .chat-composer .chat-attach-chips { flex: 1 1 100%; order: -1; margin: 0 0 var(--sp-2); }

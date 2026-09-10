@@ -1185,7 +1185,7 @@ function parseChatSteps(text) {
 
 // chatFileTokenRe — an attachment on an agent-chat user turn rides as its own
 // line `[file:: <sha256> <name>]` (server agentchat.go); the renderer turns it
-// into a download chip. Spirit turns never carry one.
+// into a preview chip. Spirit turns never carry one.
 const chatFileTokenRe = /^\[file:: ([0-9a-f]{64}) (.+?)\]$/;
 
 // chatUserTurn renders a user turn: the text, then any attachment chips.
@@ -1201,11 +1201,11 @@ function chatUserTurn(text) {
   if (files.length) {
     const chips = el("div", "chat-attach-chips");
     files.forEach((f) => {
-      const a = document.createElement("a");
+      const a = document.createElement("button");
       a.className = "chat-attach-chip";
-      a.textContent = "⤓ " + f.name;
-      a.href = chatFileHref(f.hash);
-      a.target = "_blank";
+      a.textContent = f.name;
+      const href=chatFileHref(f.hash);
+      a.onclick=()=>chatOpenAttachment(f,href);
       chips.append(a);
     });
     b.append(chips);
@@ -2688,6 +2688,11 @@ const chatArtifactSelections = new Map();
 let chatWorkspace = null;
 let chatPendingWorkspace = null;
 function chatCloseWorkspace() { if (chatWorkspace) { const w=chatWorkspace; chatWorkspace=null; w.close(); } }
+function chatOpenAttachment(file,href){
+  chatCloseWorkspace();
+  const shell=document.querySelector(".chat-shell");shell.classList.add("has-artifact");
+  chatWorkspace=attachmentWorkspace(shell,file,href,()=>{shell.classList.remove("has-artifact");chatWorkspace=null;});
+}
 function chatOpenWorkingArtifact(spec) {
   chatCloseWorkspace();
   const taskID = spec.task || chatTaskID;

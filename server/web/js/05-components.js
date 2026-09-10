@@ -587,6 +587,36 @@ function chooseActionMenu(trigger, items) {
   });
 }
 
+// Read-only original attachment bytes. No artifact identity/version is invented.
+function attachmentWorkspace(mount,file,href,onClose){
+  const pane=el("aside","artifact-workspace");pane.setAttribute("aria-label","Attachment preview");
+  const head=el("div","artifact-workspace-head"),title=el("strong","artifact-workspace-title",file.name);
+  const back=el("button","sprt-quiet","Back to chat"),controls=el("div","artifact-workspace-controls");
+  const download=el("a","sprt-quiet","Open / download original ↗");download.href=href;download.target="_blank";download.rel="noopener";
+  const notice=el("div","artifact-workspace-notice","Original attachment · read-only"),body=el("div","artifact-workspace-body","Loading…");body.tabIndex=0;notice.setAttribute("role","status");
+  let blobURL=null,closed=false;const abort=new AbortController();
+  back.onclick=()=>{closed=true;abort.abort();if(blobURL)URL.revokeObjectURL(blobURL);pane.remove();onClose?.();};
+  head.append(title,back);controls.append(download);pane.append(head,controls,notice,body);mount.append(pane);
+  (async()=>{
+    try{
+      const response=await fetch(href,{signal:abort.signal});if(!response.ok)throw new Error("Attachment unavailable ("+response.status+")");
+      const mime=(response.headers.get("Content-Type")||"").split(";")[0].trim().toLowerCase();
+      const text=/\.(md|txt|csv|tsv|json|yaml|yml|log|go|js|ts|py|css)$/i.test(file.name)||mime.startsWith("text/");
+      const media=["application/pdf","image/png","image/jpeg","image/gif","image/webp"].includes(mime);
+      if(!text&&!media){body.textContent="Preview is unavailable for this file type. Open or download the original above.";abort.abort();return;}
+      const limit=text?2*1024*1024:20*1024*1024;
+      if(Number(response.headers.get("Content-Length"))>limit)throw new Error("This file is too large to preview. Open or download the original above.");
+      const reader=response.body.getReader(),chunks=[];let size=0;
+      while(true){const {done,value}=await reader.read();if(done)break;size+=value.length;if(size>limit){await reader.cancel();throw new Error("This file is too large to preview. Open or download the original above.");}chunks.push(value);}
+      if(closed)return;
+      const blob=new Blob(chunks,{type:mime});
+      if(text){const content=await blob.text();if(closed)return;const pre=el("pre","",content);body.replaceChildren(pre);}
+      else {blobURL=URL.createObjectURL(blob);const view=document.createElement(mime==="application/pdf"?"iframe":"img");view.src=blobURL;view.title=file.name;view.alt=file.name;body.replaceChildren(view);}
+    }catch(e){abort.abort();if(!closed)body.textContent=e.message;}
+  })();
+  return {element:pane,close:()=>back.click(),isEditing:()=>false};
+}
+
 // Exact line comparison; bound the quadratic middle section for large files.
 // Large replacements remain exact, but are not claimed to be a minimal diff.
 function artifactLineChanges(before,after){
