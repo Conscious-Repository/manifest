@@ -2123,6 +2123,7 @@ async function loadChatTermSession(id) {
   chatRemember(chatAgent, id);
   chatTermOpen = {
     conversation:d.conversation,
+    planningTimeline:d.planningTimeline,
     related:d.related||[],
     id, se, turns: d.turns || [], offset: d.offset || 0, title: d.title || "", cost: d.cost || 0,
     live: se.backend === "herdr" ? !!chatTermApplyState(se).live : !!d.live, screen: [], screenSig: "",
@@ -2274,8 +2275,9 @@ function chatTermPaintTurns() {
   if (!body || !o) return;
   const previousScroll=host?.scrollTop||0;
   body.innerHTML = "";
-  chatTermPaintLines(body, o.turns);
-  if (!o.turns.length) {
+  if(o.planningTimeline)chatPaintTurns(body,o.planningTimeline,null);
+  else chatTermPaintLines(body, o.turns);
+  if (!(o.planningTimeline||o.turns).length) {
     body.append(el("div", "chat-term-line chat-term-sys", o.se.launchPhase === "draft"
       ? "Review your draft below. Sending starts the coding session."
       : o.se.kind === "codex"
@@ -2494,6 +2496,8 @@ async function chatTermTail(o) {
   let d;
   try { d = await (await fetch(chatTermBase(o.id) + "/transcript?after=" + o.offset)).json(); } catch (e) { return; }
   if (chatTermOpen !== o) return;
+  const planningChanged=JSON.stringify(o.planningTimeline)!==JSON.stringify(d.planningTimeline);
+  o.planningTimeline=d.planningTimeline;
   const turns = d.turns || [];
   if (d.offset < o.offset) { // the file was replaced/truncated: the reply is the whole projection
     o.turns = turns;
@@ -2506,6 +2510,7 @@ async function chatTermTail(o) {
   } else if (d.offset > o.offset) {
     o.offset = d.offset; // records that projected to nothing (cost-state, …)
   }
+  if(planningChanged)chatTermPaintTurns();
   let headDirty = false;
   if (d.title && d.title !== o.title) { o.title = d.title; headDirty = true; }
   if (d.cost && d.cost !== o.cost) { o.cost = d.cost; headDirty = true; }

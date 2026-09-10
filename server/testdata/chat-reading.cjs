@@ -71,3 +71,15 @@ ctx.chatAgentSessions={alfred:[{id:'parent'}]};
 assert.equal(ctx.chatHasCanonicalParent({origin:{mode:'continue',agent:'alfred',id:'parent'}}),true);
 assert.equal(ctx.chatHasCanonicalParent({origin:{mode:'related',agent:'alfred',id:'parent'}}),false);
 assert.equal(ctx.chatHasCanonicalParent({origin:{mode:'continue',agent:'alfred',id:'missing'}}),false);
+// Planning replies must repaint a native-root chat even when its native file
+// offset has not advanced. Stop-triggered final reads use the same path.
+(async()=>{
+ let paints=0,response={offset:0,turns:[],planningTimeline:[{n:'chat:alfred:1',text:'Planning reply'}]};
+ const root={id:'native',offset:0,turns:[],se:{backend:'herdr'},live:false};
+ const tail=vm.createContext({chatTermOpen:root,chatTermTailing:false,chatTermBase:id=>'/native/'+id,fetch:async()=>({json:async()=>response}),chatTermPaintTurns:()=>paints++});
+ vm.runInContext(src.slice(src.indexOf('async function chatTermRequestFinalTail('),src.indexOf('// chatTermMerge —')),tail);
+ await tail.chatTermRequestFinalTail(root);assert.equal(paints,1);assert.equal(root.turns.length,0);
+ await tail.chatTermRequestFinalTail(root);assert.equal(paints,1);
+ response={...response,planningTimeline:[...response.planningTimeline,{n:'chat:alfred:2',text:'Later reply'}]};
+ await tail.chatTermRequestFinalTail(root);assert.equal(paints,2);
+})().catch(e=>{console.error(e);process.exitCode=1});

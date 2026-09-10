@@ -69,17 +69,7 @@ func (s *Server) codingContinuations(ctx context.Context, source agentchat.Sessi
 		se, tr, ob, _ := s.projectTerminalTranscript(ctx, se, 0)
 		// Never modify the native parser cache. Only an exact submitted-text hash
 		// permits the canonical view to show the owner's text without its envelope.
-		turns := append([]termTurn{}, tr.Turns...)
-		receipts := s.terminal.continuationReceipts(se.ID, sessionConversation(source).Key)
-		submissions := map[string]terminalInputReceipt{}
-		for i, t := range turns {
-			if t.Who == "user" {
-				if receipt, ok := receipts[hashTerminalText(t.Text)]; ok {
-					turns[i].Text = receipt.Text
-					submissions[t.ID] = receipt
-				}
-			}
-		}
+		turns, submissions := s.terminal.projectContinuationTurns(se.ID, sessionConversation(source).Key, tr.Turns)
 		out = append(out, codingContinuationView{ID: se.ID, Agent: se.Kind, Model: se.Model, Cwd: se.Cwd, Created: se.CreatedAt, Conversation: s.terminalConversation(se), Turns: turns, Process: ob.Process, AgentState: ob.AgentState, Connectivity: ob.Connectivity, HistoryOmitted: o.HistoryOmitted, Submissions: submissions})
 	}
 	sort.Slice(out, func(i, j int) bool {
@@ -89,6 +79,21 @@ func (s *Server) codingContinuations(ctx context.Context, source agentchat.Sessi
 		return out[i].ID < out[j].ID
 	})
 	return out
+}
+
+func (c *termCfg) projectContinuationTurns(id, key string, native []termTurn) ([]termTurn, map[string]terminalInputReceipt) {
+	turns := append([]termTurn{}, native...)
+	receipts := c.continuationReceipts(id, key)
+	submissions := map[string]terminalInputReceipt{}
+	for i, t := range turns {
+		if t.Who == "user" {
+			if receipt, ok := receipts[hashTerminalText(t.Text)]; ok {
+				turns[i].Text = receipt.Text
+				submissions[t.ID] = receipt
+			}
+		}
+	}
+	return turns, submissions
 }
 
 type continuationNativeSource struct {
@@ -172,7 +177,8 @@ func (s *Server) terminalPlanningTimeline(ctx context.Context, root termSession)
 		return nil, false
 	}
 	_, tr, _, _ := s.projectTerminalTranscript(ctx, root, 0)
-	timeline := conversationTimeline(agentchat.Session{}, "", []codingContinuationView{{ID: root.ID, Agent: root.Kind, Model: root.Model, Created: root.CreatedAt, Conversation: s.terminalConversation(root), Turns: tr.Turns}})
+	turns, submissions := s.terminal.projectContinuationTurns(root.ID, s.terminalConversation(root).Key, tr.Turns)
+	timeline := conversationTimeline(agentchat.Session{}, "", []codingContinuationView{{ID: root.ID, Agent: root.Kind, Model: root.Model, Created: root.CreatedAt, Conversation: s.terminalConversation(root), Turns: turns, Submissions: submissions}})
 	for _, child := range children {
 		_, body, _, ok := s.agentChat.store.Get(child.Agent, child.ID)
 		if !ok {

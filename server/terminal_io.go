@@ -221,6 +221,18 @@ func (s *Server) handleTermInput(w http.ResponseWriter, r *http.Request) {
 			continuationContext = &terminalInputReceipt{Text: ownerText, ContextSource: sessionConversation(source).Key, ContextHash: hashTerminalText(context), HistoryOmitted: omitted}
 			b.Text = context + "\n\nCurrent owner instruction (submission " + b.RequestID + "):\n" + ownerText
 		}
+		if continuationContext == nil && b.Key == "" {
+			if timeline, found := s.terminalPlanningTimeline(r.Context(), se); found {
+				if b.RequestID == "" {
+					httpError(w, errBadRequest("continuation messages require a request ID"))
+					return
+				}
+				key := s.terminalConversation(se).Key
+				context, omitted := timelineContinuationContext(key, timeline)
+				continuationContext = &terminalInputReceipt{Text: ownerText, ContextSource: key, ContextHash: hashTerminalText(context), HistoryOmitted: omitted}
+				b.Text = context + "\n\nCurrent owner instruction (submission " + b.RequestID + "):\n" + ownerText
+			}
+		}
 		if len(b.Artifacts) > 0 {
 			linked := false
 			for _, link := range s.terminalConversation(se).Links {

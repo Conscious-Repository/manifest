@@ -93,6 +93,84 @@ func TestTerminalRootPlanningContinuationContext(t *testing.T) {
 	}
 }
 
+func TestTerminalRootReceivesPlanningContextWithoutEnvelopeRecursion(t *testing.T) {
+	s, st, _ := agentChatFixture(t, echoStub)
+	s.terminal = &termCfg{regPath: filepath.Join(t.TempDir(), "terminals.json"), defaultWd: t.TempDir(), claudeProjects: t.TempDir()}
+	root := termSession{ID: "abcdef123456", Kind: "claude", Backend: "herdr", LaunchPhase: "draft", Cwd: s.terminal.defaultWd, ResumeID: "01234567-abcd"}
+	s.terminal.upsert(root)
+	code, out := agentChatJSON(t, s, "POST", "/api/terminal/claude/session/"+root.ID+"/related", map[string]any{"agent": "alfred", "mode": "continue", "requestId": "return-planning-001"})
+	if code != 200 {
+		t.Fatal(code, out)
+	}
+	childID := out["id"].(string)
+	st.AppendTurn("alfred", childID, "alfred", "PLAN_ALPHA", 0)
+	var prompts []string
+	h := herdrFixture(t, func(c net.Conn, r herdrFixtureRequest) {
+		switch r.Method {
+		case "session.snapshot":
+			herdrFixtureSnapshot(c, "idle", 2)
+		case "workspace.create":
+			herdrFixtureReply(c, map[string]any{"root_pane": herdrFixturePane("unknown", 1)})
+		case "pane.send_input":
+			herdrFixtureReply(c, map[string]any{})
+		case "pane.read":
+			herdrFixtureReply(c, map[string]any{"read": map[string]any{"text": "❯"}})
+		case "agent.prompt":
+			prompt := r.Params["text"].(string)
+			prompts = append(prompts, prompt)
+			se, _ := s.terminal.find(root.ID)
+			path := s.terminal.transcriptPath(se)
+			if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+				t.Fatal(err)
+			}
+			f, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0600)
+			if err != nil {
+				t.Fatal(err)
+			}
+			enc := json.NewEncoder(f)
+			enc.Encode(map[string]any{"type": "user", "timestamp": time.Now().UTC().Format(time.RFC3339Nano), "message": map[string]any{"role": "user", "content": prompt}})
+			enc.Encode(map[string]any{"type": "assistant", "timestamp": time.Now().UTC().Format(time.RFC3339Nano), "message": map[string]any{"role": "assistant", "content": []map[string]any{{"type": "text", "text": "CODE_BETA"}}}})
+			f.Close()
+			herdrFixtureReply(c, map[string]any{})
+		default:
+			t.Errorf("unexpected %s", r.Method)
+		}
+	})
+	h.server, s.terminal.herdr = s, h
+	endpoint := "/api/terminal/session/" + root.ID + "/input"
+	if code, _ := agentChatJSON(t, s, "POST", endpoint, map[string]any{"text": "Build it"}); code != 400 {
+		t.Fatal("missing receipt ID accepted", code)
+	}
+	payload := map[string]any{"text": "Build it", "requestId": "return-input-001"}
+	if code, out := agentChatJSON(t, s, "POST", endpoint, payload); code != 200 {
+		t.Fatal(code, out)
+	}
+	if len(prompts) != 1 || !strings.Contains(prompts[0], "PLAN_ALPHA") {
+		t.Fatal(prompts)
+	}
+	if code, out := agentChatJSON(t, s, "POST", endpoint, payload); code != 200 || len(prompts) != 1 {
+		t.Fatal("retry dispatched twice", code, out)
+	}
+	se, _ := s.terminal.find(root.ID)
+	timeline, _ := s.terminalPlanningTimeline(context.Background(), se)
+	if len(timeline) != 3 || timeline[1].Text != "Build it" || timeline[1].Submission == nil {
+		t.Fatal(timeline)
+	}
+	child, body, _, _ := st.Get("alfred", childID)
+	prompt := s.composeAgentChatPrompt("alfred", child, body)
+	if !strings.Contains(prompt, "CODE_BETA") || strings.Contains(prompt, "Current owner instruction (submission") {
+		t.Fatal("missing reply or recursive envelope", prompt)
+	}
+	payload["requestId"] = "return-input-002"
+	payload["text"] = "Continue"
+	if code, out := agentChatJSON(t, s, "POST", endpoint, payload); code != 200 {
+		t.Fatal(code, out)
+	}
+	if len(prompts) != 2 || strings.Count(prompts[1], "Current owner instruction (submission") != 1 || !strings.Contains(prompts[1], "CODE_BETA") {
+		t.Fatal(prompts)
+	}
+}
+
 func TestCodingContinuationRoundTripContextAndNativeTimeline(t *testing.T) {
 	s, st, _ := agentChatFixture(t, echoStub)
 	s.terminal = &termCfg{regPath: filepath.Join(t.TempDir(), "terminals.json"), defaultWd: t.TempDir(), claudeProjects: t.TempDir()}
