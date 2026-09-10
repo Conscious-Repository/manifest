@@ -56,9 +56,12 @@ type termBlock struct {
 
 // termTranscript is the projection of one session file (or its tail).
 type termTranscript struct {
-	Turns []termTurn `json:"turns"`
-	Title string     `json:"title,omitempty"` // claude ai-title
-	Cost  float64    `json:"cost,omitempty"`  // claude cost-state totalCostUSD
+	// Set by the live projection, not the parser cache. An unreadable history
+	// must not be mistaken for an empty conversation during sharing review.
+	Available bool       `json:"-"`
+	Turns     []termTurn `json:"turns"`
+	Title     string     `json:"title,omitempty"` // claude ai-title
+	Cost      float64    `json:"cost,omitempty"`  // claude cost-state totalCostUSD
 	// Offset is the byte offset just past the last COMPLETE line parsed —
 	// pass it back as ?after= to receive only newer records.
 	Offset int64 `json:"offset"`

@@ -77,7 +77,11 @@ func (s *Server) projectTerminalTranscript(ctx context.Context, se termSession, 
 	if path != "" {
 		if got, ok := readTranscript(se.Kind, path, after); ok {
 			tr = got
+			tr.Available = true
 		}
+	}
+	if se.isDraft() {
+		tr.Available = true
 	}
 	return se, tr, ob, live
 }

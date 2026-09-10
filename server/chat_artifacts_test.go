@@ -134,7 +134,7 @@ func TestPortalCannotReadPrivateArtifactWorkspace(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, path := range []string{"/api/artifacts/get?id=0123456789abcdef&content=1", "/api/artifacts/content?id=0123456789abcdef", "/api/tasks/plan/workspace?id=aion:context-test"} {
+	for _, path := range []string{"/api/artifacts/get?id=0123456789abcdef&content=1", "/api/artifacts/content?id=0123456789abcdef", "/api/tasks/plan/workspace?id=aion:context-test", "/api/agents/chat/kairos-private/sessions/20260910-120000-abcdef/share-review"} {
 		rr := httptest.NewRecorder()
 		h.ServeHTTP(rr, httptest.NewRequest("GET", path, nil))
 		if rr.Code == 200 {

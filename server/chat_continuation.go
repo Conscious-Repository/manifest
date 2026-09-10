@@ -41,19 +41,20 @@ func codingContinuationContext(source agentchat.Session, body string) (string, i
 }
 
 type codingContinuationView struct {
-	Cwd            string                          `json:"cwd"`
-	ID             string                          `json:"id"`
-	Agent          string                          `json:"agent"`
-	Model          string                          `json:"model"`
-	Created        string                          `json:"created"`
-	Conversation   conversationDescriptor          `json:"conversation"`
-	Turns          []termTurn                      `json:"turns"`
-	Process        string                          `json:"process"`
-	AgentState     string                          `json:"agentState"`
-	Connectivity   string                          `json:"connectivity"`
-	HistoryOmitted int                             `json:"historyOmitted"`
-	Submissions    map[string]terminalInputReceipt `json:"submissions,omitempty"`
-	PlanRevisions  map[string]chatPlanRevision     `json:"planRevisions,omitempty"`
+	Cwd              string                          `json:"cwd"`
+	ID               string                          `json:"id"`
+	Agent            string                          `json:"agent"`
+	Model            string                          `json:"model"`
+	Created          string                          `json:"created"`
+	Conversation     conversationDescriptor          `json:"conversation"`
+	Turns            []termTurn                      `json:"turns"`
+	Process          string                          `json:"process"`
+	AgentState       string                          `json:"agentState"`
+	Connectivity     string                          `json:"connectivity"`
+	HistoryOmitted   int                             `json:"historyOmitted"`
+	HistoryAvailable bool                            `json:"historyAvailable"`
+	Submissions      map[string]terminalInputReceipt `json:"submissions,omitempty"`
+	PlanRevisions    map[string]chatPlanRevision     `json:"planRevisions,omitempty"`
 }
 
 // Project only explicitly continued native sessions. Neither shared task IDs
@@ -80,7 +81,7 @@ func (s *Server) codingContinuationsFor(ctx context.Context, backend, agent, id,
 		// Never modify the native parser cache. Only an exact submitted-text hash
 		// permits the canonical view to show the owner's text without its envelope.
 		turns, submissions := s.terminal.projectContinuationTurns(se.ID, key, tr.Turns)
-		out = append(out, codingContinuationView{ID: se.ID, Agent: se.Kind, Model: se.Model, Cwd: se.Cwd, Created: se.CreatedAt, Conversation: s.terminalConversation(se), Turns: turns, Process: ob.Process, AgentState: ob.AgentState, Connectivity: ob.Connectivity, HistoryOmitted: o.HistoryOmitted, Submissions: submissions, PlanRevisions: s.nativePlanRevisions(se, tr.Turns)})
+		out = append(out, codingContinuationView{ID: se.ID, Agent: se.Kind, Model: se.Model, Cwd: se.Cwd, Created: se.CreatedAt, Conversation: s.terminalConversation(se), Turns: turns, Process: ob.Process, AgentState: ob.AgentState, Connectivity: ob.Connectivity, HistoryOmitted: o.HistoryOmitted, HistoryAvailable: tr.Available, Submissions: submissions, PlanRevisions: s.nativePlanRevisions(se, tr.Turns)})
 	}
 	sort.Slice(out, func(i, j int) bool {
 		if out[i].Created != out[j].Created {
