@@ -151,6 +151,7 @@ func (c *termCfg) screenTail(id string) ([]string, bool) {
 // relaunched first (`claude --resume <id>` via the shared spawn), the CLI's
 // input line awaited, then the text delivered → {relaunched: true}.
 func (s *Server) handleTermInput(w http.ResponseWriter, r *http.Request) {
+	shared, _ := r.Context().Value(sharedTerminalInputKey{}).(*sharedTerminalInputScope)
 	if o := r.Header.Get("Origin"); o != "" && !sameOrigin(o, r.Host) {
 		http.Error(w, "cross-origin refused", http.StatusForbidden)
 		return
@@ -172,7 +173,11 @@ func (s *Server) handleTermInput(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "nothing to send", http.StatusBadRequest)
 		return
 	}
-	if b.RequestID != "" && (!agentchat.ValidRequestID(b.RequestID) || b.Key != "" || se.backend() != "herdr") {
+	if shared != nil && (se.backend() != "herdr" || !agentchat.ValidRequestID(b.RequestID) || b.Task != "" || b.ConversationAgent != "" || b.ConversationID != "" || (b.Text != "" && b.Key != "") || (b.Key != "" && len(b.Artifacts) != 0)) {
+		http.Error(w, "shared input requires a request ID and one message or key; private task/session selectors are not accepted", http.StatusBadRequest)
+		return
+	}
+	if b.RequestID != "" && (!agentchat.ValidRequestID(b.RequestID) || (b.Key != "" && shared == nil) || se.backend() != "herdr") {
 		httpError(w, errBadRequest("request IDs require a local herdr text submission"))
 		return
 	}
@@ -198,11 +203,21 @@ func (s *Server) handleTermInput(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		se = current
+		if shared != nil {
+			if se.ID != shared.Terminal {
+				http.Error(w, errSharedConversationAccess.Error(), http.StatusForbidden)
+				return
+			}
+			if _, err := s.sharedTerminal(shared.Agent, shared.Thread, se.ID); err != nil {
+				http.Error(w, errSharedConversationAccess.Error(), http.StatusForbidden)
+				return
+			}
+		}
 		if (b.ConversationAgent != "" || b.ConversationID != "") && (se.Origin == nil || se.Origin.Mode != "continue" || se.Origin.Agent != b.ConversationAgent || se.Origin.ID != b.ConversationID) {
 			httpError(w, errBadRequest("coding session does not continue this conversation"))
 			return
 		}
-		fingerprint := b.fingerprint()
+		fingerprint := sharedInputFingerprint(b, shared)
 		ownerText := b.Text
 		var continuationContext *terminalInputReceipt
 		if b.RequestID != "" {
@@ -220,7 +235,20 @@ func (s *Server) handleTermInput(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 		}
-		if se.Origin != nil && se.Origin.Mode == "continue" && se.Origin.Backend == "terminal" && b.Key == "" {
+		if shared != nil && b.Key == "" {
+			context, key, omitted, err := s.sharedInputContext(r.Context(), shared, b.Artifacts)
+			if err != nil {
+				if errors.Is(err, errSharedConversationAccess) {
+					http.Error(w, errSharedConversationAccess.Error(), http.StatusForbidden)
+				} else {
+					http.Error(w, "shared conversation context is unavailable; reconnect or resolve its attached files before retrying", http.StatusConflict)
+				}
+				return
+			}
+			continuationContext = &terminalInputReceipt{Text: ownerText, ContextSource: key, ContextHash: hashTerminalText(context), HistoryOmitted: omitted}
+			b.Text = context + "\n\nCurrent team member instruction from " + shared.Email + " (submission " + b.RequestID + "):\n" + ownerText
+		}
+		if shared == nil && se.Origin != nil && se.Origin.Mode == "continue" && se.Origin.Backend == "terminal" && b.Key == "" {
 			root, found := s.terminal.find(se.Origin.ID)
 			if !found || root.Kind != se.Origin.Agent || root.Device != "" || (root.Origin != nil && root.Origin.Mode == "continue") {
 				httpError(w, errBadRequest("source conversation unavailable"))
@@ -236,7 +264,7 @@ func (s *Server) handleTermInput(w http.ResponseWriter, r *http.Request) {
 			continuationContext = &terminalInputReceipt{Text: ownerText, ContextSource: key, ContextHash: hashTerminalText(context), HistoryOmitted: omitted}
 			b.Text = context + "\n\nCurrent owner instruction (submission " + b.RequestID + "):\n" + ownerText
 		}
-		if se.Origin != nil && se.Origin.Mode == "continue" && se.Origin.Backend == "" && b.Key == "" {
+		if shared == nil && se.Origin != nil && se.Origin.Mode == "continue" && se.Origin.Backend == "" && b.Key == "" {
 			if b.RequestID == "" {
 				httpError(w, errBadRequest("continuation messages require a request ID"))
 				return
@@ -266,7 +294,7 @@ func (s *Server) handleTermInput(w http.ResponseWriter, r *http.Request) {
 				b.Text = context + "\n\nCurrent owner instruction (submission " + b.RequestID + "):\n" + ownerText
 			}
 		}
-		if len(b.Artifacts) > 0 {
+		if shared == nil && len(b.Artifacts) > 0 {
 			linked := false
 			for _, link := range s.terminalConversation(se).Links {
 				if link.Kind == "task" && link.ID == b.Task && b.Task != "" {
@@ -298,27 +326,40 @@ func (s *Server) handleTermInput(w http.ResponseWriter, r *http.Request) {
 		var relaunched bool
 		var receipt *terminalInputReceipt
 		var err error
+		prepareReceipt := func() error {
+			receipt = &terminalInputReceipt{ID: b.RequestID, Fingerprint: fingerprint, State: "unconfirmed", Updated: time.Now().UTC().Format(time.RFC3339Nano), Runtime: se.Runtime, Task: b.Task, Artifacts: b.Artifacts, SubmittedHash: hashTerminalText(b.Text)}
+			if shared != nil {
+				receipt.SharedAgent, receipt.SharedThread = shared.Agent.Name, shared.Thread
+				receipt.ActorEmail, receipt.ActorName = shared.Email, shared.Name
+				if b.Key != "" {
+					receipt.Text = "[key: " + b.Key + "]"
+					receipt.SubmittedHash = hashTerminalText(receipt.Text)
+				}
+			}
+			if continuationContext != nil {
+				receipt.Text, receipt.ContextSource = continuationContext.Text, continuationContext.ContextSource
+				receipt.ContextHash, receipt.HistoryOmitted = continuationContext.ContextHash, continuationContext.HistoryOmitted
+			}
+			return s.terminal.writeInputReceipt(se.ID, *receipt)
+		}
 		se, relaunched, err = s.ensureHerdrInputLocked(r.Context(), se)
 		if err != nil {
 			http.Error(w, err.Error(), terminalLaunchStatus(err))
 			return
 		}
 		if b.Key != "" {
+			if shared != nil {
+				if err = prepareReceipt(); err != nil {
+					http.Error(w, "input receipt could not be persisted; nothing sent", http.StatusInternalServerError)
+					return
+				}
+			}
 			err = s.terminal.herdr.SendKey(r.Context(), se.Runtime, b.Key)
 		} else {
 			err = s.herdrPromptReady(r.Context(), se)
 			if err == nil {
 				if b.RequestID != "" {
-					receipt = &terminalInputReceipt{ID: b.RequestID, Fingerprint: fingerprint, State: "unconfirmed", Updated: time.Now().UTC().Format(time.RFC3339Nano), Runtime: se.Runtime, Task: b.Task, Artifacts: b.Artifacts}
-					receipt.SubmittedHash = hashTerminalText(b.Text)
-					if continuationContext != nil {
-						receipt.Text = continuationContext.Text
-						receipt.ContextSource = continuationContext.ContextSource
-						receipt.ContextHash = continuationContext.ContextHash
-						receipt.HistoryOmitted = continuationContext.HistoryOmitted
-						receipt.SubmittedHash = hashTerminalText(b.Text)
-					}
-					if err = s.terminal.writeInputReceipt(se.ID, *receipt); err != nil {
+					if err = prepareReceipt(); err != nil {
 						http.Error(w, "input receipt could not be persisted; nothing sent: "+err.Error(), http.StatusInternalServerError)
 						return
 					}

@@ -84,9 +84,11 @@ func (s *Server) sharedTerminalRead(ag *chatAgent, w http.ResponseWriter, r *htt
 		return
 	}
 	_, transcript, observation, live := s.projectTerminalTranscript(r.Context(), se, after)
+	key := agentConversation("hermes", se.Origin.Agent, se.Origin.ID, "private", "").Key
+	turns, submissions := s.projectConversationNativeTurns(se, key, transcript.Turns)
 	w.Header().Set("Cache-Control", "no-store")
 	writeJSON(w, map[string]any{
-		"id": se.ID, "agent": se.Kind, "turns": transcript.Turns,
+		"id": se.ID, "agent": se.Kind, "turns": turns, "submissions": submissions,
 		"offset": transcript.Offset, "available": transcript.Available,
 		"live": live, "process": observation.Process,
 		"agentState": observation.AgentState, "connectivity": observation.Connectivity,

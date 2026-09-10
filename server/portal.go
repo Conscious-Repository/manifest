@@ -88,7 +88,8 @@ type PortalOptions struct {
 	ChatAttachGet func(w http.ResponseWriter, r *http.Request, hash string)
 	// Conversation-scoped access to native sessions explicitly shared by the
 	// owner. Callback selection fixes the team; private terminal APIs stay absent.
-	ChatTerminalRead func(w http.ResponseWriter, r *http.Request)
+	ChatTerminalRead  func(w http.ResponseWriter, r *http.Request)
+	ChatTerminalInput func(w http.ResponseWriter, r *http.Request, memberEmail, memberName string)
 }
 
 // PortalHandler serves the AION portal as a standalone site, rooted at the
@@ -188,6 +189,9 @@ func PortalHandler(opt PortalOptions) (http.Handler, error) {
 			}
 			if opt.ChatTerminalRead != nil {
 				mux.HandleFunc("GET /api/chat/threads/{thread}/terminals/{terminal}/transcript", api.handleChatTerminalRead)
+			}
+			if opt.ChatTerminalInput != nil {
+				mux.HandleFunc("POST /api/chat/threads/{thread}/terminals/{terminal}/input", api.handleChatTerminalInput)
 			}
 			if opt.ChatThread != nil {
 				mux.HandleFunc("POST /api/chat/thread", api.handleChatThread)
@@ -835,6 +839,14 @@ func (p *portalAPI) handleChatTerminalRead(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	p.opt.ChatTerminalRead(w, r)
+}
+
+func (p *portalAPI) handleChatTerminalInput(w http.ResponseWriter, r *http.Request) {
+	id, ok := p.identify(w, r)
+	if !ok {
+		return
+	}
+	p.opt.ChatTerminalInput(w, r, id.Email, id.Name)
 }
 
 func (p *portalAPI) handleChatThread(w http.ResponseWriter, r *http.Request) {

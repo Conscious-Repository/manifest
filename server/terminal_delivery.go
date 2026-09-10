@@ -35,6 +35,10 @@ func (b terminalInput) fingerprint() string {
 // agent completed work. Persist unconfirmed BEFORE crossing the runtime boundary.
 // A lost reply/crash leaves uncertainty that must never authorize replay.
 type terminalInputReceipt struct {
+	SharedAgent    string               `json:"sharedAgent,omitempty"`
+	SharedThread   string               `json:"sharedThread,omitempty"`
+	ActorEmail     string               `json:"actorEmail,omitempty"`
+	ActorName      string               `json:"actorName,omitempty"`
 	ID             string               `json:"id"`
 	Fingerprint    string               `json:"fingerprint"`
 	State          string               `json:"state"` // unconfirmed | sent

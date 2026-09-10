@@ -77,11 +77,7 @@ func (s *Server) codingContinuationsFor(ctx context.Context, backend, agent, id,
 		if o == nil || o.Mode != "continue" || o.Backend != backend || o.Agent != agent || o.ID != id || se.Device != "" || !isCodingAgent(se.Kind) {
 			continue
 		}
-		se, tr, ob, _ := s.projectTerminalTranscript(ctx, se, 0)
-		// Never modify the native parser cache. Only an exact submitted-text hash
-		// permits the canonical view to show the owner's text without its envelope.
-		turns, submissions := s.terminal.projectContinuationTurns(se.ID, key, tr.Turns)
-		out = append(out, codingContinuationView{ID: se.ID, Agent: se.Kind, Model: se.Model, Cwd: se.Cwd, Created: se.CreatedAt, Conversation: s.terminalConversation(se), Turns: turns, Process: ob.Process, AgentState: ob.AgentState, Connectivity: ob.Connectivity, HistoryOmitted: o.HistoryOmitted, HistoryAvailable: tr.Available, Submissions: submissions, PlanRevisions: s.nativePlanRevisions(se, tr.Turns)})
+		out = append(out, s.projectCodingContinuation(ctx, se, key))
 	}
 	sort.Slice(out, func(i, j int) bool {
 		if out[i].Created != out[j].Created {
@@ -90,6 +86,36 @@ func (s *Server) codingContinuationsFor(ctx context.Context, backend, agent, id,
 		return out[i].ID < out[j].ID
 	})
 	return out
+}
+
+func (s *Server) projectCodingContinuation(ctx context.Context, se termSession, key string) codingContinuationView {
+	se, tr, ob, _ := s.projectTerminalTranscript(ctx, se, 0)
+	turns, submissions := s.projectConversationNativeTurns(se, key, tr.Turns)
+	omitted := 0
+	if se.Origin != nil {
+		omitted = se.Origin.HistoryOmitted
+	}
+	return codingContinuationView{ID: se.ID, Agent: se.Kind, Model: se.Model, Cwd: se.Cwd, Created: se.CreatedAt, Conversation: s.terminalConversation(se), Turns: turns, Process: ob.Process, AgentState: ob.AgentState, Connectivity: ob.Connectivity, HistoryOmitted: omitted, HistoryAvailable: tr.Available, Submissions: submissions, PlanRevisions: s.nativePlanRevisions(se, tr.Turns)}
+}
+
+func (s *Server) projectConversationNativeTurns(se termSession, key string, native []termTurn) ([]termTurn, map[string]terminalInputReceipt) {
+	turns, submissions := s.terminal.projectContinuationTurns(se.ID, key, native)
+	if o := se.Origin; o != nil && o.Backend == "" && s.agentChat != nil {
+		if source, _, _, ok := s.agentChat.store.Get(o.Agent, o.ID); ok && source.Sharing != nil && source.Sharing.State == "shared" {
+			p := source.Sharing
+			sharedKey := agentConversation("portal", p.Agent, p.Thread, "", "").Key
+			if sharedKey != key {
+				projected, shared := s.terminal.projectContinuationTurns(se.ID, sharedKey, native)
+				for i, turn := range native {
+					if receipt, ok := shared[turn.ID]; ok {
+						turns[i] = projected[i]
+						submissions[turn.ID] = receipt
+					}
+				}
+			}
+		}
+	}
+	return turns, submissions
 }
 
 func (c *termCfg) projectContinuationTurns(id, key string, native []termTurn) ([]termTurn, map[string]terminalInputReceipt) {
@@ -258,7 +284,11 @@ func timelineContinuationContext(key string, turns []conversationTimelineTurn) (
 			manifest, _ := json.Marshal(t.Delivery.Context)
 			text = "Recorded message context (references only): " + string(manifest) + "\n" + text
 		}
-		parts[i] = fmt.Sprintf("\n[source-turn %v; author %q; at %q]\n%s\n", t.N, t.Who, t.TS, text)
+		author := t.Who
+		if t.Submission != nil && t.Submission.ActorEmail != "" {
+			author = t.Submission.ActorEmail
+		}
+		parts[i] = fmt.Sprintf("\n[source-turn %v; author %q; at %q]\n%s\n", t.N, author, t.TS, text)
 	}
 	start, total := len(parts), 0
 	for i := len(parts) - 1; i >= 0; i-- {

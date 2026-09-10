@@ -1031,6 +1031,7 @@ func main() {
 		// native chat with kairos (chat-kairos handoff)
 		portalOpts.ChatThreads = srv.AionChatThreads
 		portalOpts.ChatTerminalRead = srv.AionChatTerminalRead
+		portalOpts.ChatTerminalInput = srv.AionChatTerminalInput
 		portalOpts.ChatThread = srv.AionChatThread
 		portalOpts.ChatAsk = srv.AionChatAsk
 		portalOpts.ChatEngine = srv.AionChatEngine
@@ -1168,6 +1169,7 @@ func main() {
 				oodaOpts.Agents = srv.OodaTeamAgents
 				oodaOpts.ChatThreads = srv.OodaChatThreads
 				oodaOpts.ChatTerminalRead = srv.OodaChatTerminalRead
+				oodaOpts.ChatTerminalInput = srv.OodaChatTerminalInput
 				oodaOpts.ChatThread = srv.OodaChatThread
 				oodaOpts.ChatAsk = srv.OodaChatAsk
 				oodaOpts.ChatEngine = srv.OodaChatEngine
