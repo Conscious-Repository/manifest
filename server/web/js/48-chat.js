@@ -2296,10 +2296,12 @@ function chatTermHead(o) {
   ren.title = "rename";
   ren.onclick = () => chatTermRename(title, se);
   acts.append(ren);
-  const raw = el("button", "sprt-quiet", "open in terminal ↗");
+  const addressed=chatRecipients.get(se.kind+"/"+se.id);
+  const selectedRuntime=addressed?.backend==="terminal"?(o.codingRecipients||[]).find(p=>p.id===addressed.id&&p.agent===addressed.agent):null;
+  const raw = el("button", "sprt-quiet", selectedRuntime?"Open "+chatAgentLabel(selectedRuntime.agent)+" terminal ↗":"open in terminal ↗");
   raw.title = "the raw pane (xterm) in the Terminal tab";
-  raw.onclick = () => chatTermOpenInTerminal(se);
-  if(se.launchPhase!=="draft")head.append(raw);
+  raw.onclick = () => chatTermOpenInTerminal(selectedRuntime||se);
+  if(selectedRuntime||se.launchPhase!=="draft")head.append(raw);
   const kill = chatTermEndIsKill(se);
   if (!se.boardBrief || kill) acts.append(armedDelete(kill ? "✕ end" : "forget", kill ? "end — sure?" : "forget — sure?", () => chatTermEnd(se)));
   details.append(acts);
