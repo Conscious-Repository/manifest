@@ -129,23 +129,30 @@ func TestHerdrRuntimeIdentityMismatchRefusesSend(t *testing.T) {
 	}
 }
 func TestHerdrRuntimeDialogRefusesPrompt(t *testing.T) {
-	var writes atomic.Int32
-	h := herdrFixture(t, func(c net.Conn, r herdrFixtureRequest) {
-		switch r.Method {
-		case "session.snapshot":
-			herdrFixtureSnapshot(c, "idle", 1)
-		case "pane.read":
-			herdrFixtureReply(c, map[string]any{"read": map[string]any{"text": "Do you trust the files in this folder?\n❯ No, exit"}})
-		default:
-			writes.Add(1)
-			herdrFixtureReply(c, map[string]any{})
-		}
-	})
-	if err := h.SendText(context.Background(), herdrFixtureID(t, h), "hello"); err == nil {
-		t.Fatal("accepted dialog")
-	}
-	if writes.Load() != 0 {
-		t.Fatal("prompted dialog")
+	for name, screen := range map[string]string{
+		"trust":        "Do you trust the files in this folder?\n❯ No, exit",
+		"codex-update": "Update available! 0.153.4 -> 0.154.0\n1. Update now\n2. Skip\n3. Skip until next version\nPress enter to continue",
+	} {
+		t.Run(name, func(t *testing.T) {
+			var writes atomic.Int32
+			h := herdrFixture(t, func(c net.Conn, r herdrFixtureRequest) {
+				switch r.Method {
+				case "session.snapshot":
+					herdrFixtureSnapshot(c, "idle", 1)
+				case "pane.read":
+					herdrFixtureReply(c, map[string]any{"read": map[string]any{"text": screen}})
+				default:
+					writes.Add(1)
+					herdrFixtureReply(c, map[string]any{})
+				}
+			})
+			if err := h.SendText(context.Background(), herdrFixtureID(t, h), "hello"); err == nil {
+				t.Fatal("accepted dialog")
+			}
+			if writes.Load() != 0 {
+				t.Fatal("prompted dialog")
+			}
+		})
 	}
 }
 func TestHerdrRuntimePromptTimeoutIsUnobservedAndNeverResent(t *testing.T) {

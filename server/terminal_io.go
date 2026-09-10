@@ -472,6 +472,8 @@ func termPromptShowing(lines []string) bool {
 func termBlockingDialog(lines []string) string {
 	joined := strings.ToLower(strings.Join(lines, "\n"))
 	switch {
+	case strings.Contains(joined, "update available") && strings.Contains(joined, "skip until next version") && strings.Contains(joined, "press enter to continue"):
+		return "Codex is waiting on an update choice — open the session in TERMINAL and choose an option; nothing was sent"
 	case strings.Contains(joined, "do you trust the files in this folder") ||
 		strings.Contains(joined, "yes, i trust this folder") ||
 		strings.Contains(joined, "do you trust the contents of this directory"):
