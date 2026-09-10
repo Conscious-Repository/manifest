@@ -41,11 +41,15 @@ func (s *Server) handleTermTranscript(w http.ResponseWriter, r *http.Request) {
 			full, _ = readTranscript(se.Kind, path, 0)
 		}
 	}
+	if o := se.Origin; o != nil && o.Mode == "continue" && o.Backend == "" {
+		tr.Turns, _ = s.projectConversationNativeTurns(se, agentConversation("hermes", o.Agent, o.ID, "private", "").Key, tr.Turns)
+	}
 	planningTimeline, _ := s.terminalPlanningTimeline(r.Context(), se)
 	writeJSON(w, map[string]any{
 		"turns": tr.Turns, "title": tr.Title, "cost": tr.Cost,
-		"conversation": s.terminalConversation(se),
-		"origin":       se.Origin, "draft": se.isDraft(),
+		"conversation":       s.terminalConversation(se),
+		"sharedConversation": s.terminalSharedConversation(se),
+		"origin":             se.Origin, "draft": se.isDraft(),
 		"related":            s.terminalRelatedChats(se),
 		"planningTimeline":   planningTimeline,
 		"planningRecipients": s.terminalPlanningChildren(se),
@@ -173,12 +177,8 @@ func (s *Server) handleTermInput(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "nothing to send", http.StatusBadRequest)
 		return
 	}
-	if shared != nil && (se.backend() != "herdr" || !agentchat.ValidRequestID(b.RequestID) || b.Task != "" || b.ConversationAgent != "" || b.ConversationID != "" || (b.Text != "" && b.Key != "") || (b.Key != "" && len(b.Artifacts) != 0)) {
-		http.Error(w, "shared input requires a request ID and one message or key; private task/session selectors are not accepted", http.StatusBadRequest)
-		return
-	}
-	if b.RequestID != "" && (!agentchat.ValidRequestID(b.RequestID) || (b.Key != "" && shared == nil) || se.backend() != "herdr") {
-		httpError(w, errBadRequest("request IDs require a local herdr text submission"))
+	if b.RequestID != "" && (!agentchat.ValidRequestID(b.RequestID) || se.backend() != "herdr") {
+		httpError(w, errBadRequest("request IDs require a local herdr submission"))
 		return
 	}
 	if b.Supervise && se.backend() != "herdr" {
@@ -203,6 +203,20 @@ func (s *Server) handleTermInput(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		se = current
+		original := b
+		ownerRoute := shared == nil
+		if ownerRoute {
+			var err error
+			shared, err = s.ownerSharedTerminalInput(se, &b)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusConflict)
+				return
+			}
+		}
+		if shared != nil && (!agentchat.ValidRequestID(b.RequestID) || b.Task != "" || b.ConversationAgent != "" || b.ConversationID != "" || (b.Text != "" && b.Key != "") || (b.Key != "" && len(b.Artifacts) != 0)) {
+			http.Error(w, "shared input requires a request ID and one message or key; private task/session selectors are not accepted", http.StatusBadRequest)
+			return
+		}
 		if shared != nil {
 			if se.ID != shared.Terminal {
 				http.Error(w, errSharedConversationAccess.Error(), http.StatusForbidden)
@@ -223,7 +237,7 @@ func (s *Server) handleTermInput(w http.ResponseWriter, r *http.Request) {
 		if b.RequestID != "" {
 			receipt, err := s.terminal.readInputReceipt(se.ID, b.RequestID)
 			if err == nil {
-				if receipt.Fingerprint != fingerprint {
+				if receipt.Fingerprint != fingerprint && !(ownerRoute && shared != nil && s.reviewedOwnerInputReceipt(shared, original, receipt)) {
 					http.Error(w, "request ID was already used for different content", http.StatusConflict)
 					return
 				}
@@ -331,10 +345,10 @@ func (s *Server) handleTermInput(w http.ResponseWriter, r *http.Request) {
 			if shared != nil {
 				receipt.SharedAgent, receipt.SharedThread = shared.Agent.Name, shared.Thread
 				receipt.ActorEmail, receipt.ActorName = shared.Email, shared.Name
-				if b.Key != "" {
-					receipt.Text = "[key: " + b.Key + "]"
-					receipt.SubmittedHash = hashTerminalText(receipt.Text)
-				}
+			}
+			if b.Key != "" {
+				receipt.Text = "[key: " + b.Key + "]"
+				receipt.SubmittedHash = hashTerminalText(receipt.Text)
 			}
 			if continuationContext != nil {
 				receipt.Text, receipt.ContextSource = continuationContext.Text, continuationContext.ContextSource
@@ -348,7 +362,7 @@ func (s *Server) handleTermInput(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if b.Key != "" {
-			if shared != nil {
+			if b.RequestID != "" {
 				if err = prepareReceipt(); err != nil {
 					http.Error(w, "input receipt could not be persisted; nothing sent", http.StatusInternalServerError)
 					return
@@ -404,6 +418,12 @@ func (s *Server) handleTermInput(w http.ResponseWriter, r *http.Request) {
 		} else {
 			writeJSON(w, map[string]any{"ok": true, "relaunched": relaunched})
 		}
+		return
+	}
+	original := b
+	scope, scopeErr := s.ownerSharedTerminalInput(se, &original)
+	if shared != nil || scope != nil || scopeErr != nil {
+		http.Error(w, "shared conversation input requires its supported herdr runtime; nothing sent", http.StatusConflict)
 		return
 	}
 	relaunched, err := s.termEnsureLive(se)

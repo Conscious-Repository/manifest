@@ -64,11 +64,14 @@ function ViewChat({ data }) {
   // construction: any thread switch or creation starts from nothing grounded.
   React.useEffect(() => { setCtx([]); }, [sel]);
 
+  const activeThread=((state && state.threads)||[]).find(t=>t.id===sel);
+  const shared=window.SHARED_CHAT.useThread(activeThread,((state && state.messages)||{})[sel]||[],me);
+
   if (loadError && !state) return <div role="alert" className="ooda-err">{loadError} <button className="ooda-send" onClick={load}>Retry conversations</button></div>;
   if (!state) return <Empty>loading…</Empty>;
 
   const threads = (state.threads || []).filter((t) => !t.archived);
-  const msgs = (state.messages || {})[sel] || [];
+  const msgs = shared.messages;
   const engine = state.engine || {};
   const noAgent = !engine.harness;
 
@@ -92,11 +95,15 @@ function ViewChat({ data }) {
     const ritual = window.CHAT_ACTIONS.ritualOf(key);
     setBusy(true); setErr("");
     try {
-      await postJSON("/api/chat/ask", { thread: sel, text: body, ritual, context: ctx });
+      if(shared.shared && (!shared.ready || !shared.recipient)) throw Error('Choose the agent for this message.');
+      if(shared.native) {
+        if(ctx.length)throw Error('Remove the context chips before sending to this terminal.');
+        await shared.send(body);
+      } else await postJSON("/api/chat/ask", { thread: sel, text: body, ritual, context: ctx });
       // the grounding chips belonged to THAT message — the next one starts
       // clean, or asking again silently re-attaches a property the user no
       // longer sees themselves holding
-      setText(current => current.trim() === body ? "" : current); setCtx([]); load();
+      setText(current => current.trim() === body ? "" : current); setCtx([]); load(); shared.refresh();
     } catch (e) { setErr(String(e.message || e)); }
     sending.current = false; setBusy(false);
   };
@@ -149,7 +156,7 @@ function ViewChat({ data }) {
   return (
     <div className="ooda-split">
       <div className="ooda-list">
-        {noAgent ? (
+        {noAgent && !shared.native ? (
           <div className="ooda-stale">zeck is not configured on this box yet — threads still work</div>
         ) : null}
         <div className="ooda-sec-head">
@@ -170,6 +177,7 @@ function ViewChat({ data }) {
         {sel ? (
           <Section title="CONVERSATION" count={msgs.length}>
             {!msgs.length ? <Empty>ask zeck something about the portfolio</Empty> : null}
+            {shared.controls('Zeck','ooda-in',sent=>{setText(current=>current.trim()===sent?'':current);load();})}
             {msgs.map((m, i) => (
               <div key={i} className={"ooda-msg " + (m.kind === "ask" ? "mine" : "agent")}>
                 <div className="ooda-comment-head">
@@ -274,9 +282,9 @@ function ViewChat({ data }) {
               </div>
               <div className="ooda-compose-acts">
                 <button className="ooda-send" onClick={() => send("ask")} disabled={busy || !text.trim()}>
-                  {busy ? "…" : window.CHAT_ACTIONS.ask.label}
+                  {busy ? "…" : shared.native ? "Send to "+shared.native.agent : window.CHAT_ACTIONS.ask.label}
                 </button>
-                <button className="ooda-send secondary" onClick={() => send("delegate")} disabled={busy || !text.trim()}>
+                <button style={{display:shared.native?"none":undefined}} className="ooda-send secondary" onClick={() => send("delegate")} disabled={busy || !text.trim()}>
                   {window.CHAT_ACTIONS.propose.label}
                 </button>
               </div>
@@ -284,13 +292,13 @@ function ViewChat({ data }) {
             {/* one row per action, the name in mono and its consequence beside
                 it. Run together on one line these two read as a single
                 sentence, and the sub-labels already carry their own em-dash. */}
-            <div className="ooda-actdefs">
+            <div className="ooda-actdefs" style={{display:shared.native?"none":undefined}}>
               <span><em>{window.CHAT_ACTIONS.ask.label}</em>{window.CHAT_ACTIONS.ask.sub}</span>
               <span><em>{window.CHAT_ACTIONS.propose.label}</em>{window.CHAT_ACTIONS.propose.sub}</span>
             </div>
             {/* attach is quieter and separate: the file becomes a context chip
                 above and rides the send you were going to make anyway */}
-            <div className="ooda-attach-row">
+            <div className="ooda-attach-row" style={{display:shared.native?"none":undefined}}>
               <label className="ooda-attach" title={window.CHAT_ACTIONS.attach.hint}>
                 {attaching ? "…" : window.CHAT_ACTIONS.attach.label}
                 <input type="file" accept={window.CHAT_ACTIONS.attach.accept}
@@ -299,7 +307,7 @@ function ViewChat({ data }) {
               </label>
               <span className="ooda-sub">{window.CHAT_ACTIONS.attach.hint}</span>
             </div>
-            <div className="ooda-assure">{window.CHAT_ACTIONS.assurance}</div>
+            <div className="ooda-assure">{shared.native ? 'Messages and terminal replies are visible to this team.' : window.CHAT_ACTIONS.assurance}</div>
             {err ? <div className="ooda-err">{err}</div> : null}
           </Section>
         ) : null}

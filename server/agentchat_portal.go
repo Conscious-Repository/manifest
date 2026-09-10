@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"manifest/agentchat"
 	"manifest/chatthreads"
 	"manifest/ledger"
 	"manifest/spirits"
@@ -133,6 +134,7 @@ func portalChatDomainLabel(domain string) string {
 // portalChatSession is the rail/header projection of one thread — the
 // Hermes-family Session keys, so the renderer reads it unchanged.
 type portalChatSession struct {
+	Shared   bool    `json:"shared,omitempty"`
 	ID       string  `json:"id"`
 	Agent    string  `json:"agent"`
 	Title    string  `json:"title"`
@@ -158,7 +160,7 @@ func (s *Server) portalChatSessionOf(ag *chatAgent, t chatthreads.Thread, msgs [
 		status = "thinking"
 	}
 	return portalChatSession{
-		ID: t.ID, Agent: ag.Name, Title: t.Title, Created: t.Created.UTC().Format(time.RFC3339),
+		Shared: t.SharedSource != nil, ID: t.ID, Agent: ag.Name, Title: t.Title, Created: t.Created.UTC().Format(time.RFC3339),
 		Updated: updated.UTC().Format(time.RFC3339), Status: status, Turns: len(msgs),
 		Domain: ag.Domain, Rock: t.Rock, Archived: t.Archived, Busy: busy,
 	}
@@ -384,12 +386,28 @@ func (s *Server) handlePortalChatSession(ag *chatAgent, w http.ResponseWriter, r
 	}
 	msgs := ag.Store.Messages(t.ID)
 	self, _ := s.portalChatIdentity()
-	writeJSON(w, map[string]any{
+	body := portalChatBody(ag, msgs, self)
+	out := map[string]any{
 		"session":      s.portalChatSessionOf(ag, t, msgs, portalChatPending(ag), s.chatBusy(ag)),
 		"conversation": agentConversation("portal", ag.Name, t.ID, "team:"+ag.Domain, ""),
-		"body":         portalChatBody(ag, msgs, self),
-		"queued":       []string{},
-	})
+		"body":         body, "queued": []string{},
+	}
+	if t.SharedSource != nil && !t.Archived {
+		review, err := s.sharedConversationReview(ag, t.ID)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusConflict)
+			return
+		}
+		views, err := s.sharedNativeViews(r.Context(), ag, t.ID, review)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusConflict)
+			return
+		}
+		out["continuations"] = views
+		out["timeline"] = conversationTimeline(agentchat.Session{Agent: ag.Name, ID: t.ID, Created: t.Created.Format(time.RFC3339)}, body, views)
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	writeJSON(w, out)
 }
 
 // POST /api/agents/chat/{agent}/sessions/{id}/messages {text, ritual?, context?, files?}

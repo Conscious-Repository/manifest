@@ -1024,6 +1024,7 @@ async function loadChatSession(id) {
     return;
   }
   if (id !== chatOpenId || base !== chatBase()) return; // navigated away mid-fetch
+  if(d.sharedConversation?.route){location.hash=d.sharedConversation.route;return;}
   let originSelection=null;
   const originRef=d.session.origin?.artifacts?.[0];
   if(originRef && d.session.turns===0){
@@ -1108,6 +1109,7 @@ async function refetchChatSession(id) {
     const res = await fetch(chatBase() + "/" + encodeURIComponent(id));
     if (!res.ok || id !== chatOpenId) return;
     const d = await res.json();
+    if(d.sharedConversation?.route){location.hash=d.sharedConversation.route;return;}
     renderChatTranscript(d);
     renderChatComposer(d.session);
   } catch (e) {}
@@ -1326,7 +1328,15 @@ function chatHead(s) {
   if (s.model) head.title = shortModel(s.model);
   else if (portal) sub.push(s.domain === "ooda" ? "ooda portal" : "aion portal");
   if (portal && s.busy) sub.push("✦ running");
-  if(chatRosterEntry(agent)?.durableSend){
+  if(s.shared && (s.continuations||[]).length){
+    const pick=document.createElement("select"); pick.className="pp-in chat-head-sub"; pick.setAttribute("aria-label","Next message recipient");
+    const choices=[{value:"",label:"Choose agent…"},{value:"team",label:chatAgentLabel(agent)+" · team agent"},...(s.continuations||[]).map(v=>({value:v.id,label:chatAgentLabel(v.agent)+(v.model?" · "+shortModel(v.model):"")+" · "+v.id.slice(-6)}))];
+    choices.forEach(c=>{const option=document.createElement("option");option.value=c.value;option.textContent=c.label;pick.append(option);});
+    const key=agent+"/"+s.id, recipient=chatRecipients.get(key);
+    pick.value=recipient?(recipient.backend==="terminal"?recipient.id:"team"):"";
+    pick.onchange=()=>{const native=(s.continuations||[]).find(v=>v.id===pick.value);if(native)chatRecipients.set(key,{backend:"terminal",agent:native.agent,id:native.id,model:native.model});else if(pick.value==="team")chatRecipients.set(key,{agent});else chatRecipients.delete(key);chatCaptureSyncedDraft(key);renderChatComposer(s);};
+    head.append(pick);
+  }else if(chatRosterEntry(agent)?.durableSend){
     const recipient=chatRecipients.get(agent+"/"+s.id)||{agent,model:s.model||""};
     const model=recipient.model||chatRosterEntry(recipient.agent)?.model||"";
     const to=el("button","sprt-quiet chat-head-sub","To "+chatAgentLabel(recipient.agent)+(model?" · "+shortModel(model):""));
@@ -1633,12 +1643,13 @@ function renderChatComposer(session) {
   const host = document.getElementById("chatComposer");
   if (!host) return;
   const draftKey = (chatAgent || "spirits") + "/" + (chatOpenId || "new");
+  const nativeRecipient = () => chatRecipients.get(draftKey)?.backend === "terminal";
   const syncAttach = () => {
     const btn = host.querySelector(".chat-attach");
-    if (btn) btn.hidden = !chatAgent || (chatIsTerm()&&chatRecipients.get(draftKey)?.backend!=="hermes");
+    if (btn) btn.hidden = nativeRecipient() || !chatAgent || (chatIsTerm()&&chatRecipients.get(draftKey)?.backend!=="hermes");
     const rit = host.querySelector(".chat-ritual");
     if (rit) {
-      rit.hidden = !chatIsPortal();
+      rit.hidden = !chatIsPortal() || nativeRecipient();
       rit.querySelectorAll(".filter-chip").forEach((c) => c.classList.toggle("on", c.dataset.ritual === chatRitual));
     }
     const chips = host.querySelector(".chat-attach-chips");
@@ -1660,6 +1671,8 @@ function renderChatComposer(session) {
     const a = chatRosterEntry(chatAgent);
     if (chatIsTerm()) return chatRecipients.get(draftKey)?.backend==="hermes"?"Message the selected agent…":chatTermPlaceholder();
     if (chatIsPortal()) {
+      if(nativeRecipient())return "Message "+chatAgentLabel(chatRecipients.get(draftKey).agent)+"…";
+      if(session?.shared && (session.continuations||[]).length && !chatRecipients.get(draftKey))return "Choose an agent above, then write your message…";
       if (session && session.busy) return "✦ " + (a ? a.label : chatAgent) + " is running — one order at a time";
       if (session && session.status === "thinking") return "✦ waiting on " + (a ? a.label : chatAgent) + "…";
       return "Message… · @ to tag an intent";
@@ -1671,7 +1684,7 @@ function renderChatComposer(session) {
   // a claude/codex send may relaunch the tmux and wait for its prompt (~10 s):
   // one in flight at a time
   const uploading=!!chatUploads.get(draftKey);
-  const busy = uploading || chatSending || !!(session && session.busy) || (chatIsTerm() && chatTermSending);
+  const busy = uploading || chatSending || !!(session && session.busy && !nativeRecipient()) || (chatIsTerm() && chatTermSending);
   if (host.dataset.built) {
     const ta = host.querySelector("textarea");
     const send = host.querySelector(".chat-send");
@@ -1789,6 +1802,7 @@ function renderChatComposer(session) {
     const payload = chatIsPortal() ? { text, files, ritual: chatRitual } : { text, files };
     const selected=chatArtifactSelections.get("chat:"+draftKey);
     const chosenRecipient=chatRecipients.get(draftKey);
+    if(session?.shared && (session.continuations||[]).length && !chosenRecipient){showToast("Choose the agent for this message above the conversation.");chatSending=false;renderChatComposer(chatCurSession);return;}
     if(chatIsTerm()&&chosenRecipient?.backend==="hermes"){
       try{
         const target=chosenRecipient;
@@ -1893,7 +1907,7 @@ function chatTranscriptSignature(d) {
   return JSON.stringify((d.session.deliveries || []).map(x=>[x.id,x.state,x.userTurn,x.replyTurn])) + "|" + d.session.updated + "|" + d.session.status + "|" + (d.queued || []).length + "|" + JSON.stringify((d.operations || []).map(x => [x.record.operationId, x.record.status, x.record.result])) + "|" + JSON.stringify(d.proposals || []) + "|" + JSON.stringify(d.codingResults || [])+"|"+JSON.stringify(d.continuations||[]);
 }
 function ensureChatPoll(session, queued) {
-  const active = session && (session.status === "thinking" || queued > 0 || (chatAgent && !chatIsPortal()));
+  const active = session && (session.status === "thinking" || session.shared || queued > 0 || (chatAgent && !chatIsPortal()));
   if (!active) { if (chatPollTimer) { clearInterval(chatPollTimer); chatPollTimer = null; } return; }
   if (chatPollTimer) return;
   const every = chatIsPortal() ? 4000 : 1500;
@@ -1909,13 +1923,14 @@ function ensureChatPoll(session, queued) {
       d = await res.json();
     } catch (e) { return; }
     if (routeVersion !== chatRouteVersion || id !== chatOpenId || base !== chatBase() || els.chatView.hidden) return;
+    if(d.sharedConversation?.route){location.hash=d.sharedConversation.route;return;}
     const sig = chatTranscriptSignature(d);
     if (sig !== chatLastUpdated) {
       renderChatTranscript(d);
       renderChatComposer(d.session);
       loadChatSessions().then(renderChatRail);
     }
-    if (d.session.status !== "thinking" && !(d.queued || []).length && !(chatAgent && !chatIsPortal())) {
+    if (!d.session.shared && d.session.status !== "thinking" && !(d.queued || []).length && !(chatAgent && !chatIsPortal())) {
       clearInterval(chatPollTimer); chatPollTimer = null;
     }
   }, every);
@@ -2239,6 +2254,7 @@ async function loadChatTermSession(id) {
   chatRemember(chatAgent, id);
   chatTermOpen = {
     conversation:d.conversation,
+    sharedConversation:d.sharedConversation,
     planningTimeline:d.planningTimeline,
     planningRecipients:d.planningRecipients||[],
     planRevisions:d.planRevisions||{},
@@ -2328,6 +2344,7 @@ function chatTermHead(o) {
   const status = el("span", "sprt-sub chat-head-sub", chatTermKinds[se.kind] + " · " + (se.backend === "herdr" ? terminalStateLabel(se) : o.live ? "running" : "stopped"));
   status.title = sub.join(" · ");
   head.append(status);
+  if(o.sharedConversation){const shared=el("a","sprt-quiet",o.sharedConversation.scope==="team:ooda"?"OODA team conversation":"AION team conversation");shared.href=o.sharedConversation.route;shared.title="This session's history and future messages are shared with the team.";head.append(shared);}
   if(se.backend==="herdr"&&se.origin?.mode!=="continue"&&(chatTermEnabled||chatRoster.some(a=>a.enabled&&a.durableSend))){
     const recipient=chatRecipients.get(se.kind+"/"+se.id);
     const to=el("button","sprt-quiet chat-head-sub","To "+chatAgentLabel(recipient?.agent||se.kind));
@@ -2592,7 +2609,8 @@ async function chatTermKey(label) {
   const codes = typeof TERM_KEY_CODES !== "undefined" ? TERM_KEY_CODES : {};
   const key = codes[label] || label;
   try {
-    await postJSONOk(chatTermBase(o.id) + "/input", { key });
+    const result = await postJSONOk(chatTermBase(o.id) + "/input", { key, ...(o.se.backend === "herdr" ? {requestId: crypto.randomUUID()} : {}) });
+    if (result.delivery && result.delivery.state !== "sent") showToast("Key delivery is unconfirmed — check the terminal before pressing it again.");
     setTimeout(chatTermScreenFetch, 350);
   } catch (e) { showToast("key failed — " + (e.message || "error")); }
 }
@@ -2655,6 +2673,7 @@ async function chatTermTail(o) {
   }
   if(planningChanged)chatTermPaintTurns();
   let headDirty = false;
+  if(JSON.stringify(o.sharedConversation)!==JSON.stringify(d.sharedConversation)){o.sharedConversation=d.sharedConversation;headDirty=true;}
   if(JSON.stringify(o.planningRecipients)!==JSON.stringify(d.planningRecipients||[])){o.planningRecipients=d.planningRecipients||[];headDirty=true;}
   if(JSON.stringify(o.codingRecipients)!==JSON.stringify(d.codingRecipients||[])){o.codingRecipients=d.codingRecipients||[];headDirty=true;}
   if (d.title && d.title !== o.title) { o.title = d.title; headDirty = true; }

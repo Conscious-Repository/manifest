@@ -66,10 +66,11 @@ function ChatView({ me, goalsIndex, items, filter, openItem, w, seed, onSeedUsed
 
   const pool = threads.filter(t => !!t.archived === showArch);
   const thread = pool.filter(t => t.id === active)[0] || pool[0] || null;
-  const threadMsgs = thread ? (msgs[thread.id] || []) : [];
+  const shared = window.SHARED_CHAT.useThread(thread, thread ? (msgs[thread.id] || []) : [], me);
+  const threadMsgs = shared.messages;
   const admin = !!(me && me.admin);
   const canAct = !!(me && (me.admin || me.canFire));
-  const busy = sending || !!(engine && (engine.active || (engine.pending && engine.pending.length)));
+  const busy = sending || (!shared.native && !!(engine && (engine.active || (engine.pending && engine.pending.length))));
 
   const rockChoices = [{ id: '', label: 'No goal selected · team context' }].concat(
     goalsIndex ? goalsIndex.goals.filter(g => g.horizon === 'rock' && g.status !== 'done')
@@ -100,14 +101,24 @@ function ChatView({ me, goalsIndex, items, filter, openItem, w, seed, onSeedUsed
   // send(key) — the composer labels by OUTPUT; ritualOf maps that to the wire
   // value the API takes. lastRitual only records what went out (the waiting row
   // reads it); it never gates the buttons.
-  const send = (key) => {
+  const send = async (key) => {
     const rt = window.CHAT_ACTIONS.ritualOf(key);
     if (!thread || !draft.trim() || busy || sendingRef.current) return;
     sendingRef.current = true; setSending(true);
     const sentDraft = draft;
     setErr(''); setLastRitual(rt);
-    post('api/chat/ask', { thread: thread.id, text: draft.trim(), ritual: rt, context: ctx.slice() })
-      .then(r => { if (r.ok) { setDraft(current => current === sentDraft ? '' : current); setCtx([]); load(); } }).finally(() => { sendingRef.current = false; setSending(false); });
+    try {
+      if(shared.shared && (!shared.ready || !shared.recipient)) throw Error('Choose the agent for this message.');
+      if(shared.native) {
+        if(ctx.length)throw Error('Remove the context chips before sending to this terminal.');
+        await shared.send(draft.trim());
+      } else {
+        const result=await post('api/chat/ask',{thread:thread.id,text:draft.trim(),ritual:rt,context:ctx.slice()});
+        if(!result.ok)return;
+      }
+      setDraft(current=>current===sentDraft?'':current);setCtx([]);load();shared.refresh();
+    } catch(e) {setErr(e.message || 'Send not confirmed. Your draft is retained.');}
+    finally {sendingRef.current=false;setSending(false);}
   };
 
   const decide = (m, idx, apply) =>
@@ -227,6 +238,7 @@ function ChatView({ me, goalsIndex, items, filter, openItem, w, seed, onSeedUsed
               </button>
             </div>
 
+            {shared.controls('Kairos','v2-input',sent=>{setDraft(current=>current.trim()===sent?'':current);load();})}
             {/* messages */}
             <div style={{ display: 'flex', flexDirection: 'column' }}>
               {threadMsgs.map(m => {
@@ -406,10 +418,10 @@ function ChatView({ me, goalsIndex, items, filter, openItem, w, seed, onSeedUsed
                         <button className="v2-btn v2-accentfill" disabled={!canSend}
                           style={{ borderColor: 'var(--accent,#0091ea)', color: canSend ? 'var(--accent,#0091ea)' : 'var(--ink-mute,#555)',
                             padding: '4px 13px', cursor: canSend ? 'pointer' : 'not-allowed' }}
-                          onClick={() => send('ask')}>{busy ? A.busyLabel : A.ask.label}</button>
-                        <span style={{ fontSize: 11, lineHeight: 1.5, color: 'var(--ink-mute,#666)' }}>{A.ask.sub}</span>
+                          onClick={() => send('ask')}>{busy ? A.busyLabel : shared.native ? 'Send to '+shared.native.agent : A.ask.label}</button>
+                        <span style={{ fontSize: 11, lineHeight: 1.5, color: 'var(--ink-mute,#666)' }}>{shared.native ? 'Direct this terminal agent in the shared conversation.' : A.ask.sub}</span>
                       </div>
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: 4,
+                      <div style={{ display: shared.native ? 'none' : 'flex', flexDirection: 'column', gap: 4,
                         maxWidth: 232, paddingLeft: 18, borderLeft: '1px solid var(--line,#3a3a3a)' }}>
                         <button className="v2-btn v2-hoveraccent" disabled={!canSend}
                           style={{ color: canSend ? 'var(--ink,#d4d4d4)' : 'var(--ink-mute,#555)',
@@ -424,7 +436,7 @@ function ChatView({ me, goalsIndex, items, filter, openItem, w, seed, onSeedUsed
                         marginLeft:auto in the same row, which on any real width
                         wrapped it onto its own line already, floated oddly far
                         from everything it relates to. */}
-                    <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap',
+                    <div style={{ display: shared.native ? 'none' : 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap',
                       marginTop: 10, paddingTop: 10, borderTop: '1px solid var(--line,#3a3a3a)' }}>
                       <label className="v2-btn v2-hoveraccent"
                         style={{ color: 'var(--ink-faint,#888)', padding: '4px 13px',
@@ -437,7 +449,7 @@ function ChatView({ me, goalsIndex, items, filter, openItem, w, seed, onSeedUsed
                       <span style={{ fontSize: 11, color: 'var(--ink-mute,#666)' }}>{A.attach.hint}</span>
                     </div>
                     <div style={{ fontSize: 11, color: 'var(--ink-mute,#666)', marginTop: 8 }}>
-                      {busy ? A.busyNote(engine) : A.assurance}
+                      {shared.native ? 'Messages and terminal replies are visible to this team.' : busy ? A.busyNote(engine) : A.assurance}
                     </div>
                     {err && <div style={{ fontSize: 11, color: 'var(--warn,#a44)', marginTop: 4 }}>{err}</div>}
                   </React.Fragment>

@@ -14,7 +14,7 @@ import (
 	"time"
 )
 
-func sharedInputFixture(t *testing.T, uncertain bool) (*Server, termSession, string, *atomic.Int32) {
+func sharedInputFixture(t *testing.T, uncertain bool, prepare ...func(*chatShareReview, termSession, *Server)) (*Server, termSession, string, *atomic.Int32) {
 	t.Helper()
 	s, se, sends := terminalReceiptFixture(t, uncertain)
 	private, store, _ := agentChatFixture(t, echoStub)
@@ -34,6 +34,12 @@ func sharedInputFixture(t *testing.T, uncertain bool) (*Server, termSession, str
 	if len(review.Blockers) != 0 {
 		t.Fatal(review.Blockers)
 	}
+	for _, f := range prepare {
+		f(&review, se, s)
+	}
+	review.Revision = ""
+	unsigned, _ := json.Marshal(review)
+	review.Revision = hashTerminalText(string(unsigned))
 	payload, _ := json.Marshal(review)
 	thread := chatthreads.Thread{ID: "team-input-one", Created: time.Now().UTC(), ImportSource: sessionConversation(source).Key, ImportRevision: review.Revision, SharedSource: &chatthreads.SharedSource{Agent: source.Agent, ID: source.ID}}
 	if _, _, err := store.BeginReviewedShare(source.Agent, source.ID, "shared-input-consent", review.SourceRevision, "kairos", thread.ID, payload); err != nil {

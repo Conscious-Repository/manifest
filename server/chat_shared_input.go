@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"manifest/agentchat"
 	"net/http"
@@ -74,41 +75,76 @@ func (s *Server) sharedInputContext(ctx context.Context, scope *sharedTerminalIn
 	if !ok {
 		return "", "", 0, errSharedConversationAccess
 	}
-	allowed := map[string]map[string]bool{}
-	for _, v := range review.Continuations {
-		seen := map[string]bool{}
-		for _, turn := range v.Turns {
-			seen[turn.ID] = true
-		}
-		allowed[v.ID] = seen
+	views, err := s.sharedNativeViews(ctx, scope.Agent, scope.Thread, review)
+	if err != nil {
+		return "", "", 0, err
 	}
-	views := []codingContinuationView{}
-	for _, included := range review.Continuations {
-		se, err := s.sharedTerminal(scope.Agent, scope.Thread, included.ID)
-		if err != nil {
-			return "", "", 0, err
-		}
-		v := s.projectCodingContinuation(ctx, se, sessionConversation(review.Session).Key)
-		seen := allowed[v.ID]
+	for _, v := range views {
 		if !v.HistoryAvailable {
 			return "", "", 0, fmt.Errorf("shared terminal history is unavailable; try again when it reconnects")
 		}
-		fresh := []termTurn{}
-		for _, turn := range v.Turns {
-			if !seen[turn.ID] {
-				fresh = append(fresh, turn)
-			}
-		}
-		v.Turns = fresh // historical turns are already in the imported thread
-		views = append(views, v)
-		delete(allowed, v.ID)
-	}
-	if len(allowed) != 0 {
-		return "", "", 0, fmt.Errorf("a shared terminal is unavailable; restore its history before continuing")
 	}
 	body := portalChatBody(scope.Agent, scope.Agent.Store.Messages(thread.ID), "")
 	source := agentchat.Session{Agent: scope.Agent.Name, ID: thread.ID, Created: thread.Created.Format("2006-01-02T15:04:05Z07:00")}
 	key := agentConversation("portal", scope.Agent.Name, thread.ID, "team:"+scope.Agent.Domain, "").Key
 	text, omitted := timelineContinuationContext(key, conversationTimeline(source, body, views))
 	return text + attached, key, omitted, nil
+}
+
+// Owner cockpit routes keep their original terminal identity after sharing.
+// Resolve audience from durable consent, never from a client-supplied target.
+// Caller holds the session input mutex and rereads the current registry row.
+func (s *Server) ownerSharedTerminalInput(se termSession, b *terminalInput) (*sharedTerminalInputScope, error) {
+	o := se.Origin
+	if o == nil || o.Mode != "continue" || o.Backend != "" || s.agentChat == nil {
+		return nil, nil
+	}
+	source, _, _, exists := s.agentChat.store.Get(o.Agent, o.ID)
+	if !exists {
+		return nil, errors.New("source conversation is unavailable; nothing sent")
+	}
+	p := source.Sharing
+	if p == nil {
+		return nil, nil
+	}
+	if p.State != "shared" {
+		return nil, agentchat.ErrShared
+	}
+	ag, _ := s.portalChatAgent(p.Agent)
+	if _, err := s.sharedTerminal(ag, p.Thread, se.ID); err != nil {
+		return nil, err
+	}
+	// The original chat composer still names its source and task. Accept only
+	// that exact old identity, then discard selectors rather than expanding
+	// team context from a private task. Selected artifacts are authorized below.
+	if (b.ConversationAgent != "" || b.ConversationID != "") &&
+		!(b.ConversationAgent == o.Agent && b.ConversationID == o.ID) &&
+		!(b.ConversationAgent == p.Agent && b.ConversationID == p.Thread) {
+		return nil, errors.New("coding session does not continue this conversation")
+	}
+	if b.Task != "" && b.Task != source.Task {
+		return nil, errors.New("task is not linked to the shared source conversation")
+	}
+	b.ConversationAgent, b.ConversationID, b.Task = "", "", ""
+	email, name := s.portalChatIdentity()
+	return &sharedTerminalInputScope{ag, p.Thread, se.ID, email, name}, nil
+}
+
+// A send accepted before sharing can still have a lost browser response.
+// Recover only the exact owner receipt included in the approved envelope;
+// this never authorizes another runtime send under the old private context.
+func (s *Server) reviewedOwnerInputReceipt(scope *sharedTerminalInputScope, original terminalInput, receipt terminalInputReceipt) bool {
+	if receipt.SharedAgent != "" || receipt.SharedThread != "" || receipt.Fingerprint != original.fingerprint() || receipt.State != "sent" {
+		return false
+	}
+	review, err := s.sharedConversationReview(scope.Agent, scope.Thread)
+	if err != nil {
+		return false
+	}
+	for _, approved := range review.NativeReceipts[scope.Terminal] {
+		if approved.ID == receipt.ID && approved.Fingerprint == receipt.Fingerprint && approved.State == "sent" && approved.SubmittedHash == receipt.SubmittedHash {
+			return true
+		}
+	}
+	return false
 }

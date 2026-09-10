@@ -404,6 +404,15 @@ func (s *Server) handleAgentChatSession(w http.ResponseWriter, r *http.Request) 
 		http.Error(w, "no such session", http.StatusNotFound)
 		return
 	}
+	if p := sess.Sharing; p != nil && p.State == "shared" {
+		ag, _ := s.portalChatAgent(p.Agent)
+		if _, err := s.sharedConversationReview(ag, p.Thread); err != nil {
+			http.Error(w, "Shared conversation is unavailable or archived; restore it before continuing.", http.StatusConflict)
+			return
+		}
+		writeJSON(w, map[string]any{"session": sess, "sharedConversation": agentConversation("portal", ag.Name, p.Thread, "team:"+ag.Domain, "")})
+		return
+	}
 	if queued == nil {
 		queued = []string{}
 	}

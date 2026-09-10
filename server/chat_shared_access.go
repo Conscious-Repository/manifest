@@ -160,3 +160,21 @@ func validStoredShareReview(payload []byte) bool {
 	}
 	return revision != "" && artifacts.Hash(unsigned) == revision
 }
+
+func (s *Server) terminalSharedConversation(se termSession) *conversationDescriptor {
+	o := se.Origin
+	if o == nil || o.Backend != "" || o.Mode != "continue" || s.agentChat == nil {
+		return nil
+	}
+	source, _, _, ok := s.agentChat.store.Get(o.Agent, o.ID)
+	if !ok || source.Sharing == nil || source.Sharing.State != "shared" {
+		return nil
+	}
+	p := source.Sharing
+	ag, _ := s.portalChatAgent(p.Agent)
+	if _, err := s.sharedTerminal(ag, p.Thread, se.ID); err != nil {
+		return nil
+	}
+	d := agentConversation("portal", ag.Name, p.Thread, "team:"+ag.Domain, "")
+	return &d
+}

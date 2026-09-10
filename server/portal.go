@@ -88,6 +88,7 @@ type PortalOptions struct {
 	ChatAttachGet func(w http.ResponseWriter, r *http.Request, hash string)
 	// Conversation-scoped access to native sessions explicitly shared by the
 	// owner. Callback selection fixes the team; private terminal APIs stay absent.
+	ChatConversation  func(w http.ResponseWriter, r *http.Request)
 	ChatTerminalRead  func(w http.ResponseWriter, r *http.Request)
 	ChatTerminalInput func(w http.ResponseWriter, r *http.Request, memberEmail, memberName string)
 }
@@ -186,6 +187,9 @@ func PortalHandler(opt PortalOptions) (http.Handler, error) {
 			// native chat with kairos (chat-kairos handoff)
 			if opt.ChatThreads != nil {
 				mux.HandleFunc("GET /api/chat/threads", api.handleChatThreads)
+			}
+			if opt.ChatConversation != nil {
+				mux.HandleFunc("GET /api/chat/threads/{thread}/conversation", api.handleChatConversation)
 			}
 			if opt.ChatTerminalRead != nil {
 				mux.HandleFunc("GET /api/chat/threads/{thread}/terminals/{terminal}/transcript", api.handleChatTerminalRead)
@@ -832,6 +836,13 @@ func (p *portalAPI) handleChatThreads(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, p.opt.ChatThreads())
+}
+
+func (p *portalAPI) handleChatConversation(w http.ResponseWriter, r *http.Request) {
+	if _, ok := p.identify(w, r); !ok {
+		return
+	}
+	p.opt.ChatConversation(w, r)
 }
 
 func (p *portalAPI) handleChatTerminalRead(w http.ResponseWriter, r *http.Request) {

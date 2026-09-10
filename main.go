@@ -1030,6 +1030,7 @@ func main() {
 		portalOpts.FileBlob = srv.AionFileBlob
 		// native chat with kairos (chat-kairos handoff)
 		portalOpts.ChatThreads = srv.AionChatThreads
+		portalOpts.ChatConversation = srv.AionChatConversation
 		portalOpts.ChatTerminalRead = srv.AionChatTerminalRead
 		portalOpts.ChatTerminalInput = srv.AionChatTerminalInput
 		portalOpts.ChatThread = srv.AionChatThread
@@ -1168,6 +1169,7 @@ func main() {
 				srv.UseOodaChat(oc)
 				oodaOpts.Agents = srv.OodaTeamAgents
 				oodaOpts.ChatThreads = srv.OodaChatThreads
+				oodaOpts.ChatConversation = srv.OodaChatConversation
 				oodaOpts.ChatTerminalRead = srv.OodaChatTerminalRead
 				oodaOpts.ChatTerminalInput = srv.OodaChatTerminalInput
 				oodaOpts.ChatThread = srv.OodaChatThread
