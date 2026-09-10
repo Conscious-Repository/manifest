@@ -200,7 +200,7 @@ func (s *Server) handleSettingsConnections(w http.ResponseWriter, _ *http.Reques
 		rows = append(rows, r)
 	}
 	rows = append(rows, s.bankfeedConnectionRow())
-	rows = append(rows, s.gmailSendConnectionRow())
+	rows = append(rows, s.gmailSendConnectionRow(), s.domainMailConnectionRow("ooda"))
 	rows = append(rows, s.fundraisingConnectionRow())
 	rows = append(rows, envConnectionRow("ashby-api", "Ashby (API key)", "ASHBY_API_KEY",
 		"the private recruiting client — pushes candidates, syncs applicants"))
@@ -349,20 +349,22 @@ func (s *Server) gmailSendReady(w http.ResponseWriter) bool {
 	return true
 }
 
-func (s *Server) handleSettingsGmailSendStart(w http.ResponseWriter, _ *http.Request) {
-	if !s.gmailSendReady(w) {
+func (s *Server) handleSettingsGmailSendStart(w http.ResponseWriter, r *http.Request) {
+	client, ok := s.settingsMailSender(w, r)
+	if !ok {
 		return
 	}
-	u, err := s.gmailSend.StartConnect()
+	u, err := client.StartConnect()
 	if err != nil {
 		httpError(w, errBadRequest(err.Error()))
 		return
 	}
-	writeJSON(w, map[string]any{"authUrl": u, "sender": s.gmailSend.Sender()})
+	writeJSON(w, map[string]any{"authUrl": u, "sender": client.Sender()})
 }
 
 func (s *Server) handleSettingsGmailSendFinish(w http.ResponseWriter, r *http.Request) {
-	if !s.gmailSendReady(w) {
+	client, ok := s.settingsMailSender(w, r)
+	if !ok {
 		return
 	}
 	var b struct {
@@ -374,22 +376,23 @@ func (s *Server) handleSettingsGmailSendFinish(w http.ResponseWriter, r *http.Re
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 45*time.Second)
 	defer cancel()
-	if _, err := s.gmailSend.FinishConnect(ctx, b.Redirect); err != nil {
+	if _, err := client.FinishConnect(ctx, b.Redirect); err != nil {
 		httpError(w, errBadRequest(err.Error()))
 		return
 	}
-	writeJSON(w, s.gmailSendConnectionRow())
+	writeJSON(w, s.domainMailConnectionRow(r.PathValue("domain")))
 }
 
-func (s *Server) handleSettingsGmailSendDisconnect(w http.ResponseWriter, _ *http.Request) {
-	if !s.gmailSendReady(w) {
+func (s *Server) handleSettingsGmailSendDisconnect(w http.ResponseWriter, r *http.Request) {
+	client, ok := s.settingsMailSender(w, r)
+	if !ok {
 		return
 	}
-	if err := s.gmailSend.Disconnect(); err != nil {
+	if err := client.Disconnect(); err != nil {
 		httpError(w, err)
 		return
 	}
-	writeJSON(w, s.gmailSendConnectionRow())
+	writeJSON(w, s.domainMailConnectionRow(r.PathValue("domain")))
 }
 
 // ---- Agents: the Alfred (Hermes) card ----

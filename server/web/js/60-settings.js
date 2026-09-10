@@ -864,13 +864,14 @@ function buildPortalActions(p, acts, wrap) {
   }
   if (p.kind === "gmailsend") {
     const x = p.extra || {};
+    const base = x.connectionBase || "/api/settings/gmail-send";
     if (!x.hasCreds && !x.sendCapable) { dim("add credentials first"); return; }
     acts.append(pillLight(x.sendCapable ? "reconnect" : "connect", () => connectFlow(wrap, {
-      startUrl: "/api/settings/gmail-send/connect/start", finishUrl: "/api/settings/gmail-send/connect/finish",
+      startUrl: base+"/connect/start", finishUrl: base+"/connect/finish",
       onDone: (row) => { showToast(row.state === "open" ? "Sender connected" : "Connected, but not send-capable — " + (row.err || ""), null, "info"); replaceRow(wrap, row); },
     })));
     if (x.sendCapable || p.state === "degraded") {
-      acts.append(armedPill("disconnect", "disconnect — outreach sends stop?", () => portalAction("/api/settings/gmail-send/disconnect", wrap)));
+      acts.append(armedPill("disconnect", "disconnect this sender?", () => portalAction(base+"/disconnect", wrap)));
     }
     return;
   }

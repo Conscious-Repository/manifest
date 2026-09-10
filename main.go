@@ -506,6 +506,7 @@ func main() {
 	// never config.json. Absent, the probe answers sendCapable:false and
 	// every send refuses. Nothing logs or echoes the token.
 	srv.UseGmailSend(gmailsend.New(os.Getenv("GMAIL_SEND_FROM"), gmailsend.TokenPath(cfg.DataDir)))
+	srv.UseOodaMailSend(gmailsend.New("ben@ooda.group", filepath.Join(cfg.DataDir, "gmail-send-ooda", "token.json")))
 	srv.UseTasks(tasksStore)
 	srv.UseSticky(filepath.Join(cfg.DataDir, "sticky.md")) // ⌘I floating post-it (scratch, never the vault)
 	srv.UseCapture(capture.NewStore(cfg.DataDir))          // the tray (cmd-ctr Stage; dataDir until promoted)

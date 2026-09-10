@@ -53,10 +53,11 @@ func (g gmailOutreachSender) Send(ctx context.Context, m recruiting.OutreachMess
 
 // outreachSender is nil in the unconfigured posture (no client wired).
 func (s *Server) outreachSender() recruiting.OutreachSender {
-	if s.gmailSend == nil {
+	client, err := s.mailSender("recruiting")
+	if err != nil {
 		return nil
 	}
-	return gmailOutreachSender{s.gmailSend}
+	return gmailOutreachSender{client}
 }
 
 func (s *Server) outreachSenderAddr() string {
@@ -72,6 +73,10 @@ func (s *Server) outreachProbe() map[string]any {
 	st := gmailsend.State{Sender: s.outreachSenderAddr(), Scopes: []string{}, Detail: "sender not wired"}
 	if s.gmailSend != nil {
 		st = s.gmailSend.Status()
+		if _, err := s.mailSender("recruiting"); err != nil {
+			st.SendCapable = false
+			st.Detail = err.Error()
+		}
 	}
 	return map[string]any{
 		"configured": st.Configured, "sendCapable": st.SendCapable, "sender": st.Sender,
