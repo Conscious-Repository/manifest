@@ -122,16 +122,17 @@ func laterConversationTimestamp(candidate, current string) bool {
 }
 
 type conversationTimelineTurn struct {
-	N          any                       `json:"n"`
-	Who        string                    `json:"who"`
-	TS         string                    `json:"ts"`
-	USD        string                    `json:"usd,omitempty"`
-	Text       string                    `json:"text,omitempty"`
-	Blocks     []termBlock               `json:"blocks,omitempty"`
-	Native     *continuationNativeSource `json:"native,omitempty"`
-	Submission *terminalInputReceipt     `json:"submission,omitempty"`
-	Delivery   *agentchat.Delivery       `json:"delivery,omitempty"`
-	orderTime  time.Time
+	N            any                       `json:"n"`
+	Who          string                    `json:"who"`
+	TS           string                    `json:"ts"`
+	USD          string                    `json:"usd,omitempty"`
+	Text         string                    `json:"text,omitempty"`
+	Blocks       []termBlock               `json:"blocks,omitempty"`
+	Native       *continuationNativeSource `json:"native,omitempty"`
+	Submission   *terminalInputReceipt     `json:"submission,omitempty"`
+	Delivery     *agentchat.Delivery       `json:"delivery,omitempty"`
+	PlanRevision *chatPlanRevision         `json:"planRevision,omitempty"`
+	orderTime    time.Time
 }
 
 func conversationTimeline(source agentchat.Session, body string, views []codingContinuationView) []conversationTimelineTurn {
@@ -213,7 +214,15 @@ func (s *Server) terminalRootTimeline(ctx context.Context, root termSession, chi
 		if !ok {
 			continue
 		}
+		proposals := s.chatPlanRevisions(fresh, body)
 		for _, turn := range conversationTimeline(fresh, body, nil) {
+			for _, proposal := range proposals {
+				if proposal.ReplyTurn == turn.N {
+					p := proposal
+					turn.PlanRevision = &p
+					break
+				}
+			}
 			turn.N = fmt.Sprintf("chat:%s/%s:%v", child.Agent, child.ID, turn.N)
 			timeline = append(timeline, turn)
 		}

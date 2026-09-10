@@ -766,11 +766,11 @@ function artifactWorkspace(mount, options) {
       controls.append(edit);
     }
   }
-  function editVersion(restore,resume=false) {
+  function editVersion(restore,resume=false,proposal=null) {
     generation++;
     editing = true;
     const original = current.content || "";
-    const started=resume&&editState?.value ? editState.value : {text:original,artifact:current.id,baseRevision:current.head,sourceRevision:selected,restore};
+    const started=resume&&editState?.value ? editState.value : {text:proposal?proposal.content:original,artifact:current.id,baseRevision:proposal?proposal.baseRevision:current.head,sourceRevision:selected,restore};
     if(editState&&!resume)editState.set(started);
     const input = document.createElement("textarea");
     input.className = "artifact-workspace-editor"; input.value = started.text; editor=input;
@@ -803,7 +803,15 @@ function artifactWorkspace(mount, options) {
     };
     controls.append(save,cancel,discard); chatRenderStateNotice(recovery,editState);input.focus();
   }
-  (async () => { try { const a = await opts.load(); await show(a,opts.revision || a.head); } catch(e) { notice.textContent=e.message; title.textContent="Artifact unavailable"; } })();
+  (async () => { try {
+    const a = await opts.load(); await show(a,opts.revision || a.head);
+    if(opts.proposal&&current&&pane.isConnected){
+      const p=opts.proposal;
+      if(p.artifactId!==current.id||p.baseRevision!==selected||typeof p.content!=="string")notice.textContent="Proposed revision does not match this artifact version.";
+      else if(editState?.value||editState?.conflict||editState?.error)notice.textContent="Finish or discard your existing edit before reviewing this proposal. Your draft is preserved.";
+      else{editVersion(false,false,p);notice.textContent="Proposed revision · review before saving. Execution will not start.";}
+    }
+  } catch(e) { notice.textContent=e.message; title.textContent="Artifact unavailable"; } })();
   return {element:pane, close:()=>close.click(), isEditing:()=>editing};
 }
 

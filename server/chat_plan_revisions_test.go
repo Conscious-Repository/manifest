@@ -1,0 +1,54 @@
+package server
+
+import (
+	"encoding/json"
+	"fmt"
+	"manifest/agentchat"
+	"strings"
+	"testing"
+)
+
+func TestPlanRevisionBoundToDeliveredVersion(t *testing.T) {
+	s, _ := workspaceFixture(t)
+	task := "inbox/proposed-plan"
+	if err := s.writePlanSection("todo-plans", task, "plan", "Original plan"); err != nil {
+		t.Fatal(err)
+	}
+	a := observePlan(t, s, task)
+	sess := agentchat.Session{Deliveries: []agentchat.Delivery{{State: agentchat.DeliveryCompleted, ReplyTurn: 2, Context: &agentchat.MessageContext{Task: task, Artifacts: []agentchat.ArtifactReference{{ID: a.ID, Revision: a.Head}}}}}}
+	proposal := chatPlanRevision{ArtifactID: a.ID, BaseRevision: a.Head, Content: "Revised plan", Task: "inbox/wrong", ReplyTurn: 999}
+	body := func(p chatPlanRevision) string {
+		b, _ := json.Marshal(p)
+		return fmt.Sprintf("## Turn 2 — agent:alfred · 2026-09-09T12:00:00Z\n\nReview this.\n\n```manifest-plan-revision\n%s\n```\n", b)
+	}
+	text := body(proposal)
+	got := s.chatPlanRevisions(sess, text)
+	if len(got) != 1 || got[0].Task != task || got[0].ReplyTurn != 2 || got[0].Content != "Revised plan" {
+		t.Fatal(got)
+	}
+	if current := observePlan(t, s, task); current.Head != a.Head {
+		t.Fatal("projection wrote plan")
+	}
+	proposal.BaseRevision = strings.Repeat("b", 64)
+	if len(s.chatPlanRevisions(sess, body(proposal))) != 0 {
+		t.Fatal("undelivered revision accepted")
+	}
+	proposal.BaseRevision = a.Head
+	proposal.ArtifactID = "unknown"
+	if len(s.chatPlanRevisions(sess, body(proposal))) != 0 {
+		t.Fatal("undelivered artifact accepted")
+	}
+	proposal.ArtifactID = a.ID
+	sess.Deliveries[0].State = agentchat.DeliveryRunning
+	if len(s.chatPlanRevisions(sess, body(proposal))) != 0 {
+		t.Fatal("unfinished reply accepted")
+	}
+	sess.Deliveries[0].State = agentchat.DeliveryCompleted
+	sess.Deliveries[0].Context.Artifacts = nil
+	if len(s.chatPlanRevisions(sess, body(proposal))) != 0 {
+		t.Fatal("unselected plan accepted")
+	}
+	if !strings.Contains(s.planRevisionInstructions([]artifactContextRef{{ID: a.ID, Revision: a.Head}}), a.Head) {
+		t.Fatal("prompt lacks exact base")
+	}
+}

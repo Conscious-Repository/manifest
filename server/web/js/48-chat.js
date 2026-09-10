@@ -1413,7 +1413,12 @@ function chatPaintTurns(host, turns, ctx) {
     }
     const wrap = el("div", "chat-turn chat-spirit");
     wrap.dataset.chatReadTurn=String(t.n);
-    chatTurnBlocks(t).forEach((b) => wrap.append(chatBlockEl(b)));
+    const planRevision=t.planRevision||ctx?.planRevisions?.find(p=>p.replyTurn===t.n);
+    chatTurnBlocks(t).forEach((b) => {if(planRevision&&b.t==="say")b={...b,text:(b.text||"").replace(/```manifest-plan-revision[^\n]*\n[\s\S]*?\n```/g,"").trim()};if(b.t!=="say"||b.text)wrap.append(chatBlockEl(b));});
+    if(planRevision){
+      const review=el("button","sprt-quiet","Review proposed plan revision");
+      review.onclick=()=>chatOpenWorkingArtifact({plan:true,task:planRevision.task,revision:planRevision.baseRevision,proposal:planRevision,selectionKey:"chat:"+chatAgent+"/"+chatOpenId});wrap.append(review);
+    }
     if (ctx && ctx.operations) ctx.operations.filter(item => Number(item.record.turn) + 1 === t.n).forEach(item => wrap.append(manifestOperationCard(item)));
     const foot = el("div", "chat-turn-foot");
     foot.append(el("span","chat-turn-author",chatAgentLabel(t.who.replace(/^agent:/,""))));
@@ -1481,7 +1486,7 @@ function renderChatTranscript(d) {
   chatMountHeader(chatHead(s));
 
   // → task (§3.4f): every agent turn in an agent section can become work
-  chatPaintTurns(host, d.timeline||parseChatTurns(d.body || ""), chatAgent ? { who, deliveries:s.deliveries||[], operations: d.operations || [], promote: (t) => chatPromoteTurn(s, t.n) } : null);
+  chatPaintTurns(host, d.timeline||parseChatTurns(d.body || ""), chatAgent ? { who, deliveries:s.deliveries||[], planRevisions:d.planRevisions||[],operations: d.operations || [], promote: (t) => chatPromoteTurn(s, t.n) } : null);
 
   const turnNumbers = new Set(parseChatTurns(d.body || "").filter(t => t.who !== "user" && t.who !== "system").map(t => t.n));
   (d.operations || []).filter(item => !turnNumbers.has(Number(item.record.turn) + 1)).forEach(item => host.append(manifestOperationCard(item)));
@@ -2785,7 +2790,7 @@ function chatOpenWorkingArtifact(spec) {
     const r=await fetch(path); if(!r.ok)throw new Error(await r.text());return r.json();
   };
   chatWorkspace=artifactWorkspace(shell,{
-    load, revision:spec.revision,
+    load, revision:spec.revision,proposal:spec.proposal,
     save:spec.plan ? (text,expectedRevision)=>postJSONOk("/api/tasks/plan",{id:taskID,text,expectedRevision}):null,
     onClose:()=>{shell.classList.remove("has-artifact");chatWorkspace=null;},
     onDiscuss: taskID && (key.startsWith("task:") || chatRosterEntry(chatAgent)?.durableSend || chatIsTerm()) ? ref=>{
