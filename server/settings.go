@@ -20,6 +20,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"manifest/gmailsend"
 )
 
 // HostsInfo is the read-only projection main.go builds from the loaded Config
@@ -200,7 +202,7 @@ func (s *Server) handleSettingsConnections(w http.ResponseWriter, _ *http.Reques
 		rows = append(rows, r)
 	}
 	rows = append(rows, s.bankfeedConnectionRow())
-	rows = append(rows, s.gmailSendConnectionRow())
+	rows = append(rows, s.gmailSendConnectionRows()...)
 	rows = append(rows, s.fundraisingConnectionRow())
 	rows = append(rows, envConnectionRow("ashby-api", "Ashby (API key)", "ASHBY_API_KEY",
 		"the private recruiting client — pushes candidates, syncs applicants"))
@@ -264,23 +266,57 @@ func (s *Server) bankfeedConnectionRow() panelRow {
 	return row
 }
 
+// gmailSendConnectionRows projects every outbound sender: the recruiting
+// row first (id "gmail-send", unchanged), then one row per other domain in
+// the registry (id "gmail-send-<domain>", extra.domain set so the connect /
+// disconnect actions address that account's own token).
+func (s *Server) gmailSendConnectionRows() []panelRow {
+	rows := []panelRow{s.gmailSendConnectionRow()}
+	if s.mailSenders == nil {
+		return rows
+	}
+	recruitingDomain := ""
+	if s.gmailSend != nil {
+		recruitingDomain = gmailsend.Domain(s.gmailSend.Sender())
+	}
+	for _, d := range s.mailSenders.Domains() {
+		if d == recruitingDomain {
+			continue
+		}
+		c, err := s.mailSenders.ForDomain(d)
+		if err != nil {
+			continue
+		}
+		rows = append(rows, gmailSendRow(c, "gmail-send-"+d, "Gmail (send, "+d+")", d, d+" mail"))
+	}
+	return rows
+}
+
 // gmailSendConnectionRow projects the recruiting sender: open when the token
 // carries gmail.send for the allowed From address, degraded when a token
 // exists but cannot send (wrong scope / wrong account), sealed otherwise.
 func (s *Server) gmailSendConnectionRow() panelRow {
-	row := panelRow{ID: "gmail-send", Name: "Gmail (send, recruiting)", Kind: "gmailsend", Masked: "oauth · gmail.send"}
 	if s.gmailSend == nil {
+		row := panelRow{ID: "gmail-send", Name: "Gmail (send, recruiting)", Kind: "gmailsend", Masked: "oauth · gmail.send"}
 		row.State, row.Note = "sealed", "not wired"
 		return row
 	}
-	st := s.gmailSend.Status()
+	return gmailSendRow(s.gmailSend, "gmail-send", "Gmail (send, recruiting)", "", "outreach")
+}
+
+// gmailSendRow is one sender's row. domain is "" for the recruiting sender
+// (the legacy routes) and the registry domain otherwise; `what` names the
+// mail the account carries.
+func gmailSendRow(c *gmailsend.Client, id, name, domain, what string) panelRow {
+	row := panelRow{ID: id, Name: name, Kind: "gmailsend", Masked: "oauth · gmail.send"}
+	st := c.Status()
 	row.Masked = st.Sender
 	if st.Email != "" {
 		row.Accounts = []string{st.Email}
 	}
 	switch {
 	case st.SendCapable:
-		row.State, row.Note = "open", "outreach sends as "+st.Sender+" · every send is approved by hand"
+		row.State, row.Note = "open", what+" sends as "+st.Sender+" · every send is approved by hand"
 	case st.Configured:
 		row.State, row.Err = "degraded", st.Detail
 	case !st.HasCreds:
@@ -289,6 +325,9 @@ func (s *Server) gmailSendConnectionRow() panelRow {
 		row.State, row.Note = "sealed", "connect the sender (gmail.send only) — drafts work without it; a send refuses"
 	}
 	row.Extra = map[string]any{"sender": st.Sender, "sendCapable": st.SendCapable, "hasCreds": st.HasCreds}
+	if domain != "" {
+		row.Extra["domain"] = domain
+	}
 	return row
 }
 
@@ -341,28 +380,54 @@ func (s *Server) fundraisingConnectionRow() panelRow {
 // client, mounted independently of the recruiting block so Settings works
 // whether or not the recruiting store is wired.
 
-func (s *Server) gmailSendReady(w http.ResponseWriter) bool {
-	if s.gmailSend == nil {
-		http.Error(w, "sending unavailable — no Gmail send client wired", http.StatusServiceUnavailable)
-		return false
+// gmailSendTarget picks the sender a Settings action addresses: ?domain=
+// names a registry domain (its own client, its own token); absent, the
+// recruiting client. An unmapped domain is a 404, never the recruiting
+// client — connecting "for ooda.group" must never mint the recruiting token.
+func (s *Server) gmailSendTarget(w http.ResponseWriter, r *http.Request) (*gmailsend.Client, string, bool) {
+	domain := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("domain")))
+	if domain == "" {
+		if s.gmailSend == nil {
+			http.Error(w, "sending unavailable — no Gmail send client wired", http.StatusServiceUnavailable)
+			return nil, "", false
+		}
+		return s.gmailSend, "", true
 	}
-	return true
+	c, err := s.mailSender(domain)
+	if err != nil {
+		http.Error(w, "no sender account is configured for "+domain+" — add it to mailSenders (config.json) or GMAIL_SEND_SENDERS", http.StatusNotFound)
+		return nil, "", false
+	}
+	if s.gmailSend != nil && c == s.gmailSend {
+		return c, "", true
+	}
+	return c, domain, true
 }
 
-func (s *Server) handleSettingsGmailSendStart(w http.ResponseWriter, _ *http.Request) {
-	if !s.gmailSendReady(w) {
+// gmailSendRowFor re-derives the row a Settings action should answer with.
+func (s *Server) gmailSendRowFor(c *gmailsend.Client, domain string) panelRow {
+	if domain == "" {
+		return s.gmailSendConnectionRow()
+	}
+	return gmailSendRow(c, "gmail-send-"+domain, "Gmail (send, "+domain+")", domain, domain+" mail")
+}
+
+func (s *Server) handleSettingsGmailSendStart(w http.ResponseWriter, r *http.Request) {
+	c, _, ok := s.gmailSendTarget(w, r)
+	if !ok {
 		return
 	}
-	u, err := s.gmailSend.StartConnect()
+	u, err := c.StartConnect()
 	if err != nil {
 		httpError(w, errBadRequest(err.Error()))
 		return
 	}
-	writeJSON(w, map[string]any{"authUrl": u, "sender": s.gmailSend.Sender()})
+	writeJSON(w, map[string]any{"authUrl": u, "sender": c.Sender()})
 }
 
 func (s *Server) handleSettingsGmailSendFinish(w http.ResponseWriter, r *http.Request) {
-	if !s.gmailSendReady(w) {
+	c, domain, ok := s.gmailSendTarget(w, r)
+	if !ok {
 		return
 	}
 	var b struct {
@@ -374,22 +439,23 @@ func (s *Server) handleSettingsGmailSendFinish(w http.ResponseWriter, r *http.Re
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 45*time.Second)
 	defer cancel()
-	if _, err := s.gmailSend.FinishConnect(ctx, b.Redirect); err != nil {
+	if _, err := c.FinishConnect(ctx, b.Redirect); err != nil {
 		httpError(w, errBadRequest(err.Error()))
 		return
 	}
-	writeJSON(w, s.gmailSendConnectionRow())
+	writeJSON(w, s.gmailSendRowFor(c, domain))
 }
 
-func (s *Server) handleSettingsGmailSendDisconnect(w http.ResponseWriter, _ *http.Request) {
-	if !s.gmailSendReady(w) {
+func (s *Server) handleSettingsGmailSendDisconnect(w http.ResponseWriter, r *http.Request) {
+	c, domain, ok := s.gmailSendTarget(w, r)
+	if !ok {
 		return
 	}
-	if err := s.gmailSend.Disconnect(); err != nil {
+	if err := c.Disconnect(); err != nil {
 		httpError(w, err)
 		return
 	}
-	writeJSON(w, s.gmailSendConnectionRow())
+	writeJSON(w, s.gmailSendRowFor(c, domain))
 }
 
 // ---- Agents: the Alfred (Hermes) card ----

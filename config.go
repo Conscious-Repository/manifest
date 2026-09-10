@@ -126,6 +126,14 @@ type Config struct {
 	// the properties, ledgers, and partner names it composes are not
 	// shared-volume material. Port 0 (or equal to Port/PortalPort) disables it.
 	Ooda OodaConfig `json:"ooda"`
+	// MailSenders maps a correspondence DOMAIN to the Gmail account that sends
+	// for it: {"ooda.group": "ben@ooda.group", "example.com": "me@example.com"}.
+	// Recruiting (aion.bio) is NOT listed here — it is GMAIL_SEND_FROM (default
+	// ben@aion.bio) with its own token. Each listed account's send token is
+	// <dataDir>/gmail-send/<from>.json, minted from Settings › Connections.
+	// A domain absent from this map (and from GMAIL_SEND_SENDERS) has no
+	// sender: a send for it fails, it is never routed through ben@aion.bio.
+	MailSenders map[string]string `json:"mailSenders"`
 
 	// Consume configures the CONSUME lane (the fifth attention kind): poll
 	// intervals, and the PUBLIC curation feed's listener + channel identity.

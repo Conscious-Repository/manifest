@@ -865,12 +865,16 @@ function buildPortalActions(p, acts, wrap) {
   if (p.kind === "gmailsend") {
     const x = p.extra || {};
     if (!x.hasCreds && !x.sendCapable) { dim("add credentials first"); return; }
+    // one row per sender account: the recruiting row has no domain (legacy
+    // routes); an OODA/personal row names its domain so the action addresses
+    // THAT account's own token, never the recruiting one
+    const q = x.domain ? "?domain=" + encodeURIComponent(x.domain) : "";
     acts.append(pillLight(x.sendCapable ? "reconnect" : "connect", () => connectFlow(wrap, {
-      startUrl: "/api/settings/gmail-send/connect/start", finishUrl: "/api/settings/gmail-send/connect/finish",
+      startUrl: "/api/settings/gmail-send/connect/start" + q, finishUrl: "/api/settings/gmail-send/connect/finish" + q,
       onDone: (row) => { showToast(row.state === "open" ? "Sender connected" : "Connected, but not send-capable — " + (row.err || ""), null, "info"); replaceRow(wrap, row); },
     })));
     if (x.sendCapable || p.state === "degraded") {
-      acts.append(armedPill("disconnect", "disconnect — outreach sends stop?", () => portalAction("/api/settings/gmail-send/disconnect", wrap)));
+      acts.append(armedPill("disconnect", "disconnect — " + (x.domain ? x.domain : "outreach") + " sends stop?", () => portalAction("/api/settings/gmail-send/disconnect" + q, wrap)));
     }
     return;
   }
