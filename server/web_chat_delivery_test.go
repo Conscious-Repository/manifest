@@ -5,6 +5,16 @@ import (
 	"testing"
 )
 
+func TestArtifactRevisionDiff(t *testing.T) {
+	node, err := exec.LookPath("node")
+	if err != nil {
+		t.Skip("node unavailable")
+	}
+	if out, err := exec.Command(node, "testdata/artifact-diff.cjs").CombinedOutput(); err != nil {
+		t.Fatalf("artifact diff: %v\n%s", err, out)
+	}
+}
+
 func TestChatDeliveryRecoveryUI(t *testing.T) {
 	node, err := exec.LookPath("node")
 	if err != nil {

@@ -587,6 +587,32 @@ function chooseActionMenu(trigger, items) {
   });
 }
 
+// Exact line comparison; bound the quadratic middle section for large files.
+// Large replacements remain exact, but are not claimed to be a minimal diff.
+function artifactLineChanges(before,after){
+  const lines=text=>text===""?[]:text.split("\n");
+  const a=lines(before),b=lines(after),out=[];
+  let first=0,endA=a.length,endB=b.length;
+  while(first<endA&&first<endB&&a[first]===b[first]){out.push({kind:"same",text:a[first]});first++;}
+  while(endA>first&&endB>first&&a[endA-1]===b[endB-1]){endA--;endB--;}
+  const n=endA-first,m=endB-first;
+  if(n&&m&&n*m<=250000){
+    const grid=Array.from({length:n+1},()=>new Uint32Array(m+1));
+    for(let i=n-1;i>=0;i--)for(let j=m-1;j>=0;j--)grid[i][j]=a[first+i]===b[first+j]?grid[i+1][j+1]+1:Math.max(grid[i+1][j],grid[i][j+1]);
+    let i=0,j=0;
+    while(i<n||j<m){
+      if(i<n&&j<m&&a[first+i]===b[first+j]){out.push({kind:"same",text:a[first+i]});i++;j++;}
+      else if(i<n&&(j===m||grid[i+1][j]>=grid[i][j+1]))out.push({kind:"removed",text:a[first+i++]});
+      else out.push({kind:"added",text:b[first+j++]});
+    }
+  }else{
+    for(let i=first;i<endA;i++)out.push({kind:"removed",text:a[i]});
+    for(let j=first;j<endB;j++)out.push({kind:"added",text:b[j]});
+  }
+  for(let i=endA;i<a.length;i++)out.push({kind:"same",text:a[i]});
+  return out;
+}
+
 // A shared, version-aware workspace. The caller owns placement and discussion
 // context; opening it never navigates, edits a file, or starts an agent.
 const artifactEditDrafts = new Map();
@@ -639,6 +665,7 @@ function artifactWorkspace(mount, options) {
     } catch (e) { notice.textContent = "Could not open this version: " + e.message; }
   }
   function render() {
+    generation++;
     editing = false;
     title.textContent = current.title || current.ref || "Artifact";
     controls.replaceChildren(); body.replaceChildren(); notice.textContent = "";
@@ -667,6 +694,27 @@ function artifactWorkspace(mount, options) {
     const download = el("a", "sprt-quiet", "Open file ↗");
     download.href = contentURL; download.target = "_blank"; download.rel = "noopener";
     controls.append(download);
+    const previous=current.revisions.find(r=>r.n===selectedNumber-1);
+    if(previous&&!binary){
+      const compare=el("button","sprt-quiet","Compare with version "+previous.n);
+      compare.onclick=async()=>{
+        const ticket=++generation,versionText=current.content||"";
+        compare.disabled=true;
+        try{
+          const old=await fetchJSON(url(current,previous.hash));
+          if(ticket!==generation||!pane.isConnected)return;
+          const changes=artifactLineChanges(old.content||"",versionText);
+          const added=changes.filter(x=>x.kind==="added").length,removed=changes.filter(x=>x.kind==="removed").length;
+          const summary=el("p","artifact-diff-summary",added||removed?`${added} lines added · ${removed} lines removed` : "No text changes.");
+          const diff=el("pre","artifact-diff");diff.setAttribute("aria-label",`Changes from version ${previous.n} to version ${selectedNumber}`);
+          for(const line of changes)diff.append(el("span","artifact-diff-"+line.kind,(line.kind==="added"?"+ ":line.kind==="removed"?"− ":"  ")+line.text));
+          body.replaceChildren(summary,diff);
+          compare.textContent="Back to preview";compare.onclick=render;
+        }catch(e){if(ticket===generation)notice.textContent="Could not compare versions: "+e.message;}
+        finally{compare.disabled=false;}
+      };
+      controls.append(compare);
+    }
     if (opts.onDiscuss && !binary) {
       const discuss = el("button", "sprt-quiet", "Discuss this version");
       discuss.onclick = () => {
@@ -686,6 +734,7 @@ function artifactWorkspace(mount, options) {
     }
   }
   function editVersion(restore,resume=false) {
+    generation++;
     editing = true;
     const original = current.content || "";
     const started=resume&&editState?.value ? editState.value : {text:original,artifact:current.id,baseRevision:current.head,sourceRevision:selected,restore};
