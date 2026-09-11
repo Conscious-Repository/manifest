@@ -300,7 +300,10 @@
    description, property + category selects inline, always-present rail. The
    grid must out-specify .fr-row's own (94 loads after this file) — compound,
    and the modifier rides the head row too. */
-.fr-row.re-money-grid, .fr-head.re-money-grid { grid-template-columns: 44px minmax(150px, 1fr) 104px minmax(96px, 150px) minmax(96px, 140px); gap: var(--sp-4); }
+/* sixth column = the file approval — a row whose defaults arrived right
+   needs a gesture that files it, not a value to change (2026-09-11) */
+.fr-row.re-money-grid, .fr-head.re-money-grid { grid-template-columns: 44px minmax(150px, 1fr) 104px minmax(96px, 150px) minmax(96px, 140px) 52px; gap: var(--sp-4); }
+.re-money-filebtn { white-space: nowrap; text-align: left; }
 .re-money-r { text-align: right; }
 .re-money-date { font-family: var(--mono); font-size: var(--fs-xs); color: var(--base-40); }
 .re-money-vendor { font-size: var(--fs-md); }

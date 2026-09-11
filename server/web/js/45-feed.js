@@ -910,5 +910,31 @@ function bankPendingRowEl(r) {
   catSel.value = r.category || "";
   catSel.onchange = () => patch({ id: r.id, category: catSel.value, file: true }, catSel);
   row.append(catSel);
+  // ⚠ A CORRECT DEFAULT WAS A TRAP: when vendor memory + the bank link's
+  // default property prefill the row RIGHT, picking-as-filing leaves nothing
+  // to pick — the row was stuck (owner, 2026-09-11). The button is the
+  // approval: file with exactly the values shown.
+  const fileBtn = el("button", "pill light bank-file-btn", "file ✓");
+  fileBtn.title = "file with the values shown";
+  fileBtn.onclick = async () => {
+    fileBtn.disabled = true;
+    fileBtn.textContent = "filing…";
+    try {
+      const res = await postJSONOk("/api/realestate/statements/row", { id: r.id, file: true });
+      if (res.state === "applied") {
+        showToast("Filed → " + (entityLabel(r.entity) || "entity") + " history");
+      } else {
+        showToast("Not filed — set a property and category first");
+        fileBtn.disabled = false;
+        fileBtn.textContent = "file ✓";
+      }
+      loadFeed();
+    } catch (e) {
+      showToast("Couldn't file — " + String(e.message || e).slice(0, 120));
+      fileBtn.disabled = false;
+      fileBtn.textContent = "file ✓";
+    }
+  };
+  row.append(fileBtn);
   return row;
 }

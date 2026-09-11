@@ -1553,12 +1553,40 @@ function moneyRow(r) {
   // exact to the cent — this is accounting, never the k-rounded display
   row.append(el("span", "re-money-amt" + (r.inflow ? " inflow" : ""),
     (r.inflow ? "+" : "") + fmtMoneyExact(Math.abs(r.amount || 0))));
+  // ⚠ A CORRECT DEFAULT WAS A TRAP. Vendor memory + the bank link's default
+  // property can land a row already RIGHT — and with picking-as-filing,
+  // nothing left to pick meant no way to file: the row sat "assigned"
+  // forever (owner, 2026-09-11). Every unfiled row now carries the approval
+  // itself — the same bare {file:true} the inspector's button sends, current
+  // values, one click. Filed/skipped rows keep an empty cell so the grid
+  // stays a grid.
+  const fileCell = () => {
+    if (r.state === "applied" || r.state === "skipped") return el("span", "re-money-file-slot", "");
+    const b = el("button", "pp3-link re-money-filebtn", "file ✓");
+    b.title = "file with the values shown — approval for a row whose defaults are already right";
+    b.onclick = async (e) => {
+      e.stopPropagation();
+      b.disabled = true;
+      try {
+        const res = await postJSONOk("/api/realestate/statements/row", { id: r.id, file: true });
+        if (moneyFileToast(r, res, "Not filed — set a property and category first")) {
+          moneyArmSpread(r, res);
+          moneySelId = null;
+        } else {
+          b.disabled = false;
+        }
+        moneyRefresh();
+      } catch (err) { b.disabled = false; showToast("Couldn't file — " + (err.message || "")); }
+    };
+    return b;
+  };
+
   // multi-target rows name their split instead of pretending one property
   if ((r.assignments || []).length > 1) {
     const lab = el("span", "re-money-split-label", moneySplitLabel(r));
     lab.title = (r.assignments || []).map((a) =>
       (a.slug.startsWith("admin:") ? "admin · " + a.slug.slice(6) : a.slug) + " " + fmtMoneyExact(a.amount)).join(" · ");
-    row.append(lab, moneyCatSelect(r));
+    row.append(lab, moneyCatSelect(r), fileCell());
     row.onclick = () => {
       if (window.mf && window.mf.phone()) { openMoneyAssignSheet(r); return; }
       moneySelId = moneySelId === r.id ? null : r.id;
@@ -1606,6 +1634,7 @@ function moneyRow(r) {
   // category ON the row — filing no longer needs the inspector; the inspector
   // is for splits, hops, and notes
   row.append(moneyCatSelect(r));
+  row.append(fileCell());
   row.onclick = () => {
     // phone (RE spec §8): the row tap IS the assignment gesture — a sheet of
     // tap-targets replaces the desktop's inline select + side inspector
