@@ -102,12 +102,6 @@ function chatMountHeader(head) {
   if (!transcript) return;
   let slot = document.getElementById("chatThreadHeader");
   if (!slot) { slot = el("div", "chat-thread-header"); slot.id = "chatThreadHeader"; transcript.before(slot); }
-  if (head && !head.querySelector(".chat-latest")) {
-    const latest = el("button", "sprt-quiet chat-latest", "Latest ↓");
-    latest.title = "Return to the latest output";
-    latest.onclick = () => { chatStick = true; chatPin(); chatSaveReadingPosition(); };
-    (head.querySelector(".chat-details")||head).append(latest);
-  }
   if(head && typeof chatWorkspaceHeader === "function")chatWorkspaceHeader(head);
   slot.replaceChildren(...(head ? [head] : []));
   slot.hidden = !head;
@@ -457,6 +451,7 @@ function chatFitShell() {
   const height = phone && window.visualViewport ? window.visualViewport.height : window.innerHeight;
   shell.style.height = Math.max(phone ? 180 : 320, height - top - 14) + "px";
   document.querySelector("#chatComposer textarea")?._grow?.();
+  if(typeof chatUpdateJump==="function")chatUpdateJump();
 }
 
 async function loadChatRoster() {
@@ -1335,12 +1330,14 @@ function bindChatScroll() {
     if (y < chatLastY - 1) chatStick = false;
     if (host.scrollHeight - y - host.clientHeight <= 24) chatStick = true;
     chatLastY = y;
+    if(typeof chatUpdateJump==="function")chatUpdateJump();
     if (Date.now() < chatReadingGestureUntil) chatSaveReadingPosition();
   });
 }
 function chatPin() {
   const host = document.getElementById("chatTranscript");
   if (host && chatStick) host.scrollTop = host.scrollHeight;
+  if(typeof chatUpdateJump==="function")chatUpdateJump();
 }
 
 // parseChatTurns splits the session body into turn blocks. The grammar is

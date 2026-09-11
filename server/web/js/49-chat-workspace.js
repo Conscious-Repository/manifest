@@ -162,3 +162,18 @@ function chatPolishComposer(host){
  }else status?.remove();
  input?._grow?.();
 }
+
+// Keep the return-to-latest action beside the reading surface, outside its scroll area.
+function chatUpdateJump(){
+ const transcript=document.getElementById('chatTranscript'),main=transcript?.closest('.chat-main');
+ if(!main)return;
+ let button=main.querySelector('.chat-jump-latest');
+ if(!button){
+  button=el('button','chat-jump-latest','↓');button.setAttribute('aria-label','Jump to latest messages');button.title='Jump to latest messages';
+  button.onclick=()=>{chatStick=true;chatPin();chatSaveReadingPosition();document.querySelector('#chatComposer textarea')?.focus({preventScroll:true});};
+  main.append(button);
+  const resize=new ResizeObserver(()=>chatUpdateJump());resize.observe(transcript);
+ }
+ button.hidden=main.classList.contains('landing')||transcript.clientHeight===0||transcript.scrollHeight-transcript.scrollTop-transcript.clientHeight<=80;
+ if(!button.hidden){const bounds=transcript.getBoundingClientRect(),parent=main.getBoundingClientRect();button.style.top=Math.max(0,bounds.bottom-parent.top-52)+'px';}
+}

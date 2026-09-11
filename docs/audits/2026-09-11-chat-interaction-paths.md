@@ -74,3 +74,7 @@ New chat now opens a compact, cancelable agent chooser instead of inserting a se
 ### File preview fidelity
 
 Text/code artifacts with a non-Markdown extension now render as escaped source text, preserving comments, indentation, and literal markup. Markdown plans retain their formatted preview. Version controls can share a row in wider panes, with a distinct edit/save action and aligned controls; phone version selection remains full-width. The editor disables spellcheck for source text. The artifact fixture verifies literal source rendering alongside edit/compare/save/exact-version discussion; the workspace fixture verifies draft retention across tabs and pane hiding. This does not add syntax highlighting or a general file browser.
+
+### Reading and acceptance sweep
+
+Replaced the hidden Latest menu action with a scroll-aware floating down-arrow above the composer. It follows the transcript's actual geometry, including phone and terminal resizing, disappears at the bottom, and restores composer focus when used. Reading bookmarks and follow-output behavior remain intact. Added a browser regression for scroll, bounds, focus and landing suppression. A broader frontend sweep covered lifecycle, draft/device recovery, sharing, review, workspace tabs, resizing and terminal recovery; stale launcher-copy assertions were updated. The separate acceptance record distinguishes tested UI paths from unverified physical-device/provider execution.

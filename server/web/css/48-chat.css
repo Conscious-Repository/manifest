@@ -25,7 +25,7 @@
 .chat-rail-x:disabled { opacity: 0.35; cursor: default; }
 .chat-rail-row .inline-rename { font-size: var(--fs-md); }
 
-.chat-main { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; }
+.chat-main { position:relative; flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; }
 .chat-transcript { flex: 1; overflow-y: auto; padding: var(--sp-3) var(--sp-4) var(--sp-7) var(--sp-1); min-height: 0; overscroll-behavior: contain; }
 /* thread head — the .sprt-head anatomy (title · sub · meta · actions); the
    title is user prose, so it keeps the sans face over .sprt-title's mono */
@@ -361,7 +361,7 @@ button.chat-attach-chip { min-height: 44px; max-width: 100%; background: transpa
 .chat-composer .chat-draft-notice button, .tdo-p-composer .chat-draft-notice button { min-height:44px; font-size:var(--fs-md); padding:var(--sp-4) var(--sp-8); }
 .chat-composer > .chat-artifact-context > button:first-child { white-space: normal; text-align: left; }
 .chat-shell.has-artifact .chat-rail { display: none; }
-.chat-shell.has-artifact .chat-main { flex: 1; }
+.chat-shell.has-artifact .chat-main { position:relative; flex: 1; }
 @media (max-width: 900px) {
  .chat-shell.has-artifact .chat-main { display: none; }
  .chat-shell.has-artifact .artifact-workspace { border-left: 0; padding: 0 var(--sp-6); width: 100%; }
@@ -611,3 +611,8 @@ button.chat-attach-chip { min-height: 44px; max-width: 100%; background: transpa
 .chat-new-folder .chat-landing-cwd { box-sizing:border-box; width:100%; text-align:left; }
 
 .chat-delivery-summary { cursor:pointer; color:var(--base-70); font:13px/1.5 var(--sans); padding:6px 0; }
+
+.chat-jump-latest { position:absolute; left:50%; transform:translateX(-50%); width:40px; height:40px; border:1px solid var(--line); border-radius:50%; background:var(--surface-field); color:var(--base-90); font:22px var(--sans); cursor:pointer; z-index:3; box-shadow:0 2px 8px #0002; }
+.chat-jump-latest[hidden] { display:none; }
+.chat-jump-latest:hover { border-color:var(--accent-soft); }
+@media(max-width:860px){ .chat-jump-latest { width:44px; height:44px; } }
