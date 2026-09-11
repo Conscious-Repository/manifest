@@ -37,3 +37,12 @@ Conversation row actions now separate Pin, Rename, Archive and Delete from Stop 
 Row menus are viewport-positioned and keyboard traversable. Changes gets a full-width version selector and shorter Compare/Discuss actions. Immutable snapshot semantics remain unchanged.
 
 Validation: full server and chatstate suites, Go build, fixture browser checks for archive/restore/Trash and cross-device conflict merge, menu viewport bounds, embedded exact terminal identity, outage recovery, stopped-to-running inventory changes, drawer close/restoration, keyboard resizing, desktop/phone layout, artifact editing and exact-version discussion. QA uses controlled sockets and files; no real agent input or external messages. Physical-device keyboard behavior is not certified.
+
+
+## Live browser follow-up: panel closure and navigation
+
+Walked the authenticated live Manifest surface in an isolated Chromium session, including Changes open/close, the stopped terminal drawer, More, agent chooser/Cancel, phone conversation/list filters and New chat. Compared screenshots with the user's Codex references; native Codex automation itself was denied by the computer-use tool. No agent messages or terminal input were sent. Opening Changes captured review snapshots through the normal UI.
+
+Measured defect: at 1512px viewport, chat started at 964px but remained 482px after closing Changes because its inline flex-grow stayed 0.5. On phone the same constraint halved chat height. The sizing routine now removes that constraint whenever a side pane is absent or mobile layout applies. Live browser checks with patched assets restored 964px desktop width and full phone height; zero page errors.
+
+Further corrections from the walkthrough: agent/workstream filters now expand from a readable Filters control, More/review actions use readable sans-serif text, and disclosure arrows identify expandable review details. Phone has one Chat header; its plus opens a new conversation instead of the global task capture form. A stopped embedded terminal hides unavailable connection/keyboard actions. These checks cover viewport emulation, not a physical phone keyboard.

@@ -14,6 +14,11 @@ await page.evaluate(()=>{const shell=document.querySelector('.chat-shell');shell
 const side=page.getByRole('separator',{name:'Resize chat and side pane'});await side.waitFor();const before=(await page.locator('.chat-main').boundingBox()).width;
 await side.press('ArrowRight');assert.ok((await page.locator('.chat-main').boundingBox()).width>before);
 await side.dblclick();assert.equal(await side.getAttribute('aria-valuenow'),'50');
+await page.evaluate(()=>{document.querySelector('.artifact-workspace').remove();document.querySelector('.chat-shell').classList.remove('has-artifact');});
+await page.waitForTimeout(60);
+assert.equal(await page.locator('.chat-main').evaluate(e=>e.style.flex),'','closing side pane clears split constraint');
+const shellBounds=await page.locator('.chat-shell').boundingBox(),mainBounds=await page.locator('.chat-main').boundingBox();
+assert.ok(mainBounds.x+mainBounds.width>shellBounds.x+shellBounds.width-40,'chat fills available width again');
 await page.setViewportSize({width:390,height:844});await page.waitForTimeout(80);assert.equal(await side.isVisible(),false);assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);
 console.log('PASS: drag, saved widths, keyboard adjustment/reset, side pane proportions and phone layout.');
 }finally{await browser.close();}})().catch(e=>{console.error(e);process.exit(1)});

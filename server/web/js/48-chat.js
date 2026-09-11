@@ -93,8 +93,8 @@ function chatRouteSegments(h) {
   return raw.split("/").map((s) => { try { return decodeURIComponent(s); } catch (e) { return s; } });
 }
 
-document.addEventListener("pointerdown",e=>{document.querySelectorAll(".chat-details[open],.chat-row-menu[open]").forEach(menu=>{if(!menu.contains(e.target))menu.open=false;});});
-document.addEventListener("keydown",e=>{if(e.key!=="Escape")return;document.querySelectorAll(".chat-details[open],.chat-row-menu[open]").forEach(menu=>{menu.open=false;menu.querySelector("summary")?.focus();});});
+document.addEventListener("pointerdown",e=>{document.querySelectorAll(".chat-details[open],.chat-row-menu[open],.chat-filter-menu[open]").forEach(menu=>{if(!menu.contains(e.target))menu.open=false;});});
+document.addEventListener("keydown",e=>{if(e.key!=="Escape")return;document.querySelectorAll(".chat-details[open],.chat-row-menu[open],.chat-filter-menu[open]").forEach(menu=>{menu.open=false;menu.querySelector("summary")?.focus();});});
 
 // Headers occupy their own flex row; output never scrolls behind them.
 function chatMountHeader(head) {
@@ -636,6 +636,7 @@ function renderChatInboxRows() {
   const host = document.getElementById("chatInboxRows");
   if (!host) return;
   host.replaceChildren();
+  const filterLabel=document.querySelector(".chat-filter-menu > summary");if(filterLabel)filterLabel.textContent="Filters"+((chatInboxFilter!=="all"||chatWorkstreamFilter!=="all")?" · on":"");
   const entries = chatInboxEntries();
   if(chatLifecycleFilter==="deleted")host.append(el("p","chat-head-meta","Deleted from your Chats. Restore anytime. Task and provider history are retained."));
   if (!entries.length) { host.append(emptyRow(chatSearchQuery || chatWorkstreamFilter!=="all" || chatInboxFilter!=="all" ? "No matching conversations" : "No conversations yet")); return; }
@@ -694,7 +695,8 @@ function renderChatRail() {
     const lifecycle=document.createElement("select");lifecycle.className="chat-inbox-filter";lifecycle.setAttribute("aria-label","Conversation list");
     [["active","Chats"],["archived","Archived chats"],["deleted","Trash"]].forEach(([value,label])=>{const option=el("option","",label);option.value=value;lifecycle.append(option);});
     lifecycle.value=chatLifecycleFilter;lifecycle.onchange=()=>{chatLifecycleFilter=lifecycle.value;renderChatInboxRows();};
-    filters.append(lifecycle);controls.append(search, filters);
+    const filterMenu=el("details","chat-filter-menu"),filterLabel=el("summary","","Filters");filterMenu.append(filterLabel,filters);
+    const listControls=el("div","chat-list-controls");listControls.append(lifecycle,filterMenu);controls.append(search,listControls);
     host.append(controls, el("div", "chat-inbox-rows"));
     host.lastChild.id = "chatInboxRows";
   }
@@ -2153,7 +2155,7 @@ function terminalPaintRunBadge(badge) {
   badge.title = "runtime observation; the run report determines task status";
   if (ob && ob.manifestId && ob.connectivity === "connected" && ob.process === "running") {
     const open = el("button", "sprt-quiet", "open in terminal");
-    open.onclick = (event) => { event.preventDefault(); event.stopPropagation(); chatOpenTerminalPane(chatTermFind(ob.manifestId)||{id:ob.manifestId}); };
+    open.onclick = (event) => { event.preventDefault(); event.stopPropagation(); if(typeof location!=="undefined"&&location.hash.startsWith("#/chat"))chatOpenTerminalPane(chatTermFind(ob.manifestId)||{id:ob.manifestId});else chatTermOpenInTerminal({id:ob.manifestId}); };
     badge.append(open);
   }
 }
@@ -3366,9 +3368,10 @@ function chatInstallPaneResize(shell){
   rail=clamp(rail,180,Math.max(180,Math.min(420,bounds.width-380)));
   shell.style.setProperty('--rail-w',rail+'px');
   list.hidden=phone||has;artifact.hidden=phone||!has;
+  const main=shell.querySelector('.chat-main');
+  if(main&&(!has||phone))main.style.removeProperty('flex');
   if(pane){
-   const main=shell.querySelector('.chat-main');
-   if(phone){pane.style.flex='';main.style.flex='';}
+   if(phone||!has){pane.style.flex='';}
    else{const minShare=Math.min(.5,300/Math.max(1,bounds.width-60));split=clamp(split,minShare,1-minShare);pane.style.flex=(1-split)+' 1 0px';main.style.flex=split+' 1 0px';}
   }
   const target=has?pane:shell.querySelector('.chat-rail');

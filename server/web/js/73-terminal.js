@@ -69,6 +69,7 @@ function termRenderControls() {
     pane.prepend(toolbar);
   }
   toolbar.classList.toggle("term-controls-embedded",termEmbedded);
+  toolbar.classList.toggle("term-controls-stopped",!!termOpenId&&termConnectivity==="connected"&&!termSessions.some(session=>session.id===termOpenId));
   const back=document.getElementById("termBackToChat");back.hidden=true;
   try {const origin=JSON.parse(sessionStorage.getItem("manifest.terminalReturn")||"null");if(origin?.id===termOpenId&&origin.route?.startsWith("#/chat")){back.href=origin.route;back.hidden=false;}}catch(e){}
   const select = toolbar.querySelector("select");

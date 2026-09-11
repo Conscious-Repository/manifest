@@ -414,8 +414,8 @@ button.chat-attach-chip { min-height: 44px; max-width: 100%; background: transpa
 .chat-email-watch summary { min-height: 44px; padding: var(--sp-5) 0; box-sizing: border-box; cursor: pointer; }
 
 /* Conversation first: a quiet list, one-line header, and bounded reading width. */
-.chat-inbox-filters { display: flex; gap: 6px; min-width: 0; }
-.chat-inbox-filters select { flex: 1; min-width: 0; width: 50%; font-size: 12px; padding: 7px; min-height: 36px; }
+.chat-inbox-filters { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.chat-inbox-filters select { flex: 1; min-width: 0; width: 100%; font-size: 12px; padding: 7px; min-height: 36px; }
 .chat-inbox-search { font-family: var(--sans); font-size: 14px; min-height: 40px; }
 .chat-inbox-rows .chat-rail-row { padding: 12px 10px; margin: 2px 0; border-bottom: 0; }
 .chat-inbox-rows .chat-rail-title { font-family: var(--sans); font-size: 14px; font-weight: 500; }
@@ -514,3 +514,17 @@ button.chat-attach-chip { min-height: 44px; max-width: 100%; background: transpa
 .chat-terminal-head button { min-width: 36px; min-height: 36px; }
 .chat-terminal-resizer { position: absolute; top: -5px; height: 10px; left: 0; right: 0; cursor: row-resize; touch-action: none; z-index: 3; }
 .chat-terminal-resizer:focus-visible { background: var(--hover); }
+
+.chat-list-controls { display: flex; align-items: center; gap: 8px; }
+.chat-list-controls > select { flex: 1; width: 0; min-width: 0; }
+.chat-filter-menu { position: relative; flex: none; }
+.chat-filter-menu > summary { cursor: pointer; font: 13px var(--sans); padding: 8px; }
+.chat-filter-menu > .chat-inbox-filters { position: absolute; right: 0; z-index: 20; width: 230px; max-width: calc(100vw - 40px); padding: 12px; border: 1px solid var(--line); background: var(--surface-overlay); border-radius: var(--radius); }
+.chat-details[open] .sprt-quiet { font: 14px var(--sans); }
+.artifact-workspace-controls .sprt-quiet { font: 13px var(--sans); }
+@media(max-width:860px){ #chatView > .cockpit-head { display: none; } }
+
+.chat-terminal-workspace .term-controls-stopped .term-key { display: none; }
+.working-changes-view details > summary { cursor: pointer; }
+.working-changes-view details > summary::before { content: "▸"; display: inline-block; width: 1.2em; color: var(--base-60); }
+.working-changes-view details[open] > summary::before { content: "▾"; }

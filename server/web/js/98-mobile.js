@@ -80,8 +80,11 @@
   }));
   crumbBar.append(
     btn("mf-search", "⌕", "Search", () => window.openCmdbar && openCmdbar()),
-    btn("mf-add", "＋", "Capture", () => window.openTodoQuickAdd && openTodoQuickAdd())
+    btn("mf-add", "＋", "Capture", () => {if(location.hash.startsWith("#/chat")){location.hash=chatNewHash();}else if(window.openTodoQuickAdd)openTodoQuickAdd();})
   );
+
+  const updateCaptureLabel=()=>{const add=crumbBar.querySelector(".mf-add");if(add)add.setAttribute("aria-label",location.hash.startsWith("#/chat")?"New chat":"Capture");};
+  window.addEventListener("hashchange",updateCaptureLabel);updateCaptureLabel();
 
   // ---- bottom-sheet primitive ----
   // One lazily-built host. Same-key re-open re-fills IN PLACE (no re-animation)
