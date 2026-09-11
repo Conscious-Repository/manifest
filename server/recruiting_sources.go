@@ -119,6 +119,31 @@ func (s *Server) handleRecruitingSourceRun(w http.ResponseWriter, r *http.Reques
 // classified, and every claim that landed is ledgered under the candidate.
 // The record is the truth and lands first; a graph write that fails is
 // reported in the payload, never a reason to refuse the accept.
+// POST /sources/graph/{run}/{draft} — the third outcome. The person goes
+// into the social graph as a known node with their coauthor/co-PI/repo ties,
+// and no candidate record. Everyone a paper names ends up in the graph
+// (owner, 2026-09-11); recruiting them is the separate decision.
+func (s *Server) handleRecruitingSourceGraph(w http.ResponseWriter, r *http.Request) {
+	if !s.recruitingRunsReady(w) {
+		return
+	}
+	now := time.Now()
+	runID, draftID := r.PathValue("run"), r.PathValue("draft")
+	run, p, err := s.recruitingRuns.Graph(runID, draftID, now)
+	if err != nil {
+		httpError(w, err)
+		return
+	}
+	out := s.runsPayload(true)
+	out["run"] = run
+	out["person"] = p
+	s.ledger(ledger.Entry{Source: "recruiting", Kind: "recruiting.draft.graphed", Actor: "owner",
+		Object: ledger.Object{Kind: graph.KindPerson, ID: p.ID},
+		Text:   ledger.Snip(p.Name+" put into the graph from "+run.Source+" ("+runID+"/"+draftID+")", 280),
+		Meta:   map[string]any{"run": runID, "draft": draftID, "source": run.Source, "name": p.Name, "sourceRef": p.SourceRef}})
+	writeJSON(w, out)
+}
+
 func (s *Server) handleRecruitingSourceAccept(w http.ResponseWriter, r *http.Request) {
 	if !s.recruitingRunsReady(w) {
 		return

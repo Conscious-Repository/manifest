@@ -327,7 +327,18 @@ type NetworkPerson struct {
 	Archived string `json:"archived,omitempty"`
 	// Ref is where this person came from when they are not hand-typed — the
 	// vault contact key, so the same human is not a second record here.
-	Ref     string  `json:"ref,omitempty"`
+	Ref string `json:"ref,omitempty"`
+	// SourceRef is the adapter identity of a person put INTO THE GRAPH from a
+	// source run ("openalex:A5008233636"), the same shape a candidate's
+	// source_ref takes — so a later sweep that returns them again is told
+	// "in your graph" instead of asking twice, and an edge that names their
+	// ORCID resolves onto this row. Consent stays empty: they are known, not
+	// someone the owner would ask.
+	SourceRef string `json:"sourceRef,omitempty"`
+	// ORCID is the identity link a run handed over with the person (the URL,
+	// as the profile keeps it), so an edge naming that ORCID later resolves
+	// onto this row instead of leaving them a stranger with two identities.
+	ORCID   string  `json:"orcid,omitempty"`
 	Unknown []Field `json:"unknown,omitempty"`
 }
 

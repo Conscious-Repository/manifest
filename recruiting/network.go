@@ -9,7 +9,7 @@ import (
 
 var (
 	networkPersonKeys = []string{"id", "name", "type", "email", "linkedin", "github",
-		"org", "title", "source", "consent", "added",
+		"org", "title", "source", "consent", "added", "source_ref", "orcid",
 		// archived: a connector is ARCHIVED, never deleted (the owner's rule,
 		// 2026-09-05) · ref: the vault contact this person came from
 		"archived", "ref"}
@@ -51,7 +51,7 @@ func personOf(r *Row) NetworkPerson {
 		Email: r.Get("email"), LinkedIn: r.Get("linkedin"), GitHub: r.Get("github"),
 		Org: r.Get("org"), Title: r.Get("title"), Source: r.Get("source"),
 		Consent: r.Get("consent"), Added: r.Get("added"),
-		Archived: r.Get("archived"), Ref: r.Get("ref"),
+		Archived: r.Get("archived"), Ref: r.Get("ref"), SourceRef: r.Get("source_ref"), ORCID: r.Get("orcid"),
 		Unknown: unknownFields(r, networkPersonKeys...),
 	}
 }
@@ -85,7 +85,7 @@ func (d *PeopleDoc) Add(p NetworkPerson) (NetworkPerson, error) {
 	r := newRow("id", p.ID, "name", p.Name)
 	for _, kv := range [][2]string{{"type", p.Type}, {"email", p.Email}, {"linkedin", p.LinkedIn},
 		{"github", p.GitHub}, {"org", p.Org}, {"title", p.Title}, {"source", p.Source},
-		{"consent", p.Consent}, {"added", p.Added}, {"ref", p.Ref}} {
+		{"consent", p.Consent}, {"added", p.Added}, {"ref", p.Ref}, {"source_ref", p.SourceRef}, {"orcid", p.ORCID}} {
 		if kv[1] != "" {
 			r.Set(kv[0], kv[1])
 		}

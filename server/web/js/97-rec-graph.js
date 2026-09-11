@@ -1040,6 +1040,7 @@ function rgPanel(data) {
   head.append(close);
   box.append(head);
   const meta = [node.kind === "considering" ? "on the board" : node.kind === "connector" ? "someone you'd ask"
+    : node.kind === "known" ? "in your graph"
     : node.kind === "you" ? "you" : "not on the board", node.stage, node.role].filter(Boolean).join(" · ");
   box.append(el("div", "rec-draft-sub", meta));
 

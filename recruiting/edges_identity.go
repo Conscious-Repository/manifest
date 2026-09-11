@@ -44,8 +44,8 @@ func (s *Store) extIndex() map[string]string {
 		if strings.TrimSpace(p.ID) == "" {
 			continue
 		}
-		for _, k := range extKeysOfRecord("", map[string]string{
-			"github": p.GitHub, "linkedin": p.LinkedIn,
+		for _, k := range extKeysOfRecord(p.SourceRef, map[string]string{
+			"github": p.GitHub, "linkedin": p.LinkedIn, "orcid": p.ORCID,
 		}) {
 			out[k] = p.ID
 		}

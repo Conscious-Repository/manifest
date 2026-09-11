@@ -379,6 +379,62 @@ func (s *Store) acceptDraft(d sources.CandidateDraft, now time.Time) (Candidate,
 	return s.candidateView(slug, doc), nil
 }
 
+// GraphDraft is the third thing a draft can become (beside a candidate and a
+// tombstone): a person in the social graph. It writes the network/people.md
+// row and the draft's relationship claims, repointing every edge that named
+// this person by an external key onto the row — exactly what acceptDraft does
+// for the graph, minus the record. Consent is left empty on purpose: this is
+// someone the owner KNOWS OF, not someone he would ask, and OwnerSeeds must
+// never start a route from them. D15 holds: no adapter sets an email here.
+func (s *Store) GraphDraft(d sources.CandidateDraft, now time.Time) (NetworkPerson, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	d = SanitizeDraft(d)
+	if err := ValidateDraft(d); err != nil {
+		return NetworkPerson{}, err
+	}
+	ref := SourceRef(d)
+	doc := s.LoadNetworkPeople()
+	for _, have := range doc.People() {
+		if ref != "" && have.SourceRef == ref {
+			return NetworkPerson{}, errf("already in your graph: %s", have.Name)
+		}
+		if strings.EqualFold(strings.TrimSpace(have.Name), strings.TrimSpace(d.Name)) {
+			return NetworkPerson{}, errf("already in your graph: %s", have.Name)
+		}
+	}
+	for _, slug := range s.CandidateSlugs() {
+		if have := s.LoadCandidate(slug); strings.EqualFold(strings.TrimSpace(have.Get("name")), strings.TrimSpace(d.Name)) {
+			return NetworkPerson{}, errf("already on the board: %s", d.Name)
+		}
+	}
+	p := NetworkPerson{
+		Name: d.Name, Org: d.Org, Title: d.Title,
+		Source: d.SourceID, SourceRef: ref,
+		Added: now.UTC().Format("2006-01-02"),
+	}
+	for _, l := range d.Links {
+		switch k := ExtKeyFromURL(l); {
+		case strings.HasPrefix(k, sources.ExtNodePrefix+"github/"):
+			p.GitHub = l
+		case strings.HasPrefix(k, sources.ExtNodePrefix+"orcid/"):
+			p.ORCID = l
+		}
+	}
+	p, err := doc.Add(p)
+	if err != nil {
+		return NetworkPerson{}, err
+	}
+	// the ROW lands first, for the same reason the record does in acceptDraft
+	if err := s.SaveNetworkPeople(doc); err != nil {
+		return NetworkPerson{}, err
+	}
+	if err := s.saveDraftEdges(d, p.ID); err != nil {
+		return NetworkPerson{}, err
+	}
+	return p, nil
+}
+
 // saveDraftEdges appends the draft's relationship claims, filling in the `to`
 // endpoint (the candidate that did not exist when the adapter ran), resolving
 // external keys onto records that already exist, repointing edges that named

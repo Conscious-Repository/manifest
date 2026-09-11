@@ -271,3 +271,41 @@ func TestGraphWritesNothing(t *testing.T) {
 		}
 	}
 }
+
+// A person put into the graph from a run is KNOWN — drawn, reachable, and
+// never a place a route starts from. The kind is what separates them from a
+// connector on the canvas, and the rank is what keeps them from displacing
+// candidates when a ring is cut.
+func TestGraphDrawsAGraphedPersonAsKnownNotConnector(t *testing.T) {
+	s, _, _ := testGraphServer(t)
+	if err := s.recruiting.AddNetworkPerson(recruiting.NetworkPerson{
+		Name: "Lena Ortiz", Source: "openalex", SourceRef: "openalex:A77"}); err != nil {
+		t.Fatal(err)
+	}
+	ids := map[string]string{}
+	for _, p := range s.recruiting.Connectors() {
+		ids[p.Name] = p.ID
+	}
+	doc := s.recruiting.LoadEdges()
+	if _, err := doc.Add(recruiting.Edge{From: ids["Dana Fox"], To: ids["Lena Ortiz"], Kind: "coauthor",
+		Basis: "both on a paper", Source: "openalex", Confidence: "0.55"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.recruiting.SaveEdges(doc); err != nil {
+		t.Fatal(err)
+	}
+	g := graphGet(t, s.Handler(), "?degree=2")
+	kinds := map[string]string{}
+	for _, n := range g.Nodes {
+		kinds[n.Label] = n.Kind
+	}
+	if kinds["Lena Ortiz"] != "known" {
+		t.Fatalf("a graphed person is known, not %q: %v", kinds["Lena Ortiz"], kinds)
+	}
+	if kinds["Dana Fox"] != "connector" {
+		t.Fatalf("consent:owner is still a connector: %v", kinds)
+	}
+	if graphRank("known") <= graphRank("connector") || graphRank("known") >= graphRank("stranger") {
+		t.Fatalf("known must rank between connector and stranger: %d", graphRank("known"))
+	}
+}

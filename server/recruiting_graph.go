@@ -46,7 +46,7 @@ const (
 type graphNode struct {
 	ID    string `json:"id"`
 	Label string `json:"label"`
-	Kind  string `json:"kind"`            // you | connector | considering | stranger
+	Kind  string `json:"kind"`            // you | connector | considering | known | stranger
 	Hop   int    `json:"hop"`             // rings out from the centre
 	Deg   int    `json:"deg"`             // edges within the RENDERED set
 	Stage string `json:"stage,omitempty"` // a candidate's stage, so a node shows state and not just topology
@@ -272,8 +272,17 @@ func graphKinder(board []recruiting.PersonIdentity, conns []recruiting.NetworkPe
 		on[c.ID] = "considering"
 	}
 	for _, p := range conns {
-		if p.Archived == "" {
+		if p.Archived != "" {
+			continue
+		}
+		// a connector is someone the owner would ASK — consent:owner, the only
+		// thing that starts an intro path. A person put into the graph from a
+		// run is known, and drawn as such: a route may pass through them, it
+		// never starts from them.
+		if p.Consent == "owner" {
 			on[p.ID] = "connector"
+		} else {
+			on[p.ID] = "known"
 		}
 	}
 	return func(id string) string {
@@ -295,8 +304,10 @@ func graphRank(kind string) int {
 		return 1
 	case "connector":
 		return 2
+	case "known":
+		return 3
 	}
-	return 3
+	return 4
 }
 
 // graphSearch is the entry point, not the canvas: it answers "who" without

@@ -574,7 +574,8 @@ async function recIntakeCommit() {
     recIntakeReset();
     if (made.kind === "candidate" && made.id) { recSel = made.id; recView = "board"; }
     renderAion();
-    if (sweep) showToast(made.name + " added — sweep it", () => recLoadRun(sweep), "info");
+    if (sweep && recSweepIsLookup(sweep)) { showToast(made.name + " added — reading it"); recSweep(sweep); }
+    else if (sweep) showToast(made.name + " added — sweep it", () => recLoadRun(sweep), "info");
     else showToast(made.name + " added");
   } catch (e) {
     st.busy = false;
@@ -910,7 +911,7 @@ function recIntakeBox() {
   if (sweepTarget) {
     const sw = el("button", "pill light", "sweep without adding →");
     sw.title = "load the " + sweepTarget.source + " run for this, and skip the record";
-    sw.onclick = () => { const t = sweepTarget; recIntakeReset(); recLoadRun(t); };
+    sw.onclick = () => { const t = sweepTarget; recIntakeReset(); recSweep(t); };
     acts.append(sw);
   }
   const cancel = el("button", "rec-linkish", "cancel");
@@ -1200,7 +1201,7 @@ function recPlaceRow(p) {
   if (target) {
     const go = el("button", "rec-linkish", "sweep →");
     go.title = "load the " + target.source + " run scoped to this place";
-    go.onclick = () => recLoadRun(target);
+    go.onclick = () => recSweep(target);
     acts.append(go);
   } else {
     // a place that cannot be swept says WHY and what would fix it, instead of
@@ -1362,7 +1363,7 @@ function paintBoardView(main) {
   // role is a facet on ONE list now (owner, 2026-09-05). `considering` keeps
   // the stages, the gate and the inspector exactly as they were.
   const facets = el("div", "rec-cuts rec-facets");
-  const connectors = ((recCache.network || {}).people || []).filter((p) => !p.archived);
+  const connectors = ((recCache.network || {}).people || []).filter((p) => !p.archived && p.consent === "owner");
   [["considering", "considering", (recCache.candidates || []).filter((c) => recRoleCandidates(c) && recCandidateActive(c)).length],
    ["known", "who I'd ask", connectors.length],
    ["everyone", "everyone", 0]].forEach(([key, label, n]) => {
@@ -1454,7 +1455,7 @@ function paintBoardBody() {
     });
   }
   if (recPeopleFacet === "everyone") {
-    board.append(el("div", "micro-label rec-review-count", "People you'd ask for introductions"));
+    board.append(el("div", "micro-label rec-review-count", "People you know — the ones you'd ask, and everyone put into the graph"));
     const q = recQuery.trim().toLowerCase();
     const connectors = ((recCache.network || {}).people || []).filter((p) => !p.archived &&
       (!q || [p.name, p.org, p.title, p.email].join(" ").toLowerCase().includes(q)));
@@ -1828,6 +1829,12 @@ async function recRunSource() {
   const max = parseInt(recRunForm.max, 10);
   if (max > 0) body.max = max;
   if (Object.keys(fields).length) body.fields = fields;
+  await recRunFire(body);
+}
+
+// recRunFire is THE run: one POST, the new run focused and opened in SOURCES,
+// the counts in a toast. The form submit and the one-record sweeps share it.
+async function recRunFire(body) {
   recRunning = true;
   renderAion();
   try {
@@ -1849,12 +1856,45 @@ async function recRunSource() {
     const c = (out.run || {}).counts || {};
     showToast("run: " + (c.fetched || 0) + " fetched · " +
       (c.new || 0) + " new · " + (c.duplicate || 0) + " duplicate");
+    return out;
   } catch (e) {
     showToast(String(e.message || e).slice(0, 140), null, "error");
+    return null;
   } finally {
     recRunning = false;
     renderAion();
   }
+}
+
+// recSweepIsLookup: ONE paper, ONE repo, ONE feed is a lookup — a single
+// record fetched once — not a crawl that spends somebody's rate limit. The
+// "load, never run" rule was written for lab crawls and name fan-outs; for a
+// pasted DOI it cost two clicks, one of them behind a toast that disappears,
+// and the owner reasonably read the silence as "it did nothing".
+function recSweepIsLookup(t) {
+  const f = (t && t.fields) || {};
+  return !!(f.work || f.repo || f.feed_url);
+}
+
+// recSweep is the one gesture behind every `sweep →`: a lookup runs now and
+// lands you on its card; a crawl loads the pending card for you to fire.
+function recSweep(target) {
+  if (!target) return;
+  if (!recSweepIsLookup(target)) { recLoadRun(target); return; }
+  recNav("sources");
+  recRunFire({
+    source: target.source,
+    role: recRoleId(),
+    query: target.query || "",
+    fields: Object.assign({}, target.fields || {}),
+  });
+}
+
+// recDraftStatusWord says what a decided draft became, in the owner's words.
+function recDraftStatusWord(status) {
+  if (status === "rejected") return "passed";
+  if (status === "graphed") return "in your graph";
+  return status;
 }
 
 // recUntil — an expiry reads as a DISTANCE, not a date: what a run is worth is
@@ -1948,7 +1988,7 @@ function recRunCard(run) {
   card.append(head);
 
   const counts = el("div", "rec-run-counts");
-  [["fetched", c.fetched], ["new", c.new], ["dup", c.duplicate], ["accepted", c.accepted], ["passed", c.rejected]]
+  [["fetched", c.fetched], ["new", c.new], ["dup", c.duplicate], ["accepted", c.accepted], ["graphed", c.graphed], ["passed", c.rejected]]
     .forEach(([k, n]) => counts.append(el("span", "rec-run-count" + (n ? " has" : ""), (n || 0) + " " + k)));
   counts.append(el("span", "rec-run-when", fmtWhen(run.startedAt)));
   let expiry = "kept until triaged";
@@ -2344,7 +2384,7 @@ function recDraftCard(run, d) {
 
   // 1 · identity
   const head = el("div", "rec-draft-head");
-  head.append(el("span", "micro-label rec-draft-status " + d.status, d.status === "rejected" ? "passed" : d.status));
+  head.append(el("span", "micro-label rec-draft-status " + d.status, recDraftStatusWord(d.status)));
   head.append(el("span", "rec-draft-name", dr.name || "(unnamed)"));
   if (later) head.append(el("span", "micro-label rec-draft-later-mark", "later"));
   if (d.lookedUpAt) head.append(el("span", "rec-draft-flag", "looked up"));
@@ -2503,6 +2543,16 @@ function recDraftCard(run, d) {
       accept.disabled = true; // one record per press: a double-click is not two accepts
       recSourcesPost("/api/aion/recruiting/sources/accept/" + run.id + "/" + d.id, {}, "candidate added from " + run.source);
     };
+    // THE THIRD OUTCOME (owner, 2026-09-11): everyone a paper names ends up
+    // in the social graph; recruiting them is the separate decision. This
+    // writes the person and their ties, and no candidate record.
+    const graph = el("button", "pill light rec-draft-graph", "Into the graph");
+    graph.title = "add this person and their coauthor/co-PI/repo ties to your social graph — known, not a candidate, not someone you'd ask";
+    graph.onclick = () => {
+      graph.disabled = true;
+      recSourcesPost("/api/aion/recruiting/sources/graph/" + run.id + "/" + d.id, {},
+        ((d.draft || {}).name || "this person") + " is in your graph");
+    };
     const look = el("button", "pill light", d.lookedUpAt ? "look up again" : "look up");
     look.title = "ask the other public indexes (openalex, orcid, github, pubmed) about this exact name";
     look.onclick = () => {
@@ -2521,12 +2571,12 @@ function recDraftCard(run, d) {
         recNav("sources");
       });
     };
-    acts.append(accept, look, recDraftPass(run, d), laterBtn);
+    acts.append(accept, graph, look, recDraftPass(run, d), laterBtn);
     card.append(acts);
   } else if (d.decidedAt) {
     // the reassurance ("this search only — nothing was deleted") is the
     // undo's tooltip, not a line on every settled card
-    const hint = el("div", "rec-draft-hint", (d.status === "rejected" ? "passed " : d.status + " ") + fmtWhen(d.decidedAt));
+    const hint = el("div", "rec-draft-hint", recDraftStatusWord(d.status) + " " + fmtWhen(d.decidedAt));
     if (d.status === "rejected") hint.append(" · ", recDraftUnpass(run, d));
     card.append(hint);
   }

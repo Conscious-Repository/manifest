@@ -46,6 +46,11 @@ const (
 	DraftDuplicate = "duplicate"
 	DraftAccepted  = "accepted"
 	DraftRejected  = "rejected"
+	// DraftGraphed: the person went INTO THE GRAPH — a network row and their
+	// relationship claims — without becoming a candidate. The owner's rule
+	// (2026-09-11): everyone a paper names ends up in the social graph; the
+	// only decision is whether they are ALSO someone to recruit.
+	DraftGraphed = "graphed"
 )
 
 // Run caps: a scope with no max gets DefaultRunMax; nothing may ask for more
@@ -63,6 +68,7 @@ type RunCounts struct {
 	Duplicate int `json:"duplicate"`
 	Accepted  int `json:"accepted"`
 	Rejected  int `json:"rejected"`
+	Graphed   int `json:"graphed"`
 }
 
 // RunState is run.json: the trace without the drafts.
@@ -514,13 +520,52 @@ func (run *Run) decide(i int, status, candidateID string, now time.Time) {
 	d := &run.Drafts[i]
 	d.Status = status
 	d.DecidedAt = now.UTC()
-	if status == DraftAccepted {
+	switch status {
+	case DraftAccepted:
 		d.CandidateID = candidateID
 		run.Counts.Accepted++
-	} else {
+	case DraftGraphed:
+		d.CandidateID = candidateID // the network row this draft became
+		run.Counts.Graphed++
+	default:
 		run.Counts.Rejected++
 	}
 	run.triage(now)
+}
+
+// Graph puts one draft INTO THE GRAPH: a network/people.md row carrying the
+// source identity, plus every relationship claim the adapter made, with the
+// person as the endpoint that did not exist when it ran. No candidate record
+// is written and no consent is claimed — they are known, not recruited and
+// not someone the owner would ask. A later accept is a separate decision.
+func (r *RunStore) Graph(runID, draftID string, now time.Time) (Run, NetworkPerson, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	run, err := r.load(runID)
+	if err != nil {
+		return Run{}, NetworkPerson{}, err
+	}
+	i, err := run.find(draftID)
+	if err != nil {
+		return Run{}, NetworkPerson{}, err
+	}
+	d := &run.Drafts[i]
+	switch d.Status {
+	case DraftNew:
+	case DraftDuplicate:
+		return Run{}, NetworkPerson{}, errf("draft %s is already known as %s", draftID, d.CandidateID)
+	default:
+		return Run{}, NetworkPerson{}, errf("draft %s is already %s", draftID, d.Status)
+	}
+	p, err := r.store.GraphDraft(d.Draft, now)
+	if err != nil {
+		return Run{}, NetworkPerson{}, err
+	}
+	run.decide(i, DraftGraphed, p.ID, now)
+	if err := r.writeRun(run, nil); err != nil {
+		return Run{}, NetworkPerson{}, err
+	}
+	return r.project(run, nil), p, nil
 }
 
 // Unreject reverses a pass (Phase 3): the draft returns to `new` exactly as
@@ -906,6 +951,19 @@ func (s *Store) candidateIndex() candidateIndex {
 		}
 		idx.orgs[id] = normalizeKey(doc.Profile()["org"])
 	}
+	// people put into the graph from a run dedupe the same way: the point of
+	// suppression is that a re-sweep never re-asks a question already answered,
+	// and "they are in your graph" is an answer
+	for _, p := range s.LoadNetworkPeople().People() {
+		if p.Archived != "" || strings.TrimSpace(p.ID) == "" || p.SourceRef == "" {
+			continue // hand-typed connectors are matched by the store's own name check
+		}
+		idx.byRef[p.SourceRef] = p.ID
+		if name := normalizeKey(p.Name); name != "" {
+			idx.byName[name] = append(idx.byName[name], p.ID)
+		}
+		idx.orgs[p.ID] = normalizeKey(p.Org)
+	}
 	return idx
 }
 
@@ -915,6 +973,14 @@ func (s *Store) candidateIndex() candidateIndex {
 // store refuses a same-name record anyway, and a duplicate that says so is
 // better than an accept that fails.
 func (idx candidateIndex) match(d sources.CandidateDraft) (string, string) {
+	id, why := idx.matchRecord(d)
+	if strings.HasPrefix(id, "aion-net/") {
+		why = "in your graph — " + why
+	}
+	return id, why
+}
+
+func (idx candidateIndex) matchRecord(d sources.CandidateDraft) (string, string) {
 	if ref := SourceRef(d); ref != "" {
 		if id, ok := idx.byRef[ref]; ok {
 			return id, "external id " + ref

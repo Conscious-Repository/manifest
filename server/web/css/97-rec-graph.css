@@ -50,6 +50,10 @@
 .rg-node.rg-connector .rg-dot { fill: var(--ok, #2f855a); }
 .rg-node.rg-considering .rg-dot { fill: var(--base-100); }
 .rg-node.rg-stranger .rg-dot { fill: var(--base-30); }
+/* known: put into the graph from a run — drawn and named like someone you
+   have a relationship with, coloured apart from a connector because a route
+   never STARTS from them */
+.rg-node.rg-known .rg-dot { fill: var(--base-60); }
 .rg-node.sel .rg-dot { stroke: var(--accent); stroke-width: calc(3 / var(--rg-zoom)); }
 .rg-node:hover .rg-dot { stroke: var(--accent); }
 
@@ -74,6 +78,7 @@
    labels rather than through edges */
 .rg-node.rg-you .rg-label,
 .rg-node.rg-connector .rg-label,
+.rg-node.rg-known .rg-label,
 .rg-node.rg-considering .rg-label { opacity: var(--rg-label-named); fill: var(--base-100); }
 .rg-node:hover .rg-label, .rg-node.sel .rg-label,
 .rg-node.near .rg-label { opacity: 1; fill: var(--base-100); }

@@ -539,6 +539,7 @@ func (s *Server) Handler() http.Handler {
 				mux.HandleFunc("POST /api/aion/recruiting/sources/run", s.handleRecruitingSourceRun)
 				mux.HandleFunc("POST /api/aion/recruiting/sources/accept/{run}/{draft}", s.handleRecruitingSourceAccept)
 				mux.HandleFunc("POST /api/aion/recruiting/sources/reject/{run}/{draft}", s.handleRecruitingSourceReject)
+				mux.HandleFunc("POST /api/aion/recruiting/sources/graph/{run}/{draft}", s.handleRecruitingSourceGraph)
 				// undo a pass: the draft returns to `new` (Phase 3)
 				mux.HandleFunc("POST /api/aion/recruiting/sources/unreject/{run}/{draft}", s.handleRecruitingSourceUnreject)
 				mux.HandleFunc("POST /api/aion/recruiting/sources/pin/{run}", s.handleRecruitingSourcePin)
