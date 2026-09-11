@@ -60,3 +60,9 @@ Validation: server/agentchat suites include side-chat creation for planning/nati
 ### Compact workspace presentation
 
 Follow-up to the owner's 13:23 screenshots: replaced the large explanatory cards with a centered icon-and-label chooser; removed the synthetic Open tab, absence/help copy, and duplicate working-folder snapshot entry. Saved artifacts live under Files, while Review captures the current folder. The plus opens an anchored picker over existing content; selecting a tab dismisses it without resetting editor state. The header uses labeled terminal/pane icons and a compact options menu. Tooltips retain secondary explanations. Checked the live app with overlaid assets at desktop/phone widths and the tab/editor fixture, including popover visibility without hiding an active editor.
+
+### Project sidebar and composer
+
+Project headings group coding conversations by exact working folder and host; an explicit workstream assignment takes precedence. Same-name folders remain distinct and show their paths. Groups show five recent chats plus active/pinned entries, with Show more and collapse controls; search reveals matches. Unassigned conversations remain under Recent. This is a presentation of existing metadata, not a project migration. Expansion state lasts for the page session.
+
+The recipient/model picker now sits beside the message input in the composer footer. Runtime guidance is separate from the placeholder. Phone Enter adds a newline, and Ctrl/Cmd+Enter sends; the existing IME guard remains. Input height is bounded against the visual viewport. Validation: lifecycle/project grouping, workspace artifact drafts, simple-shell and resize browser fixtures; desktop/phone live reads with local assets overlaid; JavaScript syntax and duplicate CSS checks. No model messages or terminal input sent; physical keyboard testing remains outstanding.

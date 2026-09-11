@@ -456,6 +456,7 @@ function chatFitShell() {
   const phone = window.mf && window.mf.phone();
   const height = phone && window.visualViewport ? window.visualViewport.height : window.innerHeight;
   shell.style.height = Math.max(phone ? 180 : 320, height - top - 14) + "px";
+  document.querySelector("#chatComposer textarea")?._grow?.();
 }
 
 async function loadChatRoster() {
@@ -641,7 +642,7 @@ function renderChatInboxRows() {
   const entries = chatInboxEntries();
   if(chatLifecycleFilter==="deleted")host.append(el("p","chat-head-meta","Deleted from your Chats. Restore anytime. Task and provider history are retained."));
   if (!entries.length) { host.append(emptyRow(chatSearchQuery || chatWorkstreamFilter!=="all" || chatInboxFilter!=="all" ? "No matching conversations" : "No conversations yet")); return; }
-  entries.forEach(entry => {
+  const rows=entries.map(entry => {
     const row = entry.terminal ? chatTermRow(entry.session) : chatRailRow(entry.session, entry.agent);
     row.classList.toggle("open", entry.agent === chatAgent && entry.session.id === chatOpenId);
     const meta = row.querySelector(".chat-rail-meta");
@@ -669,8 +670,38 @@ function renderChatInboxRows() {
     workstream.onclick=e=>{e.stopPropagation();chatChooseWorkstream(entry);};workstream.onkeydown=e=>e.stopPropagation();menuBody.append(workstream);
     if(group&&meta)meta.append(el("span","chat-row-group",chatWorkstreams.groups[group]));
     row.onclick = () => { location.hash = entry.agent ? "#/chat/a/" + encodeURIComponent(entry.agent) + "/" + encodeURIComponent(entry.session.id) : "#/chat/" + encodeURIComponent(entry.session.id); };
-    host.append(row);
+    return row;
   });
+  chatRenderProjectGroups(host,entries,rows);
+}
+function chatRenderProjectGroups(host,entries,rows){
+ const state=chatRenderProjectGroups.state||(chatRenderProjectGroups.state={collapsed:new Set(),expanded:new Set()});
+ const groups=new Map(),recent=[];
+ entries.forEach((entry,index)=>{
+  const assigned=chatWorkstreamMember(chatInboxKey(entry));
+  const cwd=entry.terminal?(entry.session.cwd||'').replace(/\/+$/,''):'';
+  const folder=cwd&&cwd!=='~'&&!/^\/(?:home|Users)\/[^/]+$/.test(cwd);
+  const key=assigned?'workstream:'+assigned:folder?'folder:'+(entry.session.device||'local')+':'+cwd:'';
+  if(!key){recent.push(rows[index]);return;}
+  if(!groups.has(key))groups.set(key,{label:assigned?chatWorkstreams.groups[assigned]:cwd.split('/').at(-1),detail:assigned?'Workstream':cwd+(entry.session.device?' · '+entry.session.device:''),rows:[],entries:[]});
+  groups.get(key).rows.push(rows[index]);groups.get(key).entries.push(entry);
+ });
+ if(groups.size)host.append(el('div','chat-project-section-label','Projects'));
+ for(const [key,group] of groups){
+  const section=el('details','chat-project-group'),summary=el('summary','chat-project-heading'),list=el('div','chat-project-chats');
+  section.open=!!chatSearchQuery||!state.collapsed.has(key);summary.title=group.detail;
+  if(typeof chatWorkspaceIcon==='function')summary.append(chatWorkspaceIcon('folder'));
+  const duplicates=[...groups.values()].filter(g=>g.label===group.label).length>1;
+  summary.append(el('span','chat-project-name',group.label));
+  if(duplicates)summary.append(el('span','chat-project-path',group.detail));
+  section.append(summary,list);section.addEventListener('toggle',()=>{if(section.open)state.collapsed.delete(key);else state.collapsed.add(key);});
+  const all=!!chatSearchQuery||state.expanded.has(key);
+  group.rows.forEach((row,index)=>{if(all||index<5||row.classList.contains('open')||chatPins[chatInboxKey(group.entries[index])])list.append(row);});
+  const remaining=group.rows.length-list.children.length;
+  if(remaining>0||all&&group.rows.length>5&&!chatSearchQuery){const more=el('button','sprt-quiet chat-project-more',remaining>0?'Show more':'Show less');more.onclick=()=>{if(state.expanded.has(key))state.expanded.delete(key);else state.expanded.add(key);renderChatInboxRows();};list.append(more);}
+  host.append(section);
+ }
+ if(recent.length){host.append(el('div','chat-project-section-label','Recent'));recent.forEach(row=>host.append(row));}
 }
 function renderChatRail() {
   const host = document.getElementById("chatRail");
@@ -1776,6 +1807,7 @@ function renderChatComposer(session) {
     chatRenderDeliveryNotice(host,draftKey);
     chatRenderArtifactContext(session?.task,"chat:"+draftKey);
     chatRenderDraftNotice(host,draftKey);
+    if(typeof chatPolishComposer==="function")chatPolishComposer(host);
     return;
   }
   host.dataset.built = "1";
@@ -1790,7 +1822,8 @@ function renderChatComposer(session) {
   ta.setAttribute("aria-label", "Message");
   // auto-grow with content (target feel): reset then snap to scrollHeight,
   // clamped so a long paste scrolls inside instead of shoving the transcript.
-  const grow = () => { ta.style.height = "auto"; ta.style.height = Math.min(ta.scrollHeight, window.innerHeight * 0.4) + "px"; };
+  const grow = () => { ta.style.height = "auto"; ta.style.height = Math.min(ta.scrollHeight, Math.max(56,Math.min(220,(window.visualViewport?.height||window.innerHeight)*0.3))) + "px"; };
+  ta._grow=grow;
   ta.addEventListener("input", grow);
   ta.addEventListener("input", chatSaveDraft);
   // @-mention typeahead (portal sections): the word at the caret starting
@@ -1970,7 +2003,7 @@ function renderChatComposer(session) {
       const first = mention.querySelector(".chat-mention-tok");
       if (first) { e.preventDefault(); pickMention(first.textContent); return; }
     }
-    if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); submit(); }
+    if (e.key === "Enter" && !e.shiftKey && (!window.matchMedia("(max-width: 860px)").matches || e.metaKey || e.ctrlKey)) { e.preventDefault(); submit(); }
   });
   send.onclick = submit;
   host.append(chips, mention, ta, fi, attach, ritual, send);
@@ -1979,6 +2012,7 @@ function renderChatComposer(session) {
   chatRenderDraftNotice(host,draftKey);
   grow();
   syncAttach();
+  if(typeof chatPolishComposer==="function")chatPolishComposer(host);
 }
 
 // ---- live poll (file-derived; stops when idle; every backend) ----

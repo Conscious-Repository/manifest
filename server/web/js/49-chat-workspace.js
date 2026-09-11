@@ -15,10 +15,12 @@ function chatWorkspaceSource(){
  return null;
 }
 function chatWorkspaceIcon(kind){
- const paths={panel:'M4 4h16v16H4z M15 4v16',terminal:'M4 4h16v16H4z M7 8l3 3-3 3 M12 15h5',review:'M6 3h9l4 4v14H6z M14 3v5h5 M9 12h7 M9 16h7',chat:'M20 11a8 8 0 0 1-8 8H5l-3 3v-11a9 9 0 0 1 18 0z M8 11h8 M12 7v8',file:'M6 3h9l4 4v14H6z M14 3v5h5'};
+ const paths={folder:'M3 7V5h6l2 2h10v13H3z',panel:'M4 4h16v16H4z M15 4v16',terminal:'M4 4h16v16H4z M7 8l3 3-3 3 M12 15h5',review:'M6 3h9l4 4v14H6z M14 3v5h5 M9 12h7 M9 16h7',chat:'M20 11a8 8 0 0 1-8 8H5l-3 3v-11a9 9 0 0 1 18 0z M8 11h8 M12 7v8',file:'M6 3h9l4 4v14H6z M14 3v5h5'};
  const svg=document.createElementNS('http://www.w3.org/2000/svg','svg');svg.setAttribute('viewBox','0 0 24 24');svg.setAttribute('aria-hidden','true');svg.classList.add('chat-workspace-icon');const path=document.createElementNS(svg.namespaceURI,'path');path.setAttribute('d',paths[kind]||paths.file);svg.append(path);return svg;
 }
 function chatWorkspaceHeader(head){
+ for(const child of Array.from(head.children))if(child.tagName==='BUTTON'&&child.textContent.startsWith('Agent: '))child.classList.add('chat-recipient-control');
+ queueMicrotask(()=>{const composer=document.getElementById('chatComposer');if(composer?.dataset.built)chatPolishComposer(composer);});
  if(chatEmbedded){const more=head.querySelector('.chat-details');if(more)for(const button of Array.from(head.children))if(button.matches('.chat-terminal-view')||button.textContent==='Changes')more.append(button);return;}
  const more=head.querySelector('.chat-details');
  for(const child of Array.from(head.children)){
@@ -133,4 +135,30 @@ function chatWorkspaceSideSetup(source){
   };
   wrap.append(heading,hint,field('Agent',pick),advanced,status,start);host.append(wrap);return {};
  });
+}
+
+// Keep routing beside the instruction, while reusing the existing recipient
+// chooser and all of its capability/authorization checks.
+function chatPolishComposer(host){
+ const main=host.closest('.chat-main'),source=document.querySelector('#chatThreadHeader .chat-recipient-control');
+ let picker=host.querySelector('.chat-composer-recipient');
+ if(source){
+  if(!picker){picker=el('button','sprt-quiet chat-composer-recipient');picker.setAttribute('aria-label','Choose agent or model');picker.onclick=()=>document.querySelector('#chatThreadHeader .chat-recipient-control')?.click();host.append(picker);}
+  const recipient=chatRecipients.get((chatAgent||'spirits')+'/'+(chatOpenId||'new'));
+  const model=recipient?.model||(chatIsTerm()?chatTermOpen?.se.model:chatCurSession?.model)||'';
+  const agent=chatAgentLabel(recipient?.agent||chatAgent);
+  picker.textContent=(model?shortModel(model):agent)+' ⌄';picker.title=agent+(model?' · '+model:'')+' · Choose agent or model';
+ }else picker?.remove();
+ main?.classList.toggle('has-composer-recipient',!!source);
+ const input=host.querySelector('textarea'),send=host.querySelector('.chat-send');
+ if(send){send.setAttribute('aria-label','Send message');send.title=window.matchMedia('(max-width: 860px)').matches?'Send message · Enter adds a new line':'Send message · Enter (Shift+Enter for a new line)';}
+ host.querySelector('.chat-attach')?.setAttribute('aria-label','Attach files');
+ let status=host.querySelector('.chat-composer-status');
+ if(chatIsTerm()&&input){
+  const raw=chatTermPlaceholder();
+  const hint=raw.includes('Sending ')?raw.slice(raw.indexOf('Sending ')):raw.includes('unavailable')?'Runtime unavailable · check Terminal':raw==='sending…'?'Sending…':'';
+  if(hint){if(!status){status=el('div','chat-composer-status');status.setAttribute('role','status');host.append(status);}status.textContent=hint;}else status?.remove();
+  input.placeholder='Message…';
+ }else status?.remove();
+ input?._grow?.();
 }

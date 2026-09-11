@@ -29,5 +29,26 @@ const {chromium}=require('playwright'),fs=require('fs'),path=require('path'),ass
  assert.equal(await page.evaluate(()=>chatTermEndIsKill({backend:'herdr',process:'unknown'})),false);
  assert.equal(await page.evaluate(()=>chatTermEndIsKill({live:false,process:'stopped'})),false);
  assert.equal(await page.evaluate(()=>chatTermEndIsKill({live:true,process:'running'})),true);
+ await page.evaluate(()=>{
+  const host=document.getElementById('chatInboxRows');host.replaceChildren();
+  chatWorkstreams.groups={research:'Research'};
+  chatWorkstreamMember=key=>key.endsWith('/assigned')?'research':'';
+  const entries=[...Array.from({length:7},(_,i)=>({terminal:true,agent:'codex',session:{id:'p'+i,cwd:'/src/manifest'}})),
+   {terminal:true,agent:'codex',session:{id:'other',cwd:'/elsewhere/manifest'}},
+   {terminal:true,agent:'codex',session:{id:'assigned',cwd:'/src/manifest'}},
+   {terminal:true,agent:'codex',session:{id:'standalone'}}];
+  window.renderProjects=()=>{host.replaceChildren();chatRenderProjectGroups(host,entries,entries.map(e=>el('div','fixture-row',e.session.id)));};
+  renderProjects();
+ });
+ assert.equal(await page.locator('.chat-project-group').count(),3);
+ assert.equal(await page.locator('.chat-project-path').count(),2);
+ assert.equal(await page.locator('.fixture-row').count(),8);
+ assert.equal(await page.locator('#chatInboxRows > .fixture-row').innerText(),'standalone');
+ await page.getByRole('button',{name:'Show more',exact:true}).click();
+ // Show more uses the production inbox renderer; exercise its saved expansion on the same entries.
+ await page.evaluate(()=>renderProjects());
+ assert.equal(await page.locator('.fixture-row').count(),10);
+ await page.evaluate(()=>{chatSearchQuery='manifest';renderProjects();});
+ assert.equal(await page.locator('.chat-project-group:not([open])').count(),0);
  assert.deepEqual(errors,[]);console.log('PASS: archive, restore, Trash confirmation, cross-device conflict merge, viewport menu bounds and positive stop eligibility.');
 }finally{await browser.close();}})().catch(e=>{console.error(e);process.exit(1)});

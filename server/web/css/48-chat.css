@@ -578,3 +578,26 @@ button.chat-attach-chip { min-height: 44px; max-width: 100%; background: transpa
 .chat-side-context summary::before { content: '▸ '; }
 .chat-side-context details[open] summary::before { content: '▾ '; }
 .chat-side-context details[open] p { max-height: 120px; overflow: auto; }
+
+/* Message first, routing and actions in a quiet footer. */
+.chat-composer > .chat-input { flex: 1 0 100%; box-sizing: border-box; width: 100%; order: 0; }
+.chat-composer > .chat-composer-recipient { order: 2; margin-left: auto; max-width: calc(100% - 110px); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-height: 36px; font: 13px var(--sans); color: var(--base-70); }
+.chat-composer > .mic-btn { order: 3; flex: none; background: transparent; border: 0; box-shadow: none; }
+.chat-composer > .chat-send { order: 4; border-radius: 50%; }
+.chat-composer > .chat-composer-status { order: 5; flex: 1 0 100%; font: 12px/1.4 var(--sans); color: var(--base-50); }
+.has-composer-recipient .chat-recipient-control { display: none !important; }
+.chat-composer textarea.chat-input:focus-visible { outline: none; box-shadow: none; }
+.chat-composer:has(.chat-input:focus-visible) { outline: 1px solid var(--accent-soft); outline-offset: 1px; }
+@media(max-width:860px){.chat-composer > .chat-composer-recipient{min-height:44px;}.chat-composer > .mic-btn{min-width:44px;min-height:44px;}}
+
+.chat-project-section-label { padding: 18px 10px 8px; color: var(--base-50); font: 12px var(--sans); }
+.chat-project-group { margin-bottom: 8px; }
+.chat-project-heading { display: flex; align-items: center; gap: 9px; padding: 9px 10px; min-height: 40px; box-sizing: border-box; list-style: none; cursor: pointer; font: 14px var(--sans); color: var(--base-80); }
+.chat-project-heading::-webkit-details-marker { display: none; }
+.chat-project-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chat-project-heading::after { content: '›'; margin-left: auto; color: var(--base-40); transform: rotate(90deg); }
+.chat-project-group:not([open]) > summary::after { transform: none; }
+.chat-project-path { font-size: 10px; max-width: 45%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chat-project-chats { padding-left: 10px; }
+.chat-project-more { padding: 8px 10px; color: var(--base-50); font: 13px var(--sans); min-height: 40px; }
+.chat-project-chats .chat-row-group { display: none; }
