@@ -225,22 +225,27 @@ function recFunnel(rows) {
     card.onclick = () => { recStageFilter = recStageFilter === st ? "" : st; paintBoardBody(); };
     strip.append(card);
   });
-  // history is a note at the end of the line, not a card: it is where people
-  // went, not a step they are at, and it does not get a stage's weight. Two
-  // numbers, because they are two different things — the records archived
-  // HERE, and everything Ashby holds archived (rejections the import never
-  // makes records of), so the board never reads as disagreeing with the ATS.
+  return strip;
+}
+
+// recArchivedNote is the archive as two numbers, because they are two
+// different things: the records archived HERE, and everything Ashby holds
+// archived (rejections the import never makes records of), so the board
+// never reads as disagreeing with the ATS. It lives beside HISTORY on the
+// cuts row — that chip IS the archived cut — not on the funnel, where it
+// was first a card with a stage's weight and then a note that cost the cards
+// the width their names needed.
+function recArchivedNote() {
   const archivedHere = (recCache.candidates || []).filter((c) => recRoleCandidates(c) && !recCandidateActive(c)).length;
   const ats = recAshbyArchived();
   const role = recRole ? (recCache.roles || []).find((r) => r.slug === recRole) : null;
   const inAshby = ats ? (role && role.ashbyJobId ? (ats.byJob || {})[role.ashbyJobId] || 0 : ats.total) : null;
-  const hist = el("button", "linkish rec-funnel-hist" + (recCut === "archived" ? " on" : ""));
-  hist.textContent = "archived " + archivedHere + (inAshby == null ? "" : " here · " + inAshby + " in Ashby");
-  hist.title = (recCut === "archived" ? "back to the open pipeline" : "show the people who left the pipeline")
+  const note = el("button", "linkish rec-archived-note" + (recCut === "archived" ? " on" : ""));
+  note.textContent = "archived " + archivedHere + (inAshby == null ? "" : " here · " + inAshby + " in Ashby");
+  note.title = (recCut === "archived" ? "back to the open pipeline" : "show the people who left the pipeline")
     + (ats ? " · Ashby count as of " + ats.asOf + " (a full re-sync refreshes it)" : " · run a full re-sync to see Ashby's archived count");
-  hist.onclick = () => { recCut = recCut === "archived" ? "open" : "archived"; recStageFilter = ""; if (recPaint) recPaint(); };
-  strip.append(hist);
-  return strip;
+  note.onclick = () => { recCut = recCut === "archived" ? "open" : "archived"; recStageFilter = ""; if (recPaint) recPaint(); };
+  return note;
 }
 function recCurrentRoleID() {
   const r=(recCache.roles || []).find(r=>r.slug===recRole);
@@ -1457,6 +1462,7 @@ function paintBoardView(main) {
       b.onclick = () => { recCut = key; if (recPaint) recPaint(); };
       cuts.append(b);
     });
+    cuts.append(recArchivedNote());
     main.append(cuts);
   }
 
