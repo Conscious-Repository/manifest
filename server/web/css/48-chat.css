@@ -490,7 +490,7 @@ button.chat-attach-chip { min-height: 44px; max-width: 100%; background: transpa
 .working-changes-view { font: 14px/1.5 var(--sans); min-width: 0; }
 .working-changes-summary { margin: 0 0 12px; font-weight: 600; }
 .working-changes-view select { width: 100%; min-width: 0; max-width: 100%; }
-.working-file-diff { font: 12px/1.6 var(--mono); padding: 12px 0; overflow: auto; }
+.working-file-diff { font: 12px/1.6 var(--mono); padding: 12px 0; overflow: auto; margin:0; max-width:100%; }
 .working-file-diff span { display: block; min-height: 1.6em; white-space: pre; }
 .working-diff-added { background: var(--diff-added-bg); }
 .working-diff-removed { background: var(--diff-removed-bg); }
@@ -666,3 +666,10 @@ button.chat-attach-chip { min-height: 44px; max-width: 100%; background: transpa
 .chat-row-state { color:var(--muted); }
 .chat-row-attention { color:var(--warn); }
 .chat-row-menu-body select { width:100%; min-height:var(--control-touch); padding:var(--sp-4); color:var(--text); background:var(--surface-field); border:1px solid var(--line); border-radius:var(--radius-lg); font:var(--fs-md) var(--sans); }
+
+.working-file-actions { display:flex; gap:var(--sp-4); justify-content:flex-end; }
+.working-file > summary { gap:var(--sp-4); flex-wrap:wrap; padding:var(--sp-4) 0; }
+.working-file-name { flex:1; min-width:0; overflow-wrap:anywhere; font:var(--fs-md)/1.5 var(--mono); }
+.working-file-stats { color:var(--muted); font:var(--fs-sm)/1.5 var(--sans); white-space:nowrap; }
+
+.working-file-actions button { min-height:var(--control-touch); font:var(--fs-md) var(--sans); }

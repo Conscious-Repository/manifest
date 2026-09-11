@@ -100,7 +100,7 @@ function chatEnsureWorkspace(restoring=false){
     const observer=new MutationObserver(update);observer.observe(heading,{childList:true,characterData:true,subtree:true});observer.observe(t.api.element,{attributes:true,attributeFilter:['data-draft']});
     const dispose=t.api.close;t.api.close=()=>{observer.disconnect();dispose?.();};update();
    }
-   host.addEventListener('scroll',()=>w.save(),true);host.addEventListener('change',()=>queueMicrotask(()=>w.save()));w.save();
+   host.addEventListener('scroll',()=>w.save(),true);host.addEventListener('toggle',()=>w.save(),true);host.addEventListener('change',()=>queueMicrotask(()=>w.save()));w.save();
    return t;
   },
   chooser(){clearChooser();chooserHost=el('div','chat-workspace-picker');pane.classList.add('choosing');if(entries.size){chooserHost.classList.add('chat-workspace-popover');pane.append(chooserHost);}else body.append(chooserHost);chatWorkspaceChooser(chooserHost);w.show();},

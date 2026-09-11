@@ -9,6 +9,7 @@ const {chromium}=require('playwright'),fs=require('fs'),path=require('path'),ass
   window.a={id:'plan',title:'Plan',ref:'plan.md',content:'original',head:'a'.repeat(64),revisions:[{n:1,hash:'a'.repeat(64)}]};window.fetch=async()=>({ok:true,json:async()=>structuredClone(a)});
  });
  const components=fs.readFileSync(path.join(root,'js/05-components.js'),'utf8');await p.addScriptTag({content:components.slice(components.indexOf('function artifactLineChanges'),components.indexOf('// A compact, keyboard-accessible'))});
+ await p.addScriptTag({content:components.slice(components.indexOf('function artifactWorkingChangesView('))});
  const chat=fs.readFileSync(path.join(root,'js/48-chat.js'),'utf8');await p.addScriptTag({content:chat.slice(chat.indexOf('let chatPaneResizeCleanup='))});await p.addScriptTag({content:fs.readFileSync(path.join(root,'js/49-chat-workspace.js'),'utf8')});
  await p.evaluate(()=>chatWorkspaceHeader(document.querySelector('header')));await p.getByLabel('Toggle workspace').click();assert.equal(await p.getByLabel('Chat workspace').isVisible(),true);
  await p.evaluate(()=>chatEnsureWorkspace().tab('plan','Plan',(host,drop)=>artifactWorkspace(host,{load:async()=>structuredClone(a),save:async()=>{},onClose:drop})));
@@ -50,6 +51,15 @@ const {chromium}=require('playwright'),fs=require('fs'),path=require('path'),ass
  assert.equal(await p.locator('.chat-side-frame').getAttribute('src'),'/?chatPane=1#/chat/a/alfred/side1234','restore uses the saved side conversation');
  await p.evaluate(async()=>{chatWorkspaceTabs.close();document.getElementById('chatTranscript').dataset.readKey='conversation-'+ '2'.repeat(32);await chatRestoreWorkspace();});
  assert.equal(await p.locator('.chat-tab-workspace').count(),0,'another conversation does not inherit tabs');
+ await p.evaluate(()=>{
+  a.ref='changes.diff';a.content='diff --git a/one.txt b/one.txt\n--- a/one.txt\n+++ b/one.txt\n@@ -1 +1 @@\n-old\n+new\ndiff --git a/two.txt b/two.txt\n--- a/two.txt\n+++ b/two.txt\n@@ -1 +1 @@\n-before\n+after';
+  chatOpenWorkingArtifact({id:'plan'});
+ });
+ await p.waitForFunction(()=>document.querySelectorAll('.working-file').length===2);
+ await p.locator('.working-file > summary').nth(0).click();await p.locator('.working-file > summary').nth(1).click();
+ await p.evaluate(async()=>{chatWorkspaceTabs.close();await Promise.all([...chatWorkspaceStates.values()].map(s=>s.flush()));chatWorkspaceStates.clear();await chatRestoreWorkspace();});
+ await p.waitForFunction(()=>document.querySelectorAll('.working-file').length===2&&document.querySelectorAll('.working-file')[1].open);
+ assert.equal(await p.locator('.working-file').nth(0).evaluate(e=>e.open),false,'file expansion restores independently');
  assert.deepEqual(errors,[]);
  console.log('PASS: real artifact draft survives pane and tab switches, scoped model defaults, keyboard tabs, mobile return, route disposal.');
 }finally{await b.close()}})().catch(e=>{console.error(e);process.exit(1)});
