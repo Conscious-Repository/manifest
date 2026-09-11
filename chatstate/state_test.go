@@ -200,3 +200,22 @@ func TestWorkstreamsPersistWithConflictAndIndependentPins(t *testing.T) {
 		t.Fatal("membership affected pins", pins, err)
 	}
 }
+
+func TestLifecyclePersistsAndRejectsStaleDevice(t *testing.T) {
+	s := New(t.TempDir())
+	first, err := s.Write("inbox", "lifecycle", 0, json.RawMessage(`{"items":{"terminal:codex/a":"archived"}}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = s.Write("inbox", "lifecycle", 0, json.RawMessage(`{"items":{}}`)); !errors.Is(err, ErrConflict) {
+		t.Fatalf("stale write: %v", err)
+	}
+	next, err := s.Write("inbox", "lifecycle", first.Revision, json.RawMessage(`{"items":{"terminal:codex/a":"deleted"}}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	read, err := s.Read("inbox", "lifecycle")
+	if err != nil || string(read.Value) != string(next.Value) {
+		t.Fatalf("read: %+v %v", read, err)
+	}
+}

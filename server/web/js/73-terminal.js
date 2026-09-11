@@ -4,6 +4,8 @@
 let termSessions = [];
 let termOpenId = "";
 let termInst = null;
+let termEmbedded = false;
+function termVisible(){return (termEmbedded && !!document.querySelector(".chat-terminal-workspace")?.getClientRects().length) || !els.terminalView.hidden;}
 let termAttachmentPaused = false;
 const TERM_RETRY_DELAYS = [1200, 2400, 4800, 9600, 15000, 15000];
 let termStage = "term";
@@ -27,7 +29,7 @@ function showTerminal() {
   }
   try { termStage = localStorage.getItem("manifest.termStage") || termStage; } catch (e) {}
   if (!TERM_STAGES.some((s) => s.stage === termStage)) termStage = "term";
-  if (location.hash.startsWith("#/terminal/")) termStage = "term";
+  if (termEmbedded || location.hash.startsWith("#/terminal/")) termStage = "term";
   if(termOpenId)termRevealSession();
   renderTermTabbar(); termApplyStage(); termFitShell();
   if (typeof ensureTerminalEvents === "function") ensureTerminalEvents();
@@ -36,10 +38,10 @@ function showTerminal() {
     window.addEventListener("resize", termFitShell);
     window.visualViewport?.addEventListener("resize", termFitShell);
     window.addEventListener("manifest-terminal-state", () => {
-      if (els.terminalView && !els.terminalView.hidden && !document.hidden) loadTermSessions(true);
+      if (els.terminalView && termVisible() && !document.hidden) loadTermSessions(true);
     });
     document.addEventListener("visibilitychange", () => {
-      if (!document.hidden && els.terminalView && !els.terminalView.hidden) loadTermSessions(true);
+      if (!document.hidden && els.terminalView && termVisible()) loadTermSessions(true);
     });
   }
   loadTermSessions();
@@ -54,7 +56,7 @@ function termRenderControls() {
     sessions.setAttribute("aria-label", "Switch running session");
     sessions.onchange = () => { termOpenId = sessions.value; attachTerm(termOpenId); renderTermSessions(true); history.replaceState(null, "", "#/terminal/" + encodeURIComponent(termOpenId)); };
     const launcher = el("button", "term-key", "New / sessions");
-    launcher.onclick = () => { document.querySelector(".term-shell").classList.toggle("term-nav-open"); termFitShell(); };
+    launcher.id="termLauncherToggle";launcher.onclick = () => { document.querySelector(".term-shell").classList.toggle("term-nav-open"); termFitShell(); };
     const keyboard = el("button", "term-key", "Keyboard");
     keyboard.onclick = () => { if (termInst) termInst.term.focus(); };
     const latest = el("button", "term-key", "Latest ↓");
@@ -66,6 +68,7 @@ function termRenderControls() {
     const back=el("a","term-key","Back to conversation");back.id="termBackToChat";toolbar.append(back,sessions, launcher, keyboard, latest, reconnect, separate, status);
     pane.prepend(toolbar);
   }
+  toolbar.classList.toggle("term-controls-embedded",termEmbedded);
   const back=document.getElementById("termBackToChat");back.hidden=true;
   try {const origin=JSON.parse(sessionStorage.getItem("manifest.terminalReturn")||"null");if(origin?.id===termOpenId&&origin.route?.startsWith("#/chat")){back.href=origin.route;back.hidden=false;}}catch(e){}
   const select = toolbar.querySelector("select");
@@ -78,6 +81,7 @@ function termRenderControls() {
   separate.hidden = !termOpenId;
 }
 function termFitShell() {
+  if(termEmbedded){if(termInst){try{termInst.fit.fit();sendTermResize();}catch(e){}}return;}
   const shell = document.querySelector("#terminalView .term-shell");
   if (!shell || els.terminalView.hidden) return;
   if (window.innerWidth <= 860) {
@@ -130,12 +134,13 @@ async function loadTermSessions(quiet) {
     if (termOpenId && !selected && termConnectivity === "connected") {
       // A known stopped pane is never reopened from Terminal history.
       detachTerm();
-      renderTermEmpty("This session has ended. Return to its conversation and send a message to resume it.");
+      renderTermEmpty(termEmbedded?"Agent stopped. Send a message in this conversation to resume it.":"This session has ended. Return to its conversation and send a message to resume it.");
+      termAttachmentPaused=false;termConnectionStatus("Stopped");
     } else if (termInst && selected && termInst.id === selected.id && termInst.runtimeKey !== termRuntimeKey(selected)) {
       detachTerm();
       renderTermEmpty("pane changed · select the session to attach");
       termConnectionStatus("Pane changed · select a session");
-    } else if (!els.terminalView.hidden && !document.hidden && selected && termStage === "term") {
+    } else if (termVisible() && !document.hidden && selected && termStage === "term") {
       if (termInst && termInst.id === selected.id && termInst.ws.readyState === 3) {
         const retry = termInst.retry;
         if (retry && (retry.state !== "exhausted" || restored)) {
@@ -299,7 +304,7 @@ function termConnectionStatus(text) {
 function termScheduleRetry(inst) {
   if (termInst !== inst || inst.retry.timer) return;
   const retry = inst.retry;
-  if (els.terminalView.hidden || document.hidden || termStage !== "term" || termOpenId !== inst.id) {
+  if (!termVisible() || document.hidden || termStage !== "term" || termOpenId !== inst.id) {
     retry.state = "paused";
     termConnectionStatus("Disconnected · recovery paused");
     return;
@@ -315,7 +320,7 @@ function termScheduleRetry(inst) {
   retry.timer = setTimeout(async () => {
     retry.timer = null;
     if (termInst !== inst) return;
-    if (els.terminalView.hidden || document.hidden || termStage !== "term" || termOpenId !== inst.id) {
+    if (!termVisible() || document.hidden || termStage !== "term" || termOpenId !== inst.id) {
       retry.state = "paused";
       termConnectionStatus("Disconnected · recovery paused");
       return;

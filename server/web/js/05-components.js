@@ -741,7 +741,7 @@ function artifactWorkspace(mount, options) {
     controls.append(download);
     const previous=current.revisions.find(r=>r.n===selectedNumber-1);
     if(previous&&!binary){
-      const compare=el("button","sprt-quiet","Compare with version "+previous.n);
+      const compare=el("button","sprt-quiet","Compare v"+previous.n);
       compare.onclick=async()=>{
         const ticket=++generation,versionText=current.content||"";
         compare.disabled=true;
@@ -756,7 +756,7 @@ function artifactWorkspace(mount, options) {
       controls.append(compare);
     }
     if (opts.onDiscuss && !binary) {
-      const discuss = el("button", "sprt-quiet", "Discuss this version");
+      const discuss = el("button", "sprt-quiet", "Discuss");
       discuss.onclick = () => {
         opts.onDiscuss({id:current.id, revision:selected, title:current.title || "Artifact", version:selectedNumber});
       };

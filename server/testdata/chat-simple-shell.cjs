@@ -7,7 +7,7 @@ const {chromium}=require('playwright'),fs=require('fs'),path=require('path'),ass
  await page.evaluate(()=>{
  window.el=(tag,cls,text)=>{const e=document.createElement(tag);e.className=cls||'';e.textContent=text||'';return e;};
  document.documentElement.dataset.theme="jarvis";
- Object.assign(window,{chatTermKinds:{codex:'Codex'},chatRecipients:new Map(),chatTermEnabled:true,chatRoster:[],terminalStateDot:()=>el('span','','●'),terminalStateLabel:()=> 'working',chatAgentLabel:x=>x,fmtWhen:()=> 'today',chatTermEndIsKill:()=>true,armedDelete:()=>el('button','','End session'),chatTermRename:()=>{},chatTermEnd:()=>{},chatTermOpenInTerminal:()=>{},chatChangesButton:()=>el('button','sprt-quiet','Changes'),chatTaskThreadHash:()=> '#/task',chatChooseTerminalRecipient:()=>{},chatTermKey:()=>{}});
+ Object.assign(window,{chatTermKinds:{codex:'Codex'},chatRecipients:new Map(),chatTermEnabled:true,chatRoster:[],terminalStateDot:()=>el('span','','●'),terminalStateLabel:()=> 'working',chatAgentLabel:x=>x,fmtWhen:()=> 'today',chatTermEndIsKill:()=>true,armedDelete:()=>el('button','','End session'),chatTermRename:()=>{},chatTermEnd:()=>{},chatTermOpenInTerminal:()=>{},chatLifecycleActions:()=>document.createDocumentFragment(),chatOpenTerminalPane:se=>{window.openedTerminal=se.id;},chatChangesButton:()=>el('button','sprt-quiet','Changes'),chatTaskThreadHash:()=> '#/task',chatChooseTerminalRecipient:()=>{},chatTermKey:()=>{}});
  window.o={se:{id:'fixture',kind:'codex',name:'codex · '+('Fix the concrete defects and audit usability. '.repeat(15)),cwd:'/fixture',backend:'herdr'},live:true,conversation:{links:[{kind:'task',id:'fixture'}]},turns:[],screen:['Codex is working','> Review the changes']};window.chatTermOpen=o;
  });
  const source=fs.readFileSync(path.join(root,'js/48-chat.js'),'utf8');
@@ -18,10 +18,9 @@ const {chromium}=require('playwright'),fs=require('fs'),path=require('path'),ass
  await page.setViewportSize({width,height:850});
  assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false,'overflow '+width);
  const title=await page.locator('.chat-head-title').boundingBox();assert.ok(title.height<40,'title is a scrolling paragraph');
- await page.getByRole('button',{name:'Terminal',exact:true}).click();assert.equal(await page.locator('.chat-main').evaluate(e=>e.classList.contains('terminal-focus')),true);
- await page.getByRole('button',{name:'Conversation',exact:true}).click();assert.equal(await page.locator('.chat-main').evaluate(e=>e.classList.contains('terminal-focus')),false);
+ await page.locator('.chat-terminal-view').click();assert.equal(await page.evaluate(()=>openedTerminal),'fixture');
  await page.locator('.chat-details > summary').click();await page.getByRole('button',{name:'Rename',exact:true}).waitFor();await page.locator('.chat-details > summary').click();
  await page.screenshot({path:'/tmp/manifest-simple-chat-'+width+'.png'});
  }
- console.log('PASS: long titles, compact header, More actions, in-chat Terminal/Conversation switch and phone bounds.');
+ console.log('PASS: long titles, compact header, More actions, exact-session side-terminal action and phone bounds.');
 }finally{await browser.close();}})().catch(e=>{console.error(e);process.exit(1)});

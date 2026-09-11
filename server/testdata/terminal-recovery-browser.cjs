@@ -36,6 +36,33 @@ const root=process.cwd();
  await page.evaluate(async()=>{detachTerm();await loadTermSessions();});
  assert.equal(await page.evaluate(()=>sockets.length),3);
  console.log('PASS: explicit Reconnect recovers the attachment');
+ // Reuse the exact terminal stage inside chat; no navigation or agent launch.
+ const chat=fs.readFileSync(path.join(root,'server/web/js/48-chat.js'),'utf8');
+ await page.addScriptTag({content:chat.slice(chat.indexOf('let chatTerminalDock='),chat.indexOf('function chatOpenAttachment('))});
+ await page.evaluate(()=>{
+   window.chatWorkspace=null;window.chatCloseWorkspace=()=>chatWorkspace?.close();window.chatInstallPaneResize=()=>{};
+   document.getElementById('termStageTerm').className='term-stage-pane';
+   els.terminalView.hidden=true;chatOpenTerminalPane(fixture);
+ });
+ await page.waitForFunction(()=>termInst?.ws.readyState===1&&document.querySelector('.chat-terminal-workspace #termScreen'));
+ assert.equal(await page.evaluate(()=>location.hash),'');
+ assert.equal(await page.locator('.chat-terminal-workspace #termSessionSelect').isVisible(),false);
+ await page.evaluate(async()=>{fixture.live=false;await loadTermSessions(true);});
+ await page.getByText('Agent stopped. Send a message in this conversation to resume it.',{exact:true}).waitFor();
+ assert.equal(await page.evaluate(()=>termInst),null);
+ await page.evaluate(async()=>{fixture.live=true;await loadTermSessions(true);});
+ await page.waitForFunction(()=>termInst?.ws.readyState===1);
+ await page.evaluate(()=>{document.querySelector('.chat-shell').style.height='800px';document.querySelector('.chat-main').style.minWidth='0';});
+ await page.setViewportSize({width:390,height:844});
+ assert.equal(await page.evaluate(()=>document.querySelector('.chat-terminal-workspace').getBoundingClientRect().right>innerWidth),false);
+ await page.getByRole('separator',{name:'Terminal height'}).focus();await page.keyboard.press('ArrowUp');
+ assert.ok(Number(await page.getByRole('separator',{name:'Terminal height'}).getAttribute('aria-valuenow'))>=160);
+ await page.screenshot({path:'/tmp/manifest-terminal-drawer.png'});
+ await page.getByRole('button',{name:'Close terminal',exact:true}).click();
+ assert.equal(await page.locator('#terminalView #termStageTerm').count(),1);
+ assert.equal(await page.evaluate(()=>termEmbedded),false);
+ assert.equal(await page.evaluate(()=>termInst),null);
+ console.log('PASS: bottom-docked exact-session terminal, stopped/resumed inventory, phone bounds, keyboard resizing and stage restoration');
  assert.deepEqual(errors,[]);
  console.log('PASS: browser recovery after first-retry outage; zero page errors; fixture transport only');
  }finally{await browser.close();}

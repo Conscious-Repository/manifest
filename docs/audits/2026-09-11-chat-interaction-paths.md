@@ -26,3 +26,14 @@ Terminal deep links now reveal the selected pane before reusing an existing atta
 Guidance: [OpenAI's Codex introduction](https://openai.com/index/introducing-the-codex-app/) describes reviewing work within the thread; [NN/g consistency and standards](https://www.nngroup.com/articles/consistency-and-standards/) supports predictable labels and navigation. Applied here as context-preserving task inspection and exact-session terminal navigation, rather than claiming identical underlying task/terminal semantics.
 
 Fixture coverage: reopening an existing exact attachment reveals it without reconnecting; opening and closing task details retains the coding-chat route. Terminal recovery and backend tests also run. Real terminal commands are not used for QA.
+
+
+## Conversation lifecycle and bottom terminal follow-up
+
+User correction: Terminal docks below the conversation, as in the supplied Codex reference. It reuses the existing xterm stage, socket identity and recovery logic. It does not launch an agent. The drawer has a draggable/keyboard-resizable top edge, remembered height, and a close action that detaches the viewer only. Files/Changes retain the side workspace. Leaving chat restores the terminal stage to its standalone page.
+
+Conversation row actions now separate Pin, Rename, Archive and Delete from Stop agent. Archive and Trash are owner-only, server-persisted UI organization with revision conflict protection; Restore is available in both lists. Delete explicitly moves to Trash, preserving provider transcripts, linked task history and running processes. It is not physical transcript erasure. Stop is shown only for positively live processes, and cannot become a repeated history-deletion action. The same lifecycle actions are used in the conversation header.
+
+Row menus are viewport-positioned and keyboard traversable. Changes gets a full-width version selector and shorter Compare/Discuss actions. Immutable snapshot semantics remain unchanged.
+
+Validation: full server and chatstate suites, Go build, fixture browser checks for archive/restore/Trash and cross-device conflict merge, menu viewport bounds, embedded exact terminal identity, outage recovery, stopped-to-running inventory changes, drawer close/restoration, keyboard resizing, desktop/phone layout, artifact editing and exact-version discussion. QA uses controlled sockets and files; no real agent input or external messages. Physical-device keyboard behavior is not certified.

@@ -187,10 +187,11 @@ function chatRefreshCurrentDraft(){
  }).catch(()=>{}).finally(()=>chatRecoveryRefreshes.delete(key));
  chatRecoveryRefreshes.set(key,job);return job;
 }
-window.addEventListener("focus",()=>{chatRefreshCurrentDraft();Promise.all([chatLoadPins(),chatLoadWorkstreams()]).then(()=>{chatRenderWorkstreamFilter();renderChatInboxRows();});});
+window.addEventListener("focus",()=>{chatRefreshCurrentDraft();Promise.all([chatLoadPins(),chatLoadLifecycle(),chatLoadWorkstreams()]).then(()=>{chatRenderWorkstreamFilter();renderChatInboxRows();});});
 document.addEventListener("visibilitychange",()=>{if(!document.hidden)chatRefreshCurrentDraft();});
 window.addEventListener("pagehide",()=>{chatSaveDraft();for(const state of chatSyncedDrafts.values())if(state.dirty)state.flush();});
 function showChat(h) {
+  chatCloseTerminalDock();
   chatCloseWorkspace();
   chatSaveDraft();
   const readingHost = document.getElementById("chatTranscript");
@@ -470,7 +471,7 @@ async function loadChatRoster() {
 // Load conversation summaries together so the inbox can sort across agents.
 async function loadChatSessions() {
   const agents = chatRoster.filter(a => !chatIsTerm(a.name)).map(a => a.name);
-  await Promise.all([chatLoadPins(),chatLoadWorkstreams(),...["", ...agents].map(async agent => {
+  await Promise.all([chatLoadPins(),chatLoadLifecycle(),chatLoadWorkstreams(),...["", ...agents].map(async agent => {
     try {
       const res = await fetch(chatBaseFor(agent));
       if (!res.ok) return; // retain the last good directory during an outage
@@ -541,6 +542,39 @@ async function chatSetPinned(key,pinned){
   }
   throw Error("Pinned chats changed on another device. Try again.");
 }
+// Conversation organization is owner-only and never changes task/provider history.
+let chatLifecycle={},chatLifecycleFilter="active";
+const chatLifecycleURL="/api/chat/state/inbox/lifecycle";
+async function chatLoadLifecycle(){try{const r=await fetch(chatLifecycleURL,{cache:"no-store"});if(r.ok)chatLifecycle=(await r.json()).value?.items||{};}catch(e){}}
+async function chatSetLifecycle(entry,status){
+  const key=chatInboxKey(entry);
+  for(let attempt=0;attempt<3;attempt++){
+    const r=await fetch(chatLifecycleURL,{cache:"no-store"});if(!r.ok)throw Error("Could not load conversation organization.");
+    const state=await r.json(),items={...state.value?.items};
+    if(status==="active")delete items[key];else items[key]=status;
+    const saved=await fetch(chatLifecycleURL,{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify({revision:state.revision,value:{items}})});
+    if(saved.status===409)continue;if(!saved.ok)throw Error("Conversation change was not saved.");
+    chatLifecycle=(await saved.json()).value?.items||{};
+    if(entry.session.id===chatOpenId&&entry.agent===chatAgent&&status!=="active"){chatRemember(chatAgent,"");location.hash=chatSectionHash(chatAgent);}
+    renderChatInboxRows();return;
+  }
+  throw Error("Conversations changed on another device. Try again.");
+}
+function chatLifecycleActions(entry){
+  const fragment=document.createDocumentFragment(),status=chatLifecycle[chatInboxKey(entry)]||"active";
+  const action=(label,next)=>{const b=el("button","sprt-quiet",label);b.onclick=async e=>{e.stopPropagation();b.disabled=true;try{await chatSetLifecycle(entry,next);}catch(err){showToast(err.message);}finally{b.disabled=false;}};fragment.append(b);};
+  if(status!=="active")action("Restore to chats","active");
+  if(status==="active")action("Archive","archived");
+  if(status!=="deleted"){
+    const b=el("button","sprt-quiet","Delete chat…");
+    b.onclick=e=>{e.stopPropagation();reviewDialog("Delete chat?",({body,actions,close})=>{
+      body.append(el("p","","Move this conversation to Trash. You can restore it later. Running agents continue; task and provider history are retained."));
+      const cancel=el("button","sprt-quiet","Cancel"),confirm=el("button","sprt-quiet","Move to Trash");cancel.onclick=close;
+      confirm.onclick=async()=>{confirm.disabled=true;try{await chatSetLifecycle(entry,"deleted");close();}catch(err){body.append(el("p","",err.message));confirm.disabled=false;}};actions.append(cancel,confirm);
+    });};fragment.append(b);
+  }
+  return fragment;
+}
 let chatWorkstreams={groups:{},members:{}},chatWorkstreamsRevision=-1,chatWorkstreamFilter="all";
 const chatWorkstreamURL="/api/chat/state/inbox/workstreams";
 function chatApplyWorkstreams(state){
@@ -590,7 +624,7 @@ function chatInboxEntries() {
   chatRoster.filter(a => !chatIsTerm(a.name)).forEach(agent => (chatAgentSessions[agent.name] || []).filter(session=>!chatHasNativeParent(session)).forEach(session => entries.push({agent: agent.name, session})));
   if (chatTermEnabled) Object.keys(chatTermKinds).forEach(agent => chatTermList(agent).filter(session=>!chatHasCanonicalParent(session)&&!chatHasNativeParent(session)).forEach(session => entries.push({agent, session, terminal: true})));
   const query = chatSearchQuery.trim().toLowerCase();
-  return entries.filter(entry => (chatWorkstreamFilter==="all"||(chatWorkstreamFilter==="standalone"?!chatWorkstreamMember(chatInboxKey(entry)):chatWorkstreamMember(chatInboxKey(entry))===chatWorkstreamFilter)) && (chatInboxFilter === "all" || entry.agent === chatInboxFilter || (entry.terminal&&[...(chatAgentSessions[chatInboxFilter]||[]),...chatTermSessions.filter(s=>s.kind===chatInboxFilter)].some(s=>s.origin?.mode==="continue"&&s.origin?.backend==="terminal"&&s.origin?.id===entry.session.id&&s.origin?.agent===entry.agent)))
+  return entries.filter(entry => (chatLifecycle[chatInboxKey(entry)]||"active")===chatLifecycleFilter).filter(entry => (chatWorkstreamFilter==="all"||(chatWorkstreamFilter==="standalone"?!chatWorkstreamMember(chatInboxKey(entry)):chatWorkstreamMember(chatInboxKey(entry))===chatWorkstreamFilter)) && (chatInboxFilter === "all" || entry.agent === chatInboxFilter || (entry.terminal&&[...(chatAgentSessions[chatInboxFilter]||[]),...chatTermSessions.filter(s=>s.kind===chatInboxFilter)].some(s=>s.origin?.mode==="continue"&&s.origin?.backend==="terminal"&&s.origin?.id===entry.session.id&&s.origin?.agent===entry.agent)))
     && [entry.session.title, entry.session.name, entry.session.cwd, chatAgentLabel(entry.agent), entry.session.spirit].filter(Boolean).join(" ").toLowerCase().includes(query))
     .sort((a, b) => {
       const pinned=Number(chatPins[chatInboxKey(b)]===true)-Number(chatPins[chatInboxKey(a)]===true);if(pinned)return pinned;
@@ -603,6 +637,7 @@ function renderChatInboxRows() {
   if (!host) return;
   host.replaceChildren();
   const entries = chatInboxEntries();
+  if(chatLifecycleFilter==="deleted")host.append(el("p","chat-head-meta","Deleted from your Chats. Restore anytime. Task and provider history are retained."));
   if (!entries.length) { host.append(emptyRow(chatSearchQuery || chatWorkstreamFilter!=="all" || chatInboxFilter!=="all" ? "No matching conversations" : "No conversations yet")); return; }
   entries.forEach(entry => {
     const row = entry.terminal ? chatTermRow(entry.session) : chatRailRow(entry.session, entry.agent);
@@ -617,7 +652,15 @@ function renderChatInboxRows() {
     const menuLabel=el("summary","","⋯");menuLabel.setAttribute("aria-label","Conversation actions");
     menuLabel.onclick=e=>e.stopPropagation();menuLabel.onkeydown=e=>e.stopPropagation();menu.append(menuLabel);
     const menuBody=el("div","chat-row-menu-body");menuBody.append(pin);
-    row.querySelectorAll(".chat-rail-x").forEach(action=>{action.classList.remove("chat-rail-x");action.textContent=action.textContent==="✎"?"Rename":action.title||action.textContent;menuBody.append(action);});menu.append(menuBody);
+    row.querySelectorAll(".chat-rail-x").forEach(action=>{action.classList.remove("chat-rail-x");action.classList.add("sprt-quiet");action.textContent=action.textContent==="✎"?"Rename":action.title||action.textContent;menuBody.append(action);});menuBody.append(chatLifecycleActions(entry));menu.append(menuBody);
+    menu.addEventListener("toggle",()=>{
+      if(!menu.open)return;
+      document.querySelectorAll(".chat-row-menu[open]").forEach(other=>{if(other!==menu)other.open=false;});
+      const anchor=menuLabel.getBoundingClientRect();
+      menuBody.style.left=Math.max(8,Math.min(innerWidth-menuBody.offsetWidth-8,anchor.right-menuBody.offsetWidth))+"px";
+      menuBody.style.top=Math.max(8,Math.min(innerHeight-menuBody.offsetHeight-8,anchor.bottom+4))+"px";
+    });
+    menuBody.onkeydown=e=>{if(!["ArrowDown","ArrowUp","Home","End"].includes(e.key))return;e.preventDefault();e.stopPropagation();const buttons=[...menuBody.querySelectorAll("button:not(:disabled)")],index=buttons.indexOf(document.activeElement);buttons[e.key==="Home"?0:e.key==="End"?buttons.length-1:(index+(e.key==="ArrowDown"?1:-1)+buttons.length)%buttons.length]?.focus();};
     (row.querySelector(".chat-rail-top")||row).append(menu);
     const group=chatWorkstreamMember(key),workstream=el("button","sprt-quiet chat-workstream-link",group?chatWorkstreams.groups[group]:"Workstream…");
     workstream.setAttribute("aria-label","Change workstream for "+(entry.session.title||entry.session.name||entry.session.id));
@@ -641,14 +684,17 @@ function renderChatRail() {
     search.oninput = () => { chatSearchQuery = search.value; renderChatInboxRows(); };
     const select = document.createElement("select");
     select.className = "chat-inbox-filter"; select.setAttribute("aria-label", "Filter chats by agent");
-    [["all", "All chats"], ...chatRoster.filter(a => !chatIsTerm(a.name)).map(a => [a.name, a.label]), ...(chatTermEnabled ? Object.entries(chatTermKinds) : []), ["", "Spirits"]].forEach(([value, label]) => {
+    [["all", "All agents"], ...chatRoster.filter(a => !chatIsTerm(a.name)).map(a => [a.name, a.label]), ...(chatTermEnabled ? Object.entries(chatTermKinds) : []), ["", "Spirits"]].forEach(([value, label]) => {
       const option = el("option", "", label); option.value = value; select.append(option);
     });
     select.value = chatInboxFilter;
     select.onchange = () => { chatInboxFilter = select.value; renderChatInboxRows(); };
     const workstreams=document.createElement("select");workstreams.id="chatWorkstreamFilter";workstreams.className="chat-inbox-filter";workstreams.setAttribute("aria-label","Filter chats by workstream");workstreams.onchange=()=>{chatWorkstreamFilter=workstreams.value;renderChatInboxRows();};
     const filters=el("div","chat-inbox-filters");filters.append(select,workstreams);
-    controls.append(search, filters);
+    const lifecycle=document.createElement("select");lifecycle.className="chat-inbox-filter";lifecycle.setAttribute("aria-label","Conversation list");
+    [["active","Chats"],["archived","Archived chats"],["deleted","Trash"]].forEach(([value,label])=>{const option=el("option","",label);option.value=value;lifecycle.append(option);});
+    lifecycle.value=chatLifecycleFilter;lifecycle.onchange=()=>{chatLifecycleFilter=lifecycle.value;renderChatInboxRows();};
+    filters.append(lifecycle);controls.append(search, filters);
     host.append(controls, el("div", "chat-inbox-rows"));
     host.lastChild.id = "chatInboxRows";
   }
@@ -1404,18 +1450,7 @@ function chatHead(s) {
     task.onclick = () => { location.hash = "#/tasks/"+encodeURIComponent(s.task); };
     acts.append(task);
   }
-  // a portal thread is a shared team object: the cockpit's delete ARCHIVES it
-  const base = chatBase();
-  acts.append(armedDelete(portal ? "archive" : "delete", portal ? "archive — sure?" : "delete — sure?", async () => {
-    try {
-      const res = await fetch(base + "/" + encodeURIComponent(s.id), { method: "DELETE" });
-      if (!res.ok) { showToast((await res.text()).slice(0, 120) || "delete failed"); return; }
-      chatOpenId = "";
-      chatRemember(agent || "spirits", "");
-      location.hash = chatSectionHash(agent);
-      loadChat();
-    } catch (e) { showToast("delete failed"); }
-  }));
+  acts.append(chatLifecycleActions({agent:agent||"",session:s}));
   [...head.children].filter(e=>e.tagName==="BUTTON"&&["Share…","Recover sharing","Add coding agent"].includes(e.textContent)).forEach(e=>info.append(e));
   info.append(acts);
   head.append(info);
@@ -2118,7 +2153,7 @@ function terminalPaintRunBadge(badge) {
   badge.title = "runtime observation; the run report determines task status";
   if (ob && ob.manifestId && ob.connectivity === "connected" && ob.process === "running") {
     const open = el("button", "sprt-quiet", "open in terminal");
-    open.onclick = (event) => { event.preventDefault(); event.stopPropagation(); chatTermOpenInTerminal({ id: ob.manifestId }); };
+    open.onclick = (event) => { event.preventDefault(); event.stopPropagation(); chatOpenTerminalPane(chatTermFind(ob.manifestId)||{id:ob.manifestId}); };
     badge.append(open);
   }
 }
@@ -2191,12 +2226,7 @@ function chatTermRow(se) {
   const pen = el("button", "chat-rail-x", "✎");
   pen.title = "rename";
   pen.onclick = (e) => { e.stopPropagation(); chatTermRename(title, se); };
-  const kill = chatTermEndIsKill(se);
-  const x = armedDelete("✕", kill ? "end — sure?" : "forget — sure?", () => chatTermEnd(se));
-  x.className = "chat-rail-x";
-  x.title = kill ? "end the process and keep the conversation" : "forget this conversation association";
-  if (se.boardBrief && !kill) { x.disabled = true; x.title = "work-order history stays linked to its task"; }
-  top.append(pen, x);
+  top.append(pen);
   row.append(top);
   const rm = el("div", "chat-rail-meta");
   rm.append(el("span", "chat-rail-spirit", chatTermFolder(se)));
@@ -2237,22 +2267,17 @@ function chatTermRename(nameEl, se) {
   inp.addEventListener("blur", () => setTimeout(renderChatRail, 0));
 }
 
-// chatTermEnd — live: POST …/kill (the row survives, resumable); history:
-// DELETE (forget). Both reached through an armed ✕.
-function chatTermEndIsKill(se) { return se.backend === "herdr" ? !["stopped", "not-started"].includes(se.process) : !!se.live; }
+// Stop only a positively live process. Conversation organization is independent.
+function chatTermEndIsKill(se) { return se.live === true && !["stopped", "not-started", "ended"].includes(se.process); }
 async function chatTermEnd(se) {
   const kill = chatTermEndIsKill(se);
+  if(!kill)return;
   try {
-    const res = kill
-      ? await fetch(chatTermBase(se.id) + "/kill", { method: "POST" })
-      : await fetch(chatTermBase(se.id), { method: "DELETE" });
+    const res = await fetch(chatTermBase(se.id) + "/kill", { method: "POST" });
     if (!res.ok) throw new Error((await res.text()).slice(0, 120));
-  } catch (e) { showToast((kill ? "end" : "forget") + " failed — " + (e.message || "error")); renderChatRail(); return; }
-  if (!kill && chatOpenId === se.id) {
-    chatOpenId = "";
-    chatRemember(chatAgent, "");
-    location.hash = chatSectionHash(chatAgent);
-  }
+  } catch (e) { showToast("Stop failed — " + (e.message || "error")); chatTermRepaintHead(); return; }
+  se.live=false;se.process="stopped";
+  const cached=chatTermFind(se.id);if(cached){cached.live=false;cached.process="stopped";}
   await loadChatTermSessions(true);
   renderChatRail();
   chatTermSyncOpen();
@@ -2426,26 +2451,23 @@ function chatTermHead(o) {
   acts.append(ren);
   const addressed=chatRecipients.get(se.kind+"/"+se.id);
   const selectedRuntime=addressed?.backend==="terminal"?(o.codingRecipients||[]).find(p=>p.id===addressed.id&&p.agent===addressed.agent):null;
-  const raw = el("button", "sprt-quiet", selectedRuntime?"Open "+chatAgentLabel(selectedRuntime.agent)+" in Terminal ↗":"Open in Terminal page ↗");
-  raw.title = "the raw pane (xterm) in the Terminal tab";
-  raw.onclick = () => chatTermOpenInTerminal(selectedRuntime||se);
+  const raw = el("button", "sprt-quiet", "Terminal");
+  raw.title = "Open the terminal drawer";
+  raw.onclick = () => chatOpenTerminalPane(selectedRuntime||se);
   if(selectedRuntime||se.launchPhase!=="draft") {
     details.append(raw);
     const terminal=el("button","sprt-quiet chat-terminal-view",document.querySelector(".chat-main")?.classList.contains("terminal-focus")?"Conversation":se.agentState==="blocked"?"Terminal · needs input":"Terminal");
-    terminal.title="Switch between conversation and full terminal screen";
-    terminal.onclick=()=>{
-      if(selectedRuntime||!o.live){chatTermOpenInTerminal(selectedRuntime||se);return;}
-      const main=document.querySelector(".chat-main"), focused=main.classList.toggle("terminal-focus");
-      const strip=chatTermStripEl();if(strip)strip.open=focused;
-      terminal.textContent=focused?"Conversation":"Terminal";
-    };head.append(terminal);
+    terminal.title="Open the live terminal below this conversation";
+    terminal.onclick=()=>chatOpenTerminalPane(selectedRuntime||se);
+    head.append(terminal);
   }
   const reviewRuntime=selectedRuntime||se;
   if(!se.device&&reviewRuntime.cwd){
     head.append(chatChangesButton(reviewRuntime));
   }
   const kill = chatTermEndIsKill(se);
-  if (!se.boardBrief || kill) acts.append(armedDelete(kill ? "✕ end" : "forget", kill ? "end — sure?" : "forget — sure?", () => chatTermEnd(se)));
+  if (kill) acts.append(armedDelete("Stop agent…", "Stop running agent?", () => chatTermEnd(se)));
+  acts.append(chatLifecycleActions({terminal:true,agent:se.kind,session:se}));
   details.append(acts);
   head.append(details);
   return head;
@@ -2931,6 +2953,30 @@ const chatArtifactSelections = new Map();
 let chatWorkspace = null;
 let chatPendingWorkspace = null;
 function chatCloseWorkspace() { if (chatWorkspace) { const w=chatWorkspace; chatWorkspace=null; w.close(); } }
+let chatTerminalDock=null;
+function chatCloseTerminalDock(){if(chatTerminalDock){const dock=chatTerminalDock;chatTerminalDock=null;dock.close();}}
+function chatOpenTerminalPane(session){
+  if(chatTerminalDock?.id===session.id){chatCloseTerminalDock();return;}
+  chatCloseTerminalDock();
+  const main=document.querySelector(".chat-main"),stage=document.getElementById("termStageTerm");
+  if(!main||!stage)return;
+  const home=stage.parentNode,marker=document.createComment("terminal stage home");home.insertBefore(marker,stage);
+  const pane=el("aside","chat-terminal-workspace");pane.setAttribute("aria-label","Conversation terminal");
+  const header=el("div","chat-terminal-head"),title=el("strong","chat-terminal-title","Terminal · "+(session.name||session.kind||"Agent")),close=el("button","sprt-quiet","×");close.setAttribute("aria-label","Close terminal");
+  const grip=el("div","chat-terminal-resizer");grip.tabIndex=0;grip.setAttribute("role","separator");grip.setAttribute("aria-label","Terminal height");grip.setAttribute("aria-orientation","horizontal");
+  header.append(title,close);pane.append(grip,header,stage);main.append(pane);
+  let height=280;try{height=Number(localStorage.getItem("manifest.chat.terminalHeight"))||280;}catch(e){}
+  const apply=value=>{height=Math.max(160,Math.min(main.clientHeight*.65,value));pane.style.height=height+"px";grip.setAttribute("aria-valuenow",String(Math.round(height)));grip.setAttribute("aria-valuemin","160");grip.setAttribute("aria-valuemax",String(Math.round(main.clientHeight*.65)));termFitShell();};
+  const save=()=>{try{localStorage.setItem("manifest.chat.terminalHeight",String(height));}catch(e){}};
+  grip.onpointerdown=e=>{e.preventDefault();grip.setPointerCapture(e.pointerId);const start=e.clientY,initial=height;grip.onpointermove=move=>apply(initial+start-move.clientY);grip.onpointerup=()=>{grip.onpointermove=null;save();};grip.onpointercancel=()=>{grip.onpointermove=null;};};
+  grip.onkeydown=e=>{if(!["ArrowUp","ArrowDown","Home"].includes(e.key))return;e.preventDefault();apply(e.key==="Home"?280:height+(e.key==="ArrowUp"?24:-24));save();};
+  grip.ondblclick=()=>{apply(280);save();};
+  const observer=new ResizeObserver(()=>apply(height));observer.observe(main);
+  termEmbedded=true;termOpenId=session.id;termStage="term";termAttachmentPaused=false;
+  const dispose=()=>{observer.disconnect();detachTerm();if(marker.parentNode)marker.replaceWith(stage);else home.append(stage);termEmbedded=false;pane.remove();chatTerminalDock=null;};
+  chatTerminalDock={id:session.id,close:dispose};close.onclick=dispose;
+  showTerminal();apply(height);
+}
 function chatOpenAttachment(file,href){
   chatCloseWorkspace();
   const shell=document.querySelector(".chat-shell");shell.classList.add("has-artifact");

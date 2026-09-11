@@ -13,7 +13,7 @@ await page.evaluate(()=>artifactWorkspace(document.querySelector('main'),{load:a
 await page.getByRole('button',{name:'Edit',exact:true}).click();await page.getByRole('textbox',{name:'File content'}).fill('revised report');
 await page.getByRole('button',{name:'Review changes',exact:true}).click();await page.getByText('+ revised report',{exact:true}).waitFor();
 await page.getByRole('button',{name:'Save new version'}).click();await page.getByText('New artifact version saved.',{exact:true}).waitFor();
-await page.getByRole('button',{name:'Discuss this version'}).click();assert.equal(await page.evaluate(()=>discussed.revision),'b'.repeat(64));
+await page.getByRole('button',{name:'Discuss'}).click();assert.equal(await page.evaluate(()=>discussed.revision),'b'.repeat(64));
 assert.equal(await page.evaluate(()=>a.content),'revised report');
 console.log('PASS: direct artifact text edit, compare, version save and exact-version discussion.');
 }finally{await browser.close();}})().catch(e=>{console.error(e);process.exit(1)});

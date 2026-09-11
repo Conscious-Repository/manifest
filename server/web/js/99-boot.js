@@ -405,6 +405,8 @@ function route() {
   els.todosView.hidden = !todosTab;
   els.calendarView.hidden = !cal;
   els.feedView.hidden = !fd;
+  if (!chat && typeof chatCloseWorkspace === "function") chatCloseWorkspace();
+  if (!chat && typeof chatCloseTerminalDock === "function") chatCloseTerminalDock();
   if (els.chatView) els.chatView.hidden = !chat;
   if (els.terminalView) els.terminalView.hidden = !terminalTab;
   els.spiritsView.hidden = !sp;
