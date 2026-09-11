@@ -370,7 +370,7 @@ button.chat-attach-chip { min-height: 44px; max-width: 100%; background: transpa
  .chat-shell.has-artifact.mf-chat-nav-open .artifact-workspace { display: none; }
 }
 
-.chat-delivery-notice { grid-column: 1 / -1; border-bottom: 1px solid var(--line); padding: var(--sp-6); }
+.chat-delivery-notice { grid-column: 1 / -1; border-bottom: 1px solid var(--line); padding: 8px 0; max-height:180px; overflow-y:auto; }
 .chat-delivery-row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-6); font-size: var(--fs-md); }
 .chat-delivery-row > span { flex: 1 1 100%; overflow-wrap: anywhere; }
 .chat-delivery-row button { min-height: 44px; }
@@ -601,3 +601,13 @@ button.chat-attach-chip { min-height: 44px; max-width: 100%; background: transpa
 .chat-project-chats { padding-left: 10px; }
 .chat-project-more { padding: 8px 10px; color: var(--base-50); font: 13px var(--sans); min-height: 40px; }
 .chat-project-chats .chat-row-group { display: none; }
+
+.chat-new-dialog { width:min(400px,calc(100vw - 24px)); box-sizing:border-box; padding:20px; border-radius:14px; }
+.chat-new-dialog .review-dialog-body { display:flex; flex-direction:column; gap:6px; }
+.chat-new-choice { width:100%; display:flex; align-items:center; justify-content:space-between; gap:12px; padding:14px 16px; min-height:48px; border:0; border-radius:8px; background:color-mix(in srgb,var(--base-100) 5%,transparent); color:var(--base-90); text-align:left; font:15px var(--sans); cursor:pointer; }
+.chat-new-choice:hover { background:color-mix(in srgb,var(--base-100) 10%,transparent); }
+.chat-new-model { color:var(--base-50); font-size:12px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.chat-new-folder { display:flex; flex-direction:column; gap:8px; width:min(440px,100%); text-align:left; color:var(--base-60); font:13px var(--sans); }
+.chat-new-folder .chat-landing-cwd { box-sizing:border-box; width:100%; text-align:left; }
+
+.chat-delivery-summary { cursor:pointer; color:var(--base-70); font:13px/1.5 var(--sans); padding:6px 0; }

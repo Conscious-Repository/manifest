@@ -502,18 +502,18 @@ function renderChatHeadActions() {
   const add = el("button", "sprt-ghost", "＋ new");
   add.title = "Start a conversation with an agent";
   add.textContent = "New chat";
-  add.onclick = () => {
-    const existing = host.querySelector(".chat-new-picker");
-    if (existing) { existing.remove(); return; }
-    const picker = document.createElement("select");
-    picker.className = "chat-new-picker"; picker.setAttribute("aria-label", "Choose an agent for a new chat");
-    const prompt = el("option", "", "Choose an agent…"); prompt.value = "pick"; picker.append(prompt);
-    [...chatRoster.filter(a => !chatIsTerm(a.name) && chatPrivateCreationAgent(a.name)===a.name).map(a => [a.name, a.label]), ...(chatTermEnabled ? Object.entries(chatTermKinds) : []), ["", "Spirits"]].forEach(([value, label]) => {
-      const option = el("option", "", label); option.value = value; picker.append(option);
+  add.onclick = () => reviewDialog("New chat",({body,actions,close})=>{
+    body.closest('dialog').classList.add('chat-new-dialog');
+    const cancel=el('button','sprt-quiet','Cancel');cancel.onclick=close;actions.append(cancel);
+    const choices=[...chatRoster.filter(a=>a.enabled&&!chatIsTerm(a.name)&&chatPrivateCreationAgent(a.name)===a.name).map(a=>[a.name,a.label,a.model]),...(chatTermEnabled?Object.entries(chatTermKinds):[]),['','Spirits']];
+    choices.forEach(([agent,label,model])=>{
+      const button=el('button','chat-new-choice');
+      button.append(el('span','',label));
+      if(model)button.append(el('span','chat-new-model',shortModel(model)));
+      button.onclick=()=>{close();location.hash=agent?'#/chat/a/'+encodeURIComponent(agent)+'/new':'#/chat/new';};
+      body.append(button);
     });
-    picker.onchange = () => { if (picker.value === "pick") return; location.hash = picker.value ? "#/chat/a/" + encodeURIComponent(picker.value) + "/new" : "#/chat/new"; picker.remove(); };
-    host.append(picker); picker.focus();
-  };
+  });
   host.append(add);
 
 }
@@ -916,7 +916,7 @@ async function renderChatLanding() {
     const who = el("div", "chat-spirit-pick");
     who.append(el("span", "pill light on", a ? a.label : chatAgent));
     if (a && a.model) who.append(el("span", "sprt-quiet", shortModel(a.model)));
-    if (a && a.profile) who.append(el("span", "chat-landing-hint", "hermes -p " + a.profile));
+
     if (a && a.backend === "portal") who.append(el("span", "chat-landing-hint", a.domain === "ooda" ? "OODA portal chat" : "AION team portal chat"));
     host.append(who);
     // what this agent is for — its `hermes profile describe` text (§3.5)
@@ -933,7 +933,7 @@ async function renderChatLanding() {
       host.append(el("div", "chat-landing-hint", "shared with the portal · one order at a time · @" + a.name + "::brief tags an intent"));
       if (a.busy) host.append(el("div", "chat-thinking", "✦ " + a.label + " is running — a send now is refused until it finishes"));
     }
-    host.append(el("div", "chat-landing-hint", "type below — Enter sends, the conversation starts then"));
+    host.append(el("div", "chat-landing-hint", "Send your first message to start."));
     focusChatInput();
     return;
   }
@@ -973,7 +973,7 @@ async function renderChatLanding() {
   };
   paint();
   host.append(picks);
-  host.append(el("div", "chat-landing-hint", "type below — Enter sends, the conversation starts then"));
+  host.append(el("div", "chat-landing-hint", "Send your first message to start."));
   focusChatInput();
 }
 
@@ -2895,7 +2895,7 @@ function renderChatTermLanding(host) {
   chatTermSurface(true); // the composer is the prompt of the session to come
   const who = el("div", "chat-spirit-pick");
   who.append(el("span", "pill light on", chatTermKinds[kind]));
-  who.append(el("span", "chat-landing-hint", "this server · herdr"));
+
   host.append(who);
   if (!chatTermEnabled) {
     host.append(emptyRow("The terminal is not enabled on this server — sessions can't start here."));
@@ -2903,13 +2903,17 @@ function renderChatTermLanding(host) {
   }
   const cwd = document.createElement("input");
   cwd.className = "chat-landing-cwd";
-  cwd.placeholder = "/absolute/path — the folder the session opens in (blank = home)";
+  cwd.placeholder = "Home folder";
+  cwd.setAttribute("aria-label", "Working folder");
+  cwd.setAttribute("list", "chatRecentFolders");
   cwd.spellcheck = false;
   cwd.value = chatRecall("manifest.chatTermCwd." + kind);
   cwd.oninput = () => { try { localStorage.setItem("manifest.chatTermCwd." + kind, cwd.value.trim()); } catch (e) {} };
   cwd.onkeydown = (e) => { if (e.key === "Enter") { e.preventDefault(); focusChatInput(); } };
-  host.append(cwd);
-  host.append(el("div", "chat-landing-hint", "type below — Enter starts the session there and sends; it also appears in the Terminal tab"));
+  const field=el('label','chat-new-folder','Working folder');field.append(cwd);host.append(field);
+  const recent=document.createElement('datalist');recent.id='chatRecentFolders';
+  [...new Set(chatTermSessions.filter(s=>!s.device&&s.cwd).map(s=>s.cwd))].slice(0,30).forEach(path=>{const option=document.createElement('option');option.value=path;recent.append(option);});host.append(recent);
+  host.append(el("div", "chat-landing-hint", "Send your first message to start in this folder."));
   focusChatInput();
 }
 
@@ -3173,9 +3177,11 @@ async function chatDeliverRemembered(item){
  return chatAcceptDelivery(item,result);
 }
 function chatRenderDeliveryNotice(host,scope){
+ const expanded=host.querySelector(".chat-delivery-notice")?.open||false;
  host.querySelector(".chat-delivery-notice")?.remove();
  const pending=chatReadDeliveryOutbox().filter(x=>x.scope===scope||(x.draftScope||x.scope)===scope);if(!pending.length)return;
- const notice=el("div","chat-delivery-notice");notice.setAttribute("role","status");
+ const notice=el("details","chat-delivery-notice");notice.open=expanded;
+ const summary=el('summary','chat-delivery-summary',pending.length===1?'1 message needs attention':pending.length+' messages need attention');notice.append(summary);
  pending.forEach(item=>{
   const row=el("div","chat-delivery-row");
   const label=el("span","",(item.accepted?"Sent · draft sync pending: ":"Send not confirmed: ")+String(item.payload.text||"Attachment").slice(0,90));
@@ -3195,14 +3201,14 @@ function chatRenderDeliveryNotice(host,scope){
     if(!r.ok)throw new Error(await r.text());
     const d=await r.json();
     if(chatIsTerminalDelivery(item)&&d.delivery?.state!=="sent"){label.textContent="Submission is unconfirmed. Check again or inspect the native conversation; this request will not be replayed.";return;}
-    await chatAcceptDelivery(item,d);row.remove();navigate(d);
+    await chatAcceptDelivery(item,d);chatRenderDeliveryNotice(host,scope);navigate(d);
     showToast("Message "+d.delivery.state,null,"info");
    }catch(e){label.textContent="Still unable to confirm delivery. Your message is saved here.";}
    finally{check.disabled=false;}
   };
   retry.onclick=async()=>{
    retry.disabled=true;
-   try{const d=await chatDeliverRemembered(item);row.remove();navigate(d);}
+   try{const d=await chatDeliverRemembered(item);chatRenderDeliveryNotice(host,scope);navigate(d);}
    catch(e){
     if(e.rejected){label.textContent="Send rejected: "+e.message+". Your original message remains saved here.";}
     else label.textContent="Delivery remains unconfirmed. Retrying this send is safe.";
