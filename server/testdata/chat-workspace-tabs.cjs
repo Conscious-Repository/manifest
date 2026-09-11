@@ -26,5 +26,30 @@ const {chromium}=require('playwright'),fs=require('fs'),path=require('path'),ass
  await p.setViewportSize({width:390,height:844});await p.getByRole('tab',{name:'Plan',exact:true}).click();assert.equal(await p.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);
  await p.getByLabel('Hide workspace').click();assert.equal(await p.locator('#chatComposer textarea').isVisible(),true);
  await p.evaluate(()=>chatWorkspace.close());assert.equal(await p.locator('.chat-tab-workspace').count(),0);assert.equal(await p.evaluate(()=>chatWorkspaceTabs),null);assert.deepEqual(errors,[]);
+ await p.addScriptTag({content:chat.slice(chat.indexOf('function chatOpenWorkingArtifact('),chat.indexOf('function chatRenderArtifactContext('))});
+ await p.addScriptTag({content:fs.readFileSync(path.join(root,'js/47-chat-state.js'),'utf8')});
+ await p.evaluate(()=>{
+  const transcript=el('div','','');transcript.id='chatTranscript';transcript.dataset.readKey='conversation-'+ '1'.repeat(32);document.querySelector('.chat-main').prepend(transcript);
+  window.snapshots={};window.fetch=async(url,opts={})=>{
+   if(!url.startsWith('/api/chat/state/'))return {ok:true,json:async()=>structuredClone(a)};
+   const parts=url.split('/'),key=parts.at(-2),slot=parts.at(-1);let snap=snapshots[url]||{key,slot,revision:0,value:null};
+   if(opts.method==='PUT'){const b=JSON.parse(opts.body);if(b.revision!==snap.revision)return {ok:false,status:409,json:async()=>structuredClone(snap)};snapshots[url]=snap={key,slot,revision:snap.revision+1,value:b.value};}
+   return {ok:true,json:async()=>structuredClone(snap)};
+  };
+  a.content='long preview\n'.repeat(150);chatOpenWorkingArtifact({id:'plan'});
+  const spec={kind:'side',title:'Parent',route:'#/chat/a/alfred/side1234'};chatEnsureWorkspace().tab('saved-side','Side chat',host=>chatMountSideFrame(host,spec),spec);chatWorkspaceTabs.select('artifact:plan');
+ });
+ await p.waitForFunction(()=>document.querySelector('.artifact-workspace-title')?.textContent==='Plan');
+ await p.evaluate(()=>{const body=document.querySelector('.artifact-workspace-body');body.scrollTop=180;chatWorkspaceTabs.save();chatWorkspaceTabs.show(false);chatWorkspaceTabs.close();});
+ await p.evaluate(async()=>{await Promise.all([...chatWorkspaceStates.values()].map(s=>s.flush()));chatWorkspaceStates.clear();await chatRestoreWorkspace();});
+ await p.waitForFunction(()=>document.querySelector('.artifact-workspace-title')?.textContent==='Plan');
+ assert.equal(await p.getByLabel('Chat workspace').isVisible(),false,'hidden workspace restores hidden');
+ await p.evaluate(()=>chatWorkspaceTabs.show());
+ await p.waitForFunction(()=>document.querySelector('.artifact-workspace-body')?.scrollTop===180);
+ assert.equal(await p.evaluate(()=>chatWorkspaceTabs.entries.has('artifact:plan')),true);
+ assert.equal(await p.locator('.chat-side-frame').getAttribute('src'),'/?chatPane=1#/chat/a/alfred/side1234','restore uses the saved side conversation');
+ await p.evaluate(async()=>{chatWorkspaceTabs.close();document.getElementById('chatTranscript').dataset.readKey='conversation-'+ '2'.repeat(32);await chatRestoreWorkspace();});
+ assert.equal(await p.locator('.chat-tab-workspace').count(),0,'another conversation does not inherit tabs');
+ assert.deepEqual(errors,[]);
  console.log('PASS: real artifact draft survives pane and tab switches, scoped model defaults, keyboard tabs, mobile return, route disposal.');
 }finally{await b.close()}})().catch(e=>{console.error(e);process.exit(1)});

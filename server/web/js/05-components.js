@@ -878,8 +878,11 @@ function artifactWorkspace(mount, options) {
       else{editVersion(false,false,p);notice.textContent="Proposed revision · review before saving. Execution will not start.";}
     }
   } catch(e) { notice.textContent=e.message; title.textContent="Artifact unavailable"; } }
-  refresh(opts.revision,opts.proposal);
-  return {element:pane, close:()=>close.click(), isEditing:()=>editing, refresh};
+  const ready=refresh(opts.revision,opts.proposal);
+  return {element:pane, close:()=>close.click(), isEditing:()=>editing, refresh,
+    getView:()=>({revision:selected,scrollTop:body.scrollTop}),
+    restoreView:async view=>{await ready;if(!pane.isConnected||!body.clientHeight)return false;if(Number.isFinite(view.scrollTop))body.scrollTop=Math.max(0,view.scrollTop);return true;}
+  };
 }
 
 // A compact, keyboard-accessible review surface for explicit user actions.

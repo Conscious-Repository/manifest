@@ -240,3 +240,19 @@ func TestProjectEditRecoveryIsPrivateAndRevisioned(t *testing.T) {
 		}
 	}
 }
+
+func TestWorkspaceViewSurvivesRestart(t *testing.T) {
+	root := t.TempDir()
+	value := json.RawMessage(`{"open":false,"active":"artifact:one","tabs":[{"key":"artifact:one","spec":{"kind":"artifact","id":"one"},"view":{"scrollTop":180}}]}`)
+	saved, err := New(root).Write(testKey, "workspace", 0, value)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := New(root).Read(testKey, "workspace")
+	if err != nil || !bytes.Equal(saved.Value, got.Value) {
+		t.Fatal(got, err)
+	}
+	if _, err := New(root).Write(testKey, "workspace", 0, json.RawMessage(`{"open":true}`)); !errors.Is(err, ErrConflict) {
+		t.Fatal(err)
+	}
+}

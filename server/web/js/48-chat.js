@@ -678,7 +678,7 @@ function chatEditProject(id){
   };
   load();return {close(){closed=true;if(draft){draft.changed=null;draft.flush();}}};
  };
- if(document.querySelector('.chat-shell')&&chatOpenId&&typeof chatEnsureWorkspace==='function')chatEnsureWorkspace().tab('project:'+id,chatWorkstreams.groups[id]||'Project context',build);
+ if(document.querySelector('.chat-shell')&&chatOpenId&&typeof chatEnsureWorkspace==='function')chatEnsureWorkspace().tab('project:'+id,chatWorkstreams.groups[id]||'Project context',build,{kind:'project',id});
  else reviewDialog('Project context',({body,actions,close})=>{body.closest('dialog').classList.add('chat-project-context-dialog');const api=build(body),done=el('button','sprt-quiet','close');done.onclick=close;body.closest('dialog').addEventListener('close',()=>api.close(),{once:true});actions.append(done);});
 }
 function chatChooseWorkstream(entry){
@@ -3211,7 +3211,7 @@ function chatOpenWorkingArtifact(spec) {
       if(window.matchMedia("(max-width: 900px)").matches)w.show(false);
       document.querySelector("#chatComposer textarea")?.focus();
     }:null
-  }));
+  }),{kind:"artifact",id:spec.id,plan:!!spec.plan,task:taskID,revision:spec.revision,selectionKey:spec.selectionKey,discuss:!!spec.discuss});
 }
 function chatRenderArtifactContext(taskID,key,host){
  key=key||"task:"+taskID;
