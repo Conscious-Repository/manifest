@@ -278,7 +278,7 @@
 .artifact-workspace { display: flex; flex-direction: column; min-width: 0; min-height: 0; flex: 1; border-left: 1px solid var(--line); padding-left: var(--sp-7); background: var(--panel-bg, var(--bg)); }
 .artifact-workspace-head, .artifact-workspace-controls { display: flex; align-items: center; flex-wrap: wrap; gap: var(--sp-6); padding: var(--sp-6) 0; border-bottom: 1px solid var(--line); }
 .artifact-workspace-title { flex: 1; font-size: var(--fs-xl); overflow-wrap: anywhere; }
-.artifact-workspace-controls select { min-width: 0; max-width: 100%; flex: 1 0 100%; width: 100%; }
+.artifact-workspace-controls select { min-width: 120px; max-width: 100%; flex: 1 1 150px; width: auto; }
 .artifact-workspace-body { flex: 1; min-height: 0; overflow: auto; padding: var(--sp-7) var(--sp-4); overflow-wrap: anywhere; }
 .artifact-workspace-body pre { overflow: auto; }
 .artifact-diff { font: var(--fs-sm)/1.6 var(--mono); tab-size: 2; }
@@ -291,7 +291,7 @@
 .artifact-workspace-editor { box-sizing: border-box; width: 100%; height: 100%; min-height: 240px; resize: vertical; font: var(--fs-md)/1.6 var(--mono); }
 .artifact-workspace-notice { font-size: var(--fs-sm); padding: var(--sp-4) 0; }
 .artifact-workspace-notice:empty { display: none; }
-.artifact-workspace-head button, .artifact-workspace-controls .sprt-quiet { min-height: 32px; }
+.artifact-workspace-head button, .artifact-workspace-controls .sprt-quiet { min-height: 32px; display:inline-flex; align-items:center; }
 @media (max-width: 900px) {
  .artifact-workspace-head button, .artifact-workspace-controls .sprt-quiet { min-height: 44px; font-size: var(--fs-lg); }
  .artifact-workspace-controls select { flex-basis: 100%; width: 100%; min-height: 44px; }
@@ -307,3 +307,6 @@
 .review-dialog-body label { display:grid; gap:var(--sp-4); }
 .review-dialog-actions { display:flex; gap:var(--sp-8); flex-wrap:wrap; margin-top:var(--sp-16); }
 .review-dialog .review-dialog-actions button { min-height:44px; font-size:var(--fs-md); padding:var(--sp-4) var(--sp-8); }
+
+.artifact-source-preview { margin:0; padding:0; background:transparent; font:13px/1.65 var(--mono); tab-size:4; white-space:pre; overflow-wrap:normal; }
+.artifact-primary-action { border:1px solid var(--line); border-radius:6px; padding:6px 12px; background:var(--hover); color:var(--base-90); }

@@ -15,5 +15,12 @@ await page.getByRole('button',{name:'Review changes',exact:true}).click();await 
 await page.getByRole('button',{name:'Save new version'}).click();await page.getByText('New artifact version saved.',{exact:true}).waitFor();
 await page.getByRole('button',{name:'Discuss'}).click();assert.equal(await page.evaluate(()=>discussed.revision),'b'.repeat(64));
 assert.equal(await page.evaluate(()=>a.content),'revised report');
+await page.evaluate(()=>{
+ document.querySelector('main').replaceChildren();a.ref='example.py';a.content='# keep this comment\nif left < right:\n    print("<button>literal</button>")';
+ artifactWorkspace(document.querySelector('main'),{load:async()=>structuredClone(a)});
+});
+await page.locator('.artifact-source-preview').waitFor();
+assert.equal(await page.locator('.artifact-source-preview').innerText(),await page.evaluate(()=>a.content));
+assert.equal(await page.locator('.artifact-source-preview button').count(),0);
 console.log('PASS: direct artifact text edit, compare, version save and exact-version discussion.');
 }finally{await browser.close();}})().catch(e=>{console.error(e);process.exit(1)});

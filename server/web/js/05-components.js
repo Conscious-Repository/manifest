@@ -732,6 +732,8 @@ function artifactWorkspace(mount, options) {
       notice.textContent = "Preview only. This file has not been sent to the agent.";
     } else if(ext==="diff"){
       body.append(artifactWorkingChangesView(current.content||""));
+    } else if(ext && !['md','markdown','mdown'].includes(ext)) {
+      const source=el('pre','artifact-source-preview');source.append(el('code','',current.content||''));body.append(source);
     } else {
       try { body.append(renderMarkdown(current.content || "", "", {readOnly:true})); }
       catch(e) { body.textContent = current.content || ""; }
@@ -763,12 +765,12 @@ function artifactWorkspace(mount, options) {
       controls.append(discuss);
     }
     if (opts.save && !binary && (!opts.canEdit || opts.canEdit(current))) {
-      const edit = el("button", "sprt-quiet", selected === current.head ? "Edit" : "Restore this version");
+      const edit = el("button", "sprt-quiet artifact-primary-action", selected === current.head ? "Edit" : "Restore this version");
       edit.onclick = () => editVersion(selected !== current.head);
       if(editState?.value){
         edit.textContent="Resume draft";
         edit.onclick=()=>editVersion(!!editState.value.restore,true);
-        notice.textContent="An unfinished edit is saved. The published version is unchanged.";
+        notice.textContent="An unfinished edit is saved. The saved version is unchanged.";
       }
       controls.append(edit);
     }
@@ -782,9 +784,10 @@ function artifactWorkspace(mount, options) {
     const input = document.createElement("textarea");
     input.className = "artifact-workspace-editor"; input.value = started.text; editor=input;
     input.setAttribute("aria-label", "File content");
+    input.spellcheck=false;
     body.replaceChildren(input);
     controls.replaceChildren();
-    const save = el("button", "sprt-quiet", restore ? "Save restored version" : "Save new version");
+    const save = el("button", "sprt-quiet artifact-primary-action", restore ? "Save restored version" : "Save new version");
     const remember=()=>editState?.set({...editState.value||started,text:input.value});
     input.addEventListener("input",remember);
     const review=el("button","sprt-quiet","Review changes");

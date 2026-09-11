@@ -70,3 +70,7 @@ The recipient/model picker now sits beside the message input in the composer foo
 ### Starting a conversation
 
 New chat now opens a compact, cancelable agent chooser instead of inserting a second native dropdown into the page header. Coding landing uses a labeled working-folder input with recent local folder suggestions; backend launcher jargon and desktop-only Enter instructions were removed. Pending delivery recovery remains available under a counted disclosure, with bounded scrolling, so old uncertain sends do not consume the phone composer. Existing exact-request retry and receipt handling remain unchanged. Live reads with local assets verified chooser navigation, folder suggestions, mobile layout and expanded recovery controls without creation, retry, or model sends. Delivery recovery regression and CSS checks passed.
+
+### File preview fidelity
+
+Text/code artifacts with a non-Markdown extension now render as escaped source text, preserving comments, indentation, and literal markup. Markdown plans retain their formatted preview. Version controls can share a row in wider panes, with a distinct edit/save action and aligned controls; phone version selection remains full-width. The editor disables spellcheck for source text. The artifact fixture verifies literal source rendering alongside edit/compare/save/exact-version discussion; the workspace fixture verifies draft retention across tabs and pane hiding. This does not add syntax highlighting or a general file browser.
