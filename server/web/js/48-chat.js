@@ -3182,7 +3182,7 @@ function chatOpenTerminalPane(session){
 }
 function chatOpenAttachment(file,href){
   const w=chatEnsureWorkspace();
-  w.tab("attachment:"+href,file.name||"Attachment",(host,drop)=>attachmentWorkspace(host,file,href,drop));
+  w.tab("attachment:"+href,file.name||"Attachment",(host,drop)=>attachmentWorkspace(host,file,href,drop),{kind:"attachment",file,href});
 }
 function chatChangesButton(runtime){
   const button=el("button","sprt-quiet","Changes");button.title="Capture current Git changes in this runtime's working folder";

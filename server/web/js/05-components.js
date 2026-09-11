@@ -597,7 +597,7 @@ function attachmentWorkspace(mount,file,href,onClose){
   let blobURL=null,closed=false;const abort=new AbortController();
   back.onclick=()=>{closed=true;abort.abort();if(blobURL)URL.revokeObjectURL(blobURL);pane.remove();onClose?.();};
   head.append(title,back);controls.append(download);pane.append(head,controls,notice,body);mount.append(pane);
-  (async()=>{
+  const ready=(async()=>{
     try{
       const response=await fetch(href,{signal:abort.signal});if(!response.ok){
         if(file.errorLabel){const reader=response.body?.getReader();const chunk=reader?await reader.read():null;await reader?.cancel();const reason=chunk?.value?new TextDecoder().decode(chunk.value.slice(0,500)).trim():"";throw new Error(reason||file.errorLabel);}
@@ -617,7 +617,7 @@ function attachmentWorkspace(mount,file,href,onClose){
       else {blobURL=URL.createObjectURL(blob);const view=document.createElement(mime==="application/pdf"?"iframe":"img");view.src=blobURL;view.title=file.name;view.alt=file.name;body.replaceChildren(view);}
     }catch(e){abort.abort();if(!closed)body.textContent=e.message;}
   })();
-  return {element:pane,close:()=>back.click(),isEditing:()=>false};
+  return {element:pane,close:()=>back.click(),isEditing:()=>false,getView:()=>({scrollTop:body.scrollTop}),restoreView:async view=>{await ready;if(closed||!body.clientHeight)return false;body.scrollTop=Math.max(0,Number(view.scrollTop)||0);return true;}};
 }
 
 // Exact line comparison; bound the quadratic middle section for large files.

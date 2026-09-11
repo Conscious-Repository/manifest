@@ -13,3 +13,9 @@ Remaining: attachment-tab restoration, unfinished side-chat setup recovery, arti
 Working-folder diffs now expose every changed file as a collapsible row, with added/deleted/renamed/modified status and hunk addition/deletion counts. First file opens initially; expand/collapse-all controls keep larger reviews navigable. Individual diffs render lazily and retain literal text and line gutters. Expanded file paths are included in inspector view restoration and applied before restoring scroll.
 
 Chromium fixtures cover literal script-like text, line numbers, per-file and all-file disclosure, phone overflow, and restored independent file expansion after navigation. The full server run found only a duplicate CSS selector introduced in this follow-up; its declarations were merged and the focused CSS check rerun. Syntax highlighting, diff-region annotations, preview compare/edit-mode restoration, and the larger plan gates remain open.
+
+## Attachments and unfinished side-chat recovery
+
+Attachment tabs now retain their original reference and preview position. Unfinished side-chat setup retains agent/model/folder settings in the existing conversation workspace state. Before creation, its exact payload and request ID are saved; an uncertain response locks those settings and offers `Retry creation`. Restoring a pending setup does not execute it. An explicit retry checks the same request identity. A created side-chat tab continues to restore its existing route.
+
+Extended Chromium coverage exercises response loss, navigation, state-store reopening, exact retry identity/payload, no automatic creation, and actual attachment text preview restoration at 120px. File-edit drafts remain separate. Remaining continuity work includes compare/edit preview submodes and explicit side-chat return-to-parent findings, alongside the full plan gates.

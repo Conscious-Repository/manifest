@@ -21,9 +21,11 @@ async function chatRestoreWorkspace(){
  const w=chatEnsureWorkspace(true);
  for(const tab of saved.tabs){
   if(tab.spec?.kind==='artifact'&&(tab.spec.id||tab.spec.plan&&tab.spec.task))chatOpenWorkingArtifact({...tab.spec,revision:tab.view?.revision||tab.spec.revision});
+  else if(tab.spec?.kind==='side-setup'&&tab.spec.source?.id)chatWorkspaceSideSetup(tab.spec.source,{key:tab.key,view:tab.view});
+  else if(tab.spec?.kind==='attachment'&&typeof tab.spec.file?.name==='string'&&typeof tab.spec.href==='string'&&tab.spec.href.startsWith('/api/'))chatOpenAttachment(tab.spec.file,tab.spec.href);
   else if(tab.spec?.kind==='side'&&/^#\/chat\//.test(tab.spec.route||''))w.tab(tab.key,'Side chat',host=>chatMountSideFrame(host,tab.spec),tab.spec);
   else if(tab.spec?.kind==='project'&&chatWorkstreams.groups[tab.spec.id])chatEditProject(tab.spec.id);
-  const opened=w.entries.get(tab.key);if(opened&&tab.view)opened.restoreView=tab.view;
+  const opened=w.entries.get(tab.key);if(opened?.api?.restoreView&&tab.view)opened.restoreView=tab.view;
  }
  if(w.entries.has(saved.active))w.select(saved.active);
  w.show(saved.open===true);w.restoring=false;
@@ -139,8 +141,8 @@ function chatMountSideFrame(host,spec){
  const frame=document.createElement('iframe');frame.title='Side chat · '+spec.title;frame.className='chat-side-frame';frame.src=location.pathname+'?chatPane=1'+spec.route;
  host.append(strip,frame);return {};
 }
-function chatWorkspaceSideSetup(source){
- const key='side-setup-'+crypto.randomUUID(),w=chatEnsureWorkspace();
+function chatWorkspaceSideSetup(source,restore=null){
+ const key=restore?.key||'side-setup-'+crypto.randomUUID(),w=chatEnsureWorkspace(),saved=restore?.view||{};
  w.tab(key,'New side chat',(host)=>{
   const wrap=el('div','chat-side-setup'),heading=el('h3','','Side chat'),hint=el('p','','Starts with this conversation’s recent context.');
   const pick=document.createElement('select');pick.setAttribute('aria-label','Side chat agent');
@@ -148,21 +150,22 @@ function chatWorkspaceSideSetup(source){
   if(chatTermEnabled)Object.entries(chatTermKinds).forEach(([value,label])=>options.push({value:'terminal:'+value,label,model:''}));
   options.forEach(a=>{const o=document.createElement('option');o.value=a.value;o.textContent=a.label;pick.append(o);});
   const recipient=chatRecipients.get(source.agent+'/'+source.id),initial=recipient?(recipient.backend==='terminal'?'terminal:':'')+recipient.agent:(source.backend==='terminal'?'terminal:':'')+source.agent;
-  pick.value=initial;
+  pick.value=saved.agent||initial;
   const model=document.createElement('select');model.setAttribute('aria-label','Side chat model');model.value=recipient?.model||source.model;model.placeholder='Configured default';
-  const cwd=document.createElement('input');cwd.setAttribute('aria-label','Side chat working folder');cwd.value=source.cwd||'';cwd.placeholder='Default working folder';
+  const cwd=document.createElement('input');cwd.setAttribute('aria-label','Side chat working folder');cwd.value=saved.cwd??source.cwd??'';cwd.placeholder='Default working folder';
   const field=(label,input)=>{const l=el('label','',label);l.append(input);return l;};
   const folder=field('Working folder',cwd),advanced=el('details','chat-side-options');advanced.append(el('summary','','Working folder'),folder);
-  const sync=()=>{folder.hidden=!pick.value.startsWith('terminal:');chatPopulateModelSelect(model,pick.value.startsWith('terminal:')?pick.value.slice(9):pick.value,pick.value===initial?(recipient?.model||source.model):options.find(a=>a.value===pick.value)?.model||'');};sync();pick.onchange=()=>{model.value=pick.value===initial?(recipient?.model||source.model):options.find(a=>a.value===pick.value)?.model||'';sync();};
+  const sync=()=>{folder.hidden=!pick.value.startsWith('terminal:');chatPopulateModelSelect(model,pick.value.startsWith('terminal:')?pick.value.slice(9):pick.value,pick.value===initial?(recipient?.model||source.model):options.find(a=>a.value===pick.value)?.model||'');};sync();if(saved.model)chatPopulateModelSelect(model,pick.value.startsWith('terminal:')?pick.value.slice(9):pick.value,saved.model);pick.onchange=()=>{model.value=pick.value===initial?(recipient?.model||source.model):options.find(a=>a.value===pick.value)?.model||'';sync();};
   const status=el('p','chat-workspace-hint');status.setAttribute('role','status');
   const start=el('button','chat-side-start','Open side chat');start.disabled=!pick.value;
   // Recovery is scoped to this setup tab. Keep the accepted request identity on
-  // uncertain responses; changing settings creates a distinct intent.
-  let remembered=null;
+  // uncertain responses; keep settings fixed until the result is confirmed.
+  let remembered=saved.pending||null;
+  const lock=()=>{pick.disabled=model.disabled=cwd.disabled=!!remembered;};lock();if(remembered){status.textContent='Creation is unconfirmed. Retry checks the same request.';start.textContent='Retry creation';}
   start.onclick=async()=>{
-   const coding=pick.value.startsWith('terminal:'),payload={agent:coding?pick.value.slice(9):pick.value,model:model.value.trim(),title:('Side chat · '+source.title).slice(0,240),task:source.task||'',mode:'side',...(coding?{backend:'terminal',cwd:cwd.value.trim()}:{})};
+   const coding=pick.value.startsWith('terminal:');let payload={agent:coding?pick.value.slice(9):pick.value,model:model.value.trim(),title:('Side chat · '+source.title).slice(0,240),task:source.task||'',mode:'side',...(coding?{backend:'terminal',cwd:cwd.value.trim()}:{})};
    const selected=chatArtifactSelections.get('chat:'+source.agent+'/'+source.id);if(selected)payload.artifacts=[{id:selected.id,revision:selected.revision}];
-   const signature=JSON.stringify(payload);if(remembered?.signature!==signature)remembered={signature,requestId:crypto.randomUUID()};
+   if(remembered)payload=remembered.payload;else remembered={payload,requestId:crypto.randomUUID()};lock();w.save();
    start.disabled=true;status.textContent='Preparing context…';
    try{
     const endpoint=source.backend==='terminal'?'/api/terminal/'+encodeURIComponent(source.agent)+'/session/'+encodeURIComponent(source.id)+'/related':chatBaseFor(source.agent)+'/'+encodeURIComponent(source.id)+'/related';
@@ -177,10 +180,10 @@ function chatWorkspaceSideSetup(source){
     host.replaceChildren();
     const spec={kind:'side',title:source.title,route:result.conversation.route};
     chatMountSideFrame(host,spec);w.entries.get(key).button.textContent='Side chat';w.entries.get(key).spec=spec;w.save();
-   }catch(e){status.textContent=e.message||'Could not create side chat. Retry safely.';}finally{start.disabled=false;}
+   }catch(e){status.textContent=e.message||'Could not create side chat. Retry safely.';start.textContent='Retry creation';}finally{start.disabled=false;}
   };
-  wrap.append(heading,hint,field('Agent',pick),field('Model',model),advanced,status,start);host.append(wrap);return {};
- });
+  wrap.append(heading,hint,field('Agent',pick),field('Model',model),advanced,status,start);host.append(wrap);host.addEventListener('input',()=>w.save());return {getView:()=>({agent:pick.value,model:model.value,cwd:cwd.value,pending:remembered})};
+ },{kind:'side-setup',source});
 }
 
 // Keep routing beside the instruction, while reusing the existing recipient

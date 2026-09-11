@@ -60,6 +60,29 @@ const {chromium}=require('playwright'),fs=require('fs'),path=require('path'),ass
  await p.evaluate(async()=>{chatWorkspaceTabs.close();await Promise.all([...chatWorkspaceStates.values()].map(s=>s.flush()));chatWorkspaceStates.clear();await chatRestoreWorkspace();});
  await p.waitForFunction(()=>document.querySelectorAll('.working-file').length===2&&document.querySelectorAll('.working-file')[1].open);
  assert.equal(await p.locator('.working-file').nth(0).evaluate(e=>e.open),false,'file expansion restores independently');
+ await p.evaluate(()=>{
+  window.sideRequests=[];window.postJSONOk=async(endpoint,payload)=>{sideRequests.push(structuredClone(payload));if(sideRequests.length===1)throw Error('Connection lost');return {id:'side1234',agent:payload.agent,conversation:{route:'#/chat/a/'+payload.agent+'/side1234'}};};
+  chatWorkspaceSideSetup(chatWorkspaceSource());
+ });
+ await p.getByLabel('Side chat working folder').evaluate(e=>e.closest('details').open=true);
+ await p.getByLabel('Side chat working folder').fill('/saved-folder');
+ await p.getByRole('button',{name:'Open side chat',exact:true}).click();await p.getByText('Connection lost',{exact:true}).waitFor();
+ const request=await p.evaluate(()=>sideRequests[0]);
+ await p.evaluate(async()=>{chatWorkspaceTabs.close();await Promise.all([...chatWorkspaceStates.values()].map(s=>s.flush()));chatWorkspaceStates.clear();await chatRestoreWorkspace();});
+ assert.equal(await p.getByLabel('Side chat working folder').inputValue(),'/saved-folder');
+ assert.equal(await p.getByLabel('Side chat agent').isDisabled(),true);
+ assert.equal(await p.evaluate(()=>sideRequests.length),1,'restoring setup never creates a conversation');
+ await p.getByRole('button',{name:'Retry creation',exact:true}).click();await p.waitForFunction(()=>sideRequests.length===2);
+ assert.deepEqual(await p.evaluate(()=>sideRequests[1]),request,'retry preserves exact payload and request identity');
+ await p.addScriptTag({content:components.slice(components.indexOf('function attachmentWorkspace('),components.indexOf('function artifactLineChanges('))});
+ await p.addScriptTag({content:chat.slice(chat.indexOf('function chatOpenAttachment('),chat.indexOf('function chatChangesButton('))});
+ await p.evaluate(()=>{
+  const original=fetch;window.fetch=async(url,opts)=>url.startsWith('/api/tasks/thread/file/')?new Response('attachment content\n'.repeat(200),{headers:{'Content-Type':'text/plain'}}):original(url,opts);
+  chatOpenAttachment({name:'notes.txt'},'/api/tasks/thread/file/fixture?id=agentchat');
+ });
+ await p.waitForFunction(()=>document.querySelector('[aria-label="Attachment preview"] pre'));
+ await p.evaluate(async()=>{document.querySelector('[aria-label="Attachment preview"] .artifact-workspace-body').scrollTop=120;chatWorkspaceTabs.close();await Promise.all([...chatWorkspaceStates.values()].map(s=>s.flush()));chatWorkspaceStates.clear();await chatRestoreWorkspace();});
+ await p.waitForFunction(()=>document.querySelector('[aria-label="Attachment preview"] .artifact-workspace-body')?.scrollTop===120);
  assert.deepEqual(errors,[]);
  console.log('PASS: real artifact draft survives pane and tab switches, scoped model defaults, keyboard tabs, mobile return, route disposal.');
 }finally{await b.close()}})().catch(e=>{console.error(e);process.exit(1)});
