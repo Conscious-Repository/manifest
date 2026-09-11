@@ -180,7 +180,7 @@ function chatWorkspaceSideSetup(source,restore=null){
   let remembered=saved.pending||null;
   const lock=()=>{pick.disabled=model.disabled=cwd.disabled=!!remembered;};lock();if(remembered){status.textContent='Creation is unconfirmed. Retry checks the same request.';start.textContent='Retry creation';}
   start.onclick=async()=>{
-   const coding=pick.value.startsWith('terminal:');let payload={agent:coding?pick.value.slice(9):pick.value,model:model.value.trim(),title:('Side chat · '+source.title).slice(0,240),task:source.task||'',mode:'side',...(coding?{backend:'terminal',cwd:cwd.value.trim()}:{})};
+   const coding=pick.value.startsWith('terminal:');let payload={agent:coding?pick.value.slice(9):pick.value,model:model.value.trim(),title:Array.from('Side chat · '+source.title).slice(0,240).join(''),task:source.task||'',mode:'side',...(coding?{backend:'terminal',cwd:cwd.value.trim()}:{})};
    const selected=chatArtifactSelections.get('chat:'+source.agent+'/'+source.id);if(selected)payload.artifacts=[{id:selected.id,revision:selected.revision}];
    if(remembered)payload=remembered.payload;else remembered={payload,requestId:crypto.randomUUID()};lock();w.save();
    start.disabled=true;status.textContent='Preparing context…';

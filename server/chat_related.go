@@ -5,6 +5,7 @@ import (
 	"manifest/agentchat"
 	"net/http"
 	"strings"
+	"unicode/utf8"
 )
 
 type relatedChatRequest struct {
@@ -24,10 +25,15 @@ func (s *Server) handleChatRelated(w http.ResponseWriter, r *http.Request) {
 		httpError(w, err)
 		return
 	}
-	if len(b.Prompt) > agentChatMaxChars || len(b.Title) > 240 {
-		httpError(w, errBadRequest("handoff is too long"))
+	if len(b.Prompt) > agentChatMaxChars {
+		httpError(w, errBadRequest("handoff instruction exceeds 24000 bytes"))
 		return
 	}
+	if utf8.RuneCountInString(b.Title) > 240 {
+		httpError(w, errBadRequest("conversation title exceeds 240 characters"))
+		return
+	}
+
 	task := strings.TrimSpace(b.Task)
 	origin := agentchat.Origin{Agent: r.PathValue("agent"), ID: r.PathValue("id"), Task: task, Prompt: b.Prompt, Artifacts: b.Artifacts}
 	origin.Backend = r.PathValue("originBackend")

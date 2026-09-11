@@ -28,7 +28,7 @@ func TestSideChatSnapshotIsolationAndRecovery(t *testing.T) {
 					}
 					endpoint = "/api/terminal/claude/session/" + root.ID + "/related"
 				}
-				payload := map[string]any{"agent": target, "mode": "side", "requestId": "side-request-001", "title": "Side chat"}
+				payload := map[string]any{"agent": target, "mode": "side", "requestId": "side-request-001", "title": "Side chat · " + strings.Repeat("界", 228)}
 				if target == "codex" {
 					payload["backend"] = "terminal"
 					payload["model"] = "gpt-6-astra"
