@@ -18,6 +18,7 @@ var ErrConflict = errors.New("conversation state changed on another device")
 var ErrInvalid = errors.New("invalid conversation state")
 var keyRE = regexp.MustCompile(`^conversation-[0-9a-f]{32}$`)
 var landingKeyRE = regexp.MustCompile(`^landing-[0-9a-f]{32}$`)
+var projectKeyRE = regexp.MustCompile(`^project-[0-9a-f]{32}$`)
 var artifactKeyRE = regexp.MustCompile(`^artifact-[0-9a-f]{16}$`)
 
 type Snapshot struct {
@@ -35,7 +36,7 @@ type Store struct {
 
 func New(root string) *Store { return &Store{root: root} }
 func valid(key, slot string) bool {
-	return (key == "inbox" && (slot == "pins" || slot == "workstreams" || slot == "lifecycle")) || (keyRE.MatchString(key) && (slot == "draft" || slot == "view" || slot == "deliveries")) || (landingKeyRE.MatchString(key) && (slot == "draft" || slot == "deliveries")) || (artifactKeyRE.MatchString(key) && slot == "edit")
+	return (key == "inbox" && (slot == "pins" || slot == "workstreams" || slot == "lifecycle")) || (keyRE.MatchString(key) && (slot == "draft" || slot == "view" || slot == "deliveries")) || (landingKeyRE.MatchString(key) && (slot == "draft" || slot == "deliveries")) || ((artifactKeyRE.MatchString(key) || projectKeyRE.MatchString(key)) && slot == "edit")
 }
 func (s *Store) path(key, slot string) string { return filepath.Join(s.root, key+"-"+slot+".json") }
 

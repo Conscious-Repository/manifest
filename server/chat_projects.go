@@ -24,6 +24,7 @@ const projectBlock = "manifest-projects"
 type projectSnapshot struct {
 	chatstate.Snapshot
 	RecordVersion string `json:"record_version"`
+	RecordPath    string `json:"record_path"`
 }
 
 // UseChatProjects migrates once, before serving. Existing vault records always
@@ -58,8 +59,11 @@ func validateProjects(value json.RawMessage) error {
 		return chatstate.ErrInvalid
 	}
 	var v struct {
-		Groups  map[string]string `json:"groups"`
-		Members map[string]string `json:"members"`
+		Groups   map[string]string `json:"groups"`
+		Members  map[string]string `json:"members"`
+		Contexts map[string]struct {
+			Instructions string `json:"instructions"`
+		} `json:"contexts"`
 	}
 	if json.Unmarshal(value, &v) != nil || v.Groups == nil || v.Members == nil {
 		return chatstate.ErrInvalid
@@ -71,6 +75,11 @@ func validateProjects(value json.RawMessage) error {
 	}
 	for key, id := range v.Members {
 		if key == "" || v.Groups[id] == "" {
+			return chatstate.ErrInvalid
+		}
+	}
+	for id, context := range v.Contexts {
+		if v.Groups[id] == "" || len(context.Instructions) > 24000 {
 			return chatstate.ErrInvalid
 		}
 	}
@@ -165,6 +174,7 @@ func (s *Server) handleChatProjects(w http.ResponseWriter, r *http.Request) {
 			return []byte(doc), e
 		})
 	}
+	result.RecordPath = s.chatProjectsPath
 	if errors.Is(err, chatstate.ErrConflict) {
 		w.WriteHeader(409)
 		writeJSON(w, result)

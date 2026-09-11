@@ -85,6 +85,8 @@ function chatEnsureWorkspace(){
 function chatWorkspaceChooser(host){
  const source=chatWorkspaceSource(),chooser=el('div','chat-workspace-chooser');
  const action=(name,description,icon,fn)=>{const b=el('button','chat-workspace-option');b.title=description;b.append(chatWorkspaceIcon(icon),el('span','',name));b.onclick=fn;chooser.append(b);};
+ const project=chatCurrentProject();
+ if(project)action('Context','Review project instructions and reference links','folder',()=>chatEditProject(project));
  if(source?.backend==='terminal'){
   action('Review','Review this working folder','review',()=>chatChangesButton({id:source.id}).click());
   action('Terminal','Open the live terminal below chat','terminal',()=>{chatWorkspaceTabs.show(false);chatOpenTerminalPane(chatTermOpen.se);});

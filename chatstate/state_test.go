@@ -219,3 +219,24 @@ func TestLifecyclePersistsAndRejectsStaleDevice(t *testing.T) {
 		t.Fatalf("read: %+v %v", read, err)
 	}
 }
+
+func TestProjectEditRecoveryIsPrivateAndRevisioned(t *testing.T) {
+	root := t.TempDir()
+	key := "project-0123456789abcdef0123456789abcdef"
+	first, err := New(root).Write(key, "edit", 0, json.RawMessage(`{"name":"Research","instructions":"Unfinished work"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	restored, err := New(root).Read(key, "edit")
+	if err != nil || !bytes.Equal(restored.Value, first.Value) {
+		t.Fatal(restored, err)
+	}
+	if _, err = New(root).Write(key, "edit", 0, json.RawMessage(`{"name":"stale"}`)); !errors.Is(err, ErrConflict) {
+		t.Fatal(err)
+	}
+	for _, slot := range []string{"draft", "deliveries", "view"} {
+		if _, err = New(root).Read(key, slot); !errors.Is(err, ErrInvalid) {
+			t.Fatal("unexpected project slot", slot, err)
+		}
+	}
+}

@@ -579,7 +579,7 @@ let chatWorkstreams={groups:{},members:{}},chatWorkstreamsRevision=-1,chatWorkst
 const chatWorkstreamURL="/api/chat/state/inbox/workstreams";
 function chatApplyWorkstreams(state){
   if(state.key!=="inbox"||state.slot!=="workstreams"||!Number.isSafeInteger(state.revision)||state.revision<chatWorkstreamsRevision)return;
-  chatWorkstreamsRevision=state.revision;chatWorkstreams={groups:state.value?.groups||{},members:state.value?.members||{}};
+  chatWorkstreamsRevision=state.revision;chatWorkstreams={groups:state.value?.groups||{},members:state.value?.members||{},contexts:state.value?.contexts||{},recordVersion:state.record_version||"",recordPath:state.record_path||""};
 }
 async function chatLoadWorkstreams(){try{const r=await fetch(chatWorkstreamURL,{cache:"no-store"});if(r.ok)chatApplyWorkstreams(await r.json());}catch(e){}}
 function chatWorkstreamMember(key){const id=chatWorkstreams.members[key];return chatWorkstreams.groups[id]?id:"";}
@@ -621,6 +621,65 @@ function chatCreateProject(){
   const create=async()=>{if(!name.value.trim()){name.focus();return;}save.disabled=true;try{await chatSaveWorkstream('', '', '',name.value.trim());close();chatRenderWorkstreamFilter();renderChatInboxRows();}catch(e){error.textContent=e.message;}finally{save.disabled=false;}};
   save.onclick=create;name.onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();create();}};actions.append(cancel,save);setTimeout(()=>name.focus(),0);
  });
+}
+// Context is a visible, immutable input in the first user turn, never hidden
+// system authority. Existing conversations keep the snapshot they started with.
+function chatProjectInitialText(project,text){
+ const instructions=chatWorkstreams.contexts?.[project]?.instructions?.trim();
+ if(!instructions)return text;
+ return 'Project context: '+chatWorkstreams.groups[project]+'\nSource: '+(chatWorkstreams.recordPath||'saved project record')+' · '+(chatWorkstreams.recordVersion||'saved project')+'\n\n'+instructions+'\n\n---\nCurrent request:\n'+text;
+}
+function chatCurrentProject(){
+ if(!chatOpenId)return chatPendingProject;
+ return chatWorkstreamMember(chatInboxKey({agent:chatAgent,terminal:chatIsTerm(),session:{id:chatOpenId}}));
+}
+const chatProjectDrafts=new Map();
+function chatEditProject(id){
+ const build=host=>{
+  host.classList.add('chat-project-editor');
+  const title=el('h3','','Project context'),name=document.createElement('input'),notes=document.createElement('textarea');
+  name.className='pp-in';name.maxLength=80;name.setAttribute('aria-label','Project name');
+  notes.rows=10;notes.maxLength=24000;notes.setAttribute('aria-label','Project instructions');
+  const nameLabel=el('label','','Name'),notesLabel=el('label','','Instructions and reference links');nameLabel.append(name);notesLabel.append(notes);
+  const hint=el('p','chat-workspace-hint','Included in new private chats. Existing chats keep their original context.');
+  const status=el('p','chat-workspace-hint'),actions=el('div','form-actions chat-project-edit-actions'),save=el('button','chat-dialog-primary','save'),reload=el('button','sprt-quiet','reload saved');status.setAttribute('role','status');
+  host.append(title,hint,nameLabel,notesLabel,status,actions);actions.append(reload,save);
+  let snapshot=null,dirty=false,closed=false,draft=null,sourceConflict=false;
+  const reviewSource=latest=>{
+   sourceConflict=true;save.disabled=true;const compare=el('details','chat-project-compare'),content=el('pre','',latest.value.groups[id]+'\n\n'+(latest.value.contexts?.[id]?.instructions||'')),accept=el('button','sprt-quiet','keep my edits after review');compare.open=true;compare.append(el('summary','','Saved version changed'),content,accept);host.querySelector('.chat-project-compare')?.remove();host.append(compare);
+   accept.onclick=()=>{snapshot=latest;sourceConflict=false;compare.remove();draft?.set({name:name.value,instructions:notes.value,recordVersion:snapshot.record_version});save.disabled=!!draft?.conflict;status.textContent='Reviewed saved version. Save to replace this project’s instructions with your edits.';};
+  };
+  const applyDraft=()=>{if(draft?.value){name.value=draft.value.name;notes.value=draft.value.instructions;dirty=true;status.textContent='Restored unfinished edit';if(draft.value.recordVersion&&draft.value.recordVersion!==snapshot?.record_version)reviewSource(snapshot);}else if(snapshot){name.value=snapshot.value.groups[id];notes.value=snapshot.value.contexts?.[id]?.instructions||'';dirty=false;}};
+  const load=async()=>{status.textContent='loading…';save.disabled=true;name.disabled=notes.disabled=true;try{
+   const r=await fetch(chatWorkstreamURL,{cache:'no-store'});if(!r.ok)throw Error('Project context could not be loaded.');
+   const value=await r.json();if(closed)return;if(!value.value?.groups?.[id])throw Error('Project is no longer available.');
+   snapshot=value;name.value=value.value.groups[id];notes.value=value.value.contexts?.[id]?.instructions||'';dirty=false;status.textContent='';
+   if(!draft){
+    const digest=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(id));const key='project-'+Array.from(new Uint8Array(digest)).slice(0,16).map(b=>b.toString(16).padStart(2,'0')).join('');
+    if(!chatProjectDrafts.has(id))chatProjectDrafts.set(id,new ChatDraftState(key,null,'edit'));draft=chatProjectDrafts.get(id);
+    draft.changed=(state,apply)=>{if(closed)return;if(apply)applyDraft();if(state.error)status.textContent=state.error;if(state.conflict){status.textContent='An unfinished edit changed on another device.';conflictActions.hidden=false;save.disabled=true;}};
+    await draft.refresh();if(closed)return;applyDraft();
+   }
+  }catch(e){status.textContent=e.message;}finally{if(!closed){name.disabled=notes.disabled=!snapshot;save.disabled=!snapshot||!!draft?.conflict||sourceConflict;}}};
+  const conflictActions=el('div','form-actions chat-project-edit-actions'),keep=el('button','sprt-quiet','keep my draft'),use=el('button','sprt-quiet','use saved draft');conflictActions.hidden=true;conflictActions.append(keep,use);host.append(conflictActions);
+  keep.onclick=async()=>{await draft.resolve(false);conflictActions.hidden=true;save.disabled=sourceConflict;};use.onclick=async()=>{await draft.resolve(true);conflictActions.hidden=true;save.disabled=sourceConflict;applyDraft();};
+  const changed=()=>{dirty=true;status.textContent='Unsaved changes';draft?.set({name:name.value,instructions:notes.value,recordVersion:draft?.value?.recordVersion||snapshot?.record_version});};name.oninput=notes.oninput=changed;
+  reload.onclick=()=>{if(dirty){status.textContent='Discard this unfinished edit? ';const discard=el('button','sprt-quiet','discard draft and reload');discard.onclick=()=>{draft?.set(null);draft?.flush();dirty=false;sourceConflict=false;host.querySelector('.chat-project-compare')?.remove();load();};status.append(discard);return;}load();};
+  save.onclick=async()=>{if(!snapshot||draft?.conflict||sourceConflict||!name.value.trim()){name.focus();return;}save.disabled=true;const savedName=name.value.trim(),savedNotes=notes.value;
+   try{const value={...snapshot.value,groups:{...snapshot.value.groups,[id]:savedName},contexts:{...snapshot.value.contexts,[id]:{...snapshot.value.contexts?.[id],instructions:savedNotes}}};
+    const r=await fetch(chatWorkstreamURL,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({revision:snapshot.revision,record_version:snapshot.record_version,value})});
+    if(r.status===409){
+     const latest=await r.json();reviewSource(latest);
+     throw Error('Project changed elsewhere. Compare the saved version below; your edits are retained.');
+    }
+    if(!r.ok)throw Error('Project context was not saved.');snapshot=await r.json();chatApplyWorkstreams(snapshot);chatRenderWorkstreamFilter();renderChatInboxRows();
+    dirty=name.value.trim()!==savedName||notes.value!==savedNotes;if(!dirty){draft?.set(null);draft?.flush();}else{draft?.set({name:name.value,instructions:notes.value,recordVersion:snapshot.record_version});}status.textContent=dirty?'Saved; newer edits remain':'Saved';
+   }catch(e){status.textContent=e.message;}finally{save.disabled=sourceConflict||!!draft?.conflict;}
+  };
+  load();return {close(){closed=true;if(draft){draft.changed=null;draft.flush();}}};
+ };
+ if(document.querySelector('.chat-shell')&&chatOpenId&&typeof chatEnsureWorkspace==='function')chatEnsureWorkspace().tab('project:'+id,chatWorkstreams.groups[id]||'Project context',build);
+ else reviewDialog('Project context',({body,actions,close})=>{body.closest('dialog').classList.add('chat-project-context-dialog');const api=build(body),done=el('button','sprt-quiet','close');done.onclick=close;body.closest('dialog').addEventListener('close',()=>api.close(),{once:true});actions.append(done);});
 }
 function chatChooseWorkstream(entry){
   const key=chatInboxKey(entry),expected=chatWorkstreams.members[key]||"";
@@ -714,7 +773,7 @@ function chatRenderProjectGroups(host,entries,rows){
   section.append(summary,list);section.addEventListener('toggle',()=>{if(section.open)state.collapsed.delete(key);else state.collapsed.add(key);});
   const all=!!chatSearchQuery||state.expanded.has(key);
   group.rows.forEach((row,index)=>{if(all||index<5||row.classList.contains('open')||chatPins[chatInboxKey(group.entries[index])])list.append(row);});
-  if(key.startsWith('workstream:')){const start=el('button','sprt-quiet chat-project-more','New chat');start.onclick=()=>{chatWorkstreamFilter=key.slice(11);chatRenderWorkstreamFilter();document.querySelector('#chatHeadActions button')?.click();};list.append(start);}
+  if(key.startsWith('workstream:')){const start=el('button','sprt-quiet chat-project-more','New chat');start.onclick=()=>{chatWorkstreamFilter=key.slice(11);chatRenderWorkstreamFilter();document.querySelector('#chatHeadActions button')?.click();};list.append(start);const context=el('button','sprt-quiet chat-project-more','Project context');context.onclick=()=>chatEditProject(key.slice(11));list.append(context);}
   const remaining=group.rows.length-group.rows.filter(row=>row.parentNode===list).length;
   if(remaining>0||all&&group.rows.length>5&&!chatSearchQuery){const more=el('button','sprt-quiet chat-project-more',remaining>0?'Show more':'Show less');more.onclick=()=>{if(state.expanded.has(key))state.expanded.delete(key);else state.expanded.add(key);renderChatInboxRows();};list.append(more);}
   host.append(section);
@@ -932,6 +991,7 @@ async function renderChatLanding() {
     for(const [id,label] of [['','Standalone chat'],...Object.entries(chatWorkstreams.groups)]){const o=el('option','',label);o.value=id;project.append(o);}
     project.value=chatWorkstreams.groups[chatPendingProject]?chatPendingProject:'';chatPendingProject=project.value;project.onchange=()=>{chatPendingProject=project.value;};
     const field=el('label','chat-new-folder','Project');field.append(project);host.append(field);
+    const context=el('button','sprt-quiet','Review project context');context.hidden=!project.value||chatIsPortal();context.onclick=()=>chatEditProject(project.value);host.append(context);project.onchange=()=>{chatPendingProject=project.value;context.hidden=!project.value||chatIsPortal();};
   }
 
   if (chatIsTerm()) { renderChatTermLanding(host); return; }
@@ -1942,7 +2002,8 @@ function renderChatComposer(session) {
         ta.value="";chatPendingFiles=[];grow();mention.hidden=true;syncAttach();
       }
     };
-    const payload = chatIsPortal() ? { text, files, ritual: chatRitual } : { text, files };
+    const initialText = !sendSession&&!chatIsPortal() ? chatProjectInitialText(sendProject,text) : text;
+    const payload = chatIsPortal() ? { text, files, ritual: chatRitual } : { text:initialText, files };
     const selected=chatArtifactSelections.get("chat:"+draftKey);
     const chosenRecipient=chatRecipients.get(draftKey);
     if(session?.shared && (session.continuations||[]).length && !chosenRecipient){showToast("Choose the agent for this message above the conversation.");chatSending=false;renderChatComposer(chatCurSession);return;}
@@ -1976,7 +2037,7 @@ function renderChatComposer(session) {
     if (chatIsTerm()) {
       // claude/codex: runtime input (explicitly resuming an ended session first); a
       // landing send creates the registry row, then delivers
-      try { if (!await chatTermSend(text,selected?{task:selected.task,artifacts:[{id:selected.id,revision:selected.revision}]}:{})) {
+      try { if (!await chatTermSend(initialText,selected?{task:selected.task,artifacts:[{id:selected.id,revision:selected.revision}]}:{})) {
         showToast("Send not confirmed. Your draft is retained.");
       }else acceptedDraft(); }
       finally { chatSending = false; renderChatComposer(chatCurSession); }
@@ -2003,7 +2064,7 @@ function renderChatComposer(session) {
       } else {
         // lazy create (cmd-ctr model): the landing's chosen spirit/model
         const r = await postJSONOk("/api/chat/sessions", {
-          spirit: chatPendingSpirit || "concierge", model: chatPendingModel || "", text,
+          spirit: chatPendingSpirit || "concierge", model: chatPendingModel || "", text:initialText,
         });
         acceptedDraft();
         await chatAssignNewProject(sendAgent,r.id,false,sendProject);

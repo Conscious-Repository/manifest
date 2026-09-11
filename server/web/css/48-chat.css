@@ -649,3 +649,16 @@ button.chat-attach-chip { min-height: 44px; max-width: 100%; background: transpa
 
 .chat-new-choice > span:first-child { flex:0 0 auto; white-space:nowrap; }
 .chat-workstream-dialog .sprt-quiet { border-color:transparent; background:transparent; color:var(--base-70); }
+
+/* Authored project context uses the same compact inspector as output review. */
+.chat-project-editor { box-sizing:border-box; padding:var(--sp-8); display:flex; flex-direction:column; gap:var(--sp-7); min-width:0; }
+.chat-project-editor h3, .chat-project-editor p { margin:0; }
+.chat-project-editor h3 { font-size:var(--fs-xl); }
+.chat-project-editor label { display:flex; flex-direction:column; gap:var(--sp-4); font-size:var(--fs-md); }
+.chat-project-editor textarea { box-sizing:border-box; width:100%; min-width:0; padding:var(--sp-6); font:var(--fs-lg)/1.5 var(--sans); color:var(--text); background:var(--surface-field); border:1px solid var(--line); border-radius:var(--radius-lg); resize:vertical; }
+.chat-project-edit-actions { display:flex; justify-content:flex-end; gap:var(--sp-4); flex-wrap:wrap; }
+.chat-project-context-dialog { width:min(560px,calc(100vw - 32px)); }
+.chat-project-context-dialog .chat-project-editor { padding:0; }
+.chat-project-context-dialog .chat-project-editor > h3 { display:none; }
+
+.chat-project-compare pre { white-space:pre-wrap; overflow-wrap:anywhere; font:var(--fs-md)/1.5 var(--sans); padding:var(--sp-6); border:1px solid var(--line); }

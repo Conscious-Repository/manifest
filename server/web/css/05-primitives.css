@@ -319,3 +319,10 @@
 .review-dialog .review-dialog-actions button:disabled { opacity:.5; cursor:default; }
 .review-dialog :is(input,select,button):focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
 @media(max-width:600px){ .review-dialog { padding:20px; } .review-dialog .review-dialog-actions button { min-height:44px; } }
+
+/* Form actions also work inside inspectors, outside a modal footer. */
+.form-actions { display:flex; justify-content:flex-end; align-items:center; gap:var(--sp-4); flex-wrap:wrap; }
+.form-actions button { min-height:var(--control-touch); padding:var(--sp-4) var(--sp-7); border:1px solid var(--line); border-radius:var(--radius-lg); background:var(--surface-field); color:var(--text); font:500 var(--fs-lg)/1.4 var(--sans); cursor:pointer; }
+.form-actions .sprt-quiet { background:transparent; border-color:transparent; color:var(--muted); }
+.form-actions button:disabled { opacity:.5; cursor:default; }
+.form-actions button:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
