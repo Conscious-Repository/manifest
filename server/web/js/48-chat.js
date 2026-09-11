@@ -1721,7 +1721,7 @@ function renderChatComposer(session) {
     const ta = host.querySelector("textarea");
     const send = host.querySelector(".chat-send");
     if (ta) ta.placeholder = placeholder();
-    if (send) { send.disabled = busy; send.textContent = uploading ? "…" : chatIsTerm() ? "↵" : "↑"; send.title=uploading?"Uploading attachments…":"send · Enter (Shift+Enter for a new line)"; } // a prompt line ends in enter
+    if (send) { send.disabled = busy; send.textContent = uploading ? "…" : "↑"; send.title=uploading?"Uploading attachments…":"send · Enter (Shift+Enter for a new line)"; } // a prompt line ends in enter
     syncAttach();
     chatRenderDeliveryNotice(host,draftKey);
     chatRenderArtifactContext(session?.task,"chat:"+draftKey);
@@ -1806,7 +1806,7 @@ function renderChatComposer(session) {
     c.onclick = () => { chatRitual = key; syncAttach(); ta.focus(); };
     ritual.append(c);
   });
-  const send = el("button", "chat-send", uploading ? "…" : chatIsTerm() ? "↵" : "↑");
+  const send = el("button", "chat-send", uploading ? "…" : "↑");
   send.title = uploading ? "Uploading attachments…" : "send · Enter (Shift+Enter for a new line)";
   send.disabled = busy;
   const submit = async () => {
@@ -2328,11 +2328,11 @@ function chatTermComposerSession() {
 // the prompt line's hint reads like a shell's, lowercase
 function chatTermPlaceholder() {
   if (chatTermSending) return "sending…";
-  if (chatTermOpen?.se.process === "not-started") return "enter starts this session and sends · shift+enter for a new line";
-  if (!chatOpenId) return "enter starts a new " + chatTermKinds[chatAgent] + " session there and sends";
+  if (chatTermOpen?.se.process === "not-started") return "Message "+(chatTermKinds[chatAgent]||"agent")+"… Sending starts this session.";
+  if (!chatOpenId) return "Message " + chatTermKinds[chatAgent] + "…";
   if (chatTermOpen && chatTermOpen.se.backend === "herdr" && chatTermOpen.se.connectivity !== "connected") return "runtime unavailable · open in terminal to inspect";
-  if (chatTermOpen && chatTermOpen.live) return "enter sends to the live session · shift+enter for a new line";
-  return "enter resumes the session, then sends";
+  if (chatTermOpen && chatTermOpen.live) return "Message "+(chatTermKinds[chatAgent]||"agent")+"…";
+  return "Message… Sending resumes this session.";
 }
 
 // chatTermSyncOpen — after metadata loads or an event: the open row's liveness/name may
@@ -2476,12 +2476,23 @@ function chatTermPaintTurns() {
 }
 
 // ---- the terminal painter ----
-// A claude/codex thread is a CLI session, so it paints as one: the user's
-// turns are commands behind a prompt glyph, the agent's turns are raw output
-// lines, its tool calls are step markers — no bubbles, no cards, mono
-// throughout, on the terminal's dark surface (.chat-main.term, 48-chat.css).
-// The block grammar is the shared one (chatTurnBlocks); only the paint
-// differs, so the Alfred/Kairos/Zeck/spirits sections keep chatPaintTurns.
+// Native sessions use the same readable conversation hierarchy as other agents.
+// Execution detail remains available in expandable activity; the live terminal
+// remains a separate control surface. Transport and runtime identity are unchanged.
+const chatActivityOpen = new Map();
+function chatTermActivity(blocks, key) {
+  const details=document.createElement("details");
+  details.className="chat-term-activity";
+  details.open=chatActivityOpen.get(key)||false;
+  const errors=blocks.filter(b=>b.error).length;
+  const summary=document.createElement("summary");
+  summary.textContent="Activity · "+blocks.length+" step"+(blocks.length===1?"":"s")+(errors?" · "+errors+" failed":"");
+  if(errors)summary.classList.add("has-error");
+  details.append(summary);
+  blocks.forEach(b=>details.append(chatTermBlockEl(b)));
+  details.addEventListener("toggle",()=>{chatActivityOpen.set(key,details.open);if(chatActivityOpen.size>500)chatActivityOpen.delete(chatActivityOpen.keys().next().value);});
+  return details;
+}
 const chatTermPromptGlyph = "❯";
 const chatTermStepGlyph = "→";
 const chatTermResultGlyph = "⎿";
@@ -2503,7 +2514,13 @@ function chatTermPaintLines(host, turns) {
     const out = el("div", "chat-term-out");
     if(t.id)out.dataset.chatReadTurn=t.id;
     const proposal=chatTermOpen?.planRevisions?.[t.id];
-    chatProposalBlocks(t,proposal).forEach(b=>out.append(chatTermBlockEl(b)));
+    const blocks=chatProposalBlocks(t,proposal);
+    for(let i=0;i<blocks.length;) {
+      if(blocks[i].t==="say") {out.append(chatTermBlockEl(blocks[i++]));continue;}
+      const first=i,activity=[];
+      while(i<blocks.length&&blocks[i].t!=="say")activity.push(blocks[i++]);
+      out.append(chatTermActivity(activity,(chatTermOpen?.id||chatOpenId)+":"+t.id+":"+first));
+    }
     if(proposal)out.append(chatPlanReviewButton(proposal));
     const meta = [];
     if (t.ts) meta.push(fmtWhen(t.ts));
@@ -2912,7 +2929,9 @@ function chatOpenWorkingArtifact(spec) {
   };
   chatWorkspace=artifactWorkspace(shell,{
     load, revision:spec.revision,proposal:spec.proposal,
-    save:spec.plan ? (text,expectedRevision)=>postJSONOk("/api/tasks/plan",{id:taskID,text,expectedRevision}):null,
+    save:spec.plan ? (text,expectedRevision)=>postJSONOk("/api/tasks/plan",{id:taskID,text,expectedRevision}):(text,expectedRevision)=>postJSONOk("/api/artifacts/text",{id:spec.id,content:text,expectedRevision}),
+    canEdit:spec.plan ? null : a=>/\.(md|txt|json|csv|tsv|yaml|yml|toml|js|jsx|ts|tsx|py|go|html|css|sql|sh|xml|svg)$/i.test(a.ref||"") && a.provenance?.source!=="task-plan",
+    saveNotice:spec.plan ? null : "Saved as a new artifact version. Use Discuss this version to ask the agent to apply it to working files.",
     onClose:()=>{shell.classList.remove("has-artifact");chatWorkspace=null;},
     onDiscuss: (taskID||spec.discuss) && (key.startsWith("task:") || chatRosterEntry(chatAgent)?.durableSend || chatIsTerm()) ? ref=>{
       chatArtifactSelections.set(key,{...ref,task:taskID,discuss:!!spec.discuss});

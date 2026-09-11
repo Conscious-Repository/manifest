@@ -18,6 +18,7 @@ type EmailAttachment struct {
 	Name string `json:"name"`
 }
 type EmailInput struct {
+	MonitorReplies bool              `json:"monitorReplies,omitempty"`
 	Domain         string            `json:"domain"`
 	To             []string          `json:"to"`
 	Cc             []string          `json:"cc,omitempty"`
@@ -86,7 +87,7 @@ func (a *Adapter) emailPrepare(q EmailInput) (Object, error) {
 	if err != nil {
 		return nil, err
 	}
-	preview := Object{"domain": domain, "deliveryId": d.ID, "envelopeHash": d.Hash, "email": Object{"from": d.Message.From, "to": d.Message.To, "cc": d.Message.Cc, "subject": d.Message.Subject, "body": d.Message.Body, "inReplyTo": d.Message.InReplyTo, "references": d.Message.References, "attachments": q.Attachments}}
+	preview := Object{"monitorReplies": q.MonitorReplies, "domain": domain, "deliveryId": d.ID, "envelopeHash": d.Hash, "email": Object{"from": d.Message.From, "to": d.Message.To, "cc": d.Message.Cc, "subject": d.Message.Subject, "body": d.Message.Body, "inReplyTo": d.Message.InReplyTo, "references": d.Message.References, "attachments": q.Attachments}}
 	return prepared("email.prepare", "human_approval", preview), nil
 }
 
@@ -175,6 +176,9 @@ func (a *Adapter) executeEmail(ctx context.Context, o *OperationRecord) (Object,
 		if d.Status == "uncertain" {
 			o.Status = "partial"
 		}
+	}
+	if o.Status == "succeeded" && o.EmailWatch == nil && emailWatchRequested(o.Arguments) {
+		o.EmailWatch = &EmailWatch{Enabled: true, Replies: []EmailReply{}}
 	}
 	if e := a.saveOperation(o); e != nil {
 		return nil, e

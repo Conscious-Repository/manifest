@@ -1658,8 +1658,9 @@ function manifestOperationCard(item) {
   const target = (p.candidate || p.person || p.suppression || {}).name || (p.draft && p.draft.draft && p.draft.draft.name) || "";
   const card = el("article", "feed-card chat-operation");
   card.dataset.approvalId = a.id;
-  card.append(el("strong", "", a.action + (target ? " · " + target : "") + " · " + o.status));
-  card.append(el("p", "", o.policy === "standing_authorization" ? "Standing authorization · no approval needed" : "Human approval · shared with FEED"));
+  const heading=p.email ? (o.status==="succeeded"?"Email sent":o.status==="pending_approval"?"Review email": "Email · "+o.status) : a.action + (target ? " · " + target : "") + " · " + o.status;
+  card.append(el("strong", "", heading));
+  if(!p.email||o.status==="pending_approval")card.append(el("p", "", p.email?"Requires your approval":o.policy === "standing_authorization" ? "Standing authorization · no approval needed" : "Human approval · shared with FEED"));
   if(p.email){
     const m=p.email;
     card.append(el("p","","From: "+m.from),el("p","","To: "+(m.to||[]).join(", ")));
@@ -1714,6 +1715,23 @@ function manifestOperationCard(item) {
     if (chatOpenId && chatAgent) refetchChatSession(chatOpenId);
     loadFeed();
   });
+  if(p.email && o.status==="succeeded") {
+    const watch=o.emailWatch;
+    const section=el("section","chat-email-watch");
+    section.append(el("strong","","Replies"));
+    section.append(el("p","",watch?.enabled ? (watch.error|| (watch.checkedAt ? ((watch.total||0)+" replies · checked "+new Date(watch.checkedAt).toLocaleString()) : "Tracking enabled · waiting for first check")) : "Reply tracking is off"));
+    const toggle=el("button","ghost",watch?.enabled?"Stop tracking":"Track replies");
+    toggle.onclick=async()=>{toggle.disabled=true;try{await postJSONOk("/api/manifest/operations/"+encodeURIComponent(o.operationId)+"/email-watch",{enabled:!watch?.enabled});if(typeof chatOpenId!=="undefined"&&chatOpenId)refetchChatSession(chatOpenId);loadFeed();}catch(e){showToast(e.message||"Could not update reply tracking");toggle.disabled=false;}};
+    section.append(toggle);
+    if(watch?.enabled)section.append(el("p","sprt-sub","Checks this sent thread every five minutes. Requires this sender's read-only Gmail connection."));
+    if(watch?.total>50)section.append(el("p","","Showing the latest 50 replies."));
+    for(const reply of watch?.replies||[]){
+      const detail=el("details","");detail.append(el("summary","",reply.from+" · "+new Date(reply.at).toLocaleString()));
+      const body=el("pre","chat-email-body",reply.body);body.style.whiteSpace="pre-wrap";body.style.overflowWrap="anywhere";detail.append(body);
+      if(reply.clipped)detail.append(el("p","","Preview shortened. Open the mailbox for the full message."));section.append(detail);
+    }
+    card.append(section);
+  } else if(p.monitorReplies)card.append(el("p","","Reply tracking will start after confirmed sending."));
   if (o.result) {
     const receipt = el("details", ""); receipt.append(el("summary", "", "Result · " + o.status));
     receipt.append(el("pre", "", JSON.stringify(o.result, null, 2))); card.append(receipt);

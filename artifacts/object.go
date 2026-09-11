@@ -214,17 +214,20 @@ func NewRegistry(pool *Store) (*Registry, error) {
 }
 
 // Put registers content as an artifact — or as a new revision of one.
+var ErrRevisionConflict = errors.New("artifact changed; review the latest version before saving")
+
 type Put struct {
-	ID         string     // revise THIS artifact; "" resolves by Harness+Ref, else creates
-	Kind       string     // KindFile when empty (ignored on a revision)
-	Title      string     // set/refreshed when non-empty
-	Harness    string     // the tree Ref is relative to
-	Ref        string     // harness-relative path the bytes live at (may be empty: pool-only)
-	Content    []byte     // the bytes — required, non-empty
-	Actor      string     // who is putting
-	Note       string     // one line on this version
-	At         time.Time  // now when zero
-	Provenance Provenance // merged into the artifact's (never unlearned)
+	ExpectedHead string     // optional compare-and-swap guard for interactive edits
+	ID           string     // revise THIS artifact; "" resolves by Harness+Ref, else creates
+	Kind         string     // KindFile when empty (ignored on a revision)
+	Title        string     // set/refreshed when non-empty
+	Harness      string     // the tree Ref is relative to
+	Ref          string     // harness-relative path the bytes live at (may be empty: pool-only)
+	Content      []byte     // the bytes — required, non-empty
+	Actor        string     // who is putting
+	Note         string     // one line on this version
+	At           time.Time  // now when zero
+	Provenance   Provenance // merged into the artifact's (never unlearned)
 }
 
 // PutResult reports what Put did. Created: a new object. Changed: a revision
@@ -271,6 +274,9 @@ func (r *Registry) Put(p Put) (PutResult, error) {
 		}
 	case p.Ref != "":
 		cur, have = r.byRef(p.Harness, p.Ref)
+	}
+	if p.ExpectedHead != "" && (!have || cur.Head != p.ExpectedHead) {
+		return PutResult{}, ErrRevisionConflict
 	}
 	if !have {
 		id := IDFor(p.Kind, p.Harness, p.Ref, hash)

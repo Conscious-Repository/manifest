@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -25,6 +26,7 @@ import (
 // input. Body is decoded plaintext (or a stripped HTML fallback), verbatim
 // sender text.
 type Msg struct {
+	Sent        bool // provider SENT label; excludes aliases of the sending mailbox
 	ID          string
 	From        string
 	To          string
@@ -42,7 +44,8 @@ type Msg struct {
 
 // Client is one member's read-only mailbox handle.
 type Client struct {
-	http *http.Client
+	mailbox string
+	http    *http.Client
 }
 
 // NewClient builds a client over a member's token source (Tokens.Source).
@@ -99,11 +102,22 @@ func (c *Client) ThreadIDsSince(ctx context.Context, after time.Time, max int) (
 	return ids, nil
 }
 
+// NewMailboxClient pins requests to the exact connected account.
+func NewMailboxClient(src oauth2.TokenSource, mailbox string) *Client {
+	c := NewClient(src)
+	c.mailbox = mailbox
+	return c
+}
+
 // ThreadFull fetches one thread with full bodies (one GET), returning the
 // subject (first message wins) and the ordered messages with decoded
 // plaintext bodies.
 func (c *Client) ThreadFull(ctx context.Context, id string) (string, []Msg, error) {
-	u := "https://gmail.googleapis.com/gmail/v1/users/me/threads/" + url.PathEscape(id) + "?format=full"
+	mailbox := c.mailbox
+	if mailbox == "" {
+		mailbox = "me"
+	}
+	u := "https://gmail.googleapis.com/gmail/v1/users/" + url.PathEscape(mailbox) + "/threads/" + url.PathEscape(id) + "?format=full"
 	var tr struct {
 		Messages []gmailMessage `json:"messages"`
 	}
@@ -125,6 +139,7 @@ func (c *Client) ThreadFull(ctx context.Context, id string) (string, []Msg, erro
 		}
 		msgs = append(msgs, Msg{
 			ID:          m.ID,
+			Sent:        slices.Contains(m.LabelIDs, "SENT"),
 			From:        m.header("From"),
 			To:          m.header("To"),
 			Cc:          m.header("Cc"),
@@ -140,6 +155,7 @@ func (c *Client) ThreadFull(ctx context.Context, id string) (string, []Msg, erro
 }
 
 type gmailMessage struct {
+	LabelIDs     []string  `json:"labelIds"`
 	ID           string    `json:"id"`
 	InternalDate string    `json:"internalDate"` // ms epoch, string
 	Payload      gmailPart `json:"payload"`

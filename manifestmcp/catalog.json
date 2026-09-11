@@ -198,10 +198,13 @@
         "idempotentHint": false,
         "readOnlyHint": false
       },
-      "description": "Prepare an immutable email for owner review in Chat and Feed. Specify the correspondence domain (aion or ooda) for external recipients. Personal is unavailable. Never sends; execution requires owner approval. Attachments are exact content-addressed files owned by that domain.",
+      "description": "Prepare an immutable email for owner review in Chat and Feed. Specify the correspondence domain (aion or ooda) for external recipients. Personal is unavailable. Never sends; execution requires owner approval. Attachments are exact content-addressed files owned by that domain. Set monitorReplies when the owner requests ongoing reply tracking after sending.",
       "inputSchema": {
         "type": "object",
         "properties": {
+          "monitorReplies": {
+            "type": "boolean"
+          },
           "domain": {
             "type": "string"
           },
@@ -758,6 +761,12 @@
                 "type": "string"
               },
               "ref": {
+                "type": "string"
+              },
+              "sourceRef": {
+                "type": "string"
+              },
+              "orcid": {
                 "type": "string"
               },
               "unknown": {

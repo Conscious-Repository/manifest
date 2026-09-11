@@ -762,7 +762,7 @@ function artifactWorkspace(mount, options) {
       };
       controls.append(discuss);
     }
-    if (opts.save && !binary) {
+    if (opts.save && !binary && (!opts.canEdit || opts.canEdit(current))) {
       const edit = el("button", "sprt-quiet", selected === current.head ? "Edit" : "Restore this version");
       edit.onclick = () => editVersion(selected !== current.head);
       if(editState?.value){
@@ -781,7 +781,7 @@ function artifactWorkspace(mount, options) {
     if(editState&&!resume)editState.set(started);
     const input = document.createElement("textarea");
     input.className = "artifact-workspace-editor"; input.value = started.text; editor=input;
-    input.setAttribute("aria-label", "Plan content");
+    input.setAttribute("aria-label", "File content");
     body.replaceChildren(input);
     controls.replaceChildren();
     const save = el("button", "sprt-quiet", restore ? "Save restored version" : "Save new version");
@@ -817,7 +817,7 @@ function artifactWorkspace(mount, options) {
         if(editState&&chatStateEqual(editState.value,submitted)){editState.set(null);await editState.flush();}
         const a = await opts.load();
         await show(a,a.head);
-        notice.textContent = "New version saved. Execution has not started.";
+        notice.textContent = opts.saveNotice || "New version saved. Execution has not started.";
       } catch(e) { notice.textContent = e.message; }
       finally { save.disabled = false;input.disabled=false;discard.disabled=false;review.disabled=false; }
     };

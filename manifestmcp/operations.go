@@ -32,6 +32,7 @@ type Transition struct {
 }
 
 type OperationRecord struct {
+	EmailWatch      *EmailWatch       `json:"emailWatch,omitempty"`
 	CacheFiles      map[string]string `json:"cacheFiles,omitempty"`
 	BeforeFiles     map[string]string `json:"beforeFiles,omitempty"`
 	Input           json.RawMessage   `json:"input,omitempty"`

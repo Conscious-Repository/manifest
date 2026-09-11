@@ -379,3 +379,11 @@ visible beside the document on desktop; switch to a single document surface with
 explicitly selects immutable context, and “Save new version” remains separate from
 execution. Use the existing registry for revision bytes and the existing vault
 writer for editable plan sections; never make a second editable plan store.
+
+## Chat across runtimes
+
+Native coding sessions use the same readable prose and composer hierarchy as other conversations. Monospace identifies code, tool activity and the live terminal, not ordinary messages. Consecutive execution blocks may collapse under Activity; failures remain evident in its summary, and approvals stay independently visible. Keep native runtime identity and all original execution detail available.
+
+Chat's text artifact editor reuses the plan workspace: preview, compare, save a new version, restore, and discuss exact bytes. Supported UTF-8 text artifacts are edited in the registry; saving does not modify a runtime working file. The save notice explains how to discuss/apply that version with the agent. Binary files and generated Git change snapshots stay preview-only. Canonical task plans continue through the existing vault writer. Interactive artifact saves reject stale head hashes before appending a revision.
+
+External-action approvals remain owner-only, including in shared conversations. Shared terminal control is a separate capability and does not confer email approval rights.

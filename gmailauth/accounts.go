@@ -363,3 +363,32 @@ func ParsePasted(pasted string) (code, state string, err error) { return parsePa
 
 // RandState mints an OAuth state token.
 func RandState() string { return randState() }
+
+// ReadSource resolves only the requested connected mailbox; it never falls
+// back to the primary account. The caller still pins Gmail's userId in requests.
+func (c *Client) ReadSource(ctx context.Context, email string) (oauth2.TokenSource, error) {
+	email = strings.ToLower(strings.TrimSpace(email))
+	if email == "" {
+		return nil, errors.New("mailbox required")
+	}
+	var selected *storedToken
+	for _, path := range []string{tokenPath(), extraTokenPath(email)} {
+		b, err := os.ReadFile(path)
+		if err != nil {
+			continue
+		}
+		var st storedToken
+		if json.Unmarshal(b, &st) == nil && strings.EqualFold(st.Email, email) && st.Token != nil {
+			selected = &st
+			break
+		}
+	}
+	if selected == nil {
+		return nil, errors.New("connect the sender's read-only Gmail account to track replies")
+	}
+	cfg, err := oauthConfig()
+	if err != nil {
+		return nil, errors.New("Gmail read-only connection unavailable")
+	}
+	return cfg.TokenSource(ctx, selected.Token), nil
+}

@@ -379,6 +379,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/tasks/plan/workspace", s.handleTaskPlanWorkspace)
 	mux.HandleFunc("GET /api/artifacts/get", s.handleArtifactGet)        // ?id=&content=1&rev=
 	mux.HandleFunc("POST /api/artifacts/create", s.handleArtifactCreate) // {kind,title,ref|content,task,run,…}
+	mux.HandleFunc("POST /api/artifacts/text", s.handleArtifactText)
 	mux.HandleFunc("POST /api/artifacts/revise", s.handleArtifactRevise) // {id, content|ref, note}
 	// P2 graph: the entity/edge graph over stored claims + derived edges (graph.go)
 	mux.HandleFunc("GET /api/graph", s.handleGraph)                    // vocabulary + counts
@@ -886,6 +887,7 @@ func (s *Server) Handler() http.Handler {
 	// pass 5: the page-side measurables editor (frontmatter stays the record)
 	mux.HandleFunc("POST /api/properties/{slug}/measurables", s.handlePropertyMeasurables)
 	mux.HandleFunc("POST /api/manifest/operations/{id}/regenerate", s.handleOperationRegenerate)
+	mux.HandleFunc("POST /api/manifest/operations/{id}/email-watch", s.handleEmailWatch)
 	mux.HandleFunc("POST /api/spirits/approvals/{id}/recontract", s.handleApprovalReContract)
 	mux.HandleFunc("POST /api/properties/{slug}/receipt", s.handleReceiptUpload)
 	mux.HandleFunc("POST /api/deals/{slug}/export-underwrite", s.handleDealExportUnderwrite)

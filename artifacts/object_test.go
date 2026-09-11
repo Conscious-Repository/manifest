@@ -285,3 +285,26 @@ func TestRefAndIDGuards(t *testing.T) {
 		t.Fatal("derived ids/hashes must validate")
 	}
 }
+
+func TestInteractiveRevisionRejectsStaleHead(t *testing.T) {
+	r, _ := registry(t)
+	original, err := r.Put(Put{Ref: "report.md", Content: []byte("original")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	next, err := r.Put(Put{ID: original.Artifact.ID, ExpectedHead: original.Artifact.Head, Content: []byte("updated")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = r.Put(Put{ID: original.Artifact.ID, ExpectedHead: original.Artifact.Head, Content: []byte("stale")}); err != ErrRevisionConflict {
+		t.Fatalf("stale save: %v", err)
+	}
+	old, err := r.Content(original.Artifact.Head)
+	if err != nil || string(old) != "original" {
+		t.Fatalf("old bytes lost: %s %v", old, err)
+	}
+	restored, err := r.Put(Put{ID: original.Artifact.ID, ExpectedHead: next.Artifact.Head, Content: old})
+	if err != nil || restored.Artifact.Version() != 3 {
+		t.Fatalf("restore: %+v %v", restored, err)
+	}
+}

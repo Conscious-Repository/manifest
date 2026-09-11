@@ -31,8 +31,9 @@ Attachments are `{hash, name}` references to existing domain-owned artifact uplo
 Preparation verifies hashes and freezes bytes into an immutable local envelope
 (maximum 20 MiB total). Approval uses that envelope's digest, not current file paths.
 RFC threading headers can be supplied as `inReplyTo` and `references`; successful
-receipts retain Gmail message and thread IDs. No ongoing monitor is started by this
-feature and a Gmail thread ID alone is not a monitoring subscription.
+receipts retain Gmail message and thread IDs. Set `monitorReplies: true` when preparing if reply tracking is requested; the approval includes that choice. After confirmed sending, the existing server ticker reads only the exact sent thread from the exact sender mailbox. Existing sent email cards also offer Track replies / Stop tracking. A separate read-only Gmail connection for that same account is required; missing access is explicit and never falls back to another mailbox.
+
+Reply state stays on the existing operation receipt, survives restarts, and refreshes every five minutes while enabled. Only messages after the provider-confirmed outgoing message are shown; earlier thread history and the sender’s own replies are excluded. Up to the latest 50 reply previews are retained (4,000 characters each, with clipping labeled). Monitoring does not send messages, launch agents, or approve actions. External-action approvals remain owner-only. The mailbox route uses Google’s documented [explicit user email address](https://developers.google.com/workspace/gmail/api/reference/rest/v1/users.threads/get).
 
 Delivery is recorded before the network boundary. A lost acknowledgement or crash
 recovers the existing receipt, never automatically replays the send. `partial`

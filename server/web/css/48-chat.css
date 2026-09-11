@@ -41,9 +41,9 @@
 .chat-user { margin-left: auto; background: var(--base-20); border: 1px solid var(--line); border-radius: var(--radius-message) var(--radius-message) var(--radius) var(--radius-message); padding: var(--sp-4) var(--sp-6); white-space: pre-wrap; font-size: var(--fs-md); width: fit-content; max-width: min(72ch, 88%); line-height: 1.55; }
 .chat-user.chat-queued { opacity: 0.55; }
 .chat-system { font-size: var(--fs-sm); color: var(--base-40); font-style: italic; }
-.chat-spirit { max-width: min(72ch, 92%); width: fit-content; background: var(--base-05); border: 1px solid var(--line); border-radius: var(--radius-message) var(--radius-message) var(--radius-message) var(--radius); padding: var(--sp-5) var(--sp-6); }
+.chat-spirit { max-width: 80ch; width: 100%; background: transparent; border: 0; padding: 0; }
 .chat-step { font-size: var(--fs-xs); color: var(--base-40); padding: var(--sp-1) 0; }
-.chat-say { font-size: var(--fs-md); line-height: 1.55; }
+.chat-say { font-size: var(--fs-xl); line-height: 1.65; }
 .chat-say .md-p { margin: var(--sp-3) 0; }
 .chat-spirit .chat-say > :first-child { margin-top: 0; }
 .chat-spirit .chat-say > :last-child { margin-bottom: 0; }
@@ -197,25 +197,17 @@ button.chat-attach-chip { min-height: 44px; max-width: 100%; background: transpa
 .chat-landing-cwd:focus { outline: none; border-color: var(--accent); }
 .chat-landing-cwd::placeholder { color: var(--base-30); }
 
-/* THE TERMINAL SURFACE (.chat-main.term — a claude/codex thread or landing,
-   chatTermSurface in 48-chat.js). A CLI session reads as a terminal, not an
-   IM thread: the transcript, the screen strip and the composer are ONE dark
-   surface (the cockpit's --term-* chrome, the xterm's own palette), mono
-   throughout, no bubbles/cards. What you sent is a command behind ❯; the
-   agent's turn is raw output; a tool call is a → step line, its result folded
-   under ⎿; the pane's last lines are the surface's scrollback and the
-   composer is its prompt line. Only these sections get it — the Alfred /
-   portal / spirits threads keep the light bubbles above. */
+/* Native coding sessions remain conversations. Use human-readable prose and
+   the shared composer; reserve monospace for actual code and runtime controls. */
 .chat-main.term:not(.landing) .chat-transcript {
-  background: var(--surface-field); color: var(--base-100);
-  font-family: var(--mono); font-size: var(--fs-sm); line-height: 1.55;
-  border: 1px solid var(--line); border-bottom: 0;
-  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+  background: transparent; color: var(--base-100);
+  font-family: var(--sans); font-size: var(--fs-xl); line-height: 1.65;
+  border: 0; border-radius: 0;
   padding: var(--sp-5) var(--sp-7) var(--sp-7);
 }
 /* the head on the dark surface: same anatomy, the terminal's inks */
 .chat-main.term .chat-head { border-bottom-color: var(--line); margin-bottom: var(--sp-6); }
-.chat-main.term .chat-head-title { font-family: var(--mono); font-weight: 600; color: var(--base-100); }
+.chat-main.term .chat-head-title { font-family: var(--sans); font-weight: 600; color: var(--base-100); }
 .chat-main.term .chat-head .sprt-sub, .chat-main.term .chat-head .sprt-head-meta { color: var(--base-60); }
 .chat-main.term .chat-head .sprt-quiet { color: var(--base-60); }
 .chat-main.term .chat-head .sprt-quiet:hover { color: var(--accent-soft); }
@@ -225,19 +217,20 @@ button.chat-attach-chip { min-height: 44px; max-width: 100%; background: transpa
 /* lines */
 .chat-term-line { display: flex; gap: var(--sp-3); align-items: baseline; white-space: pre-wrap; word-break: break-word; margin: var(--sp-5) 0 var(--sp-3); }
 .chat-term-glyph { flex: none; width: 1.2ch; color: var(--base-60); user-select: none; }
-.chat-term-cmd .chat-term-glyph { color: var(--accent-soft); }
-.chat-term-cmd-text { flex: 1 1 auto; min-width: 0; color: var(--base-100); font-weight: 600; }
+.chat-term-cmd .chat-term-glyph { display: none; }
+.chat-term-cmd { width: fit-content; max-width: min(72ch, 90%); margin: var(--sp-8) 0 var(--sp-8) auto; padding: var(--sp-5) var(--sp-6); border-radius: var(--radius-message); background: var(--surface-field); border: 1px solid var(--line); flex-wrap: wrap; }
+.chat-term-cmd-text { flex: 1 1 auto; min-width: 0; color: var(--base-100); font-weight: 400; }
 .chat-term-sys { color: var(--base-60); }
 .chat-term-sys::before { content: "#"; flex: none; width: 1.2ch; color: var(--base-50); }
 .chat-term-meta { flex: none; margin-left: auto; font-size: var(--fs-2xs); color: var(--base-50); font-variant-numeric: tabular-nums; white-space: nowrap; }
 /* the agent's output — indented to the command text's column, no box */
-.chat-term-out { padding-left: calc(1.2ch + var(--sp-3)); margin: 0 0 var(--sp-5); }
+.chat-term-out { padding: 0; max-width: 80ch; margin: 0 0 var(--sp-9); }
 .chat-term-out > .chat-term-meta { display: block; margin: var(--sp-2) 0 0; text-align: right; }
 .chat-term-say { color: var(--base-100); }
 .chat-term-say .md-p { margin: var(--sp-3) 0; }
 .chat-term-say > :first-child, .chat-term-say .md-p:first-child { margin-top: 0; }
-.chat-term-say .md-h { font-family: var(--mono); font-size: var(--fs-sm); font-weight: 600; color: var(--base-100); margin: var(--sp-5) 0 var(--sp-2); }
-.chat-term-say .md-h::before { content: "## "; color: var(--base-50); }
+.chat-term-say .md-h { font-family: var(--sans); font-size: var(--fs-xl); font-weight: 600; color: var(--base-100); margin: var(--sp-5) 0 var(--sp-2); }
+
 .chat-term-say .md-li { margin: var(--sp-1) 0; }
 .chat-term-say .md-bullet { color: var(--base-60); }
 .chat-term-say .md-pre { margin: var(--sp-3) 0; padding: var(--sp-3) var(--sp-5); overflow-x: auto; background: rgba(255, 255, 255, 0.035); border: 1px solid var(--line); border-radius: var(--radius); font-family: var(--mono); font-size: var(--fs-sm); line-height: 1.5; color: var(--base-100); }
@@ -277,21 +270,19 @@ button.chat-attach-chip { min-height: 44px; max-width: 100%; background: transpa
 .chat-main.term .chat-term-key { background: transparent; color: var(--base-60); border-color: var(--line); border-radius: var(--radius); }
 .chat-main.term .chat-term-key:hover { color: var(--base-100); border-color: var(--base-60); }
 .chat-main.term .chat-term-key:active { background: rgba(255, 255, 255, 0.06); }
-/* the prompt line: ❯ then the command, mono, on the same surface; the send
-   is a quiet ↵ (enter sends) — the box is the surface's last row */
-.chat-main.term .chat-composer { margin-top: 0; background: var(--surface-field); border: 1px solid var(--line); border-radius: 0 0 var(--radius-lg) var(--radius-lg); padding: var(--sp-4) var(--sp-4) var(--sp-4) var(--sp-7); align-items: flex-start; }
-.chat-main.term .chat-composer:focus-within { border-color: var(--base-60); }
-.chat-main.term .chat-composer::before { content: "❯"; flex: none; font-family: var(--mono); font-size: var(--fs-md); line-height: 1.55; color: var(--accent-soft); padding-top: var(--sp-3); user-select: none; }
-.chat-main.term .chat-composer .chat-input { font-family: var(--mono); font-size: var(--fs-md); line-height: 1.55; color: var(--base-100); caret-color: var(--accent-soft); padding-left: 0; }
-.chat-main.term .chat-composer .chat-input::placeholder { color: var(--base-50); }
-.chat-main.term .chat-send { background: transparent; color: var(--base-60); border: 1px solid var(--line); font-family: var(--mono); font-size: var(--fs-md); width: 30px; height: 30px; border-radius: var(--radius); align-self: flex-end; }
-.chat-main.term .chat-send:hover { filter: none; color: var(--base-100); border-color: var(--base-60); }
-.chat-main.term .chat-send:disabled { color: var(--base-50); border-color: var(--line); }
-/* the dictation mic (75-bars.css) sits in this composer too: same quiet chrome */
-.chat-main.term .chat-composer .mic-btn { order: 2; align-self: flex-end; border-color: var(--line); color: var(--base-60); }
-.chat-main.term .chat-composer .mic-btn:hover { color: var(--base-100); border-color: var(--base-60); }
-/* the landing keeps the light greeting; its composer is already the prompt */
-.chat-main.term.landing .chat-composer { border-radius: var(--radius-lg); }
+/* Shared input treatment: no command prompt or alternate send affordance. */
+.chat-main.term .chat-composer { margin-top: var(--sp-6); }
+.chat-main.term .chat-composer .chat-input { font-family: var(--sans); font-size: var(--fs-xl); }
+.chat-term-activity { margin: var(--sp-5) 0; color: var(--muted); font-family: var(--mono); font-size: var(--fs-sm); }
+.chat-term-activity > summary { cursor: pointer; min-height: 44px; display: list-item; padding: var(--sp-6) 0; box-sizing: border-box; }
+.chat-term-activity > summary.has-error { color: var(--danger); }
+.chat-term-activity > summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.chat-term-activity .chat-term-step, .chat-term-activity .chat-term-think { margin-left: 0; }
+@media (max-width: 860px) {
+  .chat-main.term:not(.landing) .chat-transcript { padding: var(--sp-4) var(--sp-2); }
+  .chat-term-cmd { max-width: 94%; }
+  .chat-composer .chat-send, .chat-composer .chat-attach { min-width: 44px; min-height: 44px; }
+}
 
 /* Shared runtime observations stay quieter than the durable task status. */
 .terminal-run-state { display: inline-flex; align-items: center; gap: var(--sp-2); margin-left: var(--sp-3); font-size: var(--fs-xs); color: var(--base-50); }
@@ -335,7 +326,7 @@ button.chat-attach-chip { min-height: 44px; max-width: 100%; background: transpa
 .chat-details .chat-head-acts { display: flex; padding: var(--sp-5) 0; }
 .chat-new-picker { width: auto; max-width: 220px; }
 .chat-main.term .chat-term-cmd { margin-left: auto; width: fit-content; max-width: 88%; background: var(--base-20); border-radius: var(--radius-message); padding: var(--sp-5) var(--sp-6); }
-.chat-main.term .chat-term-out { max-width: 92%; padding: var(--sp-6); border: 1px solid var(--line); border-radius: var(--radius-message); background: var(--base-05); }
+.chat-main.term .chat-term-out { max-width: 80ch; padding: 0; border: 0; border-radius: 0; background: transparent; }
 @media (max-width: 860px) {
   .chat-inbox-search, .chat-inbox-filter { font-size: var(--fs-xl); }
   .chat-shell.mf-chat-nav-open .chat-main { display: none; }
@@ -417,3 +408,7 @@ button.chat-attach-chip { min-height: 44px; max-width: 100%; background: transpa
 .chat-share-dialog .chat-workstream-actions { flex-wrap: wrap; }
 
 .chat-share-files a { color: var(--accent); }
+
+.chat-email-body { font-family: var(--sans); font-size: var(--fs-lg); line-height: 1.6; }
+.chat-email-watch { border-top: 1px solid var(--line); margin-top: var(--sp-7); padding-top: var(--sp-7); overflow-wrap: anywhere; }
+.chat-email-watch summary { min-height: 44px; padding: var(--sp-5) 0; box-sizing: border-box; cursor: pointer; }
