@@ -13,6 +13,10 @@ func (s *Server) UseChatState(root string) { s.chatState = chatstate.New(root) }
 // These routes exist only on the private cockpit handler, even when a draft is
 // intended for a team conversation. Unsent drafts do not become team content.
 func (s *Server) handleChatState(w http.ResponseWriter, r *http.Request) {
+	if s.chatProjectsPath != "" && r.PathValue("key") == "inbox" && r.PathValue("slot") == "workstreams" {
+		s.handleChatProjects(w, r)
+		return
+	}
 	if s.chatState == nil {
 		http.Error(w, "conversation state unavailable", http.StatusServiceUnavailable)
 		return

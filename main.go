@@ -334,6 +334,7 @@ func main() {
 			vaultwriter.Capability{Name: "todo-plans", Zone: record.ZoneSystem,
 				Pattern: filepath.ToSlash(filepath.Join(cfg.SystemRoot, "todo-plans")) + "/**",
 				Actor:   vaultwriter.ActorUserAction},
+			vaultwriter.Capability{Name: "chat-projects", Zone: record.ZoneSystem, Pattern: filepath.ToSlash(filepath.Join(cfg.SystemRoot, "workbench", "projects.md")), Actor: vaultwriter.ActorUserAction},
 			vaultwriter.Capability{Name: "writing", Zone: record.ZoneSystem, Pattern: filepath.ToSlash(filepath.Join(cfg.SystemRoot, "writing")) + "/**", Actor: vaultwriter.ActorUserAction},
 			vaultwriter.Capability{Name: "writing-agent", Zone: record.ZoneSystem, Pattern: filepath.ToSlash(filepath.Join(cfg.SystemRoot, "writing")) + "/**", Actor: vaultwriter.ActorApprovedProposal},
 			vaultwriter.Capability{Name: "todo-plans-agent", Zone: record.ZoneSystem,
@@ -768,6 +769,9 @@ func main() {
 	// approvals inbox is the excalibur surface (warden findings today, the
 	// goals-Phase-2 EA later). Save-to-vault stays the one vault write.
 	srv.UseVault(vw)
+	if err := srv.UseChatProjects(filepath.ToSlash(filepath.Join(cfg.SystemRoot, "workbench"))); err != nil {
+		log.Printf("chat projects unavailable: %v", err)
+	}
 	// goals-approved index-fork guard: the approved lane writes the vault-root
 	// goals.md by a FIXED path, while every read surface resolves through the
 	// index (a hand-moved goals.md is still found). If those ever disagree —

@@ -62,6 +62,7 @@ var webFiles embed.FS
 type Server struct {
 	chatShareWriters sync.Map // source identity -> writer/publication RWMutex
 	chatState        *chatstate.Store
+	chatProjectsPath string
 	svc              *daily.Service
 	goals            *goals.Store
 	tasksStore       *tasks.Store // the third surface — vault-root `tasks.md` (nilable)

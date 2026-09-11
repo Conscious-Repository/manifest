@@ -601,7 +601,7 @@ async function chatSaveWorkstream(key,expected,id,name){
     if(name){selected=Object.keys(groups).find(k=>groups[k].toLowerCase()===name.toLowerCase())||newID;groups[selected]=groups[selected]||name;}
     if(selected&&!groups[selected])throw Error("That workstream is no longer available.");
     if(key){if(selected)members[key]=selected;else delete members[key];}
-    const saved=await fetch(chatWorkstreamURL,{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify({revision:state.revision,value:{groups,members}})});
+    const saved=await fetch(chatWorkstreamURL,{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify({revision:state.revision,record_version:state.record_version,value:{...state.value,groups,members}})});
     if(saved.status===409)continue;if(!saved.ok)throw Error("Workstream change was not saved.");
     chatApplyWorkstreams(await saved.json());return selected;
   }
