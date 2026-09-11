@@ -1,0 +1,59 @@
+{
+  "meta": {"count": 1996, "db_response_time_ms": 9, "page": null, "per_page": 50, "next_cursor": "CURSOR-3", "groups_count": null},
+  "results": [
+    {
+      "id": "https://openalex.org/W1003",
+      "doi": "https://doi.org/10.1000/fc.2022.3",
+      "title": "Field-cycling relaxometry of stroke",
+      "display_name": "Field-cycling relaxometry of stroke",
+      "publication_year": 2022,
+      "publication_date": "2022-01-10",
+      "type": "article",
+      "cited_by_count": 3,
+      "primary_location": {"source": {"id": "https://openalex.org/S3", "display_name": "NMR in Biomedicine"}},
+      "authorships": [
+        {
+          "author_position": "first",
+          "author": {"id": "https://openalex.org/A1", "display_name": "Lionel Broche", "orcid": "https://orcid.org/0000-0001-0000-0001"},
+          "institutions": [{"id": "https://openalex.org/I1", "display_name": "University of Aberdeen", "country_code": "GB"}],
+          "raw_author_name": "Broche LM",
+          "raw_affiliation_strings": ["University of Aberdeen, UK"]
+        },
+        {
+          "author_position": "middle",
+          "author": {"id": null, "display_name": "Orcid Only", "orcid": "0000-0002-0000-0002"},
+          "institutions": [],
+          "raw_author_name": "Only O",
+          "raw_affiliation_strings": []
+        },
+        {
+          "author_position": "last",
+          "author": {"id": "A2", "display_name": "David J. Lurie", "orcid": null},
+          "institutions": [{"id": "https://openalex.org/I1", "display_name": "University of Aberdeen", "country_code": "GB"}],
+          "raw_author_name": "Lurie DJ",
+          "raw_affiliation_strings": ["University of Aberdeen, UK"]
+        }
+      ]
+    },
+    {
+      "id": "https://openalex.org/W1001",
+      "doi": "https://doi.org/10.1000/fc.2021.1",
+      "title": "Fast field-cycling MRI of the human brain",
+      "display_name": "Fast field-cycling MRI of the human brain",
+      "publication_year": 2021,
+      "publication_date": "2021-03-15",
+      "type": "article",
+      "cited_by_count": 42,
+      "primary_location": {"source": {"id": "https://openalex.org/S1", "display_name": "Magnetic Resonance in Medicine"}},
+      "authorships": [
+        {
+          "author_position": "first",
+          "author": {"id": "https://openalex.org/A1", "display_name": "Lionel Broche", "orcid": "https://orcid.org/0000-0001-0000-0001"},
+          "institutions": [],
+          "raw_author_name": "Broche LM",
+          "raw_affiliation_strings": []
+        }
+      ]
+    }
+  ]
+}

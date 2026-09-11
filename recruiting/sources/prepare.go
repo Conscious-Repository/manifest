@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
 )
 
@@ -16,12 +17,37 @@ func queryScope(s Scope, source string) (Scope, error) {
 	}
 	return s, nil
 }
+
+// OpenAlex's check also resolves the branch (sourcing-effectiveness plan
+// Phase 2): the effective mode is written back into the scope, and for a
+// works search so are the effective work budget, the text field and the
+// exact filter sent upstream — so a run records "mode: works · works: 200 ·
+// filter: title_and_abstract.search:…" rather than absences that silently
+// meant defaults, and a reader can see which branch a query took.
 func (OpenAlex) PrepareScope(s Scope) (Scope, error) {
 	if ref := strings.TrimSpace(s.Fields["work"]); ref != "" {
 		_, err := openAlexWorkPath(ref)
 		return s, err
 	}
-	return queryScope(s, "openalex")
+	plan, err := openAlexPlanScope(s)
+	if err != nil {
+		return Scope{}, err
+	}
+	fields := make(map[string]string, len(s.Fields)+4)
+	for k, v := range s.Fields {
+		fields[k] = v
+	}
+	fields[openAlexFieldMode] = plan.Mode
+	if plan.Mode == openAlexModeWorks {
+		fields[openAlexFieldWorks] = strconv.Itoa(plan.Budget)
+		fields[openAlexFieldText] = plan.Text
+		delete(fields, openAlexFieldFilter)
+		if plan.Filter != "" {
+			fields[openAlexFieldFilter] = plan.Filter
+		}
+	}
+	s.Fields = fields
+	return s, nil
 }
 func (GitHub) PrepareScope(s Scope) (Scope, error) {
 	if ref := strings.TrimSpace(s.Fields["repo"]); ref != "" {

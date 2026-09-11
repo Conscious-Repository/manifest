@@ -1,0 +1,9 @@
+{
+  "meta": {"count": 1996, "db_response_time_ms": 31, "page": 1, "per_page": 200, "groups_count": 200},
+  "group_by": [
+    {"key": "https://openalex.org/A2", "key_display_name": "David J. Lurie", "count": 77},
+    {"key": "https://openalex.org/A1", "key_display_name": "Lionel Broche", "count": 61},
+    {"key": "https://openalex.org/A9", "key_display_name": "Someone Unread", "count": 40},
+    {"key": "unknown", "key_display_name": "unknown", "count": 12}
+  ]
+}

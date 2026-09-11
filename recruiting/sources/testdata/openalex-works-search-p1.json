@@ -1,0 +1,73 @@
+{
+  "meta": {"count": 1996, "db_response_time_ms": 12, "page": null, "per_page": 50, "next_cursor": "CURSOR-2", "groups_count": null},
+  "results": [
+    {
+      "id": "https://openalex.org/W1001",
+      "doi": "https://doi.org/10.1000/fc.2021.1",
+      "title": "Fast field-cycling MRI of the human brain",
+      "display_name": "Fast field-cycling MRI of the human brain",
+      "publication_year": 2021,
+      "publication_date": "2021-03-15",
+      "type": "article",
+      "cited_by_count": 42,
+      "primary_location": {"source": {"id": "https://openalex.org/S1", "display_name": "Magnetic Resonance in Medicine"}},
+      "authorships": [
+        {
+          "author_position": "first",
+          "author": {"id": "https://openalex.org/A1", "display_name": "Lionel Broche", "orcid": "https://orcid.org/0000-0001-0000-0001"},
+          "institutions": [{"id": "https://openalex.org/I1", "display_name": "University of Aberdeen", "country_code": "GB"}],
+          "raw_author_name": "Broche LM",
+          "raw_affiliation_strings": ["Aberdeen Biomedical Imaging Centre, University of Aberdeen, UK. lionel@example.test"]
+        },
+        {
+          "author_position": "middle",
+          "author": {"id": null, "display_name": "Orcid Only", "orcid": "https://orcid.org/0000-0002-0000-0002"},
+          "institutions": [],
+          "raw_author_name": "Only O",
+          "raw_affiliation_strings": []
+        },
+        {
+          "author_position": "middle",
+          "author": {"id": null, "display_name": "Nobody Nameable", "orcid": null},
+          "institutions": [],
+          "raw_author_name": "Nameable N",
+          "raw_affiliation_strings": ["Somewhere, nobody@example.test"]
+        },
+        {
+          "author_position": "last",
+          "author": {"id": "https://openalex.org/A2", "display_name": "David J. Lurie", "orcid": "https://orcid.org/0000-0003-0000-0003"},
+          "institutions": [{"id": "https://openalex.org/I1", "display_name": "University of Aberdeen", "country_code": "GB"}],
+          "raw_author_name": "Lurie DJ",
+          "raw_affiliation_strings": ["Aberdeen Biomedical Imaging Centre, University of Aberdeen, UK"]
+        }
+      ]
+    },
+    {
+      "id": "https://openalex.org/W1002",
+      "doi": null,
+      "title": "T1 dispersion in tissue by field cycling",
+      "display_name": "T1 dispersion in tissue by field cycling",
+      "publication_year": 2019,
+      "publication_date": "2019-07-01",
+      "type": "article",
+      "cited_by_count": 7,
+      "primary_location": {"source": {"id": "https://openalex.org/S2", "display_name": "Journal of Magnetic Resonance"}},
+      "authorships": [
+        {
+          "author_position": "first",
+          "author": {"id": "https://openalex.org/A3", "display_name": "P. J. Ross", "orcid": null},
+          "institutions": [{"id": "https://openalex.org/I1", "display_name": "University of Aberdeen", "country_code": "GB"}],
+          "raw_author_name": "Ross PJ",
+          "raw_affiliation_strings": ["University of Aberdeen, UK"]
+        },
+        {
+          "author_position": "last",
+          "author": {"id": "https://openalex.org/A2", "display_name": "David J. Lurie", "orcid": "https://orcid.org/0000-0003-0000-0003"},
+          "institutions": [{"id": "https://openalex.org/I1", "display_name": "University of Aberdeen", "country_code": "GB"}],
+          "raw_author_name": "Lurie DJ",
+          "raw_affiliation_strings": ["University of Aberdeen, UK"]
+        }
+      ]
+    }
+  ]
+}

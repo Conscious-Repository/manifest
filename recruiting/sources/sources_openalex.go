@@ -12,18 +12,24 @@ import (
 	"time"
 )
 
-// OpenAlex is the Phase 3b.1 scholarly adapter: one search against the
-// public, no-key OpenAlex authors endpoint, each hit becoming a draft that
-// cites its own author page. It is the first network adapter, so it also
-// sets the shape for the ones after it: one bounded GET per run, the base
-// URL and client injectable so tests never leave the process, and nothing
-// on the draft that the returned JSON did not say outright.
+// OpenAlex is the scholarly adapter over the public, no-key OpenAlex API. It
+// was the first network adapter (Phase 3b.1), so it also set the shape for
+// the ones after it: bounded GETs, the base URL and client injectable so
+// tests never leave the process, and nothing on the draft that the returned
+// JSON did not say outright. It has three branches, chosen by the scope:
+//
+//   - one paper (scope field "work") → everyone on it, with coauthor and
+//     same_lab claims (sources_openalex_works.go);
+//   - a name-shaped query, or mode=authors → /authors?search=<name>, one
+//     page, each hit a draft citing its own author page (this file);
+//   - a keyword query, or mode=works → /works searched by text under a
+//     work budget, authorships aggregated into people by author id
+//     (sources_openalex_people.go — sourcing-effectiveness plan Phase 2).
 //
 // OpenAlex is an aggregator over primary records, which is why its citations
 // are TrustMedium rather than TrustHigh. It exposes no contact details and
-// this adapter would drop them if it did (D15). Coauthor edges need the
-// works endpoint and are Phase 4's; the author record alone supports no
-// relationship claim, so this adapter emits none.
+// this adapter would drop them if it did (D15). An author record alone
+// supports no relationship claim, so the name branch emits no edges.
 type OpenAlex struct {
 	// BaseURL overrides the API root ("" → OpenAlexBaseURL). Tests point it
 	// at an httptest server.
@@ -69,9 +75,14 @@ func (OpenAlex) Kind() Kind { return KindScholarly }
 func (OpenAlex) Scope() []ScopeField {
 	return []ScopeField{
 		{Key: "role", Label: "role"},
-		{Key: "query", Label: "author name or keyword", Placeholder: "e.g. diffusion MRI reconstruction"},
+		{Key: "query", Label: "keyword, or an author name", Placeholder: "e.g. field cycling MRI — a name (Dana Reyes) looks up authors"},
 		{Key: "work", Label: "or one paper", Placeholder: "DOI, OpenAlex id, or link"},
 		{Key: "max", Label: "max people shown", Placeholder: strconv.Itoa(openAlexDefaultMax)},
+		{Key: openAlexFieldMode, Label: "search", Placeholder: openAlexModeWorks + " (papers → people; the default for a keyword) or " + openAlexModeAuthors + " (name lookup; the default for a name)"},
+		{Key: openAlexFieldWorks, Label: "works to read", Placeholder: strconv.Itoa(openAlexDefaultWorks) + " — the work budget, at most " + strconv.Itoa(openAlexMaxWorks) + "; separate from people shown"},
+		{Key: openAlexFieldYears, Label: "publication years", Placeholder: "e.g. 2018-2026 (works search)"},
+		{Key: openAlexFieldType, Label: "work type", Placeholder: "e.g. article (works search)"},
+		{Key: openAlexFieldText, Label: "match in", Placeholder: openAlexTextTitleAbstract + " (default) or " + openAlexTextFulltext + " (works search)"},
 	}
 }
 
@@ -138,26 +149,39 @@ type openAlexAuthorsResponse struct {
 	Results *[]openAlexAuthor `json:"results"`
 }
 
-// Search runs one bounded GET /authors?search=… and converts each returned
-// author into a cited draft. It never paginates: the scope's Max is both the
-// per-page it asks for and the most it will return, whatever the server sent.
+// Search is SearchCounted without the counts.
 func (oa OpenAlex) Search(ctx context.Context, s Scope) ([]CandidateDraft, error) {
 	out, _, err := oa.SearchCounted(ctx, s)
 	return out, err
 }
 
-// SearchCounted is Search plus the size of the field (Phase 0): Available is
-// meta.count — every author the registry matched — Read is the author rows
-// the one page carried, and PeopleSeen is how many of those were citable,
-// counted past the cap so a page the server over-filled is not hidden. The
-// single-paper path reports the one work and everyone named on it.
+// SearchCounted is Search plus the size of the field (Phase 0), on whichever
+// branch the scope selects. The single-paper path reports the one work and
+// everyone named on it; the name path reports meta.count — every author the
+// registry matched — the author rows the one page carried, and how many of
+// those were citable, counted past the cap; the keyword path reports
+// matching works, works read, and distinct people seen before the cap.
 func (oa OpenAlex) SearchCounted(ctx context.Context, s Scope) ([]CandidateDraft, Retrieval, error) {
 	if ref := strings.TrimSpace(s.Fields["work"]); ref != "" {
 		return oa.searchWork(ctx, ref, s)
 	}
+	plan, err := openAlexPlanScope(s)
+	if err != nil {
+		return nil, Retrieval{}, err
+	}
+	if plan.Mode == openAlexModeWorks {
+		return oa.searchWorks(ctx, s, plan)
+	}
+	return oa.searchAuthors(ctx, s, plan.Query)
+}
+
+// searchAuthors is the name branch: one bounded GET /authors?search=…, each
+// returned author a cited draft. It never paginates: the scope's Max is
+// both the per-page it asks for and the most it will return, whatever the
+// server sent.
+func (oa OpenAlex) searchAuthors(ctx context.Context, s Scope, query string) ([]CandidateDraft, Retrieval, error) {
 	ret := Retrieval{Unit: "authors"}
-	query := strings.TrimSpace(s.Query)
-	if query == "" {
+	if query = strings.TrimSpace(query); query == "" {
 		return nil, ret, errors.New("openalex: a search needs a query, or one paper")
 	}
 	max := s.Max
@@ -305,8 +329,13 @@ func (OpenAlex) GraphEdges(_ context.Context, d CandidateDraft) ([]EdgeClaim, er
 }
 
 // get preserves the polite headers and body bound, retrying transient
-// statuses before returning an error that names the final status.
+// statuses before returning an error that names the final status. fetch is
+// the same with a caller-chosen body bound, for the works pages.
 func (oa OpenAlex) get(ctx context.Context, path string, params url.Values) ([]byte, error) {
+	return oa.fetch(ctx, path, params, openAlexMaxBody)
+}
+
+func (oa OpenAlex) fetch(ctx context.Context, path string, params url.Values, maxBody int64) ([]byte, error) {
 	base := strings.TrimRight(strings.TrimSpace(oa.BaseURL), "/")
 	if base == "" {
 		base = OpenAlexBaseURL
@@ -325,7 +354,7 @@ func (oa OpenAlex) get(ctx context.Context, path string, params url.Values) ([]b
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("User-Agent", OpenAlexUserAgent)
 
-	return scholarlyGet(oa.Client, req, "openalex", path, openAlexMaxBody)
+	return scholarlyGet(oa.Client, req, "openalex", path, maxBody)
 }
 
 // openAlexAuthorURL normalises an author id — the API returns it as the full

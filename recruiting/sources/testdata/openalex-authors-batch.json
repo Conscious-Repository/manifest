@@ -1,0 +1,26 @@
+{
+  "meta": {"count": 2, "db_response_time_ms": 8, "page": 1, "per_page": 50},
+  "results": [
+    {
+      "id": "https://openalex.org/A1",
+      "display_name": "Lionel Broche",
+      "orcid": "https://orcid.org/0000-0001-0000-0001",
+      "works_count": 120,
+      "cited_by_count": 2100,
+      "last_known_institution": {"id": "https://openalex.org/I1", "display_name": "University of Aberdeen", "country_code": "GB"},
+      "summary_stats": {"h_index": 22},
+      "topics": [{"display_name": "Field-Cycling NMR"}, {"display_name": "Low-Field MRI"}]
+    },
+    {
+      "id": "https://openalex.org/A2",
+      "display_name": "David J. Lurie",
+      "orcid": "https://orcid.org/0000-0003-0000-0003",
+      "works_count": 260,
+      "cited_by_count": 5400,
+      "last_known_institutions": [{"id": "https://openalex.org/I1", "display_name": "University of Aberdeen", "country_code": "GB"}],
+      "summary_stats": {"h_index": 38},
+      "topics": [{"display_name": "Fast Field-Cycling MRI"}],
+      "email": "lurie@example.test"
+    }
+  ]
+}

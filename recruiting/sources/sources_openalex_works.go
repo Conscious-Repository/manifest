@@ -60,13 +60,16 @@ const (
 
 // openAlexWork is the slice of a work object this adapter reads.
 type openAlexWork struct {
-	ID              string             `json:"id"`
-	DOI             string             `json:"doi"`
-	Title           string             `json:"title"`
-	DisplayName     string             `json:"display_name"`
-	PublicationYear int                `json:"publication_year"`
-	PublicationDate string             `json:"publication_date"`
-	Type            string             `json:"type"`
+	ID              string `json:"id"`
+	DOI             string `json:"doi"`
+	Title           string `json:"title"`
+	DisplayName     string `json:"display_name"`
+	PublicationYear int    `json:"publication_year"`
+	PublicationDate string `json:"publication_date"`
+	Type            string `json:"type"`
+	// CitedByCount is a pointer so a works page that omitted it (an older
+	// select, a shape change) is told apart from a work cited zero times.
+	CitedByCount    *int               `json:"cited_by_count"`
 	PrimaryLocation openAlexLocation   `json:"primary_location"`
 	Authorships     []openAlexAuthorsh `json:"authorships"`
 }

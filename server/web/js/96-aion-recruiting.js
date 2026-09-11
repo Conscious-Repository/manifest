@@ -2471,11 +2471,11 @@ function recDraftSubtitle(dr) {
     if (!snippet) continue;
     const source = e.sourceId || dr.sourceId || "";
     let label = snippet;
-    if (source === "pubmed") {
-      // PubMed separates labeled fields with middle dots; titles can contain dots too.
+    if (source === "pubmed" || source === "openalex") {
+      // PubMed and OpenAlex work rows separate labeled fields with middle dots; titles can contain dots too.
       const field = (name) => ((snippet.match(new RegExp("(?:^| · )" + name +
-        ":(.*?)(?= · (?:author|byline|position|title|journal|pubdate|pmid|doi|pmcid|mesh|collective):|$)")) || [])[1] || "").trim();
-      label = [field("title"), field("journal")].filter(Boolean).join(" · ") || snippet;
+        ":(.*?)(?= · (?:author|byline|position|title|journal|venue|pubdate|type|pmid|openalex|doi|pmcid|cited_by_count|authors|institutions|mesh|collective):|$)")) || [])[1] || "").trim();
+      label = [field("title"), field("journal") || field("venue")].filter(Boolean).join(" · ") || snippet;
     }
     const short = Array.from(label);
     label = short.length > 160 ? short.slice(0, 159).join("").trimEnd() + "…" : label;
@@ -3982,11 +3982,11 @@ async function recAshbySyncBack(full) {
 // publication topic into a claim about a person's skills or current job.
 function recEvidenceExcerpt(e) {
   const raw = (e.snippet || "").replace(/\s+/g, " ").trim();
-  const pubmed = /(?:^| · )title:/.test(raw) && /(?:^| · )pmid:/.test(raw);
-  if (!pubmed) return { text: raw, label: "Source excerpt", detail: "" };
+  const listed = /(?:^| · )title:/.test(raw) && /(?:^| · )(?:pmid|openalex):/.test(raw);
+  if (!listed) return { text: raw, label: "Source excerpt", detail: "" };
   const field = (key) => ((raw.match(new RegExp("(?:^| · )" + key +
-    ":(.*?)(?= · (?:author|byline|position|title|journal|pubdate|pmid|doi|pmcid|mesh|collective):|$)")) || [])[1] || "").trim();
-  return { text: field("title"), label: "Listed publication", detail: [field("journal"), field("pubdate")].filter(Boolean).join(" · ") };
+    ":(.*?)(?= · (?:author|byline|position|title|journal|venue|pubdate|type|pmid|openalex|doi|pmcid|cited_by_count|authors|institutions|mesh|collective):|$)")) || [])[1] || "").trim();
+  return { text: field("title"), label: "Listed publication", detail: [field("journal") || field("venue"), field("pubdate")].filter(Boolean).join(" · ") };
 }
 
 function recBackgroundBrief(person) {

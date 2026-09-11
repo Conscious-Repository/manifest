@@ -11,7 +11,9 @@ import (
 
 var openAlexLookupAuthorID = regexp.MustCompile(`^A[0-9]+$`)
 
-// LookupCandidate preserves ordinary name search, but anchors a PubMed
+// LookupCandidate preserves ordinary name search — the scope's query IS a
+// person's name here, so the author branch is taken outright, whatever
+// shape the name has — but anchors a PubMed
 // draft to its paper: the work is fetched, and the ONE authorship whose
 // printed name equals what PubMed printed for this person on that paper —
 // the full name or the Medline byline, folded for case and punctuation only
@@ -23,7 +25,8 @@ var openAlexLookupAuthorID = regexp.MustCompile(`^A[0-9]+$`)
 // source.
 func (oa OpenAlex) LookupCandidate(ctx context.Context, d CandidateDraft, s Scope) ([]CandidateDraft, error) {
 	if d.SourceID != "pubmed" {
-		return oa.Search(ctx, s)
+		out, _, err := oa.searchAuthors(ctx, s, s.Query)
+		return out, err
 	}
 	ref := ""
 	for _, ev := range d.Evidence {

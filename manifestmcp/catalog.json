@@ -30,8 +30,8 @@
         },
         {
           "key": "query",
-          "label": "author name or keyword",
-          "placeholder": "e.g. diffusion MRI reconstruction"
+          "label": "keyword, or an author name",
+          "placeholder": "e.g. field cycling MRI — a name (Dana Reyes) looks up authors"
         },
         {
           "key": "work",
@@ -42,6 +42,31 @@
           "key": "max",
           "label": "max people shown",
           "placeholder": "25"
+        },
+        {
+          "key": "mode",
+          "label": "search",
+          "placeholder": "works (papers → people; the default for a keyword) or authors (name lookup; the default for a name)"
+        },
+        {
+          "key": "works",
+          "label": "works to read",
+          "placeholder": "200 — the work budget, at most 500; separate from people shown"
+        },
+        {
+          "key": "years",
+          "label": "publication years",
+          "placeholder": "e.g. 2018-2026 (works search)"
+        },
+        {
+          "key": "type",
+          "label": "work type",
+          "placeholder": "e.g. article (works search)"
+        },
+        {
+          "key": "text",
+          "label": "match in",
+          "placeholder": "title-abstract (default) or fulltext (works search)"
         }
       ]
     },
@@ -1359,7 +1384,7 @@
       "name": "operation.execute"
     }
   ],
-  "version": "2.4.0",
+  "version": "2.5.0",
   "vocabulary": {
     "entityKinds": [
       "task",
