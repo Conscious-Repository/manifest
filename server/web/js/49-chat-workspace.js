@@ -14,9 +14,20 @@ function chatWorkspaceSource(){
  }
  return null;
 }
+function chatWorkspaceIcon(kind){
+ const paths={panel:'M4 4h16v16H4z M15 4v16',terminal:'M4 4h16v16H4z M7 8l3 3-3 3 M12 15h5',review:'M6 3h9l4 4v14H6z M14 3v5h5 M9 12h7 M9 16h7',chat:'M20 11a8 8 0 0 1-8 8H5l-3 3v-11a9 9 0 0 1 18 0z M8 11h8 M12 7v8',file:'M6 3h9l4 4v14H6z M14 3v5h5'};
+ const svg=document.createElementNS('http://www.w3.org/2000/svg','svg');svg.setAttribute('viewBox','0 0 24 24');svg.setAttribute('aria-hidden','true');svg.classList.add('chat-workspace-icon');const path=document.createElementNS(svg.namespaceURI,'path');path.setAttribute('d',paths[kind]||paths.file);svg.append(path);return svg;
+}
 function chatWorkspaceHeader(head){
  if(chatEmbedded){const more=head.querySelector('.chat-details');if(more)for(const button of Array.from(head.children))if(button.matches('.chat-terminal-view')||button.textContent==='Changes')more.append(button);return;}
- const button=el('button','sprt-quiet chat-workspace-toggle','Workspace');
+ const more=head.querySelector('.chat-details');
+ for(const child of Array.from(head.children)){
+  if(child.textContent==='Changes'&&more)more.append(child);
+  if(child.matches('.chat-terminal-view')){child.setAttribute('aria-label','Terminal');child.title='Toggle terminal';child.replaceChildren(chatWorkspaceIcon('terminal'));child.classList.add('chat-icon-button');}
+  if(child.tagName==='BUTTON'&&child.textContent.startsWith('Agent: ')){child.setAttribute('aria-label',child.textContent);child.textContent=child.textContent.slice(7);}
+ }
+ const summary=more?.querySelector(':scope > summary');if(summary){summary.textContent='···';summary.setAttribute('aria-label','Conversation options');summary.title='Conversation options';more.classList.add('chat-options-compact');}
+ const button=el('button','sprt-quiet chat-workspace-toggle chat-icon-button');button.append(chatWorkspaceIcon('panel'));
  button.setAttribute('aria-label','Toggle workspace');button.setAttribute('aria-expanded',String(!!chatWorkspaceTabs&&!chatWorkspaceTabs.pane.hidden));
  button.title='Plans, files and side chats';
  button.onclick=()=>{if(chatWorkspaceTabs)chatWorkspaceTabs.show(chatWorkspaceTabs.pane.hidden);else chatEnsureWorkspace();};head.append(button);
@@ -29,10 +40,11 @@ function chatEnsureWorkspace(){
  tabs.setAttribute('role','tablist');tabs.setAttribute('aria-label','Workspace tabs');
  add.setAttribute('aria-label','Add workspace tab');hide.setAttribute('aria-label','Hide workspace');hide.title='Hide workspace; keep tabs and drafts';
  bar.append(tabs,add,hide);pane.append(bar,body);shell.append(pane);
- const entries=new Map();let active=null,disposed=false;
+ const entries=new Map();let active=null,disposed=false,chooserHost=null;
+ const clearChooser=()=>{chooserHost?.remove();chooserHost=null;pane.classList.remove('choosing');};
  const w={pane,body,entries,
   show(open=true){pane.hidden=!open;shell.classList.toggle('has-artifact',open);shell._refreshPaneWidths?.();document.querySelectorAll('.chat-workspace-toggle').forEach(b=>b.setAttribute('aria-expanded',String(open)));if(!open)document.querySelector('#chatComposer textarea')?.focus();},
-  select(key){active=key;for(const [id,t] of entries){t.host.hidden=id!==key;t.button.setAttribute('aria-selected',String(id===key));t.button.tabIndex=id===key?0:-1;}w.show();},
+  select(key){clearChooser();active=key;for(const [id,t] of entries){t.host.hidden=id!==key;t.button.setAttribute('aria-selected',String(id===key));t.button.tabIndex=id===key?0:-1;}w.show();},
   drop(key){const t=entries.get(key);if(!t)return;t.host.remove();t.row.remove();entries.delete(key);if(!disposed&&active===key){const next=Array.from(entries.keys()).at(-1);if(next)w.select(next);else w.chooser();}},
   tab(key,title,build){if(entries.has(key)){w.select(key);return entries.get(key);}
    const row=el('div','chat-workspace-tab'),button=el('button','sprt-quiet',title),close=el('button','sprt-quiet','×'),host=el('div','chat-workspace-tabbody');
@@ -50,32 +62,37 @@ function chatEnsureWorkspace(){
    if(heading){const update=()=>{if(heading.textContent&&heading.textContent!=='Loading…'){button.textContent=heading.textContent;button.title=heading.textContent;}};const observer=new MutationObserver(update);observer.observe(heading,{childList:true,characterData:true,subtree:true});const dispose=t.api.close;t.api.close=()=>{observer.disconnect();dispose?.();};update();}
    return t;
   },
-  chooser(){w.tab('chooser','Open tab',(host)=>{chatWorkspaceChooser(host);return {};});},
+  chooser(){clearChooser();chooserHost=el('div','chat-workspace-picker');pane.classList.add('choosing');if(entries.size){chooserHost.classList.add('chat-workspace-popover');pane.append(chooserHost);}else body.append(chooserHost);chatWorkspaceChooser(chooserHost);w.show();},
   close(){if(disposed)return;disposed=true;for(const t of Array.from(entries.values()))t.api?.close?.();entries.clear();pane.remove();shell.classList.remove('has-artifact');chatWorkspaceTabs=null;chatWorkspace=null;shell._refreshPaneWidths?.();}
  };
- chatWorkspaceTabs=w;chatWorkspace=w;add.onclick=()=>w.chooser();hide.onclick=()=>w.show(false);
+ chatWorkspaceTabs=w;chatWorkspace=w;add.onclick=()=>{if(chooserHost&&entries.size)clearChooser();else w.chooser();};hide.onclick=()=>w.show(false);
+ pane.addEventListener('keydown',e=>{if(e.key==='Escape'){if(chooserHost&&entries.size){clearChooser();add.focus();}else w.show(false);}});
+ pane.addEventListener('pointerdown',e=>{if(chooserHost&&entries.size&&!chooserHost.contains(e.target)&&!add.contains(e.target))clearChooser();});
  chatInstallPaneResize(shell);w.chooser();return w;
 }
 function chatWorkspaceChooser(host){
  const source=chatWorkspaceSource(),chooser=el('div','chat-workspace-chooser');
- chooser.append(el('h3','','Open beside chat'));
- const action=(name,description,fn)=>{const b=el('button','chat-workspace-option');b.append(el('strong','',name),el('span','',description));b.onclick=fn;chooser.append(b);};
- if(source){action('Side chat','Start with this conversation’s context',()=>chatWorkspaceSideSetup(source));}
+ const action=(name,description,icon,fn)=>{const b=el('button','chat-workspace-option');b.title=description;b.append(chatWorkspaceIcon(icon),el('span','',name));b.onclick=fn;chooser.append(b);};
+ if(source?.backend==='terminal'){
+  action('Review','Review this working folder','review',()=>chatChangesButton({id:source.id}).click());
+  action('Terminal','Open the live terminal below chat','terminal',()=>{chatWorkspaceTabs.show(false);chatOpenTerminalPane(chatTermOpen.se);});
+ }
  const task=source?.task||chatTaskID;
  if(task){
-  const status=el('p','chat-workspace-hint','Checking linked plan…');chooser.append(status);
-  fetch('/api/tasks/panel?id='+encodeURIComponent(task)).then(r=>{if(!r.ok)throw Error();return r.json();}).then(data=>{if(!host.isConnected)return;status.remove();if(data.record?.plan)action('Plan','Review, edit and save a new version',()=>chatOpenWorkingArtifact({plan:true,task}));else chooser.append(el('p','chat-workspace-hint','No plan is attached to this task.'));for(const a of [...(data.artifacts?.outputs||[]),...(data.artifacts?.inputs||[])].filter((a,i,all)=>all.findIndex(b=>b.id===a.id)===i&&!a.unknown&&a.provenance?.source!=='task-plan'))action(a.title||a.ref||'File','Open saved artifact',()=>chatOpenWorkingArtifact({id:a.id,task}));}).catch(()=>{status.textContent='Could not load linked files. Close and reopen this tab to retry.';});
+  fetch('/api/tasks/panel?id='+encodeURIComponent(task)).then(r=>{if(!r.ok)throw Error();return r.json();}).then(data=>{
+   if(!host.isConnected)return;
+   if(data.record?.plan)action('Plan','Review and edit the linked plan','file',()=>chatOpenWorkingArtifact({plan:true,task}));
+   const files=[...(data.artifacts?.outputs||[]),...(data.artifacts?.inputs||[])].filter((a,i,all)=>all.findIndex(b=>b.id===a.id)===i&&!a.unknown&&a.provenance?.source!=='task-plan'&&!(source?.backend==='terminal'&&(a.title==='Working-folder changes'||a.provenance?.source==='terminal-changes')));
+   if(files.length){const list=el('details','chat-workspace-files');const summary=el('summary','');summary.append(chatWorkspaceIcon('file'),el('span','','Files'),el('span','chat-workspace-count',String(files.length)));list.append(summary);for(const a of files){const button=el('button','chat-workspace-file',a.title||a.ref||'File');button.title=a.ref||a.title;button.onclick=()=>chatOpenWorkingArtifact({id:a.id,task});list.append(button);}chooser.append(list);}
+  }).catch(()=>{const retry=el('button','sprt-quiet','Retry loading files');retry.onclick=()=>{host.replaceChildren();chatWorkspaceChooser(host);};chooser.append(retry);});
  }
- if(source?.backend==='terminal'){
-  action('Changes','Review this working folder',()=>chatChangesButton({id:source.id}).click());
-  action('Terminal','Open the live terminal below chat',()=>{chatWorkspaceTabs.show(false);chatOpenTerminalPane(chatTermOpen.se);});
- }
- chooser.append(el('p','chat-workspace-hint','Tabs and edits stay here when you hide this pane.'));host.append(chooser);
+ if(source)action('Side chat','Start with this conversation’s context','chat',()=>chatWorkspaceSideSetup(source));
+ host.append(chooser);
 }
 function chatWorkspaceSideSetup(source){
  const key='side-setup-'+crypto.randomUUID(),w=chatEnsureWorkspace();
  w.tab(key,'New side chat',(host)=>{
-  const wrap=el('div','chat-side-setup'),heading=el('h3','','Side chat'),hint=el('p','','A separate conversation with a snapshot of the recent parent history. Replies stay here; the main agent keeps working.');
+  const wrap=el('div','chat-side-setup'),heading=el('h3','','Side chat'),hint=el('p','','Starts with this conversation’s recent context.');
   const pick=document.createElement('select');pick.setAttribute('aria-label','Side chat agent');
   const options=chatRoster.filter(a=>a.enabled&&a.durableSend).map(a=>({value:a.name,label:a.label,model:a.model||''}));
   if(chatTermEnabled)Object.entries(chatTermKinds).forEach(([value,label])=>options.push({value:'terminal:'+value,label,model:''}));
