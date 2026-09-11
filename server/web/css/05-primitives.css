@@ -299,14 +299,23 @@
 }
 .artifact-edit-recovery:empty { display: none; }
 .artifact-edit-recovery .chat-draft-notice button { min-height:44px; font-size:var(--fs-md); }
-.review-dialog { width:min(38rem,calc(100vw - 2rem)); max-height:calc(100dvh - 2rem); overflow:auto; color:var(--text); background:var(--bg); border:1px solid var(--line); padding:var(--sp-16); }
+.review-dialog { box-sizing:border-box; width:min(38rem,calc(100vw - 32px)); max-height:calc(100dvh - 32px); overflow:auto; color:var(--text); background:var(--surface-overlay); border:1px solid var(--line); border-radius:12px; padding:24px; font:14px/1.5 var(--sans); box-shadow:0 16px 64px #0003; }
 .review-dialog::backdrop { background:var(--scrim); }
-.review-dialog h2 { font-size:var(--fs-xl); }
-.review-dialog-body { display:grid; gap:var(--sp-8); }
+.review-dialog h2 { margin:0 0 20px; font:600 20px/1.3 var(--sans); overflow-wrap:anywhere; }
+.review-dialog-body { display:grid; gap:16px; min-width:0; }
 .review-dialog-body textarea { width:100%; min-height:12rem; resize:vertical; }
 .review-dialog-body label { display:grid; gap:var(--sp-4); }
-.review-dialog-actions { display:flex; gap:var(--sp-8); flex-wrap:wrap; margin-top:var(--sp-16); }
-.review-dialog .review-dialog-actions button { min-height:44px; font-size:var(--fs-md); padding:var(--sp-4) var(--sp-8); }
+.review-dialog-actions { display:flex; justify-content:flex-end; align-items:center; gap:8px; flex-wrap:wrap; margin-top:24px; }
+.review-dialog .review-dialog-actions button { box-sizing:border-box; min-height:40px; margin:0; padding:8px 14px; border:1px solid var(--line); border-radius:8px; background:var(--surface-field); color:var(--text); font:500 14px/1.4 var(--sans); cursor:pointer; }
 
 .artifact-source-preview { margin:0; padding:0; background:transparent; font:13px/1.65 var(--mono); tab-size:4; white-space:pre; overflow-wrap:normal; }
-.artifact-primary-action { border:1px solid var(--line); border-radius:6px; padding:6px 12px; background:var(--hover); color:var(--base-90); }
+.artifact-primary-action { border:1px solid var(--line); border-radius:6px; padding:6px 12px; background:var(--hover); color:var(--base-100); }
+
+.review-dialog-body p { margin:0; }
+.review-dialog-body p:empty { display:none; }
+.review-dialog-body input:not([type="checkbox"]):not([type="radio"]), .review-dialog-body select { box-sizing:border-box; width:100%; min-width:0; min-height:42px; padding:9px 12px; border:1px solid var(--line); border-radius:8px; background:var(--surface-field); color:var(--text); font:14px/1.4 var(--sans); }
+.review-dialog .review-dialog-actions .sprt-quiet { background:transparent; border-color:transparent; color:var(--base-70); }
+.review-dialog .review-dialog-actions .chat-dialog-primary { background:var(--accent); border-color:var(--accent); color:var(--on-accent,var(--bg)); }
+.review-dialog .review-dialog-actions button:disabled { opacity:.5; cursor:default; }
+.review-dialog :is(input,select,button):focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+@media(max-width:600px){ .review-dialog { padding:20px; } .review-dialog .review-dialog-actions button { min-height:44px; } }

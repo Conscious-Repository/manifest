@@ -501,7 +501,7 @@ function renderChatHeadActions() {
     body.closest('dialog').classList.add('chat-new-dialog');
     const cancel=el('button','sprt-quiet','Cancel');cancel.onclick=close;actions.append(cancel);
     const project=document.createElement('select');project.className='pp-in';project.setAttribute('aria-label','New chat project');
-    for(const [id,label] of [['','Standalone chat'],...Object.entries(chatWorkstreams.groups)]){const o=el('option','',label);o.value=id;project.append(o);}project.value=chatWorkstreams.groups[chatWorkstreamFilter]?chatWorkstreamFilter:'';body.append(project);
+    for(const [id,label] of [['','Standalone chat'],...Object.entries(chatWorkstreams.groups)]){const o=el('option','',label);o.value=id;project.append(o);}project.value=chatWorkstreams.groups[chatWorkstreamFilter]?chatWorkstreamFilter:'';const projectLabel=el('label','chat-new-project','Project');projectLabel.append(project);body.append(projectLabel);
     const choices=[...chatRoster.filter(a=>a.enabled&&!chatIsTerm(a.name)&&chatPrivateCreationAgent(a.name)===a.name).map(a=>[a.name,a.label,a.model]),...(chatTermEnabled?Object.entries(chatTermKinds):[]),['','Spirits']];
     choices.forEach(([agent,label,model])=>{
       const button=el('button','chat-new-choice');
@@ -614,9 +614,10 @@ async function chatAssignNewProject(agent,id,terminal,project){
 }
 function chatCreateProject(){
  reviewDialog('New project',({body,actions,close})=>{
+  body.closest('dialog').classList.add('chat-project-dialog');
   const name=document.createElement('input');name.className='pp-in';name.maxLength=80;name.placeholder='Project name';name.setAttribute('aria-label','Project name');
-  const error=el('p','');error.setAttribute('role','alert');body.append(name,error);
-  const cancel=el('button','sprt-quiet','Cancel'),save=el('button','','Create project');cancel.onclick=close;
+  const error=el('p','');error.setAttribute('role','alert');const label=el('label','','Name');label.append(name);body.append(label,error);
+  const cancel=el('button','sprt-quiet','Cancel'),save=el('button','chat-dialog-primary','Create project');cancel.onclick=close;
   const create=async()=>{if(!name.value.trim()){name.focus();return;}save.disabled=true;try{await chatSaveWorkstream('', '', '',name.value.trim());close();chatRenderWorkstreamFilter();renderChatInboxRows();}catch(e){error.textContent=e.message;}finally{save.disabled=false;}};
   save.onclick=create;name.onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();create();}};actions.append(cancel,save);setTimeout(()=>name.focus(),0);
  });
@@ -629,7 +630,7 @@ function chatChooseWorkstream(entry){
   const name=document.createElement("input");name.placeholder="Project name";name.setAttribute("aria-label","Project name");name.maxLength=80;name.hidden=true;
   select.onchange=()=>{name.hidden=select.value!=="new";if(!name.hidden)name.focus();};
   const error=el("p","",""),actions=el("div","chat-workstream-actions"),cancel=el("button","sprt-quiet","Cancel"),save=el("button","","Save");error.setAttribute("role","alert");cancel.type="button";cancel.onclick=()=>dialog.close();save.type="submit";actions.append(cancel,save);
-  form.append(title,el("p","",entry.session.title||entry.session.name||"Chat"),select,name,error,actions);
+  const context=el("p","chat-project-context",entry.session.title||entry.session.name||"Chat");context.title=context.textContent;form.append(title,context,select,name,error,actions);
   form.onsubmit=async e=>{e.preventDefault();const creating=select.value==="new",label=name.value.trim();if(creating&&!label){error.textContent="Enter a workstream name.";name.focus();return;}save.disabled=true;try{await chatSaveWorkstream(key,expected,creating?"":select.value,creating?label:"");dialog.close();chatRenderWorkstreamFilter();renderChatInboxRows();}catch(e){error.textContent=e.message;}finally{save.disabled=false;}};
   dialog.append(form);dialog.addEventListener("close",()=>dialog.remove(),{once:true});document.body.append(dialog);dialog.showModal();select.focus();
 }
@@ -2088,7 +2089,7 @@ function loadChat() { showChat(location.hash); }
 // the transcript; the shared terminal SSE supplies advisory runtime state.
 // The 1.5 s file tail continues after process stop to ingest final records.
 
-const chatTermKinds = { claude: "claude code", codex: "codex" };
+const chatTermKinds = { claude: "Claude Code", codex: "Codex" };
 function chatIsTerm(name) {
   const n = name === undefined ? chatAgent : name;
   return !!n && Object.prototype.hasOwnProperty.call(chatTermKinds, n);
@@ -3345,10 +3346,10 @@ function chatChooseTerminalRecipient(source){
     body.append(el("p","","Choose who receives your next message. Current work keeps running."),pick);
     const cwd=document.createElement("input");cwd.className="pp-in";cwd.setAttribute("aria-label","Continuation working folder");
     const model=document.createElement("select");model.className="pp-in";model.setAttribute("aria-label","Continuation coding model");model.placeholder="Installed default";
-    const fields=el("div","");const folderLabel=el("label","","Working folder on metis"),modelLabel=el("label","","Model");folderLabel.append(cwd);modelLabel.append(model);fields.append(folderLabel,modelLabel);body.append(fields);
+    const fields=el("div","");const folderLabel=el("label","","Working folder on metis"),modelLabel=el("label","","Model");folderLabel.append(cwd);modelLabel.append(model);fields.append(modelLabel,folderLabel);body.append(fields);
     const sync=()=>{const kind=pick.value==='native'?se.kind:pick.value.slice(9);fields.hidden=pick.value!=='native'&&!pick.value.startsWith('terminal:');const prior=(source.codingRecipients||[]).filter(p=>p.agent===kind).at(-1);cwd.value=pick.value==='native'?(current?.backend==='terminal'?(source.codingRecipients||[]).find(p=>p.id===current.id)?.cwd||se.cwd||'':se.cwd||''):prior?.cwd||se.cwd||'';if(typeof chatPopulateModelSelect==='function')chatPopulateModelSelect(model,kind,pick.value==='native'?(current?.model||se.model||''):(prior?.model||''));};pick.onchange=sync;sync();
     const status=el("p","");status.setAttribute("role","status");body.append(status);
-    const here=el("button","sprt-quiet chat-agent-confirm","Use agent"),cancel=el("button","sprt-quiet","Cancel");
+    const here=el("button","sprt-quiet chat-agent-confirm chat-dialog-primary","Use agent"),cancel=el("button","sprt-quiet","Cancel");
     cancel.onclick=close;
     here.onclick=async()=>{
       here.disabled=true;
@@ -3392,10 +3393,10 @@ function chatChooseRecipient(source){
       el("p","","The next message includes recent history and selected files."));
     const cwd=document.createElement("input");cwd.className="pp-in";cwd.setAttribute("aria-label","Continuation working folder");cwd.placeholder="Default home folder";
     const model=document.createElement("select");model.className="pp-in";model.setAttribute("aria-label","Continuation coding model");model.placeholder="Installed default";
-    const fields=el("div","");const folderLabel=el("label","","Working folder on metis"),modelLabel=el("label","","Model");folderLabel.append(cwd);modelLabel.append(model);fields.append(folderLabel,modelLabel);body.append(fields);
+    const fields=el("div","");const folderLabel=el("label","","Working folder on metis"),modelLabel=el("label","","Model");folderLabel.append(cwd);modelLabel.append(model);fields.append(modelLabel,folderLabel);body.append(fields);
     const sync=()=>{fields.hidden=!pick.value.startsWith("terminal:");const existing=(source.continuations||[]).filter(v=>v.agent===pick.value.slice(9)).at(-1);cwd.value=existing?.cwd||"";if(typeof chatPopulateModelSelect==='function')chatPopulateModelSelect(model,pick.value.slice(9),existing?.model||'');};pick.onchange=sync;sync();
     const status=el("p","");status.setAttribute("role","status");body.append(status);
-    const cancel=el("button","sprt-quiet","Cancel"),here=el("button","sprt-quiet chat-agent-confirm","Use agent");
+    const cancel=el("button","sprt-quiet","Cancel"),here=el("button","sprt-quiet chat-agent-confirm chat-dialog-primary","Use agent");
     cancel.onclick=close;
     here.onclick=async()=>{
       here.disabled=true;
