@@ -89,6 +89,40 @@ func ledgerKinds(t *testing.T, led *ledger.Store, kind, id string) []string {
 	return kinds
 }
 
+// Every executed run is ledgered under itself (recruiting.run.executed —
+// sourcing-effectiveness plan Phase 0): who ran which source over what, with
+// the counts. The cache sweeps itself; this line is what survives it.
+func TestRecruitingSourceRunIsLedgered(t *testing.T) {
+	_, mux, _, led := testRecruitingPhase3Server(t)
+	run := startRun(t, mux, topicalRunBody)
+
+	if kinds := ledgerKinds(t, led, "run", run.ID); strings.Join(kinds, ",") != "recruiting.run.executed" {
+		t.Fatalf("ledger under run %s: %v", run.ID, kinds)
+	}
+	h, err := led.History("run", run.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	e := h.Entries[0]
+	if e.Actor != "owner" || e.Source != "recruiting" {
+		t.Errorf("actor/source: %s / %s", e.Actor, e.Source)
+	}
+	for k, want := range map[string]any{"source": "topical", "query": "low-field mri", "role": "role/mri-engineer", "fetched": float64(1), "new": float64(1), "peopleSeen": float64(1)} {
+		if e.Meta[k] != want {
+			t.Errorf("meta[%s] = %v, want %v", k, e.Meta[k], want)
+		}
+	}
+	// a source that did not say how big its field was gets no number invented
+	for _, k := range []string{"available", "read", "unit"} {
+		if _, has := e.Meta[k]; has {
+			t.Errorf("meta[%s] present for a source that reported none: %v", k, e.Meta[k])
+		}
+	}
+	if !strings.Contains(e.Text, "1 shown") || strings.Contains(e.Text, "fetched") {
+		t.Errorf("text should read as the summary line: %q", e.Text)
+	}
+}
+
 func TestRecruitingSourceAcceptDerivesKnowledgeEdges(t *testing.T) {
 	_, mux, gs, led := testRecruitingPhase3Server(t)
 	run := startRun(t, mux, topicalRunBody)

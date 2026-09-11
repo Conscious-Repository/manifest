@@ -42,8 +42,12 @@ type PubMed struct {
 	Client http.Client
 }
 
-// compile-time proof that the PubMed source satisfies the adapter contract.
-var _ Adapter = PubMed{}
+// compile-time proof that the PubMed source satisfies the adapter contract,
+// and reports the size of its field (Phase 0).
+var (
+	_ Adapter = PubMed{}
+	_ Counted = PubMed{}
+)
 
 const (
 	// PubMedBaseURL is the public E-utilities root. No key, no auth.
@@ -80,7 +84,7 @@ func (PubMed) Scope() []ScopeField {
 	return []ScopeField{
 		{Key: "role", Label: "role"},
 		{Key: "query", Label: "PubMed search", Placeholder: "e.g. diffusion MRI reconstruction[Title]", Required: true},
-		{Key: "max", Label: "max results", Placeholder: strconv.Itoa(pubmedDefaultMax)},
+		{Key: "max", Label: "max people shown", Placeholder: strconv.Itoa(pubmedDefaultMax)},
 	}
 }
 
@@ -136,9 +140,21 @@ type pubmedSummary struct {
 // PMIDs it will summarize, whatever the server sent. A search that finds
 // nothing returns an empty slice, not an error.
 func (p PubMed) Search(ctx context.Context, s Scope) ([]CandidateDraft, error) {
+	out, _, err := p.SearchCounted(ctx, s)
+	return out, err
+}
+
+// SearchCounted is Search plus the size of the field (Phase 0): Available is
+// esearchresult.count — every paper PubMed holds for the query, however few
+// were summarized — Read is the papers whose summary decoded, and PeopleSeen
+// is the distinct first-author strings among them. The adapter still reads
+// only ONE page of Max papers; the counts make that visible rather than
+// change it (the paper budget separates from the people cap in Phase 1).
+func (p PubMed) SearchCounted(ctx context.Context, s Scope) ([]CandidateDraft, Retrieval, error) {
+	ret := Retrieval{Unit: "papers"}
 	query := strings.TrimSpace(s.Query)
 	if query == "" {
-		return nil, errors.New("pubmed: a search needs a query")
+		return nil, ret, errors.New("pubmed: a search needs a query")
 	}
 	max := s.Max
 	if max <= 0 {
@@ -155,23 +171,28 @@ func (p PubMed) Search(ctx context.Context, s Scope) ([]CandidateDraft, error) {
 	params.Set("retmode", "json")
 	body, err := p.get(ctx, pubmedSearchPath, params)
 	if err != nil {
-		return nil, err
+		return nil, ret, err
 	}
 	var search pubmedSearchResponse
 	if err := json.Unmarshal(body, &search); err != nil {
-		return nil, fmt.Errorf("pubmed: malformed response from %s: %v", pubmedSearchPath, err)
+		return nil, ret, fmt.Errorf("pubmed: malformed response from %s: %v", pubmedSearchPath, err)
 	}
 	if search.Result == nil {
 		if msg := strings.TrimSpace(search.Error); msg != "" {
-			return nil, fmt.Errorf("pubmed: %s reported an error: %s", pubmedSearchPath, msg)
+			return nil, ret, fmt.Errorf("pubmed: %s reported an error: %s", pubmedSearchPath, msg)
 		}
-		return nil, fmt.Errorf("pubmed: response from %s has no esearchresult field", pubmedSearchPath)
+		return nil, ret, fmt.Errorf("pubmed: response from %s has no esearchresult field", pubmedSearchPath)
 	}
 	if msg := strings.TrimSpace(search.Result.Error); msg != "" {
-		return nil, fmt.Errorf("pubmed: %s reported an error: %s", pubmedSearchPath, msg)
+		return nil, ret, fmt.Errorf("pubmed: %s reported an error: %s", pubmedSearchPath, msg)
 	}
 	if search.Result.IDList == nil {
-		return nil, fmt.Errorf("pubmed: response from %s has no idlist field", pubmedSearchPath)
+		return nil, ret, fmt.Errorf("pubmed: response from %s has no idlist field", pubmedSearchPath)
+	}
+	// the count is a decimal string in the envelope; anything else is "the
+	// source did not say", never zero
+	if n, err := strconv.Atoi(strings.TrimSpace(search.Result.Count)); err == nil && n >= 0 {
+		ret.Available = Known(n)
 	}
 
 	ids := make([]string, 0, max)
@@ -184,10 +205,10 @@ func (p PubMed) Search(ctx context.Context, s Scope) ([]CandidateDraft, error) {
 		}
 	}
 	if len(ids) == 0 {
-		return []CandidateDraft{}, nil
+		return []CandidateDraft{}, ret, nil
 	}
 	if err := ctx.Err(); err != nil {
-		return nil, fmt.Errorf("pubmed: %v", err)
+		return nil, ret, fmt.Errorf("pubmed: %v", err)
 	}
 
 	params = url.Values{}
@@ -196,17 +217,17 @@ func (p PubMed) Search(ctx context.Context, s Scope) ([]CandidateDraft, error) {
 	params.Set("retmode", "json")
 	body, err = p.get(ctx, pubmedSummaryPath, params)
 	if err != nil {
-		return nil, err
+		return nil, ret, err
 	}
 	var summary pubmedSummaryResponse
 	if err := json.Unmarshal(body, &summary); err != nil {
-		return nil, fmt.Errorf("pubmed: malformed response from %s: %v", pubmedSummaryPath, err)
+		return nil, ret, fmt.Errorf("pubmed: malformed response from %s: %v", pubmedSummaryPath, err)
 	}
 	if summary.Result == nil {
 		if msg := strings.TrimSpace(summary.Error); msg != "" {
-			return nil, fmt.Errorf("pubmed: %s reported an error: %s", pubmedSummaryPath, msg)
+			return nil, ret, fmt.Errorf("pubmed: %s reported an error: %s", pubmedSummaryPath, msg)
 		}
-		return nil, fmt.Errorf("pubmed: response from %s has no result field", pubmedSummaryPath)
+		return nil, ret, fmt.Errorf("pubmed: response from %s has no result field", pubmedSummaryPath)
 	}
 
 	retrieved := time.Now().UTC()
@@ -222,6 +243,7 @@ func (p PubMed) Search(ctx context.Context, s Scope) ([]CandidateDraft, error) {
 		if err := json.Unmarshal(raw, &paper); err != nil || strings.TrimSpace(paper.Error) != "" {
 			continue
 		}
+		ret.Read++ // a summary that decoded is a paper read, usable author or not
 		if paper.UID == "" {
 			paper.UID = id
 		}
@@ -245,7 +267,8 @@ func (p PubMed) Search(ctx context.Context, s Scope) ([]CandidateDraft, error) {
 			Evidence:   []Evidence{ev},
 		})
 	}
-	return out, nil
+	ret.PeopleSeen = len(out)
+	return out, ret, nil
 }
 
 // firstAuthor returns the first entry that names a person — authtype

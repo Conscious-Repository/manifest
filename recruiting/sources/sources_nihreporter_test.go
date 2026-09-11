@@ -429,6 +429,39 @@ func TestNIHRePORTERNeverEmitsContactDetails(t *testing.T) {
 
 // Enrich is a no-op and makes no request: everything came back in the one
 // bounded search response.
+// RETRIEVAL (Phase 0): meta.total is the field, the page is what was read,
+// and PIs are counted past the cap.
+func TestNIHRePORTERRetrievalCounts(t *testing.T) {
+	s := newNIHFixtureServer(t)
+	all, ret, err := s.adapter().SearchCounted(context.Background(), Scope{Query: "mri", Max: 100})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(all) == 0 || ret.Available == nil || *ret.Available != 4 || ret.Read != 4 || ret.PeopleSeen != len(all) || ret.Unit != "projects" {
+		t.Errorf("fixture: drafts=%d available=%v read=%d people=%d unit=%q", len(all), deref(ret.Available), ret.Read, ret.PeopleSeen, ret.Unit)
+	}
+	capped, ret, err := s.adapter().SearchCounted(context.Background(), Scope{Query: "mri", Max: 1})
+	if err != nil || len(capped) != 1 || ret.PeopleSeen != len(all) || ret.Read != 4 {
+		t.Errorf("capped at 1: drafts=%d read=%d people=%d (want %d) err=%v", len(capped), ret.Read, ret.PeopleSeen, len(all), err)
+	}
+
+	// the field is bigger than the page
+	body := strings.Replace(nihFixture(t, "nihreporter-projects.json"), `"total": 4`, `"total": 258`, 1)
+	_, ret, err = newNIHServer(t, http.StatusOK, body).adapter().SearchCounted(context.Background(), Scope{Query: "mri", Max: 100})
+	if err != nil || ret.Available == nil || *ret.Available != 258 || ret.Read != 4 {
+		t.Errorf("258 matching: available=%v read=%d err=%v", deref(ret.Available), ret.Read, err)
+	}
+	// said zero → zero; did not say → nil
+	_, ret, err = newNIHServer(t, http.StatusOK, nihEmptySearch).adapter().SearchCounted(context.Background(), Scope{Query: "nobody", Max: 5})
+	if err != nil || ret.Available == nil || *ret.Available != 0 || ret.Read != 0 || ret.PeopleSeen != 0 {
+		t.Errorf("said zero: %+v err=%v", ret, err)
+	}
+	_, ret, err = newNIHServer(t, http.StatusOK, `{"results":[]}`).adapter().SearchCounted(context.Background(), Scope{Query: "nobody", Max: 5})
+	if err != nil || ret.Available != nil {
+		t.Errorf("did not say: available=%v err=%v", deref(ret.Available), err)
+	}
+}
+
 func TestNIHRePORTEREnrichChangesNothing(t *testing.T) {
 	s := newNIHFixtureServer(t)
 	got, err := s.adapter().Search(context.Background(), Scope{Query: "mri", Max: 1})

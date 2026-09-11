@@ -310,6 +310,60 @@ func TestOpenAlexNeverEmitsContactDetails(t *testing.T) {
 }
 
 // Enrich is a no-op: a second call per draft is Phase 4's, not this.
+// RETRIEVAL (Phase 0): meta.count is the field, the page is what was read,
+// and people are counted past the cap.
+func TestOpenAlexRetrievalCounts(t *testing.T) {
+	s := newOpenAlexServer(t, http.StatusOK, openAlexFixture(t, "openalex-authors.json"))
+	got, ret, err := s.adapter().SearchCounted(context.Background(), Scope{Query: "diffusion MRI", Max: 25})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 3 || ret.Available == nil || *ret.Available != 3 || ret.Read != 3 || ret.PeopleSeen != 3 || ret.Unit != "authors" {
+		t.Errorf("fixture: drafts=%d available=%v read=%d people=%d unit=%q", len(got), deref(ret.Available), ret.Read, ret.PeopleSeen, ret.Unit)
+	}
+
+	// a cap below the page: fewer shown, the same people seen
+	got, ret, err = s.adapter().SearchCounted(context.Background(), Scope{Query: "diffusion MRI", Max: 2})
+	if err != nil || len(got) != 2 || ret.PeopleSeen != 3 || ret.Read != 3 {
+		t.Errorf("capped at 2: drafts=%d read=%d people=%d err=%v", len(got), ret.Read, ret.PeopleSeen, err)
+	}
+
+	// the field is bigger than the page: meta.count is what it says
+	body := strings.Replace(openAlexFixture(t, "openalex-authors.json"), `"count": 3`, `"count": 1234`, 1)
+	s = newOpenAlexServer(t, http.StatusOK, body)
+	_, ret, err = s.adapter().SearchCounted(context.Background(), Scope{Query: "diffusion MRI", Max: 25})
+	if err != nil || ret.Available == nil || *ret.Available != 1234 || ret.Read != 3 {
+		t.Errorf("1234 matching: available=%v read=%d err=%v", deref(ret.Available), ret.Read, err)
+	}
+
+	// no meta → the source did not say; meta said zero → zero, known
+	s = newOpenAlexServer(t, http.StatusOK, `{"results":[]}`)
+	got, ret, err = s.adapter().SearchCounted(context.Background(), Scope{Query: "x", Max: 5})
+	if err != nil || len(got) != 0 || ret.Available != nil || ret.Read != 0 {
+		t.Errorf("no meta: drafts=%d available=%v read=%d err=%v", len(got), deref(ret.Available), ret.Read, err)
+	}
+	s = newOpenAlexServer(t, http.StatusOK, `{"meta":{"count":0},"results":[]}`)
+	_, ret, err = s.adapter().SearchCounted(context.Background(), Scope{Query: "x", Max: 5})
+	if err != nil || ret.Available == nil || *ret.Available != 0 {
+		t.Errorf("meta zero: available=%v err=%v", deref(ret.Available), err)
+	}
+}
+
+func TestOpenAlexWorkRetrievalCounts(t *testing.T) {
+	s := newOpenAlexServer(t, http.StatusOK, openAlexFixture(t, "openalex-work.json"))
+	all, ret, err := s.adapter().SearchCounted(context.Background(), Scope{Fields: map[string]string{"work": "10.1000/example"}, Max: 100})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ret.Available == nil || *ret.Available != 1 || ret.Read != 1 || ret.Unit != "works" || ret.PeopleSeen != len(all) || len(all) == 0 {
+		t.Errorf("one work: drafts=%d available=%v read=%d people=%d unit=%q", len(all), deref(ret.Available), ret.Read, ret.PeopleSeen, ret.Unit)
+	}
+	capped, ret, err := s.adapter().SearchCounted(context.Background(), Scope{Fields: map[string]string{"work": "10.1000/example"}, Max: 1})
+	if err != nil || len(capped) != 1 || ret.PeopleSeen != len(all) {
+		t.Errorf("capped at 1: drafts=%d people=%d (want %d) err=%v", len(capped), ret.PeopleSeen, len(all), err)
+	}
+}
+
 func TestOpenAlexEnrichChangesNothing(t *testing.T) {
 	s := newOpenAlexServer(t, http.StatusOK, openAlexFixture(t, "openalex-authors.json"))
 	got, err := s.adapter().Search(context.Background(), Scope{Query: "Dana Reyes", Max: 1})

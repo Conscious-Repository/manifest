@@ -40,7 +40,7 @@
         },
         {
           "key": "max",
-          "label": "max results",
+          "label": "max people shown",
           "placeholder": "25"
         }
       ]
@@ -107,7 +107,7 @@
         },
         {
           "key": "max",
-          "label": "max results",
+          "label": "max people shown",
           "placeholder": "25"
         }
       ]
@@ -128,7 +128,7 @@
         },
         {
           "key": "max",
-          "label": "max results",
+          "label": "max people shown",
           "placeholder": "25"
         }
       ]
@@ -356,7 +356,7 @@
         "idempotentHint": false,
         "readOnlyHint": true
       },
-      "description": "Read the application's shared adapter registry and scope fields; no fetch or cache sweep.",
+      "description": "Read the application's shared adapter registry and scope fields; no fetch or cache sweep. `max` is the optional people/display cap per run (default 25, ceiling 100), not an upstream page size.",
       "inputSchema": {
         "type": "object",
         "additionalProperties": false
@@ -368,7 +368,7 @@
         "idempotentHint": false,
         "readOnlyHint": true
       },
-      "description": "Read one run and review queue using RunStore.Get; counts include previously passed drafts separately.",
+      "description": "Read one run and review queue using RunStore.Get; counts include previously passed drafts separately, plus available/read/peopleSeen denominators when the source reported them.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -459,7 +459,7 @@
         "idempotentHint": false,
         "readOnlyHint": false
       },
-      "description": "Normalize a source scope using Execute's shared PrepareScope. Resolve optional seed and role refs. No fetch or source-cache write; persists an operation. Standing authorization applies; network/robots validation remains execution-time.",
+      "description": "Normalize a source scope using Execute's shared PrepareScope. Resolve optional seed and role refs. request.max is optional: the people/display cap (default 25, ceiling 100), not an API page size — omit it rather than guessing small. No fetch or source-cache write; persists an operation. Standing authorization applies; network/robots validation remains execution-time.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -501,7 +501,6 @@
               "source",
               "role",
               "query",
-              "max",
               "dryRun"
             ],
             "additionalProperties": false
@@ -1355,7 +1354,7 @@
       "name": "operation.execute"
     }
   ],
-  "version": "2.2.0",
+  "version": "2.3.0",
   "vocabulary": {
     "entityKinds": [
       "task",

@@ -104,9 +104,46 @@ func (s *Server) handleRecruitingSourceRun(w http.ResponseWriter, r *http.Reques
 		httpError(w, err)
 		return
 	}
+	s.runExecutedEvent(run, "owner")
 	out := s.runsPayload(false)
 	out["run"] = run
 	writeJSON(w, out)
+}
+
+// runExecutedEvent ledgers one executed source run under the run itself
+// (recruiting.run.executed — sourcing-effectiveness plan Phase 0): who ran
+// which source over what scope, and every count the run holds, denominators
+// included when the source gave them. The cache sweeps itself after RunTTL;
+// this line is what survives it, so "8 fetched" is never the only number
+// left of a search. Actor is the caller: the owner from this route. The MCP
+// path (manifestmcp/operations.go, source_run.prepare → operation.execute)
+// holds no ledger handle today and writes its own operation receipt instead;
+// giving it this event is a follow-up, not a second log.
+func (s *Server) runExecutedEvent(run recruiting.Run, actor string) {
+	c := run.Counts
+	meta := map[string]any{
+		"run": run.ID, "source": run.Source, "query": run.Scope.Query, "role": run.Scope.Role, "max": run.Scope.Max,
+		"fetched": c.Fetched, "new": c.New, "duplicate": c.Duplicate, "rejected": c.Rejected,
+	}
+	if len(run.Scope.Fields) > 0 {
+		meta["fields"] = run.Scope.Fields
+	}
+	if c.Available != nil {
+		meta["available"] = *c.Available
+	}
+	if c.Read != nil {
+		meta["read"] = *c.Read
+	}
+	if c.PeopleSeen != nil {
+		meta["peopleSeen"] = *c.PeopleSeen
+	}
+	if c.Unit != "" {
+		meta["unit"] = c.Unit
+	}
+	s.ledger(ledger.Entry{Source: "recruiting", Kind: "recruiting.run.executed", Actor: actor,
+		Object: ledger.Object{Kind: "run", ID: run.ID},
+		Text:   ledger.Snip("ran "+run.Source+" for "+orStr(run.Scope.Query, "one reference")+" — "+c.Summary(), 280),
+		Meta:   meta})
 }
 
 // POST /api/aion/recruiting/sources/accept/{run}/{draft} — promote exactly

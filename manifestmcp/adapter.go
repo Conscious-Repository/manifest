@@ -19,7 +19,7 @@ import (
 	"manifest/recruiting"
 )
 
-const Version = "2.2.0"
+const Version = "2.3.0"
 
 type Object map[string]any
 type Adapter struct {
@@ -163,12 +163,14 @@ func (a *Adapter) Server() *mcp.Server {
 		return Object{"status": status, "matches": matches, "requiresChoice": len(matches) > 1}, nil
 	})
 	add(a, s, "entity.get", "Read a canonical entity, evidence/provenance and content revision.", func(q Ref) (Object, error) { e, err := a.get(q); return Object{"entity": e}, err })
-	add(a, s, "sources.list", "Read the application's shared adapter registry and scope fields; no fetch or cache sweep.", func(_ struct{}) (Object, error) {
-		return Object{"sources": a.Runs.Sources(), "defaultMax": recruiting.DefaultRunMax, "maxMax": recruiting.MaxRunMax}, nil
+	add(a, s, "sources.list", "Read the application's shared adapter registry and scope fields; no fetch or cache sweep. `max` is the optional people/display cap per run (default 25, ceiling 100), not an upstream page size.", func(_ struct{}) (Object, error) {
+		return Object{"sources": a.Runs.Sources(), "defaultMax": recruiting.DefaultRunMax, "maxMax": recruiting.MaxRunMax,
+			"max": Object{"optional": true, "default": recruiting.DefaultRunMax, "ceiling": recruiting.MaxRunMax,
+				"meaning": "people/display cap: at most this many drafts land in the run's queue; omit it to take the default. Not an upstream page size — run counts report available/read/peopleSeen when the source says how big the field was."}}, nil
 	})
-	add(a, s, "source_run.get", "Read one run and review queue using RunStore.Get; counts include previously passed drafts separately.", a.runGet)
+	add(a, s, "source_run.get", "Read one run and review queue using RunStore.Get; counts include previously passed drafts separately, plus available/read/peopleSeen denominators when the source reported them.", a.runGet)
 	add(a, s, "graph.neighbors", "Bounded stored general-graph neighbors and optional paths (at most 3 hops, 10 paths). Server-only task/calendar derivations are not included.", a.neighbors)
-	add(a, s, "source_run.prepare", "Normalize a source scope using Execute's shared PrepareScope. Resolve optional seed and role refs. No fetch or source-cache write; persists an operation. Standing authorization applies; network/robots validation remains execution-time.", a.sourcePrepare)
+	add(a, s, "source_run.prepare", "Normalize a source scope using Execute's shared PrepareScope. Resolve optional seed and role refs. request.max is optional: the people/display cap (default 25, ceiling 100), not an API page size — omit it rather than guessing small. No fetch or source-cache write; persists an operation. Standing authorization applies; network/robots validation remains execution-time.", a.sourcePrepare)
 	add(a, s, "candidate_accept.prepare", "Preview exactly one new draft through AcceptDraft with an in-memory capture writer, plus derived knowledge and decision effects. Persists an operation outside the vault.", func(q DraftInput) (Object, error) { return a.draftPrepare(q, true) })
 	add(a, s, "candidate_accept_batch.prepare", "Preview acceptance of 1–100 explicitly selected draft IDs from one run, in order, with one approval and exact intermediate and final effects. Execute with operation.execute.", a.batchAcceptPrepare)
 	add(a, s, "candidate_reject.prepare", "Resolve one new draft and preview durable passed.md suppression plus queue and audit effects.", func(q DraftInput) (Object, error) { return a.draftPrepare(q, false) })

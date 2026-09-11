@@ -35,8 +35,12 @@ type OpenAlex struct {
 	Client http.Client
 }
 
-// compile-time proof that the OpenAlex source satisfies the adapter contract.
-var _ Adapter = OpenAlex{}
+// compile-time proof that the OpenAlex source satisfies the adapter contract,
+// and reports the size of its field (Phase 0).
+var (
+	_ Adapter = OpenAlex{}
+	_ Counted = OpenAlex{}
+)
 
 const (
 	// OpenAlexBaseURL is the public API root. No key, no auth.
@@ -67,7 +71,7 @@ func (OpenAlex) Scope() []ScopeField {
 		{Key: "role", Label: "role"},
 		{Key: "query", Label: "author name or keyword", Placeholder: "e.g. diffusion MRI reconstruction"},
 		{Key: "work", Label: "or one paper", Placeholder: "DOI, OpenAlex id, or link"},
-		{Key: "max", Label: "max results", Placeholder: strconv.Itoa(openAlexDefaultMax)},
+		{Key: "max", Label: "max people shown", Placeholder: strconv.Itoa(openAlexDefaultMax)},
 	}
 }
 
@@ -125,8 +129,12 @@ type openAlexAffiliation struct {
 
 // openAlexAuthorsResponse is the envelope. Results is a pointer so a response
 // with NO results key (a shape change, an error page that happened to be
-// JSON) is told apart from an honest empty list.
+// JSON) is told apart from an honest empty list. Meta.count is the total the
+// registry matched, pointer for the same reason: absent is "did not say".
 type openAlexAuthorsResponse struct {
+	Meta *struct {
+		Count *int `json:"count"`
+	} `json:"meta"`
 	Results *[]openAlexAuthor `json:"results"`
 }
 
@@ -134,12 +142,23 @@ type openAlexAuthorsResponse struct {
 // author into a cited draft. It never paginates: the scope's Max is both the
 // per-page it asks for and the most it will return, whatever the server sent.
 func (oa OpenAlex) Search(ctx context.Context, s Scope) ([]CandidateDraft, error) {
+	out, _, err := oa.SearchCounted(ctx, s)
+	return out, err
+}
+
+// SearchCounted is Search plus the size of the field (Phase 0): Available is
+// meta.count — every author the registry matched — Read is the author rows
+// the one page carried, and PeopleSeen is how many of those were citable,
+// counted past the cap so a page the server over-filled is not hidden. The
+// single-paper path reports the one work and everyone named on it.
+func (oa OpenAlex) SearchCounted(ctx context.Context, s Scope) ([]CandidateDraft, Retrieval, error) {
 	if ref := strings.TrimSpace(s.Fields["work"]); ref != "" {
 		return oa.searchWork(ctx, ref, s)
 	}
+	ret := Retrieval{Unit: "authors"}
 	query := strings.TrimSpace(s.Query)
 	if query == "" {
-		return nil, errors.New("openalex: a search needs a query, or one paper")
+		return nil, ret, errors.New("openalex: a search needs a query, or one paper")
 	}
 	max := s.Max
 	if max <= 0 {
@@ -154,29 +173,34 @@ func (oa OpenAlex) Search(ctx context.Context, s Scope) ([]CandidateDraft, error
 	params.Set("per-page", strconv.Itoa(max))
 	body, err := oa.get(ctx, "/authors", params)
 	if err != nil {
-		return nil, err
+		return nil, ret, err
 	}
 	var resp openAlexAuthorsResponse
 	if err := json.Unmarshal(body, &resp); err != nil {
-		return nil, fmt.Errorf("openalex: malformed response from /authors: %v", err)
+		return nil, ret, fmt.Errorf("openalex: malformed response from /authors: %v", err)
 	}
 	if resp.Results == nil {
-		return nil, errors.New("openalex: response from /authors has no results field")
+		return nil, ret, errors.New("openalex: response from /authors has no results field")
 	}
+	if resp.Meta != nil && resp.Meta.Count != nil && *resp.Meta.Count >= 0 {
+		ret.Available = Known(*resp.Meta.Count)
+	}
+	ret.Read = len(*resp.Results)
 
 	retrieved := time.Now().UTC()
 	out := make([]CandidateDraft, 0, min(len(*resp.Results), max))
 	for _, a := range *resp.Results {
-		if len(out) >= max {
-			break
-		}
 		d, ok := oa.draft(a, s.Role, retrieved)
 		if !ok {
 			continue
 		}
+		ret.PeopleSeen++
+		if len(out) >= max {
+			continue
+		}
 		out = append(out, d)
 	}
-	return out, nil
+	return out, ret, nil
 }
 
 // draft converts one returned author into a draft. It reports false for an

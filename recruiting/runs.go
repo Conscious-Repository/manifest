@@ -61,7 +61,17 @@ const (
 )
 
 // RunCounts are the numbers the sources panel paints. `Fetched` is what the
-// adapter returned; the other four partition it by what happened next.
+// queue holds — the adapter's drafts after the run's cap — and the next five
+// partition it by what happened next.
+//
+// The last four are the DENOMINATORS (sourcing-effectiveness plan Phase 0,
+// 2026-09-11): a run capped at 8 that says "8 fetched" has said nothing
+// about the field, and the owner read those eights as the size of the
+// world. Available is what the source said matched, Read is how many of its
+// records the adapter decoded, PeopleSeen is how many distinct people those
+// records named before the cap. All pointers, all omitempty: a run.json
+// written before they existed reads back with none, and "the source did not
+// say" is nil — never zero. Unit names what Available and Read count.
 type RunCounts struct {
 	Fetched   int `json:"fetched"`
 	New       int `json:"new"`
@@ -69,6 +79,37 @@ type RunCounts struct {
 	Accepted  int `json:"accepted"`
 	Rejected  int `json:"rejected"`
 	Graphed   int `json:"graphed"`
+
+	Available  *int   `json:"available,omitempty"`
+	Read       *int   `json:"read,omitempty"`
+	PeopleSeen *int   `json:"peopleSeen,omitempty"`
+	Unit       string `json:"unit,omitempty"`
+}
+
+// Summary is the one honest line about a run's size — the same words the
+// UI's card and toast print, so the ledger and the screen agree: "8 shown of
+// 162 matching papers · 32 papers read · 31 people seen · 3 new · 5
+// duplicate". A denominator the source did not give is left out, never
+// printed as zero; a people count equal to what is shown adds nothing and is
+// left out too. `shown`, not `fetched`: the number is the queue, not the field.
+func (c RunCounts) Summary() string {
+	unit := ""
+	if c.Unit != "" {
+		unit = " " + c.Unit
+	}
+	shown := strconv.Itoa(c.Fetched) + " shown"
+	if c.Available != nil {
+		shown += " of " + strconv.Itoa(*c.Available) + " matching" + unit
+	}
+	parts := []string{shown}
+	if c.Read != nil {
+		parts = append(parts, strconv.Itoa(*c.Read)+unit+" read")
+	}
+	if c.PeopleSeen != nil && *c.PeopleSeen != c.Fetched {
+		parts = append(parts, strconv.Itoa(*c.PeopleSeen)+" people seen")
+	}
+	parts = append(parts, strconv.Itoa(c.New)+" new", strconv.Itoa(c.Duplicate)+" duplicate")
+	return strings.Join(parts, " · ")
 }
 
 // RunState is run.json: the trace without the drafts.
@@ -121,12 +162,20 @@ type SourceInfo struct {
 	Fields []sources.ScopeField `json:"fields"`
 }
 
-// RunRequest is the body of POST …/sources/run.
+// RunRequest is the body of POST …/sources/run, and the MCP source_run
+// request (the catalog schema is generated from it).
 type RunRequest struct {
-	Source string            `json:"source"`
-	Role   string            `json:"role"`
-	Query  string            `json:"query"`
-	Max    int               `json:"max"`
+	Source string `json:"source"`
+	Role   string `json:"role"`
+	Query  string `json:"query"`
+	// Max is the PEOPLE cap: at most this many drafts land in the queue.
+	// Optional — omitted (or ≤ 0) means DefaultRunMax, and anything above
+	// MaxRunMax is clamped, so a caller never has to pick a number to run.
+	// It is not an upstream page size, even though today's scholarly
+	// adapters still ask their API for exactly this many records; the counts
+	// on the run (RunCounts.Available/Read) say what that left unread, and
+	// the paper budget separates from this cap in the plan's Phase 1/2.
+	Max    int               `json:"max,omitempty"`
 	DryRun bool              `json:"dryRun"`
 	Fields map[string]string `json:"fields,omitempty"`
 }
@@ -279,10 +328,21 @@ func (r *RunStore) ExecuteTracked(ctx context.Context, req RunRequest, now time.
 		}
 	}
 
-	drafts, err := adapter.Search(ctx, scope)
+	// an adapter that can say how big its field was is asked to (Phase 0);
+	// the rest are asked the old question and the substrate counts what it
+	// can see for itself — the drafts they emitted, before the cap
+	var drafts []sources.CandidateDraft
+	var retrieval sources.Retrieval
+	counted, ok := adapter.(sources.Counted)
+	if ok {
+		drafts, retrieval, err = counted.SearchCounted(ctx, scope)
+	} else {
+		drafts, err = adapter.Search(ctx, scope)
+	}
 	if err != nil {
 		return Run{}, errf("%s: %v", adapter.ID(), err)
 	}
+	emitted := len(drafts)
 	if len(drafts) > max {
 		drafts = drafts[:max]
 	}
@@ -295,6 +355,12 @@ func (r *RunStore) ExecuteTracked(ctx context.Context, req RunRequest, now time.
 		ID: runID, Source: adapter.ID(), Scope: scope, StartedAt: now.UTC(),
 	}}
 	run.Counts.Fetched = len(drafts)
+	run.Counts.PeopleSeen = sources.Known(max2(emitted, retrieval.PeopleSeen))
+	if ok {
+		run.Counts.Available = retrieval.Available
+		run.Counts.Read = sources.Known(retrieval.Read)
+		run.Counts.Unit = retrieval.Unit
+	}
 	if adapter.ID() == "web" && len(drafts) == 0 {
 		run.Note = "No person-shaped content with a supported role was accepted from this web seed within the crawl limits. Consider seeding the /people, /members or /lab page directly; pages may also have been unavailable or blocked."
 	}
@@ -797,6 +863,13 @@ func (r *RunStore) sweep(now time.Time) []string {
 
 var runIDRe = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,80}$`)
 var draftIDRe = regexp.MustCompile(`^d[0-9]{1,6}$`)
+
+func max2(a, b int) int {
+	if a > b {
+		return a
+	}
+	return b
+}
 
 // newRunID is sortable by start time, names its source, and carries enough
 // randomness that two runs in the same second do not collide.

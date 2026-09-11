@@ -262,3 +262,38 @@ type Adapter interface {
 	Enrich(ctx context.Context, d CandidateDraft) (CandidateDraft, error)
 	GraphEdges(ctx context.Context, d CandidateDraft) ([]EdgeClaim, error)
 }
+
+// Retrieval is the size of the field a Search saw, beside the drafts it
+// emitted (sourcing-effectiveness plan Phase 0, 2026-09-11). A run that
+// says "8 fetched" with a cap of 8 has said nothing about the field; these
+// are the denominators. Every count is what the upstream said or what the
+// adapter itself decoded — never inferred, never padded.
+//
+//   - Available is the upstream's own count of records matching the query
+//     (PubMed esearchresult.count, OpenAlex meta.count, RePORTER meta.total).
+//     nil when the source did not say; a source that said zero says 0.
+//   - Read is how many upstream records the adapter actually decoded:
+//     papers summarized, author rows, projects. What the run was built from.
+//   - PeopleSeen is how many distinct people those records named BEFORE any
+//     cap — the number that grows when the paper budget widens, and the one
+//     the substrate compares against what it shows.
+//   - Unit names the record Available and Read count: "papers", "authors",
+//     "projects", "works". People need no unit.
+type Retrieval struct {
+	Available  *int   `json:"available,omitempty"`
+	Read       int    `json:"read"`
+	PeopleSeen int    `json:"peopleSeen"`
+	Unit       string `json:"unit,omitempty"`
+}
+
+// Known wraps a count the source stated outright — including zero.
+func Known(n int) *int { return &n }
+
+// Counted is the optional adapter contract behind Retrieval. An adapter that
+// knows how big its field was implements it; the run substrate calls it in
+// preference to Search, and Search stays the whole contract for everyone
+// else. Adapters are values with no pointer fields (rule 1), so the count
+// rides the return, never the adapter.
+type Counted interface {
+	SearchCounted(ctx context.Context, s Scope) ([]CandidateDraft, Retrieval, error)
+}

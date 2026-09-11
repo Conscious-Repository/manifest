@@ -1869,8 +1869,9 @@ function recRunFormEl() {
   max.type = "number";
   max.min = "1";
   max.max = String(recSources.maxMax || 100);
-  max.placeholder = "max " + (recSources.defaultMax || 25);
-  max.title = "at most " + (recSources.maxMax || 100) + " per run";
+  max.placeholder = "show " + (recSources.defaultMax || 25);
+  max.title = "people shown per run — " + (recSources.defaultMax || 25) + " unless you say, at most " +
+    (recSources.maxMax || 100) + ". Not how many the source holds: the run card says how many matched and were read.";
   max.value = recRunForm.max;
   max.oninput = () => { recRunForm.max = max.value; };
   form.append(max);
@@ -1937,9 +1938,7 @@ async function recRunFire(body) {
       recShowCleared = recRunCleared(out.run);
     }
     recRunForm.query = "";
-    const c = (out.run || {}).counts || {};
-    showToast("run: " + (c.fetched || 0) + " fetched · " +
-      (c.new || 0) + " new · " + (c.duplicate || 0) + " duplicate");
+    showToast("run: " + recRunRetrieval((out.run || {}).counts));
     return out;
   } catch (e) {
     showToast(String(e.message || e).slice(0, 140), null, "error");
@@ -1948,6 +1947,26 @@ async function recRunFire(body) {
     recRunning = false;
     renderAion();
   }
+}
+
+// recRunRetrieval — the honest size of a run, in the words the server's
+// RunCounts.Summary uses (sourcing plan Phase 0, 2026-09-11): what is SHOWN,
+// out of what the source said MATCHED, and how much of that was actually
+// READ. A run capped at 8 used to say "8 fetched" and the owner read the
+// eights as the size of the world; `shown` is the queue, and it never prints
+// without its denominator when the source gave one. A count the source did
+// not give is left out — never shown as zero — and a people count equal to
+// what is shown adds nothing, so it is left out too.
+function recRunRetrieval(c) {
+  c = c || {};
+  const unit = c.unit ? " " + c.unit : "";
+  let shown = (c.fetched || 0) + " shown";
+  if (c.available != null) shown += " of " + c.available + " matching" + unit;
+  const parts = [shown];
+  if (c.read != null) parts.push(c.read + unit + " read");
+  if (c.peopleSeen != null && c.peopleSeen !== (c.fetched || 0)) parts.push(c.peopleSeen + " people seen");
+  parts.push((c.new || 0) + " new", (c.duplicate || 0) + " duplicate");
+  return parts.join(" · ");
 }
 
 // recSweepIsLookup: ONE paper, ONE repo, ONE feed is a lookup — a single
@@ -2072,7 +2091,20 @@ function recRunCard(run) {
   card.append(head);
 
   const counts = el("div", "rec-run-counts");
-  [["fetched", c.fetched], ["new", c.new], ["dup", c.duplicate], ["accepted", c.accepted], ["graphed", c.graphed], ["passed", c.rejected]]
+  // the size of the field first — shown / matching / read — then the queue's
+  // partition. Never a bare `fetched`: see recRunRetrieval.
+  const unit = c.unit ? " " + c.unit : "";
+  const shown = el("span", "rec-run-count" + (c.fetched ? " has" : ""),
+    (c.fetched || 0) + " shown" + (c.available != null ? " of " + c.available + " matching" + unit : ""));
+  shown.title = c.available != null
+    ? "the source matched " + c.available + unit + "; this run shows " + (c.fetched || 0) + " people"
+    : "this run shows " + (c.fetched || 0) + " people; the source did not say how many it matched";
+  counts.append(shown);
+  if (c.read != null) counts.append(el("span", "rec-run-count" + (c.read ? " has" : ""), c.read + unit + " read"));
+  if (c.peopleSeen != null && c.peopleSeen !== (c.fetched || 0)) {
+    counts.append(el("span", "rec-run-count has", c.peopleSeen + " people seen"));
+  }
+  [["new", c.new], ["dup", c.duplicate], ["accepted", c.accepted], ["graphed", c.graphed], ["passed", c.rejected]]
     .forEach(([k, n]) => counts.append(el("span", "rec-run-count" + (n ? " has" : ""), (n || 0) + " " + k)));
   counts.append(el("span", "rec-run-when", fmtWhen(run.startedAt)));
   let expiry = "kept until triaged";
@@ -2885,6 +2917,9 @@ function paintRoleView(main) {
       recRunForm.source = r.source;
       recRunForm.role = roleId;
       recRunForm.query = scope.query || "";
+      // the budget is part of the search: a rerun that silently dropped it
+      // fell back to the default and looked like a smaller field (Phase 0)
+      recRunForm.max = scope.max > 0 ? String(scope.max) : "";
       recRunForm.fields = Object.assign({}, scope.fields || {});
       recNav("sources");
     };

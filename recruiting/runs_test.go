@@ -2,6 +2,7 @@ package recruiting
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"go/ast"
 	"go/parser"
@@ -711,6 +712,112 @@ func TestTriagedUnpinnedRunExpiresPinnedDoesNot(t *testing.T) {
 	}
 	if _, err := rs.Get(pinned.ID); err == nil {
 		t.Error("a swept run still loads")
+	}
+}
+
+// ---- retrieval denominators (Phase 0) ----
+
+// countedAdapter is a fakeAdapter that also knows how big its field was.
+type countedAdapter struct {
+	*fakeAdapter
+	retrieval sources.Retrieval
+}
+
+func (c countedAdapter) SearchCounted(ctx context.Context, s sources.Scope) ([]sources.CandidateDraft, sources.Retrieval, error) {
+	drafts, err := c.fakeAdapter.Search(ctx, s)
+	return drafts, c.retrieval, err
+}
+
+// A run that shows 8 says what it showed them out of — what the source
+// matched, what the adapter read, how many people it saw — and claims
+// nothing a source did not say.
+func TestExecuteRecordsRetrievalCounts(t *testing.T) {
+	var forty []sources.CandidateDraft
+	for i := 0; i < 40; i++ {
+		forty = append(forty, citedDraft("Person "+string(rune('A'+i%26))+string(rune('a'+i/26)), "P"+string(rune('0'+i%10))+string(rune('a'+i/10))))
+	}
+	counted := countedAdapter{
+		fakeAdapter: &fakeAdapter{id: "fake", drafts: forty},
+		retrieval:   sources.Retrieval{Available: sources.Known(162), Read: 32, PeopleSeen: 40, Unit: "papers"},
+	}
+	rs, _, _ := testRunStore(t, nil)
+	rs.Register(counted)
+
+	run := mustRun(t, rs, RunRequest{Source: "fake", Query: "field-cycling", Max: 10})
+	c := run.Counts
+	if c.Fetched != 10 || len(run.Drafts) != 10 {
+		t.Fatalf("cap 10 → fetched %d, %d drafts", c.Fetched, len(run.Drafts))
+	}
+	if c.Available == nil || *c.Available != 162 || c.Read == nil || *c.Read != 32 || c.PeopleSeen == nil || *c.PeopleSeen != 40 || c.Unit != "papers" {
+		t.Errorf("denominators lost between adapter and run: %+v", c)
+	}
+	if got, want := c.Summary(), "10 shown of 162 matching papers · 32 papers read · 40 people seen · 10 new · 0 duplicate"; got != want {
+		t.Errorf("summary\n got %q\nwant %q", got, want)
+	}
+
+	// the numbers survive the cache: what Get reads back is what Execute wrote
+	back, err := rs.Get(run.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if back.Counts.Available == nil || *back.Counts.Available != 162 || back.Counts.Read == nil || *back.Counts.Read != 32 {
+		t.Errorf("run.json dropped the denominators: %+v", back.Counts)
+	}
+
+	// an adapter that cannot count its field: the substrate still says how
+	// many drafts came back before the cap, and invents nothing else
+	plain := &fakeAdapter{id: "plain", drafts: forty[:30]}
+	rs.Register(plain)
+	run = mustRun(t, rs, RunRequest{Source: "plain", Query: "x", Max: 10})
+	c = run.Counts
+	if c.Fetched != 10 || c.PeopleSeen == nil || *c.PeopleSeen != 30 {
+		t.Errorf("30 emitted, 10 shown: %+v", c)
+	}
+	if c.Available != nil || c.Read != nil || c.Unit != "" {
+		t.Errorf("a source that did not say got a number anyway: %+v", c)
+	}
+	if got, want := c.Summary(), "10 shown · 30 people seen · 10 new · 0 duplicate"; got != want {
+		t.Errorf("summary\n got %q\nwant %q", got, want)
+	}
+
+	// nothing capped, nothing hidden: the people line is left out
+	run = mustRun(t, rs, RunRequest{Source: "plain", Query: "x", Max: 50})
+	if got, want := run.Counts.Summary(), "30 shown · 30 new · 0 duplicate"; got != want {
+		t.Errorf("summary\n got %q\nwant %q", got, want)
+	}
+}
+
+// A run.json written before the denominators existed carries none of them,
+// and the reader must not invent zeros: nil means the source did not say.
+func TestRunCountsReadBackWithoutDenominators(t *testing.T) {
+	var c RunCounts
+	if err := json.Unmarshal([]byte(`{"fetched":8,"new":3,"duplicate":5,"accepted":0,"rejected":0,"graphed":0}`), &c); err != nil {
+		t.Fatal(err)
+	}
+	if c.Fetched != 8 || c.New != 3 || c.Duplicate != 5 {
+		t.Errorf("old counts changed: %+v", c)
+	}
+	if c.Available != nil || c.Read != nil || c.PeopleSeen != nil || c.Unit != "" {
+		t.Errorf("an old run grew denominators it never had: %+v", c)
+	}
+	if got, want := c.Summary(), "8 shown · 3 new · 5 duplicate"; got != want {
+		t.Errorf("summary\n got %q\nwant %q", got, want)
+	}
+	// and the wire form of an old run is byte-for-byte what it was
+	b, err := json.Marshal(c)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(b) != `{"fetched":8,"new":3,"duplicate":5,"accepted":0,"rejected":0,"graphed":0}` {
+		t.Errorf("old counts serialize differently now: %s", b)
+	}
+}
+
+// A source that said ZERO is not a source that did not say.
+func TestRunCountsSummaryKnownZero(t *testing.T) {
+	c := RunCounts{Available: sources.Known(0), Read: sources.Known(0), PeopleSeen: sources.Known(0), Unit: "papers"}
+	if got, want := c.Summary(), "0 shown of 0 matching papers · 0 papers read · 0 new · 0 duplicate"; got != want {
+		t.Errorf("summary\n got %q\nwant %q", got, want)
 	}
 }
 

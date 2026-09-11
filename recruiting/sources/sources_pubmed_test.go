@@ -2,6 +2,8 @@ package sources
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -390,6 +392,105 @@ func TestPubMedNeverEmitsContactDetails(t *testing.T) {
 
 // Enrich is a no-op and makes no request: the bounded summary fetch already
 // happened inside Search.
+// RETRIEVAL — the denominators (sourcing-effectiveness plan Phase 0). A run
+// capped at 8 that says "8 fetched" has said nothing about the field; these
+// tests pin that the adapter reports what PubMed said matched, what it
+// actually read, and how many people it saw — and that a count the source
+// did not give is nil, never zero.
+
+// pubmedField builds an esearch/esummary pair for n papers whose first
+// authors are all distinct except that the last paper repeats the first's —
+// so n papers read fold into n-1 drafts, and the two numbers are told apart.
+func pubmedField(n int, count string) (search, summary string) {
+	ids := make([]string, 0, n)
+	result := map[string]any{}
+	for i := 1; i <= n; i++ {
+		id := fmt.Sprintf("3900%04d", i)
+		ids = append(ids, id)
+		author := fmt.Sprintf("Author %d", i)
+		if i == n {
+			author = "Author 1"
+		}
+		result[id] = map[string]any{
+			"uid": id, "title": fmt.Sprintf("Paper %d", i), "source": "J Test", "pubdate": "2025 Jan",
+			"authors": []map[string]string{{"name": author, "authtype": "Author"}},
+		}
+	}
+	result["uids"] = ids
+	s, _ := json.Marshal(map[string]any{"esearchresult": map[string]any{"count": count, "retmax": fmt.Sprint(n), "retstart": "0", "idlist": ids}})
+	m, _ := json.Marshal(map[string]any{"result": result})
+	return string(s), string(m)
+}
+
+func TestPubMedRetrievalTellsDraftsFromAvailablePapers(t *testing.T) {
+	search, summary := pubmedField(32, "32")
+	s := newPubMedServer(t, http.StatusOK, search, http.StatusOK, summary)
+	got, ret, err := s.adapter().SearchCounted(context.Background(), Scope{Query: "field-cycling MRI", Max: 100})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 31 {
+		t.Fatalf("31 first authors → %d drafts", len(got))
+	}
+	if ret.Available == nil || *ret.Available != 32 || ret.Read != 32 || ret.PeopleSeen != 31 || ret.Unit != "papers" {
+		t.Errorf("retrieval: available=%v read=%d people=%d unit=%q; want 32 / 32 / 31 / papers", deref(ret.Available), ret.Read, ret.PeopleSeen, ret.Unit)
+	}
+
+	// the count is the FIELD, not the page: 162 matching, 32 read — the
+	// number that was invisible behind "8 fetched"
+	search, summary = pubmedField(32, "162")
+	s = newPubMedServer(t, http.StatusOK, search, http.StatusOK, summary)
+	got, ret, err = s.adapter().SearchCounted(context.Background(), Scope{Query: "field-cycling MRI", Max: 100})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 31 || ret.Available == nil || *ret.Available != 162 || ret.Read != 32 {
+		t.Errorf("162 matching: drafts=%d available=%v read=%d", len(got), deref(ret.Available), ret.Read)
+	}
+
+	// Search is SearchCounted without the numbers — same drafts
+	plain, err := s.adapter().Search(context.Background(), Scope{Query: "field-cycling MRI", Max: 100})
+	if err != nil || len(plain) != len(got) {
+		t.Errorf("Search: %d drafts, err %v", len(plain), err)
+	}
+}
+
+func TestPubMedRetrievalHonestZeroAndUnknown(t *testing.T) {
+	// the source said zero → zero, known
+	s := newPubMedServer(t, http.StatusOK, pubmedEmptySearch, http.StatusOK, `{}`)
+	got, ret, err := s.adapter().SearchCounted(context.Background(), Scope{Query: "nobody", Max: 5})
+	if err != nil || len(got) != 0 {
+		t.Fatalf("empty: %d drafts, err %v", len(got), err)
+	}
+	if ret.Available == nil || *ret.Available != 0 || ret.Read != 0 || ret.PeopleSeen != 0 {
+		t.Errorf("a source that said zero: %+v", ret)
+	}
+
+	// the source did not say (no count, or not a number) → nil, never zero
+	for _, count := range []string{"", "lots"} {
+		search, summary := pubmedField(3, count)
+		if count == "" {
+			search = strings.Replace(search, `"count":"",`, "", 1)
+		}
+		s := newPubMedServer(t, http.StatusOK, search, http.StatusOK, summary)
+		got, ret, err := s.adapter().SearchCounted(context.Background(), Scope{Query: "mri", Max: 5})
+		if err != nil || len(got) != 2 {
+			t.Fatalf("count %q: %d drafts, err %v", count, len(got), err)
+		}
+		if ret.Available != nil || ret.Read != 3 || ret.PeopleSeen != 2 {
+			t.Errorf("count %q: available=%v read=%d people=%d; want nil / 3 / 2", count, deref(ret.Available), ret.Read, ret.PeopleSeen)
+		}
+	}
+}
+
+// deref prints a known count or nil, for messages.
+func deref(p *int) any {
+	if p == nil {
+		return nil
+	}
+	return *p
+}
+
 func TestPubMedEnrichChangesNothing(t *testing.T) {
 	s := newPubMedFixtureServer(t)
 	got, err := s.adapter().Search(context.Background(), Scope{Query: "mri", Max: 1})

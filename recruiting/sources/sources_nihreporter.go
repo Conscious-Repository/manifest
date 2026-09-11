@@ -44,8 +44,12 @@ type NIHRePORTER struct {
 	Client http.Client
 }
 
-// compile-time proof that the NIH RePORTER source satisfies the adapter contract.
-var _ Adapter = NIHRePORTER{}
+// compile-time proof that the NIH RePORTER source satisfies the adapter
+// contract, and reports the size of its field (Phase 0).
+var (
+	_ Adapter = NIHRePORTER{}
+	_ Counted = NIHRePORTER{}
+)
 
 const (
 	// NIHRePORTERBaseURL is the public RePORTER API root. No key, no auth.
@@ -100,7 +104,7 @@ func (NIHRePORTER) Scope() []ScopeField {
 	return []ScopeField{
 		{Key: "role", Label: "role"},
 		{Key: "query", Label: "RePORTER search", Placeholder: "e.g. diffusion MRI reconstruction", Required: true},
-		{Key: "max", Label: "max results", Placeholder: strconv.Itoa(nihDefaultMax)},
+		{Key: "max", Label: "max people shown", Placeholder: strconv.Itoa(nihDefaultMax)},
 	}
 }
 
@@ -123,10 +127,11 @@ type nihSearchRequest struct {
 
 // nihSearchResponse is the v2 envelope. Results is a pointer so a response
 // with NO results key (a shape change, an error page that happened to be
-// JSON) is told apart from an honest empty list.
+// JSON) is told apart from an honest empty list. Meta.total is every project
+// the search matched, pointer for the same reason: absent is "did not say".
 type nihSearchResponse struct {
 	Meta *struct {
-		Total int `json:"total"`
+		Total *int `json:"total"`
 	} `json:"meta"`
 	Results *[]nihProject `json:"results"`
 	Message string        `json:"message"`
@@ -171,9 +176,20 @@ type nihProject struct {
 // back, at most Max distinct drafts leave. A search that matches nothing
 // returns an empty slice, not an error.
 func (n NIHRePORTER) Search(ctx context.Context, s Scope) ([]CandidateDraft, error) {
+	out, _, err := n.SearchCounted(ctx, s)
+	return out, err
+}
+
+// SearchCounted is Search plus the size of the field (Phase 0): Available is
+// meta.total — every project the search matched — Read is the projects the
+// one page carried, and PeopleSeen is the distinct PIs named on the usable
+// ones, counted past the cap so a page that named more people than the run
+// shows says so.
+func (n NIHRePORTER) SearchCounted(ctx context.Context, s Scope) ([]CandidateDraft, Retrieval, error) {
+	ret := Retrieval{Unit: "projects"}
 	query := strings.TrimSpace(s.Query)
 	if query == "" {
-		return nil, errors.New("nihreporter: a search needs a query")
+		return nil, ret, errors.New("nihreporter: a search needs a query")
 	}
 	max := s.Max
 	if max <= 0 {
@@ -192,27 +208,32 @@ func (n NIHRePORTER) Search(ctx context.Context, s Scope) ([]CandidateDraft, err
 	reqBody.Limit = max
 	body, err := n.post(ctx, nihSearchPath, reqBody)
 	if err != nil {
-		return nil, err
+		return nil, ret, err
 	}
 	var resp nihSearchResponse
 	if err := json.Unmarshal(body, &resp); err != nil {
-		return nil, fmt.Errorf("nihreporter: malformed response from %s: %v", nihSearchPath, err)
+		return nil, ret, fmt.Errorf("nihreporter: malformed response from %s: %v", nihSearchPath, err)
 	}
 	if resp.Results == nil {
 		for _, msg := range []string{resp.Error, resp.Message} {
 			if msg = strings.TrimSpace(msg); msg != "" {
-				return nil, fmt.Errorf("nihreporter: %s reported an error: %s", nihSearchPath, msg)
+				return nil, ret, fmt.Errorf("nihreporter: %s reported an error: %s", nihSearchPath, msg)
 			}
 		}
-		return nil, fmt.Errorf("nihreporter: response from %s has no results field", nihSearchPath)
+		return nil, ret, fmt.Errorf("nihreporter: response from %s has no results field", nihSearchPath)
 	}
+	if resp.Meta != nil && resp.Meta.Total != nil && *resp.Meta.Total >= 0 {
+		ret.Available = Known(*resp.Meta.Total)
+	}
+	ret.Read = len(*resp.Results)
 	if len(*resp.Results) == 0 {
-		return []CandidateDraft{}, nil
+		return []CandidateDraft{}, ret, nil
 	}
 
 	retrieved := time.Now().UTC()
 	out := make([]CandidateDraft, 0, max)
 	byKey := map[string]int{}
+	people := map[string]bool{} // every PI key named, shown or not
 	// results order is the search's own ranking.
 	for _, proj := range *resp.Results {
 		num := strings.TrimSpace(proj.ProjectNum)
@@ -238,6 +259,7 @@ func (n NIHRePORTER) Search(ctx context.Context, s Scope) ([]CandidateDraft, err
 			}
 			ev := n.evidence(proj, name, link, retrieved)
 			key := pi.key(name)
+			people[key] = true
 			edges := nihGrantEdges(n.ID(), team, key, name, proj)
 			if i, seen := byKey[key]; seen {
 				if !containsString(out[i].Links, link) {
@@ -264,7 +286,8 @@ func (n NIHRePORTER) Search(ctx context.Context, s Scope) ([]CandidateDraft, err
 			})
 		}
 	}
-	return out, nil
+	ret.PeopleSeen = len(people)
+	return out, ret, nil
 }
 
 // name returns the PI's display name: full_name when the record spells one,

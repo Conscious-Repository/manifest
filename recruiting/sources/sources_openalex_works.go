@@ -126,23 +126,27 @@ func openAlexWorkPath(ref string) (string, error) {
 	return "", fmt.Errorf("openalex: %q is not a DOI, a PubMed id or an OpenAlex work id", ref)
 }
 
-// searchWork fetches one work and returns a draft per author on it.
-func (oa OpenAlex) searchWork(ctx context.Context, ref string, s Scope) ([]CandidateDraft, error) {
+// searchWork fetches one work and returns a draft per author on it. The
+// retrieval it reports is the one work, read, and every named author on it —
+// counted past the cap, so a 40-author paper shown as 25 says so.
+func (oa OpenAlex) searchWork(ctx context.Context, ref string, s Scope) ([]CandidateDraft, Retrieval, error) {
+	ret := Retrieval{Unit: "works"}
 	path, err := openAlexWorkPath(ref)
 	if err != nil {
-		return nil, err
+		return nil, ret, err
 	}
 	body, err := oa.get(ctx, path, nil)
 	if err != nil {
-		return nil, err
+		return nil, ret, err
 	}
 	var w openAlexWork
 	if err := json.Unmarshal(body, &w); err != nil {
-		return nil, fmt.Errorf("openalex: malformed response from %s: %v", path, err)
+		return nil, ret, fmt.Errorf("openalex: malformed response from %s: %v", path, err)
 	}
 	if strings.TrimSpace(w.ID) == "" {
-		return nil, fmt.Errorf("openalex: %s returned no work", path)
+		return nil, ret, fmt.Errorf("openalex: %s returned no work", path)
 	}
+	ret.Available, ret.Read = Known(1), 1
 	max := s.Max
 	if max <= 0 {
 		max = openAlexDefaultMax
@@ -155,11 +159,12 @@ func (oa OpenAlex) searchWork(ctx context.Context, ref string, s Scope) ([]Candi
 
 	out := make([]CandidateDraft, 0, min(len(w.Authorships), max))
 	for i, a := range w.Authorships {
-		if len(out) >= max {
-			break
-		}
 		name := strings.TrimSpace(a.Author.DisplayName)
 		if name == "" {
+			continue
+		}
+		ret.PeopleSeen++
+		if len(out) >= max {
 			continue
 		}
 		d := CandidateDraft{
@@ -209,9 +214,9 @@ func (oa OpenAlex) searchWork(ctx context.Context, ref string, s Scope) ([]Candi
 		out = append(out, d)
 	}
 	if len(out) == 0 {
-		return nil, fmt.Errorf("openalex: %s names no authors", cite)
+		return nil, ret, fmt.Errorf("openalex: %s names no authors", cite)
 	}
-	return out, nil
+	return out, ret, nil
 }
 
 // workEdges is what ONE authorship on a work lets us claim about the others

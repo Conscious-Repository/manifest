@@ -13,6 +13,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"manifest/graph"
 	"manifest/recruiting"
+	"manifest/recruiting/sources"
 )
 
 func TestCatalogFresh(t *testing.T) {
@@ -87,6 +88,66 @@ func snapshot(t *testing.T, root string) map[string]string {
 	}
 	return out
 }
+
+// `max` is the optional people cap (sourcing-effectiveness plan Phase 0):
+// an agent that omits it gets the documented default rather than being
+// forced to pick a number — which is how the 6s and 8s got chosen.
+func TestSourceRunPrepareMaxIsOptional(t *testing.T) {
+	a, _, _ := fixture(t)
+	out, err := a.sourcePrepare(SourceInput{Request: recruiting.RunRequest{Source: "manual", Query: "Ada Example"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	preview := out["operation"].(Object)["preview"].(Object)
+	if scope := preview["scope"].(sources.Scope); scope.Max != recruiting.DefaultRunMax {
+		t.Errorf("omitted max → scope.Max %d, want the default %d", scope.Max, recruiting.DefaultRunMax)
+	}
+	if req := preview["request"].(recruiting.RunRequest); req.Max != recruiting.DefaultRunMax {
+		t.Errorf("the normalized request should carry the default explicitly: %+v", req)
+	}
+
+	// the generated schema says so: request.max is present and not required
+	a.Server()
+	var schema map[string]any
+	for _, tool := range a.Tools {
+		if tool.Name != "source_run.prepare" {
+			continue
+		}
+		b, err := json.Marshal(tool.InputSchema)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := json.Unmarshal(b, &schema); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if schema == nil {
+		t.Fatal("source_run.prepare is not in the catalog")
+	}
+	request := schema["properties"].(map[string]any)["request"].(map[string]any)
+	required := map[string]bool{}
+	for _, r := range request["required"].([]any) {
+		required[r.(string)] = true
+	}
+	if required["max"] || !required["source"] {
+		t.Errorf("request.required = %v; max must be optional, source must not", request["required"])
+	}
+	if _, has := request["properties"].(map[string]any)["max"]; !has {
+		t.Error("request.max vanished from the schema")
+	}
+
+	// and the catalog documents what max means, where an agent reads it
+	for _, tool := range a.Tools {
+		if tool.Name == "sources.list" || tool.Name == "source_run.prepare" {
+			for _, want := range []string{"optional", "cap", "not an", "page size"} {
+				if !strings.Contains(tool.Description, want) {
+					t.Errorf("%s does not document max as an optional cap (%q missing): %q", tool.Name, want, tool.Description)
+				}
+			}
+		}
+	}
+}
+
 func TestAllToolsOverMCPAndNoVaultEffects(t *testing.T) {
 	a, run, _ := fixture(t)
 	before := revision(snapshot(t, a.Vault))
