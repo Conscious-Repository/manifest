@@ -31,7 +31,6 @@ func (GitHub) PrepareScope(s Scope) (Scope, error) {
 	return queryScope(s, "github")
 }
 func (ORCID) PrepareScope(s Scope) (Scope, error)       { return queryScope(s, "orcid") }
-func (PubMed) PrepareScope(s Scope) (Scope, error)      { return queryScope(s, "pubmed") }
 func (NIHRePORTER) PrepareScope(s Scope) (Scope, error) { return queryScope(s, "nihreporter") }
 func (m Manual) PrepareScope(s Scope) (Scope, error) {
 	_, err := m.Search(context.Background(), s)

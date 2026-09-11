@@ -138,8 +138,8 @@ func TestScholarlyRetryWaitUsesClientDeadline(t *testing.T) {
 func TestPubMedSearchRecoversAcrossBothFetches(t *testing.T) {
 	delays := fastScholarlyRetries(t)
 	search := pubmedFixture(t, "pubmed-esearch.json")
-	summary := pubmedFixture(t, "pubmed-esummary.json")
-	searchCalls, summaryCalls := 0, 0
+	records := pubmedFixture(t, "pubmed-efetch.xml")
+	searchCalls, fetchCalls := 0, 0
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case pubmedSearchPath:
@@ -149,13 +149,13 @@ func TestPubMedSearchRecoversAcrossBothFetches(t *testing.T) {
 				return
 			}
 			w.Write([]byte(search))
-		case pubmedSummaryPath:
-			summaryCalls++
-			if summaryCalls == 1 {
+		case pubmedFetchPath:
+			fetchCalls++
+			if fetchCalls == 1 {
 				w.WriteHeader(503)
 				return
 			}
-			w.Write([]byte(summary))
+			w.Write([]byte(records))
 		default:
 			t.Errorf("unexpected path: %s", r.URL.Path)
 			w.WriteHeader(404)
@@ -163,8 +163,8 @@ func TestPubMedSearchRecoversAcrossBothFetches(t *testing.T) {
 	}))
 	defer srv.Close()
 	drafts, err := (PubMed{BaseURL: srv.URL}).Search(context.Background(), Scope{Query: "mri", Max: 5})
-	if err != nil || len(drafts) == 0 || searchCalls != 3 || summaryCalls != 2 || len(*delays) != 3 {
-		t.Fatalf("drafts=%v err=%v calls=%d/%d waits=%v", drafts, err, searchCalls, summaryCalls, *delays)
+	if err != nil || len(drafts) == 0 || searchCalls != 3 || fetchCalls != 2 || len(*delays) != 3 {
+		t.Fatalf("drafts=%v err=%v calls=%d/%d waits=%v", drafts, err, searchCalls, fetchCalls, *delays)
 	}
 	for _, d := range drafts {
 		if len(d.Evidence) == 0 {

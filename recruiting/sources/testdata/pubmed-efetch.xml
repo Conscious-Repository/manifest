@@ -1,0 +1,188 @@
+<?xml version="1.0" ?>
+<!DOCTYPE PubmedArticleSet PUBLIC "-//NLM//DTD PubMedArticle, 1st January 2025//EN" "https://dtd.nlm.nih.gov/ncbi/pubmed/out/pubmed_250101.dtd">
+<PubmedArticleSet>
+<PubmedArticle>
+  <MedlineCitation Status="MEDLINE" Owner="NLM">
+    <PMID Version="1">39000001</PMID>
+    <Article PubModel="Print-Electronic">
+      <Journal>
+        <ISSN IssnType="Print">0740-3194</ISSN>
+        <JournalIssue CitedMedium="Internet">
+          <Volume>95</Volume><Issue>3</Issue>
+          <PubDate><Year>2026</Year><Month>Mar</Month><Day>12</Day></PubDate>
+        </JournalIssue>
+        <Title>Magnetic resonance in medicine</Title>
+        <ISOAbbreviation>Magn Reson Med</ISOAbbreviation>
+      </Journal>
+      <ArticleTitle>Self-supervised reconstruction of diffusion MRI with learned priors.</ArticleTitle>
+      <ELocationID EIdType="doi" ValidYN="Y">10.1002/mrm.00001</ELocationID>
+      <Abstract><AbstractText>Not read by the adapter. Contact dana@example.test for data.</AbstractText></Abstract>
+      <AuthorList CompleteYN="Y">
+        <Author ValidYN="Y">
+          <LastName>Reyes</LastName><ForeName>Dana M</ForeName><Initials>DM</Initials>
+          <Identifier Source="ORCID">https://orcid.org/0000-0001-2345-6789</Identifier>
+          <AffiliationInfo><Affiliation>Department of Radiology, University of Aberdeen, Aberdeen, UK. Electronic address: dana@example.test.</Affiliation></AffiliationInfo>
+        </Author>
+        <Author ValidYN="Y">
+          <LastName>Okafor</LastName><ForeName>Samuel</ForeName><Initials>S</Initials>
+          <AffiliationInfo><Affiliation>Institute of Biomedical Engineering, University of Oxford, Oxford, UK.</Affiliation></AffiliationInfo>
+        </Author>
+        <Author ValidYN="Y">
+          <LastName>Natarajan</LastName><ForeName>Priya</ForeName><Initials>P</Initials>
+          <AffiliationInfo><Affiliation>Department of Radiology, University of Aberdeen, Aberdeen, UK.</Affiliation></AffiliationInfo>
+        </Author>
+      </AuthorList>
+      <ArticleDate DateType="Electronic"><Year>2026</Year><Month>02</Month><Day>28</Day></ArticleDate>
+    </Article>
+    <MeshHeadingList>
+      <MeshHeading><DescriptorName UI="D008279" MajorTopicYN="N">Magnetic Resonance Imaging</DescriptorName></MeshHeading>
+      <MeshHeading><DescriptorName UI="D038524" MajorTopicYN="Y">Diffusion Magnetic Resonance Imaging</DescriptorName><QualifierName UI="Q000379" MajorTopicYN="Y">methods</QualifierName></MeshHeading>
+      <MeshHeading><DescriptorName UI="D006801" MajorTopicYN="N">Humans</DescriptorName></MeshHeading>
+    </MeshHeadingList>
+  </MedlineCitation>
+  <PubmedData>
+    <ArticleIdList>
+      <ArticleId IdType="pubmed">39000001</ArticleId>
+      <ArticleId IdType="doi">10.1002/mrm.00001</ArticleId>
+      <ArticleId IdType="pmc">PMC9900001</ArticleId>
+    </ArticleIdList>
+  </PubmedData>
+</PubmedArticle>
+<PubmedArticle>
+  <MedlineCitation Status="MEDLINE" Owner="NLM">
+    <PMID Version="1">39000002</PMID>
+    <Article PubModel="Print">
+      <Journal>
+        <JournalIssue CitedMedium="Internet">
+          <PubDate><MedlineDate>2025 Nov-Dec</MedlineDate></PubDate>
+        </JournalIssue>
+        <Title>Journal of magnetic resonance imaging : JMRI</Title>
+        <ISOAbbreviation>J Magn Reson Imaging</ISOAbbreviation>
+      </Journal>
+      <ArticleTitle>Compressed sensing for low-field MRI: a prospective study</ArticleTitle>
+      <AuthorList CompleteYN="Y">
+        <Author ValidYN="Y">
+          <LastName>Okafor</LastName><ForeName>Samuel</ForeName><Initials>S</Initials>
+          <AffiliationInfo><Affiliation>University of Oxford, Oxford, UK. samuel.okafor@example.test</Affiliation></AffiliationInfo>
+        </Author>
+        <Author ValidYN="Y">
+          <LastName>Lurie</LastName><ForeName>D J</ForeName><Initials>DJ</Initials>
+          <AffiliationInfo><Affiliation>University of Aberdeen, Aberdeen, UK.</Affiliation></AffiliationInfo>
+        </Author>
+        <Author ValidYN="Y">
+          <LastName>Reyes</LastName><ForeName>Dana M</ForeName><Initials>DM</Initials>
+          <AffiliationInfo><Affiliation>University of Aberdeen, Aberdeen, UK.</Affiliation></AffiliationInfo>
+        </Author>
+      </AuthorList>
+    </Article>
+  </MedlineCitation>
+  <PubmedData>
+    <ArticleIdList>
+      <ArticleId IdType="pubmed">39000002</ArticleId>
+    </ArticleIdList>
+  </PubmedData>
+</PubmedArticle>
+<PubmedArticle>
+  <MedlineCitation Status="MEDLINE" Owner="NLM">
+    <PMID Version="1">39000003</PMID>
+    <Article PubModel="Print-Electronic">
+      <Journal>
+        <JournalIssue CitedMedium="Internet">
+          <PubDate><Year>2026</Year><Month>Jan</Month><Day>5</Day></PubDate>
+        </JournalIssue>
+        <Title>Radiology</Title>
+        <ISOAbbreviation>Radiology</ISOAbbreviation>
+      </Journal>
+      <ArticleTitle>Multicenter evaluation of an accelerated pulse sequence at <i>B</i><sub>0</sub> = 0.2 T.</ArticleTitle>
+      <AuthorList CompleteYN="Y">
+        <Author ValidYN="Y">
+          <CollectiveName>Radiology Consortium</CollectiveName>
+        </Author>
+        <Author ValidYN="Y">
+          <LastName>Reyes</LastName><ForeName>Dana M</ForeName><Initials>DM</Initials>
+          <Identifier Source="ORCID">0000-0001-2345-6789</Identifier>
+          <AffiliationInfo><Affiliation>Department of Radiology, University of Aberdeen, Aberdeen, UK.</Affiliation></AffiliationInfo>
+        </Author>
+      </AuthorList>
+    </Article>
+    <MeshHeadingList>
+      <MeshHeading><DescriptorName UI="D008279" MajorTopicYN="Y">Magnetic Resonance Imaging</DescriptorName></MeshHeading>
+    </MeshHeadingList>
+  </MedlineCitation>
+  <PubmedData>
+    <ArticleIdList>
+      <ArticleId IdType="pubmed">39000003</ArticleId>
+      <ArticleId IdType="doi">10.1148/radiol.250001</ArticleId>
+      <ArticleId IdType="pmc">PMC9900003</ArticleId>
+    </ArticleIdList>
+  </PubmedData>
+</PubmedArticle>
+<PubmedArticle>
+  <MedlineCitation Status="In-Process" Owner="NLM">
+    <PMID Version="1">39000004</PMID>
+    <Article PubModel="Electronic">
+      <Journal>
+        <JournalIssue CitedMedium="Internet">
+          <PubDate><Year>2025</Year></PubDate>
+        </JournalIssue>
+        <Title>Scientific reports</Title>
+        <ISOAbbreviation>Sci Rep</ISOAbbreviation>
+      </Journal>
+      <ArticleTitle>Field-cycling MRI at 0.2 T: a feasibility study.</ArticleTitle>
+      <ELocationID EIdType="doi" ValidYN="Y">10.1038/s41598-025-00004</ELocationID>
+      <AuthorList CompleteYN="Y">
+        <Author ValidYN="Y">
+          <LastName>Reyes</LastName><ForeName>D M</ForeName><Initials>DM</Initials>
+          <AffiliationInfo><Affiliation>University of Aberdeen, Aberdeen, UK.</Affiliation></AffiliationInfo>
+        </Author>
+        <Author ValidYN="Y">
+          <LastName>Broche</LastName><ForeName>Lionel M</ForeName><Initials>LM</Initials>
+          <AffiliationInfo><Affiliation>Aberdeen Biomedical Imaging Centre, University of Aberdeen, Aberdeen, UK.</Affiliation></AffiliationInfo>
+        </Author>
+        <Author ValidYN="Y">
+          <LastName>Ross</LastName><ForeName>P James</ForeName><Initials>PJ</Initials>
+        </Author>
+        <Author ValidYN="Y">
+          <LastName>Lurie</LastName><ForeName>David J</ForeName><Initials>DJ</Initials>
+          <AffiliationInfo><Affiliation>University of Aberdeen, Aberdeen, UK. E-mail: d.lurie@example.test</Affiliation></AffiliationInfo>
+        </Author>
+      </AuthorList>
+    </Article>
+  </MedlineCitation>
+  <PubmedData>
+    <ArticleIdList>
+      <ArticleId IdType="pubmed">39000004</ArticleId>
+      <ArticleId IdType="doi">10.1038/s41598-025-00004</ArticleId>
+    </ArticleIdList>
+  </PubmedData>
+</PubmedArticle>
+<PubmedArticle>
+  <MedlineCitation Status="MEDLINE" Owner="NLM">
+    <PMID Version="1">39000005</PMID>
+    <Article PubModel="Print-Electronic">
+      <Journal>
+        <JournalIssue CitedMedium="Internet">
+          <PubDate><Year>2025</Year><Month>Aug</Month><Day>15</Day></PubDate>
+        </JournalIssue>
+        <Title>Medical physics</Title>
+        <ISOAbbreviation>Med Phys</ISOAbbreviation>
+      </Journal>
+      <ArticleTitle>Deep learning denoising for low-field MRI.</ArticleTitle>
+      <AuthorList CompleteYN="Y">
+        <Author ValidYN="Y">
+          <LastName>Okafor</LastName><ForeName>Samuel</ForeName><Initials>S</Initials>
+          <Identifier Source="ORCID">0000-0003-4444-5555</Identifier>
+          <AffiliationInfo><Affiliation>Institute of Biomedical Engineering, University of Oxford, Oxford, UK.</Affiliation></AffiliationInfo>
+          <AffiliationInfo><Affiliation>Oxford University Hospitals NHS Foundation Trust, Oxford, UK.</Affiliation></AffiliationInfo>
+        </Author>
+      </AuthorList>
+    </Article>
+  </MedlineCitation>
+  <PubmedData>
+    <ArticleIdList>
+      <ArticleId IdType="pubmed">39000005</ArticleId>
+      <ArticleId IdType="doi">10.1002/mp.00005</ArticleId>
+    </ArticleIdList>
+  </PubmedData>
+</PubmedArticle>
+</PubmedArticleSet>

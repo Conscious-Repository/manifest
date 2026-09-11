@@ -11,11 +11,16 @@ import (
 
 var openAlexLookupAuthorID = regexp.MustCompile(`^A[0-9]+$`)
 
-// LookupCandidate preserves ordinary name search, but anchors PubMed's
-// abbreviated first authors to their paper. Initials alone are not identity.
-// At most one cited paper and one author are fetched, through the shared
-// bounded/retrying transport. Missing or ambiguous attribution is an empty
-// result; transport/response errors remain visible as a failed lookup source.
+// LookupCandidate preserves ordinary name search, but anchors a PubMed
+// draft to its paper: the work is fetched, and the ONE authorship whose
+// printed name equals what PubMed printed for this person on that paper —
+// the full name or the Medline byline, folded for case and punctuation only
+// — at the same byline position, is the person. Initials alone are not
+// identity and no initial is ever expanded; a paper where zero or several
+// authorships match is an empty result, not a guess. At most one cited
+// paper and one author are fetched, through the shared bounded/retrying
+// transport. Transport/response errors remain visible as a failed lookup
+// source.
 func (oa OpenAlex) LookupCandidate(ctx context.Context, d CandidateDraft, s Scope) ([]CandidateDraft, error) {
 	if d.SourceID != "pubmed" {
 		return oa.Search(ctx, s)
@@ -29,6 +34,10 @@ func (oa OpenAlex) LookupCandidate(ctx context.Context, d CandidateDraft, s Scop
 		}
 	}
 	if ref == "" {
+		return nil, nil
+	}
+	printed := pubmedPrintedOn(d, ref)
+	if len(printed) == 0 {
 		return nil, nil
 	}
 	path, err := openAlexWorkPath(ref)
@@ -50,15 +59,15 @@ func (oa OpenAlex) LookupCandidate(ctx context.Context, d CandidateDraft, s Scop
 	firstIndex := -1
 	for i := range w.Authorships {
 		a := &w.Authorships[i]
-		if a.AuthorPosition == "first" {
-			if first != nil {
-				return nil, nil
-			}
-			first, firstIndex = a, i
+		if !openAlexAuthorshipPrinted(*a, printed) {
+			continue
 		}
+		if first != nil {
+			return nil, nil
+		}
+		first, firstIndex = a, i
 	}
-	// Compare the printed name, never an initial expansion or a fuzzy match.
-	if first == nil || !strings.EqualFold(strings.Join(strings.Fields(first.RawAuthorName), " "), strings.TrimSpace(d.Name)) {
+	if first == nil {
 		return nil, nil
 	}
 	authorID := strings.TrimPrefix(strings.TrimSpace(first.Author.ID), openAlexAuthorRoot)
@@ -83,10 +92,10 @@ func (oa OpenAlex) LookupCandidate(ctx context.Context, d CandidateDraft, s Scop
 	}
 	hit.Evidence = append(hit.Evidence, Evidence{
 		SourceID: oa.ID(), URLOrFile: w.url(), RetrievedAt: now,
-		Snippet: w.citation() + " · first author: " + first.RawAuthorName + " · resolved author: " + hit.Name + " (" + openAlexAuthorURL(authorID) + ")",
+		Snippet: w.citation() + " · " + first.AuthorPosition + " author: " + first.RawAuthorName + " · resolved author: " + hit.Name + " (" + openAlexAuthorURL(authorID) + ")",
 		Kind:    EvidencePublication, Trust: TrustMedium,
 	})
-	// The work's own byline is what makes the first author's coauthors
+	// The work's own byline is what makes the person's coauthors
 	// nameable: the same durable-key claims a work sweep would emit, plus the
 	// affiliation the paper printed for them (structured institution only).
 	hit.Edges = append(hit.Edges, oa.workEdges(w, firstIndex)...)
@@ -101,4 +110,30 @@ func (oa OpenAlex) LookupCandidate(ctx context.Context, d CandidateDraft, s Scop
 	// remain in the evidence. All fields use Lookup's existing merge path.
 	hit.Name = d.Name
 	return []CandidateDraft{hit}, nil
+}
+
+// openAlexAuthorshipPrinted reports whether one authorship is the person a
+// PubMed draft printed on this paper: the raw author name equals, under the
+// blunt fold, the printed name or the byline, AND the byline position
+// agrees (a sole author is OpenAlex's "first"). A position the draft did
+// not record — an older queue — constrains nothing.
+func openAlexAuthorshipPrinted(a openAlexAuthorsh, printed []pubmedPrinted) bool {
+	raw := foldName(a.RawAuthorName)
+	if raw == "" {
+		return false
+	}
+	for _, p := range printed {
+		if raw != foldName(p.Name) && (p.Byline == "" || raw != foldName(p.Byline)) {
+			continue
+		}
+		want := p.Position
+		if want == "sole" {
+			want = "first"
+		}
+		if want != "" && !strings.EqualFold(strings.TrimSpace(a.AuthorPosition), want) {
+			continue
+		}
+		return true
+	}
+	return false
 }

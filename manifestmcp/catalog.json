@@ -109,6 +109,11 @@
           "key": "max",
           "label": "max people shown",
           "placeholder": "25"
+        },
+        {
+          "key": "papers",
+          "label": "papers to read",
+          "placeholder": "100 — the paper budget, at most 500; separate from people shown"
         }
       ]
     },
@@ -356,7 +361,7 @@
         "idempotentHint": false,
         "readOnlyHint": true
       },
-      "description": "Read the application's shared adapter registry and scope fields; no fetch or cache sweep. `max` is the optional people/display cap per run (default 25, ceiling 100), not an upstream page size.",
+      "description": "Read the application's shared adapter registry and scope fields; no fetch or cache sweep. `max` is the optional people/display cap per run (default 25, ceiling 100), not an upstream page size. PubMed reads a separate paper budget, `fields.papers` (default 100, ceiling 500), and aggregates every author on those papers into people.",
       "inputSchema": {
         "type": "object",
         "additionalProperties": false
@@ -1354,7 +1359,7 @@
       "name": "operation.execute"
     }
   ],
-  "version": "2.3.0",
+  "version": "2.4.0",
   "vocabulary": {
     "entityKinds": [
       "task",

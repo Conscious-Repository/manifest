@@ -33,8 +33,8 @@ func TestPubMedLookupAttributedAuthorTopics(t *testing.T) {
 				switch r.URL.Path {
 				case "/entrez/eutils/esearch.fcgi":
 					fmt.Fprint(w, `{"esearchresult":{"idlist":["39000001"]}}`)
-				case "/entrez/eutils/esummary.fcgi":
-					fmt.Fprint(w, `{"result":{"39000001":{"uid":"39000001","title":"Diffusion MRI reconstruction.","authors":[{"name":"Yu G","authtype":"Author"}]}}}`)
+				case "/entrez/eutils/efetch.fcgi":
+					fmt.Fprint(w, `<PubmedArticleSet><PubmedArticle><MedlineCitation><PMID>39000001</PMID><Article><ArticleTitle>Diffusion MRI reconstruction.</ArticleTitle><AuthorList><Author><LastName>Yu</LastName><ForeName>G</ForeName><Initials>G</Initials></Author></AuthorList></Article></MedlineCitation></PubmedArticle></PubmedArticleSet>`)
 				case "/works/pmid:39000001":
 					fmt.Fprintf(w, `{"id":"https://openalex.org/W1234","title":"Diffusion MRI reconstruction.","authorships":[%s]}`, tc.byline)
 				case "/authors/A1234":

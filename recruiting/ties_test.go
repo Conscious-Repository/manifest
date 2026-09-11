@@ -330,8 +330,11 @@ func TestPubMedLookupCarriesCoauthorClaims(t *testing.T) {
 		switch r.URL.Path {
 		case "/entrez/eutils/esearch.fcgi":
 			fmt.Fprint(w, `{"esearchresult":{"idlist":["39000001"]}}`)
-		case "/entrez/eutils/esummary.fcgi":
-			fmt.Fprint(w, `{"result":{"39000001":{"uid":"39000001","title":"Diffusion MRI reconstruction.","authors":[{"name":"Yu G","authtype":"Author"},{"name":"Park S","authtype":"Author"}],"articleids":[{"idtype":"doi","value":"10.1000/dmri.2025"}]}}}`)
+		case "/entrez/eutils/efetch.fcgi":
+			fmt.Fprint(w, `<PubmedArticleSet><PubmedArticle><MedlineCitation><PMID>39000001</PMID><Article><ArticleTitle>Diffusion MRI reconstruction.</ArticleTitle><AuthorList>
+				<Author><LastName>Yu</LastName><ForeName>G</ForeName><Initials>G</Initials></Author>
+				<Author><LastName>Park</LastName><ForeName>S</ForeName><Initials>S</Initials></Author>
+				</AuthorList></Article></MedlineCitation><PubmedData><ArticleIdList><ArticleId IdType="doi">10.1000/dmri.2025</ArticleId></ArticleIdList></PubmedData></PubmedArticle></PubmedArticleSet>`)
 		case "/works/pmid:39000001":
 			fmt.Fprint(w, `{"id":"https://openalex.org/W1234","doi":"https://doi.org/10.1000/dmri.2025","title":"Diffusion MRI reconstruction.","authorships":[
 				{"author_position":"first","raw_author_name":"Yu G","author":{"id":"https://openalex.org/A1234","display_name":"Guang Yu"},"institutions":[{"id":"https://openalex.org/I1","display_name":"Example University"}]},

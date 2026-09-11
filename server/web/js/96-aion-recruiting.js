@@ -2474,7 +2474,7 @@ function recDraftSubtitle(dr) {
     if (source === "pubmed") {
       // PubMed separates labeled fields with middle dots; titles can contain dots too.
       const field = (name) => ((snippet.match(new RegExp("(?:^| · )" + name +
-        ":(.*?)(?= · (?:author|title|journal|pubdate|pmid|doi):|$)")) || [])[1] || "").trim();
+        ":(.*?)(?= · (?:author|byline|position|title|journal|pubdate|pmid|doi|pmcid|mesh|collective):|$)")) || [])[1] || "").trim();
       label = [field("title"), field("journal")].filter(Boolean).join(" · ") || snippet;
     }
     const short = Array.from(label);
@@ -3985,7 +3985,7 @@ function recEvidenceExcerpt(e) {
   const pubmed = /(?:^| · )title:/.test(raw) && /(?:^| · )pmid:/.test(raw);
   if (!pubmed) return { text: raw, label: "Source excerpt", detail: "" };
   const field = (key) => ((raw.match(new RegExp("(?:^| · )" + key +
-    ":(.*?)(?= · (?:author|title|journal|pubdate|pmid|doi):|$)")) || [])[1] || "").trim();
+    ":(.*?)(?= · (?:author|byline|position|title|journal|pubdate|pmid|doi|pmcid|mesh|collective):|$)")) || [])[1] || "").trim();
   return { text: field("title"), label: "Listed publication", detail: [field("journal"), field("pubdate")].filter(Boolean).join(" · ") };
 }
 

@@ -32,9 +32,10 @@ import (
 // evidence. It returns the original byline and separately supported claims;
 // it cannot fuzzy-merge an external search hit.
 //
-// OpenAlex may also resolve a PubMed first author through that exact paper's
-// raw byline and durable author ID. It returns the original name with cited
-// identity evidence, so the same merge and validation path still applies.
+// OpenAlex may also resolve a PubMed author through that exact paper's raw
+// byline, at the same byline position, to a durable author ID. It returns
+// the original name with cited identity evidence, so the same merge and
+// validation path still applies.
 //
 // ⚠ IT ADDS, IT NEVER OVERWRITES. Links and citations are unioned; a profile
 // field is filled ONLY where the draft left it empty. The source that found

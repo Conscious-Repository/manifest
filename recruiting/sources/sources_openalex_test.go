@@ -384,3 +384,78 @@ func TestOpenAlexEnrichChangesNothing(t *testing.T) {
 		t.Errorf("Enrich/GraphEdges made a request: total %d", n)
 	}
 }
+
+// A PubMed draft anchors to its paper's authorship by what the paper
+// PRINTED — the full name or the Medline byline, at the same position —
+// never by an expanded initial or a display name (Phase 1: PubMed drafts
+// now carry full names and any position, so the byline is the bridge).
+func TestOpenAlexAuthorshipPrinted(t *testing.T) {
+	printed := []pubmedPrinted{{Name: "Guang Yu", Byline: "Yu G", Position: "last"}}
+	for _, c := range []struct {
+		raw, pos string
+		want     bool
+	}{
+		{"Yu G", "last", true}, {"Yu, G.", "last", true}, {"Guang Yu", "last", true}, {"GUANG YU", "last", true},
+		{"Yu G", "first", false}, {"Guang Yu", "middle", false}, {"G. Yu", "last", false}, {"Yu Guang", "last", false},
+		{"", "last", false}, {"Yu H", "last", false},
+	} {
+		a := openAlexAuthorsh{AuthorPosition: c.pos, RawAuthorName: c.raw, Author: openAlexWorkAuthor{DisplayName: "Guang Yu"}}
+		if got := openAlexAuthorshipPrinted(a, printed); got != c.want {
+			t.Errorf("raw %q at %s = %v want %v", c.raw, c.pos, got, c.want)
+		}
+	}
+	// a sole author is OpenAlex's first; a draft with no recorded position
+	// (an older queue) constrains nothing
+	if !openAlexAuthorshipPrinted(openAlexAuthorsh{AuthorPosition: "first", RawAuthorName: "Yu G"}, []pubmedPrinted{{Name: "Yu G", Position: "sole"}}) ||
+		!openAlexAuthorshipPrinted(openAlexAuthorsh{AuthorPosition: "middle", RawAuthorName: "Yu G"}, []pubmedPrinted{{Name: "Yu G"}}) {
+		t.Error("sole/unrecorded positions")
+	}
+	// a lookup on a full-name draft resolves through the byline, and a
+	// paper where two authorships print the same byline resolves nobody
+	work := `{"id":"https://openalex.org/W1","title":"T","authorships":[
+		{"author_position":"first","raw_author_name":"Someone Else","author":{"id":"https://openalex.org/A1"}},
+		{"author_position":"last","raw_author_name":"Yu G","author":{"id":"https://openalex.org/A2","display_name":"Guang Yu"}}]}`
+	twins := `{"id":"https://openalex.org/W1","title":"T","authorships":[
+		{"author_position":"last","raw_author_name":"Yu G","author":{"id":"https://openalex.org/A2"}},
+		{"author_position":"last","raw_author_name":"Yu G","author":{"id":"https://openalex.org/A3"}}]}`
+	for name, body := range map[string]string{"one match": work, "twins": twins} {
+		t.Run(name, func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				switch r.URL.Path {
+				case "/works/pmid:39000001":
+					_, _ = w.Write([]byte(body))
+				case "/authors/A2":
+					_, _ = w.Write([]byte(`{"id":"https://openalex.org/A2","display_name":"Guang Yu","last_known_institution":{"display_name":"Example University"}}`))
+				default:
+					t.Errorf("unexpected request: %s", r.URL)
+					http.NotFound(w, r)
+				}
+			}))
+			defer srv.Close()
+			d := CandidateDraft{SourceID: "pubmed", Name: "Guang Yu", Evidence: []Evidence{{
+				SourceID: "pubmed", Kind: EvidencePublication, URLOrFile: PubMedArticleURL + "39000001/",
+				Snippet: "author: Guang Yu · byline: Yu G · position: last of 2 · title: T · pmid: 39000001",
+			}}}
+			hits, err := (OpenAlex{BaseURL: srv.URL, Client: *srv.Client()}).LookupCandidate(context.Background(), d, Scope{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if name == "twins" {
+				if len(hits) != 0 {
+					t.Fatalf("twins resolved: %+v", hits)
+				}
+				return
+			}
+			if len(hits) != 1 || hits[0].Name != "Guang Yu" || hits[0].Org != "Example University" || hits[0].ExternalID != "A2" {
+				t.Fatalf("hits: %+v", hits)
+			}
+			found := false
+			for _, ev := range hits[0].Evidence {
+				found = found || strings.Contains(ev.Snippet, "last author: Yu G · resolved author: Guang Yu (https://openalex.org/A2)")
+			}
+			if !found {
+				t.Errorf("identity bridge not cited: %+v", hits[0].Evidence)
+			}
+		})
+	}
+}

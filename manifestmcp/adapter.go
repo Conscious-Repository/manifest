@@ -19,7 +19,7 @@ import (
 	"manifest/recruiting"
 )
 
-const Version = "2.3.0"
+const Version = "2.4.0"
 
 type Object map[string]any
 type Adapter struct {
@@ -163,7 +163,7 @@ func (a *Adapter) Server() *mcp.Server {
 		return Object{"status": status, "matches": matches, "requiresChoice": len(matches) > 1}, nil
 	})
 	add(a, s, "entity.get", "Read a canonical entity, evidence/provenance and content revision.", func(q Ref) (Object, error) { e, err := a.get(q); return Object{"entity": e}, err })
-	add(a, s, "sources.list", "Read the application's shared adapter registry and scope fields; no fetch or cache sweep. `max` is the optional people/display cap per run (default 25, ceiling 100), not an upstream page size.", func(_ struct{}) (Object, error) {
+	add(a, s, "sources.list", "Read the application's shared adapter registry and scope fields; no fetch or cache sweep. `max` is the optional people/display cap per run (default 25, ceiling 100), not an upstream page size. PubMed reads a separate paper budget, `fields.papers` (default 100, ceiling 500), and aggregates every author on those papers into people.", func(_ struct{}) (Object, error) {
 		return Object{"sources": a.Runs.Sources(), "defaultMax": recruiting.DefaultRunMax, "maxMax": recruiting.MaxRunMax,
 			"max": Object{"optional": true, "default": recruiting.DefaultRunMax, "ceiling": recruiting.MaxRunMax,
 				"meaning": "people/display cap: at most this many drafts land in the run's queue; omit it to take the default. Not an upstream page size — run counts report available/read/peopleSeen when the source says how big the field was."}}, nil
