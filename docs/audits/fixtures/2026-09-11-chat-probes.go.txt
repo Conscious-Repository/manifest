@@ -1,0 +1,181 @@
+// Audit-only observations. Load as server/zz_chat_audit_test.go with Go -overlay.
+package server
+
+import (
+	"context"
+	"encoding/json"
+	"github.com/creack/pty"
+	"io"
+	"net"
+	"net/http/httptest"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strings"
+	"testing"
+	"time"
+)
+
+func TestAuditAdvertisedHerdrKeys(t *testing.T) {
+	for _, key := range []string{"\t", "\x04", "\x1b[Z", "\x03", "\x1b[A"} {
+		t.Run(strings.ReplaceAll(key, "\x1b", "ESC"), func(t *testing.T) {
+			sent := 0
+			h := herdrFixture(t, func(c net.Conn, r herdrFixtureRequest) {
+				if r.Method == "pane.send_keys" {
+					sent++
+					herdrFixtureReply(c, map[string]any{})
+					return
+				}
+				herdrFixtureSnapshot(c, "idle", 1)
+			})
+			err := h.SendKey(context.Background(), herdrFixtureID(t, h), key)
+			unsupported := key == "\t" || key == "\x04" || key == "\x1b[Z"
+			if unsupported {
+				if err == nil || sent != 0 {
+					t.Fatal("observed defect changed", err, sent)
+				}
+				t.Logf("REPRODUCED R2: advertised key %q refused before send: %v", key, err)
+			} else if err != nil || sent != 1 {
+				t.Fatal(err, sent)
+			}
+		})
+	}
+}
+
+func TestAuditQuestionWhileBoardWorks(t *testing.T) {
+	s := codingFixture(t)
+	task := "inbox/wire-the-fence"
+	if err := s.startCodingTask(s.findHarness("codex"), task, "go", "fixture initial work", "execute"); err != nil {
+		t.Fatal(err)
+	}
+	original := s.terminal.load()[0]
+	before, err := os.ReadFile(original.BoardBrief)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = s.postAndDispatch(task, "comment", "", nil, nil, "Owner note without an agent mention"); err != nil {
+		t.Fatal(err)
+	}
+	if len(s.terminal.load()) != 1 {
+		t.Fatal("plain owner comment launched work")
+	}
+	if _, err = s.postAndDispatch(task, "ask", "agent:codex", nil, nil, "Which file are you changing right now?"); err != nil {
+		t.Fatal(err)
+	}
+	after, _ := os.ReadFile(original.BoardBrief)
+	if string(before) != string(after) || len(s.terminal.load()) != 1 {
+		t.Fatal("unexpected current-run mutation")
+	}
+	h := s.findHarness("codex")
+	run := h.Spirits.Runs()[0]
+	if err = boardReport(h, run.ID, task, "go", "", "completed", "fixture finished", time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	s.relaySweep(nil)
+	if len(s.terminal.load()) != 2 {
+		t.Fatal("expected parked Ask to launch a later run")
+	}
+	t.Log("OBSERVED G1: owner comment suppressed; Ask during work did not reach the existing brief/runtime, then launched a second run after completion")
+}
+
+func TestAuditNativeChatWorkingInput(t *testing.T) {
+	for _, kind := range []string{"codex", "claude"} {
+		t.Run(kind, func(t *testing.T) {
+			s := &Server{terminal: &termCfg{regPath: filepath.Join(t.TempDir(), "terminals.json"), defaultWd: t.TempDir()}}
+			prompts := 0
+			launches := 0
+			h := herdrFixture(t, func(c net.Conn, r herdrFixtureRequest) {
+				pane := herdrFixturePane("working", 1)
+				pane["agent"] = kind
+				pane["agent_session"] = nil
+				switch r.Method {
+				case "session.snapshot":
+					herdrFixtureReply(c, map[string]any{"snapshot": map[string]any{"version": "0.9.0", "protocol": 22, "panes": []any{pane}}})
+				case "workspace.create":
+					launches++
+					herdrFixtureReply(c, map[string]any{"root_pane": pane})
+				case "pane.read":
+					herdrFixtureReply(c, map[string]any{"read": map[string]any{"text": "Fixture agent working"}})
+				case "agent.prompt":
+					prompts++
+					if r.Params["text"] != "Fixture question\nSecond controlled line" {
+						t.Error(r.Params)
+					}
+					herdrFixtureReply(c, map[string]any{})
+				default:
+					herdrFixtureReply(c, map[string]any{})
+				}
+			})
+			h.server = s
+			s.terminal.herdr = h
+			se := createCodingDraft(t, s, kind)
+			raw := `{"text":"Fixture question\nSecond controlled line","requestId":"audit-message-001"}`
+			for i := 0; i < 2; i++ {
+				w := httptest.NewRecorder()
+				r := httptest.NewRequest("POST", "/", strings.NewReader(raw))
+				r.SetPathValue("id", se.ID)
+				s.handleTermInput(w, r)
+				if w.Code != 200 {
+					t.Fatal(w.Code, w.Body.String())
+				}
+			}
+			if prompts != 1 || launches != 1 {
+				t.Fatal(prompts, launches)
+			}
+			t.Log("PASS: Chat first-send launches once; working-state multiline prompt submitted once; duplicate request returns receipt. Agent answer/queue semantics are not simulated.")
+		})
+	}
+}
+
+func TestAuditHeadlessLaunchInControlledPTY(t *testing.T) {
+	for _, kind := range []string{"codex", "claude"} {
+		t.Run(kind, func(t *testing.T) {
+			s := codingFixture(t)
+			task := "inbox/wire-the-fence"
+			if err := s.startCodingTask(s.findHarness(kind), task, "go", "fixture only", "execute"); err != nil {
+				t.Fatal(err)
+			}
+			se := s.terminal.load()[0]
+			dir := t.TempDir()
+			args := filepath.Join(dir, "argv")
+			// Shell functions intercept the exact production CLI command; no model/API invocation.
+			fixture := "codex() { printf '%s\\n' \"$@\" > " + shQuote(args) + "; printf '%s\\n' '{\"type\":\"thread.started\",\"thread_id\":\"00000000-0000-0000-0000-000000000001\"}' '{\"type\":\"item.completed\",\"item\":{\"type\":\"agent_message\",\"text\":\"FIXTURE_CODEX_OK\"}}'; }; claude() { printf '%s\\n' \"$@\" > " + shQuote(args) + "; printf '%s\\n' FIXTURE_CLAUDE_OK; }; "
+			// Only redirect the constant TMPDIR setup into this fixture's private directory.
+			command := strings.Replace(se.boardLaunch(), termTmpExport, "export TMPDIR="+shQuote(dir)+"; ", 1)
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer cancel()
+			cmd := exec.CommandContext(ctx, "bash", "--noprofile", "--norc", "-c", fixture+command)
+			cmd.Dir = s.terminal.codingRepo
+			f, err := pty.Start(cmd)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer f.Close()
+			out, _ := io.ReadAll(f)
+			if err = cmd.Wait(); err != nil {
+				t.Fatal(err, string(out))
+			}
+			argv, _ := os.ReadFile(args)
+			exit, _ := os.ReadFile(filepath.Join(filepath.Dir(se.BoardBrief), "exit"))
+			if string(exit) != "0" || !strings.Contains(string(out), "FIXTURE_") {
+				t.Fatal(string(exit), string(out))
+			}
+			if kind == "codex" && !strings.HasPrefix(string(argv), "exec\n--json\n") {
+				t.Fatal(string(argv))
+			}
+			if kind == "claude" && (!strings.Contains(string(argv), "--print\n") || !strings.Contains(string(argv), "--session-id\n"+se.ResumeID)) {
+				t.Fatal(string(argv))
+			}
+			if kind == "codex" {
+				raw, _ := os.ReadFile(filepath.Join(filepath.Dir(se.BoardBrief), "events.jsonl"))
+				for _, line := range strings.Split(strings.TrimSpace(string(raw)), "\n") {
+					var obj map[string]any
+					if json.Unmarshal([]byte(line), &obj) != nil {
+						t.Fatal("invalid fixture JSONL")
+					}
+				}
+			}
+			t.Logf("PASS: dispatched %s boardLaunch in real PTY with controlled CLI function; pinned model=%s, durable exit=0", kind, se.Model)
+		})
+	}
+}
