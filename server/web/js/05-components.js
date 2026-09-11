@@ -715,7 +715,7 @@ function artifactWorkspace(mount, options) {
   notice.setAttribute("role", "status");
   pane.append(header, controls, notice, body);
   mount.append(pane);
-  let current, selected, selectedNumber, generation = 0, editing = false, editState, editor;
+  let current, selected, selectedNumber, generation = 0, editing = false, editState, editor, previewMode="preview", openComparison=null;
   const recovery = el("div", "artifact-edit-recovery");
   pane.insertBefore(recovery,body);
   async function prepareEditState(id){
@@ -749,6 +749,7 @@ function artifactWorkspace(mount, options) {
   }
   function render() {
     generation++;
+    previewMode="preview";openComparison=null;
     editing = false;
     pane.dataset.draft=String(!!editState?.value);
     title.textContent = current.title || current.ref || "Artifact";
@@ -787,14 +788,14 @@ function artifactWorkspace(mount, options) {
     const previous=current.revisions.find(r=>r.n===selectedNumber-1);
     if(previous&&!binary){
       const compare=el("button","sprt-quiet","Compare v"+previous.n);
-      compare.onclick=async()=>{
+      openComparison=compare.onclick=async()=>{
         const ticket=++generation,versionText=current.content||"";
         compare.disabled=true;
         try{
           const old=await fetchJSON(url(current,previous.hash));
           if(ticket!==generation||!pane.isConnected)return;
           body.replaceChildren(artifactDiffView(old.content||"",versionText,`Changes from version ${previous.n} to version ${selectedNumber}`));
-          compare.textContent="Back to preview";compare.onclick=render;
+          previewMode="compare";compare.textContent="Back to preview";compare.onclick=render;
         }catch(e){if(ticket===generation)notice.textContent="Could not compare versions: "+e.message;}
         finally{compare.disabled=false;}
       };
@@ -882,8 +883,8 @@ function artifactWorkspace(mount, options) {
   } catch(e) { notice.textContent=e.message; title.textContent="Artifact unavailable"; } }
   const ready=refresh(opts.revision,opts.proposal);
   return {element:pane, close:()=>close.click(), isEditing:()=>editing, refresh,
-    getView:()=>({revision:selected,scrollTop:body.scrollTop,expandedFiles:[...body.querySelectorAll('.working-file[open]')].map(f=>f.dataset.diffFile)}),
-    restoreView:async view=>{await ready;if(!pane.isConnected||!body.clientHeight)return false;if(Array.isArray(view.expandedFiles)){body.querySelectorAll('.working-file').forEach(f=>f.open=view.expandedFiles.includes(f.dataset.diffFile));await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));}if(Number.isFinite(view.scrollTop))body.scrollTop=Math.max(0,view.scrollTop);return true;}
+    getView:()=>({revision:selected,mode:previewMode,scrollTop:body.scrollTop,expandedFiles:[...body.querySelectorAll('.working-file[open]')].map(f=>f.dataset.diffFile)}),
+    restoreView:async view=>{await ready;if(!pane.isConnected||!body.clientHeight)return false;if(view.mode==="compare"&&previewMode!=="compare"&&openComparison)await openComparison();if(!pane.isConnected||!body.clientHeight)return false;if(Array.isArray(view.expandedFiles)){body.querySelectorAll('.working-file').forEach(f=>f.open=view.expandedFiles.includes(f.dataset.diffFile));await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));}if(Number.isFinite(view.scrollTop))body.scrollTop=Math.max(0,view.scrollTop);return true;}
   };
 }
 

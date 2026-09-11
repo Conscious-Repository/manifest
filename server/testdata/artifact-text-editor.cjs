@@ -17,10 +17,11 @@ await page.getByRole('button',{name:'Discuss'}).click();assert.equal(await page.
 assert.equal(await page.evaluate(()=>a.content),'revised report');
 await page.evaluate(()=>{
  document.querySelector('main').replaceChildren();a.ref='example.py';a.content='# keep this comment\nif left < right:\n    print("<button>literal</button>")';
- artifactWorkspace(document.querySelector('main'),{load:async()=>structuredClone(a)});
+ window.preview=artifactWorkspace(document.querySelector('main'),{load:async()=>structuredClone(a)});
 });
 await page.locator('.artifact-source-preview').waitFor();
 assert.equal(await page.locator('.artifact-source-preview').innerText(),await page.evaluate(()=>a.content));
 assert.equal(await page.locator('.artifact-source-preview button').count(),0);
+await page.getByRole('button',{name:'Compare v1',exact:true}).click();await page.getByRole('button',{name:'Back to preview',exact:true}).waitFor();assert.equal(await page.evaluate(()=>preview.getView().mode),'compare');await page.evaluate(async()=>{const view=preview.getView();preview.close();preview=artifactWorkspace(document.querySelector('main'),{load:async()=>structuredClone(a)});await preview.restoreView(view);});await page.getByRole('button',{name:'Back to preview',exact:true}).waitFor();assert.equal(await page.evaluate(()=>preview.getView().mode),'compare');
 console.log('PASS: direct artifact text edit, compare, version save and exact-version discussion.');
 }finally{await browser.close();}})().catch(e=>{console.error(e);process.exit(1)});

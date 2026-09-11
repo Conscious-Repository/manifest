@@ -19,3 +19,7 @@ Chromium fixtures cover literal script-like text, line numbers, per-file and all
 Attachment tabs now retain their original reference and preview position. Unfinished side-chat setup retains agent/model/folder settings in the existing conversation workspace state. Before creation, its exact payload and request ID are saved; an uncertain response locks those settings and offers `Retry creation`. Restoring a pending setup does not execute it. An explicit retry checks the same request identity. A created side-chat tab continues to restore its existing route.
 
 Extended Chromium coverage exercises response loss, navigation, state-store reopening, exact retry identity/payload, no automatic creation, and actual attachment text preview restoration at 120px. File-edit drafts remain separate. Remaining continuity work includes compare/edit preview submodes and explicit side-chat return-to-parent findings, alongside the full plan gates.
+
+## Comparison-mode restoration
+
+Artifact view state now records preview versus comparison mode. Restoring a comparison reloads the selected immutable version and its preceding revision before applying scroll. It does not enter editing or save a version. The actual artifact-editor browser fixture closes and rebuilds the preview and verifies comparison mode remains selected. Edit-mode restoration remains outstanding.
