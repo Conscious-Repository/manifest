@@ -93,6 +93,9 @@ function chatRouteSegments(h) {
   return raw.split("/").map((s) => { try { return decodeURIComponent(s); } catch (e) { return s; } });
 }
 
+document.addEventListener("pointerdown",e=>{document.querySelectorAll(".chat-details[open],.chat-row-menu[open]").forEach(menu=>{if(!menu.contains(e.target))menu.open=false;});});
+document.addEventListener("keydown",e=>{if(e.key!=="Escape")return;document.querySelectorAll(".chat-details[open],.chat-row-menu[open]").forEach(menu=>{menu.open=false;menu.querySelector("summary")?.focus();});});
+
 // Headers occupy their own flex row; output never scrolls behind them.
 function chatMountHeader(head) {
   const transcript = document.getElementById("chatTranscript");
@@ -1380,7 +1383,7 @@ function chatHead(s) {
   const meta = [fmtWhen(s.updated || s.created)];
   if (!portal) meta.push("$" + (s.spentUsd || 0).toFixed(4) + (s.ceilingUsd ? " / $" + s.ceilingUsd.toFixed(2) : ""));
   const info = el("details", "chat-details");
-  info.append(el("summary", "", "More"), el("div","chat-detail-title",s.title||s.id), el("div", "chat-head-meta", meta.filter(Boolean).join(" · ")));
+  info.append(el("summary", "", "More"), chatConversationInfo(s.title||s.id), el("div", "chat-head-meta", meta.filter(Boolean).join(" · ")));
   const acts = el("span", "chat-head-acts");
   const ren = el("button", "sprt-quiet", "Rename");
   ren.title = "rename";
@@ -2399,7 +2402,7 @@ function chatTermHead(o) {
   const meta = [fmtWhen(se.lastUsed)];
   if (o.cost) meta.push("$" + o.cost.toFixed(2));
   const details = el("details", "chat-details");
-  details.append(el("summary", "", "More"), el("div", "chat-detail-title", se.name || se.kind), status, el("div", "chat-head-meta", sub.join(" · ") + " · " + meta.join(" · ")));
+  details.append(el("summary", "", "More"), chatConversationInfo(se.name || se.kind), status, el("div", "chat-head-meta", sub.join(" · ") + " · " + meta.join(" · ")));
   const taskLinks=(o.conversation?.links||[]).filter(link=>link.kind==="task");
   if(taskLinks.length===1) {
     const task=el("a","sprt-quiet","Task ↗");
@@ -3207,18 +3210,19 @@ function chatChooseTerminalRecipient(source){
   const se=source.se,key=se.kind+"/"+se.id,route=chatRouteVersion,current=chatRecipients.get(key);
   const tasks=(source.conversation?.links||[]).filter(l=>l.kind==="task"),task=tasks.length===1?tasks[0].id:"";
   reviewDialog("Choose agent",({body,actions,close})=>{
+    body.closest("dialog").classList.add("chat-agent-dialog");
     const pick=document.createElement("select");pick.className="pp-in";pick.setAttribute("aria-label","Next message recipient");
     const native=document.createElement("option");native.value="native";native.textContent=chatAgentLabel(se.kind)+(se.model?" · "+shortModel(se.model):"");pick.append(native);
     chatRoster.filter(a=>a.enabled&&a.durableSend).forEach(a=>{const option=document.createElement("option");option.value=a.name;option.textContent=a.label+(a.model?" · "+shortModel(a.model):"");pick.append(option);});
-    if(chatTermEnabled)Object.entries(chatTermKinds).forEach(([kind,label])=>{const option=document.createElement("option");option.value="terminal:"+kind;option.textContent=label+" · separate runtime";pick.append(option);});
+    if(chatTermEnabled)Object.entries(chatTermKinds).forEach(([kind,label])=>{const option=document.createElement("option");option.value="terminal:"+kind;option.textContent=label+" · new coding session";pick.append(option);});
     pick.value=current?.backend==="terminal"?"terminal:"+current.agent:current?.backend==="hermes"?current.agent:"native";
-    body.append(el("p","","Continue in this conversation with its attributed history, or start a separate related chat. This does not interrupt work already running."),pick);
+    body.append(el("p","","Choose who receives your next message. Current work keeps running."),pick);
     const cwd=document.createElement("input");cwd.className="pp-in";cwd.setAttribute("aria-label","Continuation working folder");
     const model=document.createElement("input");model.className="pp-in";model.setAttribute("aria-label","Continuation coding model");model.placeholder="Installed default";
     const fields=el("div","");const folderLabel=el("label","","Working folder on metis"),modelLabel=el("label","","Model (optional)");folderLabel.append(cwd);modelLabel.append(model);fields.append(folderLabel,modelLabel);body.append(fields);
     const sync=()=>{fields.hidden=!pick.value.startsWith("terminal:");const prior=(source.codingRecipients||[]).filter(p=>p.agent===pick.value.slice(9)).at(-1);cwd.value=prior?.cwd||se.cwd||"";model.value=prior?.model||"";};pick.onchange=sync;sync();
     const status=el("p","");status.setAttribute("role","status");body.append(status);
-    const here=el("button","sprt-quiet","Continue here"),cancel=el("button","sprt-quiet","Cancel"),related=el("button","sprt-quiet","Start related chat");
+    const here=el("button","sprt-quiet chat-agent-confirm","Use agent"),cancel=el("button","sprt-quiet","Cancel");
     cancel.onclick=close;
     here.onclick=async()=>{
       here.disabled=true;
@@ -3244,8 +3248,7 @@ function chatChooseTerminalRecipient(source){
       }catch(e){status.textContent=e.message||"Could not choose this agent.";}
       finally{here.disabled=false;}
     };
-    related.onclick=()=>{const chosen=pick.value;close();chatStartRelated({backend:"terminal",agent:se.kind,id:se.id,title:se.name||se.kind},chosen==="native"?"terminal:"+se.kind:chosen);};
-    actions.append(cancel,here,related);
+    actions.append(cancel,here);
   });
 }
 function chatChooseRecipient(source){
@@ -3253,18 +3256,19 @@ function chatChooseRecipient(source){
   const current=chatRecipients.get(key)||{agent:source.agent,model:source.model||""};
   const route=chatRouteVersion;
   reviewDialog("Choose agent",({body,actions,close})=>{
+    body.closest("dialog").classList.add("chat-agent-dialog");
     const pick=document.createElement("select");pick.className="pp-in";pick.setAttribute("aria-label","Next message recipient");
     chatRoster.filter(a=>a.enabled&&a.durableSend).forEach(a=>{const o=document.createElement("option");o.value=a.name;o.textContent=a.label+(a.model?" · "+shortModel(a.model):"");pick.append(o);});
     if(chatTermEnabled)Object.entries(chatTermKinds).forEach(([kind,label])=>{const o=document.createElement("option");o.value="terminal:"+kind;o.textContent=label;pick.append(o);});
     pick.value=(current.backend==="terminal"?"terminal:":"")+current.agent;
-    body.append(el("p","","Continue in this conversation or open a separate linked chat. Already accepted work keeps its recipient."),pick,
-      el("p","","Continuing sends recent conversation history and your selected artifact versions with the next message. Older history may be omitted to fit the model; replies retain their authors."));
+    body.append(el("p","","Choose who receives your next message. Current work keeps running."),pick,
+      el("p","","The next message includes recent history and selected files."));
     const cwd=document.createElement("input");cwd.className="pp-in";cwd.setAttribute("aria-label","Continuation working folder");cwd.placeholder="Default home folder";
     const model=document.createElement("input");model.className="pp-in";model.setAttribute("aria-label","Continuation coding model");model.placeholder="Installed default";
     const fields=el("div","");const folderLabel=el("label","","Working folder on metis"),modelLabel=el("label","","Model (optional)");folderLabel.append(cwd);modelLabel.append(model);fields.append(folderLabel,modelLabel);body.append(fields);
     const sync=()=>{fields.hidden=!pick.value.startsWith("terminal:");const existing=(source.continuations||[]).filter(v=>v.agent===pick.value.slice(9)).at(-1);cwd.value=existing?.cwd||"";model.value=existing?.model||"";};pick.onchange=sync;sync();
     const status=el("p","");status.setAttribute("role","status");body.append(status);
-    const cancel=el("button","sprt-quiet","Cancel"),here=el("button","sprt-quiet","Continue here"),related=el("button","sprt-quiet","Start related chat");
+    const cancel=el("button","sprt-quiet","Cancel"),here=el("button","sprt-quiet chat-agent-confirm","Use agent");
     cancel.onclick=close;
     here.onclick=async()=>{
       here.disabled=true;
@@ -3290,8 +3294,7 @@ function chatChooseRecipient(source){
       }catch(e){status.textContent=e.message||"Could not select this recipient.";}
       finally{here.disabled=false;}
     };
-    related.onclick=()=>{const chosen=pick.value;close();chatStartRelated(source,chosen);};
-    actions.append(cancel,here,related);
+    actions.append(cancel,here);
   });
 }
 
@@ -3336,4 +3339,8 @@ function chatInstallPaneResize(shell){
  const mutation=new MutationObserver(apply);mutation.observe(shell,{childList:true,attributes:true,attributeFilter:['class']});
  shell._refreshPaneWidths=apply;apply();
  chatPaneResizeCleanup=()=>{observer.disconnect();mutation.disconnect();list.remove();artifact.remove();delete shell._refreshPaneWidths;};
+}
+
+function chatConversationInfo(title){
+ const info=el("details","chat-conversation-info");info.append(el("summary","","Conversation details"),el("p","",title));return info;
 }

@@ -11,6 +11,7 @@ const {chromium}=require('playwright'),fs=require('fs'),path=require('path'),ass
  window.o={se:{id:'fixture',kind:'codex',name:'codex · '+('Fix the concrete defects and audit usability. '.repeat(15)),cwd:'/fixture',backend:'herdr'},live:true,conversation:{links:[{kind:'task',id:'fixture'}]},turns:[],screen:['Codex is working','> Review the changes']};window.chatTermOpen=o;
  });
  const source=fs.readFileSync(path.join(root,'js/48-chat.js'),'utf8');
+ await page.addScriptTag({content:source.slice(source.indexOf('function chatConversationInfo'))});
  for(const [start,end] of [['function chatMountHeader','const chatDrafts'],['function chatTermHead(o)','function chatTermRepaintHead'],['const chatTermQuickKeys','async function chatTermScreenFetch']])await page.addScriptTag({content:source.slice(source.indexOf(start),source.indexOf(end))});
  await page.evaluate(()=>{chatMountHeader(chatTermHead(o));chatTermPaintStrip();});
  for(const width of [1440,390]){

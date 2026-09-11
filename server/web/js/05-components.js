@@ -731,7 +731,7 @@ function artifactWorkspace(mount, options) {
       body.append(media);
       notice.textContent = "Preview only. This file has not been sent to the agent.";
     } else if(ext==="diff"){
-      body.append(el("pre","",current.content||""));
+      body.append(artifactWorkingChangesView(current.content||""));
     } else {
       try { body.append(renderMarkdown(current.content || "", "", {readOnly:true})); }
       catch(e) { body.textContent = current.content || ""; }
@@ -845,4 +845,25 @@ function reviewDialog(title,build){
   dialog.addEventListener("cancel",()=>dialog.remove());
   build({body,actions,close});dialog.showModal();
   return dialog;
+}
+
+
+// Presentation only: immutable snapshot bytes remain available through Open file.
+function artifactWorkingChangesView(text){
+ const view=el("div","working-changes-view");
+ const marker="\nUntracked files (contents not included):\n",cut=text.indexOf(marker);
+ const tracked=cut<0?text:text.slice(0,cut),untracked=cut<0?[]:text.slice(cut+marker.length).trim().split("\n");
+ const starts=[...tracked.matchAll(/^diff --git /gm)].map(m=>m.index);
+ const files=starts.map((start,i)=>{const content=tracked.slice(start,starts[i+1]??tracked.length);const path=content.match(/^\+\+\+ b\/(.+)$/m)?.[1]||content.match(/^--- a\/(.+)$/m)?.[1]||content.split("\n")[0].replace("diff --git ","");return {path,content};});
+ view.append(el("p","working-changes-summary",files.length?files.length+" changed "+(files.length===1?"file":"files"):"No tracked changes"));
+ if(files.length){
+  const pick=document.createElement("select");pick.className="pp-in";pick.setAttribute("aria-label","Changed file");
+  files.forEach((f,i)=>{const option=el("option","",f.path);option.value=i;pick.append(option);});
+  const content=el("pre","working-file-diff");
+  const show=()=>{content.replaceChildren();for(const line of files[Number(pick.value)].content.split("\n")){const cls=line.startsWith("+")&&!line.startsWith("+++")?"added":line.startsWith("-")&&!line.startsWith("---")?"removed":"context";content.append(el("span","working-diff-"+cls,line));}};
+  pick.onchange=show;show();view.append(pick,content);
+ }
+ if(untracked.length){const details=el("details","working-untracked");details.append(el("summary","",untracked.length+" untracked files · contents not included"));const list=el("ul","");for(const raw of untracked){let name=raw;try{name=JSON.parse(raw);}catch(e){}list.append(el("li","",name));}details.append(list);view.append(details);}
+ const meta=el("details","working-snapshot-meta");meta.append(el("summary","","Snapshot details"),el("pre","",tracked.slice(0,starts[0]??tracked.length).replace("No tracked changes against HEAD.","").trim()));view.append(meta);
+ return view;
 }

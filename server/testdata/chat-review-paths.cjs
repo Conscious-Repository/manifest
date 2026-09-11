@@ -1,0 +1,22 @@
+const {chromium}=require('playwright'),fs=require('fs'),path=require('path'),assert=require('node:assert/strict');
+(async()=>{const browser=await chromium.launch({headless:true,channel:'chrome'});try{
+const page=await browser.newPage({viewport:{width:390,height:844}});await page.setContent('<main></main>');
+const root=path.join(__dirname,'../web');for(const f of ['00-core','05-primitives','48-chat'])await page.addStyleTag({content:fs.readFileSync(path.join(root,'css',f+'.css'),'utf8')});
+await page.evaluate(()=>{document.documentElement.dataset.theme='jarvis';window.el=(tag,cls,text)=>{const e=document.createElement(tag);e.className=cls||'';e.textContent=text||'';return e;};});
+const source=fs.readFileSync(path.join(root,'js/05-components.js'),'utf8');await page.addScriptTag({content:source.slice(source.indexOf('function artifactWorkingChangesView'))});
+await page.evaluate(()=>document.querySelector('main').append(artifactWorkingChangesView('Working folder: /fixture\nCompared with HEAD: abc\n\ndiff --git a/one.txt b/one.txt\n--- a/one.txt\n+++ b/one.txt\n-old\n+new\ndiff --git a/two.txt b/two.txt\n--- a/two.txt\n+++ b/two.txt\n+<script>bad()</script>\n\nUntracked files (contents not included):\n"draft.txt"\n')));
+await page.getByText('2 changed files',{exact:true}).waitFor();await page.getByRole('combobox',{name:'Changed file'}).selectOption('1');await page.getByText('+<script>bad()</script>',{exact:true}).waitFor();
+assert.equal(await page.locator('.working-untracked').evaluate(e=>e.open),false);await page.locator('.working-untracked > summary').click();await page.getByText('draft.txt',{exact:true}).waitFor();
+assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);
+await page.evaluate(()=>{document.querySelector('main').replaceChildren(artifactWorkingChangesView('Working folder: /fixture\nNo tracked changes against HEAD.\n'));});await page.getByText('No tracked changes',{exact:true}).waitFor();assert.equal(await page.getByRole('combobox').count(),0);
+const chat=fs.readFileSync(path.join(root,'js/48-chat.js'),'utf8');
+const start=source.indexOf('function reviewDialog('),end=source.indexOf('return dialog;',start)+ 'return dialog;'.length;
+await page.addScriptTag({content:source.slice(start,end)+'\n}'});
+await page.addScriptTag({content:chat.slice(chat.indexOf('function chatChooseTerminalRecipient('),chat.indexOf('function chatChooseRecipient('))});
+await page.evaluate(()=>{Object.assign(window,{chatRecipients:new Map(),chatRouteVersion:1,chatRoster:[],chatTermEnabled:true,chatTermKinds:{codex:'Codex'},chatAgentLabel:x=>x,shortModel:x=>x});chatChooseTerminalRecipient({se:{kind:'codex',id:'fixture',model:'test',cwd:'/fixture'}});});
+await page.getByRole('button',{name:'Use agent',exact:true}).waitFor();assert.equal(await page.getByRole('button',{name:'Start related chat',exact:true}).count(),0);
+await page.getByRole('combobox',{name:'Next message recipient'}).selectOption('terminal:codex');await page.getByRole('textbox',{name:'Continuation working folder'}).waitFor();
+assert.equal(await page.evaluate(()=>document.querySelector('dialog').getBoundingClientRect().right>innerWidth),false);
+await page.getByRole('button',{name:'Cancel',exact:true}).click();assert.equal(await page.getByRole('dialog').count(),0);
+console.log('PASS: per-file review, literal diff text, expandable untracked files, honest empty state and phone bounds.');
+}finally{await browser.close();}})().catch(e=>{console.error(e);process.exit(1)});

@@ -471,3 +471,30 @@ button.chat-attach-chip { min-height: 44px; max-width: 100%; background: transpa
 .chat-shell.resizing-panes { cursor: col-resize; user-select: none; }
 .chat-shell.resizing-panes iframe { pointer-events: none; }
 @media(max-width:900px){.chat-pane-resizer{display:none;}}
+
+/* Action menus stay actionable; long source prompts are opt-in context. */
+.chat-thread-header .chat-details[open] { padding: 8px; font-size: 14px; }
+.chat-details[open] > .chat-conversation-info { margin: 4px 0; }
+.chat-conversation-info > summary { cursor: pointer; min-height: 36px; padding: 8px; box-sizing: border-box; }
+.chat-conversation-info p { max-height: 180px; overflow: auto; font: 13px/1.5 var(--sans); padding: 8px; margin: 0; }
+.chat-details[open] .chat-head-acts { display: flex; flex-direction: column; align-items: stretch; gap: 4px; }
+.chat-details[open] > a, .chat-details[open] > button, .chat-details[open] .chat-head-acts > * { box-sizing: border-box; width: 100%; text-align: left; min-height: 40px; padding: 8px; margin: 0; }
+.chat-details[open] .chat-head-meta { padding: 8px; font-size: 12px; }
+.chat-agent-dialog { box-sizing: border-box; width: min(460px,calc(100vw - 24px)); padding: 24px; border-radius: 8px; }
+.chat-agent-dialog h2 { margin: 0 0 16px; }
+.chat-agent-dialog .review-dialog-body { gap: 12px; font: 14px/1.5 var(--sans); }
+.chat-agent-dialog p { margin: 0; }
+.chat-agent-dialog p:empty { display: none; }
+.chat-agent-dialog .review-dialog-actions { justify-content: flex-end; gap: 8px; margin-top: 20px; }
+.chat-agent-dialog .chat-agent-confirm { background: var(--accent); color: var(--bg); border-radius: 6px; }
+.working-changes-view { font: 14px/1.5 var(--sans); min-width: 0; }
+.working-changes-summary { margin: 0 0 12px; font-weight: 600; }
+.working-changes-view select { width: 100%; min-width: 0; max-width: 100%; }
+.working-file-diff { font: 12px/1.6 var(--mono); padding: 12px 0; overflow: auto; }
+.working-file-diff span { display: block; min-height: 1.6em; white-space: pre; }
+.working-diff-added { background: #39a66818; }
+.working-diff-removed { background: #c9484818; }
+.working-changes-view details { border-top: 1px solid var(--line); padding: 8px 0; }
+.working-changes-view summary { cursor: pointer; min-height: 36px; display: flex; align-items: center; }
+.working-changes-view li { overflow-wrap: anywhere; font-size: 12px; }
+.working-snapshot-meta pre { font: 12px/1.5 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; }
