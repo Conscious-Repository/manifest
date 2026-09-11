@@ -651,6 +651,7 @@ function renderChatRail() {
   }
   chatRenderWorkstreamFilter();
   renderChatInboxRows();
+  chatInstallPaneResize(host.closest(".chat-shell"));
 }
 
 // shortModel — one model id shortener for the rail, the head and the landing.
@@ -2930,6 +2931,7 @@ function chatOpenAttachment(file,href){
   chatCloseWorkspace();
   const shell=document.querySelector(".chat-shell");shell.classList.add("has-artifact");
   chatWorkspace=attachmentWorkspace(shell,file,href,()=>{shell.classList.remove("has-artifact");chatWorkspace=null;});
+  chatInstallPaneResize(shell);
 }
 function chatChangesButton(runtime){
   const button=el("button","sprt-quiet","Changes");button.title="Capture current Git changes in this runtime's working folder";
@@ -2961,6 +2963,7 @@ function chatOpenWorkingArtifact(spec) {
       document.querySelector("#chatComposer textarea")?.focus();
     }:null
   });
+  chatInstallPaneResize(shell);
 }
 function chatRenderArtifactContext(taskID,key,host){
  key=key||"task:"+taskID;
@@ -3290,4 +3293,47 @@ function chatChooseRecipient(source){
     related.onclick=()=>{const chosen=pick.value;close();chatStartRelated(source,chosen);};
     actions.append(cancel,here,related);
   });
+}
+
+// Local layout preference only; resizing never changes a conversation or file.
+let chatPaneResizeCleanup=null,chatPaneResizeShell=null;
+function chatInstallPaneResize(shell){
+ if(!shell)return;
+ if(chatPaneResizeShell===shell){shell._refreshPaneWidths?.();return;}
+ chatPaneResizeCleanup?.();chatPaneResizeShell=shell;
+ let rail=260,split=0.5;
+ try{const saved=JSON.parse(localStorage.getItem('manifest.chat.paneWidths')||'null');if(Number.isFinite(saved?.rail))rail=saved.rail;if(Number.isFinite(saved?.split))split=saved.split;}catch(e){}
+ const make=(label,kind)=>{const bar=document.createElement('div');bar.className='chat-pane-resizer '+kind;bar.tabIndex=0;bar.setAttribute('role','separator');bar.setAttribute('aria-orientation','vertical');bar.setAttribute('aria-label',label);bar.title='Drag to resize · arrow keys to adjust · double-click to reset';shell.append(bar);return bar;};
+ const list=make('Resize conversation list','list-resizer'),artifact=make('Resize chat and side pane','artifact-resizer');
+ const clamp=(n,min,max)=>Math.max(min,Math.min(max,n));
+ const persist=()=>{try{localStorage.setItem('manifest.chat.paneWidths',JSON.stringify({rail,split}));}catch(e){}};
+ const apply=()=>{
+  if(!shell.isConnected)return;
+  const bounds=shell.getBoundingClientRect(),phone=window.innerWidth<=900;
+  const pane=shell.querySelector('.artifact-workspace'),has=!!pane&&shell.classList.contains('has-artifact');
+  rail=clamp(rail,180,Math.max(180,Math.min(420,bounds.width-380)));
+  shell.style.setProperty('--rail-w',rail+'px');
+  list.hidden=phone||has;artifact.hidden=phone||!has;
+  if(pane){
+   const main=shell.querySelector('.chat-main');
+   if(phone){pane.style.flex='';main.style.flex='';}
+   else{const minShare=Math.min(.5,300/Math.max(1,bounds.width-60));split=clamp(split,minShare,1-minShare);pane.style.flex=(1-split)+' 1 0px';main.style.flex=split+' 1 0px';}
+  }
+  const target=has?pane:shell.querySelector('.chat-rail');
+  if(target&&!phone){const r=target.getBoundingClientRect(),bar=has?artifact:list;bar.style.left=(has?r.left-bounds.left-12:r.right-bounds.left+2)+'px';}
+  for(const [bar,value,min,max] of [[list,Math.round(rail),180,420],[artifact,Math.round(split*100),25,75]]){bar.setAttribute('aria-valuenow',value);bar.setAttribute('aria-valuemin',min);bar.setAttribute('aria-valuemax',max);}
+ };
+ const bind=(bar,isArtifact)=>{
+  let drag=null;
+  bar.onpointerdown=e=>{if(e.button!==0)return;e.preventDefault();drag={x:e.clientX,rail,split,width:shell.getBoundingClientRect().width};bar.setPointerCapture(e.pointerId);shell.classList.add('resizing-panes');};
+  bar.onpointermove=e=>{if(!drag)return;const delta=e.clientX-drag.x;if(isArtifact)split=drag.split+delta/drag.width;else rail=drag.rail+delta;apply();};
+  const finish=()=>{if(!drag)return;drag=null;shell.classList.remove('resizing-panes');persist();};bar.onpointerup=finish;bar.onpointercancel=finish;bar.onlostpointercapture=finish;
+  bar.ondblclick=()=>{if(isArtifact)split=.5;else rail=260;apply();persist();};
+  bar.onkeydown=e=>{if(!['ArrowLeft','ArrowRight','Home'].includes(e.key))return;e.preventDefault();if(e.key==='Home'){if(isArtifact)split=.5;else rail=260;}else{const d=e.key==='ArrowLeft'?-1:1;if(isArtifact)split+=d*.025;else rail+=d*20;}apply();persist();};
+ };
+ bind(list,false);bind(artifact,true);
+ const observer=new ResizeObserver(apply);observer.observe(shell);
+ const mutation=new MutationObserver(apply);mutation.observe(shell,{childList:true,attributes:true,attributeFilter:['class']});
+ shell._refreshPaneWidths=apply;apply();
+ chatPaneResizeCleanup=()=>{observer.disconnect();mutation.disconnect();list.remove();artifact.remove();delete shell._refreshPaneWidths;};
 }

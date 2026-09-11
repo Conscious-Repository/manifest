@@ -1,0 +1,19 @@
+const {chromium}=require('playwright'),fs=require('fs'),path=require('path'),assert=require('node:assert/strict');
+(async()=>{const browser=await chromium.launch({headless:true,channel:'chrome'});try{
+const page=await browser.newPage({viewport:{width:1440,height:900}});
+await page.route('https://fixture.test/**',r=>r.fulfill({body:'<main class="chat-shell"><aside class="chat-rail">Chats</aside><section class="chat-main">Conversation</section></main>',contentType:'text/html'}));await page.goto('https://fixture.test/');
+for(const f of ['00-core','05-primitives','48-chat'])await page.addStyleTag({content:fs.readFileSync(path.join(__dirname,'../web/css',f+'.css'),'utf8')});
+const source=fs.readFileSync(path.join(__dirname,'../web/js/48-chat.js'),'utf8');await page.addScriptTag({content:source.slice(source.indexOf('let chatPaneResizeCleanup='))});
+await page.evaluate(()=>chatInstallPaneResize(document.querySelector('.chat-shell')));
+const list=page.getByRole('separator',{name:'Resize conversation list'});const initial=await page.locator('.chat-rail').boundingBox();const grip=await list.boundingBox();
+await page.mouse.move(grip.x+5,grip.y+50);await page.mouse.down();await page.mouse.move(grip.x+85,grip.y+50);await page.mouse.up();
+assert.ok((await page.locator('.chat-rail').boundingBox()).width>initial.width+50);
+assert.ok(await page.evaluate(()=>JSON.parse(localStorage.getItem('manifest.chat.paneWidths')).rail>300));
+await list.press('Home');assert.equal(Math.round((await page.locator('.chat-rail').boundingBox()).width),260);
+await page.evaluate(()=>{const shell=document.querySelector('.chat-shell');shell.classList.add('has-artifact');const pane=document.createElement('aside');pane.className='artifact-workspace';pane.textContent='File preview';shell.append(pane);chatInstallPaneResize(shell);});
+const side=page.getByRole('separator',{name:'Resize chat and side pane'});await side.waitFor();const before=(await page.locator('.chat-main').boundingBox()).width;
+await side.press('ArrowRight');assert.ok((await page.locator('.chat-main').boundingBox()).width>before);
+await side.dblclick();assert.equal(await side.getAttribute('aria-valuenow'),'50');
+await page.setViewportSize({width:390,height:844});await page.waitForTimeout(80);assert.equal(await side.isVisible(),false);assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);
+console.log('PASS: drag, saved widths, keyboard adjustment/reset, side pane proportions and phone layout.');
+}finally{await browser.close();}})().catch(e=>{console.error(e);process.exit(1)});

@@ -5,7 +5,7 @@
 /* the shell adopts the terminal cockpit's proportions: the shared page gutter
    and a fixed height (set by chatFitShell) so the transcript scrolls inside
    while the composer stays pinned. */
-.chat-shell { --rail-w: 260px; display: flex; gap: 20px; height: calc(100vh - 150px); padding: 0 var(--page-gutter); }
+.chat-shell { position: relative; --rail-w: 260px; display: flex; gap: 20px; height: calc(100vh - 150px); padding: 0 var(--page-gutter); }
 .chat-rail { width: var(--rail-w); flex: none; display: flex; flex-direction: column; min-height: 0; overflow-y: auto; border-right: 1px solid var(--line); padding-right: 16px; padding-top: var(--sp-3); }
 .chat-new { width: 100%; height: auto; padding: var(--sp-4) 0; border-radius: var(--radius-lg); margin-bottom: var(--sp-6); flex: none; }
 .chat-spirit-pick { display: flex; flex-wrap: wrap; gap: var(--sp-3); margin: var(--sp-3) 0 var(--sp-5); }
@@ -464,3 +464,10 @@ button.chat-attach-chip { min-height: 44px; max-width: 100%; background: transpa
 .chat-main.terminal-focus .chat-term-strip > summary { display: none; }
 .chat-main.terminal-focus .chat-term-strip { border: 1px solid var(--line); border-radius: 4px; }
 .chat-head .chat-terminal-view { color: var(--base-80); }
+
+.chat-pane-resizer { position: absolute; top: 0; bottom: 0; width: 10px; cursor: col-resize; touch-action: none; z-index: 5; border: 0; border-radius: 3px; }
+.chat-pane-resizer:hover, .chat-pane-resizer:focus-visible { background: var(--base-20); outline: 1px solid var(--accent); }
+.chat-pane-resizer[hidden] { display: none; }
+.chat-shell.resizing-panes { cursor: col-resize; user-select: none; }
+.chat-shell.resizing-panes iframe { pointer-events: none; }
+@media(max-width:900px){.chat-pane-resizer{display:none;}}
