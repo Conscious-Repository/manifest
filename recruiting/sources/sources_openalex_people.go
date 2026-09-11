@@ -113,7 +113,8 @@ type openAlexPlan struct {
 
 // openAlexPlanScope reads the scope into a plan. It refuses what it cannot
 // send exactly: an unknown mode, a malformed year window, a work type that
-// is not a bare type name, a works-only field on an authors search.
+// is not a bare type name, a works-only field on an authors search (the
+// text field's default excepted — see below).
 func openAlexPlanScope(s Scope) (openAlexPlan, error) {
 	p := openAlexPlan{Query: strings.TrimSpace(s.Query)}
 	if p.Query == "" {
@@ -132,11 +133,24 @@ func openAlexPlanScope(s Scope) (openAlexPlan, error) {
 		return p, fmt.Errorf("openalex: mode %q is not %q or %q", field(openAlexFieldMode), openAlexModeAuthors, openAlexModeWorks)
 	}
 	p.Mode = mode
+	text, err := openAlexTextField(field(openAlexFieldText))
+	if err != nil {
+		return p, err
+	}
 	if mode == openAlexModeAuthors {
-		for _, k := range []string{openAlexFieldYears, openAlexFieldType, openAlexFieldText} {
+		// a works-only field the owner set refuses, in words. The text field
+		// is the exception when it names the DEFAULT: PrepareScope writes
+		// "text: title-abstract" onto every works run, "run again" hands
+		// those fields back, and switching the mode to authors must not be
+		// refused for a value the owner never typed. Full text would change
+		// a works search, so it still refuses.
+		for _, k := range []string{openAlexFieldYears, openAlexFieldType} {
 			if field(k) != "" {
 				return p, fmt.Errorf("openalex: %s applies to a works search; set %s to %s", k, openAlexFieldMode, openAlexModeWorks)
 			}
+		}
+		if text == openAlexTextFulltext {
+			return p, fmt.Errorf("openalex: %s applies to a works search; set %s to %s", openAlexFieldText, openAlexFieldMode, openAlexModeWorks)
 		}
 		return p, nil
 	}
@@ -146,15 +160,7 @@ func openAlexPlanScope(s Scope) (openAlexPlan, error) {
 		return p, err
 	}
 	p.Budget = budget
-
-	switch strings.ToLower(strings.Join(strings.FieldsFunc(field(openAlexFieldText), func(r rune) bool { return r == ' ' || r == '_' || r == '-' }), "-")) {
-	case "", "title-abstract", "titleabstract", "title-and-abstract":
-		p.Text = openAlexTextTitleAbstract
-	case "fulltext", "full-text":
-		p.Text = openAlexTextFulltext
-	default:
-		return p, fmt.Errorf("openalex: %s %q is not %q or %q", openAlexFieldText, field(openAlexFieldText), openAlexTextTitleAbstract, openAlexTextFulltext)
-	}
+	p.Text = text
 
 	var filters []string
 	if p.Text == openAlexTextTitleAbstract {
@@ -185,6 +191,19 @@ func openAlexPlanScope(s Scope) (openAlexPlan, error) {
 	}
 	p.Filter = strings.Join(filters, ",")
 	return p, nil
+}
+
+// openAlexTextField reads the "text" scope field: absent is the default,
+// the two known values in any spelling ("title abstract", "full_text") are
+// canonical, anything else is refused because it cannot be sent exactly.
+func openAlexTextField(raw string) (string, error) {
+	switch strings.ToLower(strings.Join(strings.FieldsFunc(raw, func(r rune) bool { return r == ' ' || r == '_' || r == '-' }), "-")) {
+	case "", "title-abstract", "titleabstract", "title-and-abstract":
+		return openAlexTextTitleAbstract, nil
+	case "fulltext", "full-text":
+		return openAlexTextFulltext, nil
+	}
+	return "", fmt.Errorf("openalex: %s %q is not %q or %q", openAlexFieldText, raw, openAlexTextTitleAbstract, openAlexTextFulltext)
 }
 
 var (

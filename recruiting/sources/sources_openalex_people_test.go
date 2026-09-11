@@ -248,6 +248,72 @@ func TestOpenAlexWorksPlanAndPrepareScope(t *testing.T) {
 	}
 }
 
+// A prepared works scope comes back whole on "run again" (the UI copies
+// scope.fields into the form), and the owner may then switch the mode to
+// authors. The defaults PrepareScope itself wrote — text: title-abstract,
+// works: 200, the filter — must not refuse that run or be recorded on it:
+// an authors run that says "filter=…" claims a search it never sent.
+// Fields the owner typed that WOULD change a works search (years, type,
+// fulltext) are still refused on the author branch, in words.
+func TestOpenAlexPreparedWorksScopeRerunsAsAuthors(t *testing.T) {
+	prepared, err := (OpenAlex{}).PrepareScope(Scope{Query: "field cycling MRI", Max: 25})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if prepared.Fields["text"] != openAlexTextTitleAbstract || prepared.Fields["works"] == "" || prepared.Fields["filter"] == "" {
+		t.Fatalf("a works run records its defaults: %v", prepared.Fields)
+	}
+
+	rerun := Scope{Query: prepared.Query, Max: prepared.Max, Fields: map[string]string{}}
+	for k, v := range prepared.Fields {
+		rerun.Fields[k] = v
+	}
+	rerun.Fields["mode"] = openAlexModeAuthors
+	again, err := (OpenAlex{}).PrepareScope(rerun)
+	if err != nil {
+		t.Fatalf("the defaults the system wrote refused the rerun: %v", err)
+	}
+	if again.Fields["mode"] != openAlexModeAuthors || again.Fields["text"] != "" || again.Fields["works"] != "" || again.Fields["filter"] != "" {
+		t.Errorf("an authors run records nothing works-only: %v", again.Fields)
+	}
+	// preparing the authors scope again changes nothing
+	if third, err := (OpenAlex{}).PrepareScope(again); err != nil || len(third.Fields) != len(again.Fields) {
+		t.Errorf("idempotent: %v %v", third.Fields, err)
+	}
+
+	// the search itself takes the author branch with those fields, once
+	s := newOpenAlexWorksServer(t)
+	got, ret, err := s.adapter().SearchCounted(context.Background(), again)
+	if err != nil || ret.Unit != "authors" || len(got) != 3 {
+		t.Fatalf("rerun as authors: unit=%q drafts=%d err=%v", ret.Unit, len(got), err)
+	}
+	if p := s.paths(); len(p) != 1 || p[0] != "/authors search=field cycling MRI per-page=25" {
+		t.Fatalf("rerun as authors is one name search: %v", p)
+	}
+
+	// a stale derived filter on an authors scope is dropped, not recorded
+	stale, err := (OpenAlex{}).PrepareScope(Scope{Query: "Dana Reyes", Fields: map[string]string{"filter": "title_and_abstract.search:stale"}})
+	if err != nil || stale.Fields["filter"] != "" {
+		t.Errorf("stale filter on the author branch: %v %v", stale.Fields, err)
+	}
+
+	// what the owner typed and would change a works search still refuses,
+	// naming the works mode; a text value that is neither known is refused
+	// as such on either branch
+	for name, fields := range map[string]map[string]string{
+		"years":    {"mode": "authors", "text": openAlexTextTitleAbstract, "years": "2018-2026"},
+		"type":     {"mode": "authors", "text": openAlexTextTitleAbstract, "type": "article"},
+		"fulltext": {"mode": "authors", "text": "fulltext"},
+	} {
+		if _, err := (OpenAlex{}).PrepareScope(Scope{Query: "field cycling MRI", Fields: fields}); err == nil || !strings.Contains(err.Error(), openAlexModeWorks) {
+			t.Errorf("%s on the author branch: err=%v", name, err)
+		}
+	}
+	if _, err := (OpenAlex{}).PrepareScope(Scope{Query: "field cycling MRI", Fields: map[string]string{"mode": "authors", "text": "abstract-only"}}); err == nil || !strings.Contains(err.Error(), "abstract-only") {
+		t.Errorf("unknown text on the author branch: err=%v", err)
+	}
+}
+
 // A keyword fixture with several pages and repeated authors yields one
 // draft per stable author id, not one per work — and never touches
 // /authors?search.

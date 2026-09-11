@@ -38,13 +38,21 @@ func (OpenAlex) PrepareScope(s Scope) (Scope, error) {
 		fields[k] = v
 	}
 	fields[openAlexFieldMode] = plan.Mode
+	// the derived and works-only values are rewritten from the plan, never
+	// carried over: a works run that comes back through "run again" with its
+	// mode switched to authors would otherwise record a budget, a text field
+	// and a filter it never sent (the plan refuses years/type/fulltext on the
+	// author branch before this point)
+	delete(fields, openAlexFieldFilter)
 	if plan.Mode == openAlexModeWorks {
 		fields[openAlexFieldWorks] = strconv.Itoa(plan.Budget)
 		fields[openAlexFieldText] = plan.Text
-		delete(fields, openAlexFieldFilter)
 		if plan.Filter != "" {
 			fields[openAlexFieldFilter] = plan.Filter
 		}
+	} else {
+		delete(fields, openAlexFieldWorks)
+		delete(fields, openAlexFieldText)
 	}
 	s.Fields = fields
 	return s, nil
