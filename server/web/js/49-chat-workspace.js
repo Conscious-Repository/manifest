@@ -25,6 +25,7 @@ async function chatRestoreWorkspace(){
   else if(tab.spec?.kind==='attachment'&&typeof tab.spec.file?.name==='string'&&typeof tab.spec.href==='string'&&tab.spec.href.startsWith('/api/'))chatOpenAttachment(tab.spec.file,tab.spec.href);
   else if(tab.spec?.kind==='side'&&/^#\/chat\//.test(tab.spec.route||''))w.tab(tab.key,'Side chat',host=>chatMountSideFrame(host,tab.spec),tab.spec);
   else if(tab.spec?.kind==='activity')chatOpenActivity();
+  else if(tab.spec?.kind==='context')chatOpenContext();
   else if(tab.spec?.kind==='project'&&chatWorkstreams.groups[tab.spec.id])chatEditProject(tab.spec.id);
   const opened=w.entries.get(tab.key);if(opened?.api?.restoreView&&tab.view)opened.restoreView=tab.view;
  }
@@ -74,9 +75,11 @@ function chatEnsureWorkspace(restoring=false){
  const savedState=chatWorkspaceState(document.getElementById('chatTranscript')?.dataset.readKey);
  const entries=new Map();let active=null,disposed=false,chooserHost=null;
  const clearChooser=()=>{chooserHost?.remove();chooserHost=null;pane.classList.remove('choosing');};
+ const revealActive=()=>{const row=entries.get(active)?.row;if(!row||pane.hidden)return;const bounds=tabs.getBoundingClientRect(),selected=row.getBoundingClientRect();if(selected.left<bounds.left)tabs.scrollLeft-=bounds.left-selected.left;else if(selected.right>bounds.right)tabs.scrollLeft+=selected.right-bounds.right;};
+ const tabResize=new ResizeObserver(revealActive);tabResize.observe(tabs);
  const w={pane,body,entries,restoring,
   save(){if(disposed||w.restoring||!savedState)return;for(const t of entries.values())if(!pane.hidden&&!t.host.hidden)t.view=t.api?.getView?.()||t.view;savedState.set({open:!pane.hidden,active,tabs:[...entries].filter(([,t])=>t.spec).map(([key,t])=>({key,spec:t.spec,view:t.restoreView||t.view||{}}))});},
-  show(open=true){w.save();pane.hidden=!open;shell.classList.toggle('has-artifact',open);shell._refreshPaneWidths?.();document.querySelectorAll('.chat-workspace-toggle').forEach(b=>b.setAttribute('aria-expanded',String(open)));if(!open)document.querySelector('#chatComposer textarea')?.focus();if(open){const t=entries.get(active);if(t?.restoreView){const view=t.restoreView;Promise.resolve(t.api?.restoreView?.(view)).then(ok=>{if(ok&&t.restoreView===view)t.restoreView=null;});}}w.save();},
+  show(open=true){w.save();pane.hidden=!open;shell.classList.toggle('has-artifact',open);shell._refreshPaneWidths?.();document.querySelectorAll('.chat-workspace-toggle').forEach(b=>b.setAttribute('aria-expanded',String(open)));if(!open)document.querySelector('#chatComposer textarea')?.focus();if(open){revealActive();const t=entries.get(active);if(t?.restoreView){const view=t.restoreView;Promise.resolve(t.api?.restoreView?.(view)).then(ok=>{if(ok&&t.restoreView===view)t.restoreView=null;});}}w.save();},
   select(key){w.save();clearChooser();active=key;for(const [id,t] of entries){t.host.hidden=id!==key;t.button.setAttribute('aria-selected',String(id===key));t.button.tabIndex=id===key?0:-1;}w.show();},
   drop(key){const t=entries.get(key);if(!t)return;t.host.remove();t.row.remove();entries.delete(key);if(!disposed&&active===key){const next=Array.from(entries.keys()).at(-1);if(next)w.select(next);else w.chooser();}w.save();},
   tab(key,title,build,spec=null){if(entries.has(key)){w.select(key);return entries.get(key);}
@@ -107,7 +110,7 @@ function chatEnsureWorkspace(restoring=false){
    return t;
   },
   chooser(){clearChooser();chooserHost=el('div','chat-workspace-picker');pane.classList.add('choosing');if(entries.size){chooserHost.classList.add('chat-workspace-popover');pane.append(chooserHost);}else body.append(chooserHost);chatWorkspaceChooser(chooserHost);w.show();},
-  close(){if(disposed)return;w.save();savedState?.flush();++chatWorkspaceRestoreTicket;disposed=true;for(const t of Array.from(entries.values()))t.api?.close?.();entries.clear();pane.remove();shell.classList.remove('has-artifact');chatWorkspaceTabs=null;chatWorkspace=null;shell._refreshPaneWidths?.();}
+  close(){if(disposed)return;tabResize.disconnect();w.save();savedState?.flush();++chatWorkspaceRestoreTicket;disposed=true;for(const t of Array.from(entries.values()))t.api?.close?.();entries.clear();pane.remove();shell.classList.remove('has-artifact');chatWorkspaceTabs=null;chatWorkspace=null;shell._refreshPaneWidths?.();}
  };
  chatWorkspaceTabs=w;chatWorkspace=w;add.onclick=()=>{if(chooserHost&&entries.size)clearChooser();else w.chooser();};hide.onclick=()=>w.show(false);
  pane.addEventListener('keydown',e=>{if(e.key==='Escape'){if(chooserHost&&entries.size){clearChooser();add.focus();}else w.show(false);}});
@@ -119,7 +122,7 @@ function chatWorkspaceChooser(host){
  const action=(name,description,icon,fn)=>{const b=el('button','chat-workspace-option');b.title=description;b.append(chatWorkspaceIcon(icon),el('span','',name));b.onclick=fn;chooser.append(b);};
  if(source)action('Activity','Inspect recorded instructions, narration and tool output','review',()=>chatOpenActivity());
  const project=chatCurrentProject();
- if(project)action('Context','Review project instructions and reference links','folder',()=>chatEditProject(project));
+ if(source)action('Context','Inspect recorded inputs and project instructions','folder',()=>chatOpenContext());
  if(source?.backend==='terminal'){
   action('Review','Review this working folder','review',()=>chatChangesButton({id:source.id}).click());
   action('Terminal','Open the live terminal below chat','terminal',()=>{chatWorkspaceTabs.show(false);chatOpenTerminalPane(chatTermOpen.se);});
@@ -303,9 +306,9 @@ document.addEventListener('keydown',chatWorkbenchShortcut);
 // Read-only projection of the same authorized transcript used by the center.
 // It subscribes to existing transcript renders; it never starts another poller.
 let chatWorkbenchActivity=null;
-function chatWorkbenchActivityUpdate(turns,operations=[],proposals=[]){
+function chatWorkbenchActivityUpdate(turns,operations=[],proposals=[],context={}){
  if(chatIsPortal())return;
- const next={key:chatAgent+'/'+chatOpenId,turns,operations,proposals};
+ const next={key:chatAgent+'/'+chatOpenId,turns,operations,proposals,context};
  const signature=JSON.stringify(next);if(chatWorkbenchActivity?.signature===signature)return;
  chatWorkbenchActivity={...structuredClone(next),signature};
  window.dispatchEvent(new Event('chat-workbench-activity'));
@@ -356,4 +359,47 @@ function chatOpenActivity(){
   filter.onchange=()=>{list.scrollTop=0;render();};window.addEventListener('chat-workbench-activity',render);render();
   return {element:pane,close:()=>{closed=true;window.removeEventListener('chat-workbench-activity',render);pane.remove();drop();},getView:()=>{for(const item of list.querySelectorAll('details.chat-activity-event')){if(item.open)expanded.add(item.dataset.eventId);else expanded.delete(item.dataset.eventId);}return {filter:filter.value,scrollTop:list.scrollTop,expanded:[...expanded]};},restoreView:async view=>{if(!host.isConnected||!host.clientHeight)return false;if([...filter.options].some(o=>o.value===view.filter))filter.value=view.filter;expanded.clear();for(const id of view.expanded||[])if(typeof id==='string')expanded.add(id);render();list.scrollTop=Math.max(0,Number(view.scrollTop)||0);return true;}};
  },{kind:'activity'});
+}
+
+function chatContextInputs(data){
+ return (data?.turns||[]).filter(t=>t.who==='user').map((turn,index)=>{
+  const receipt=turn.delivery||(turn.n!==undefined?(data.context?.deliveries||[]).find(d=>d.userTurn===turn.n):null);
+  const context=receipt?.context||{};
+  return {id:String(turn.id??turn.n??index),text:turn.text||'',recipient:context.recipient||turn.native||null,task:context.task||turn.submission?.task||'',artifacts:context.artifacts||turn.submission?.artifacts||[],files:turn.submission?.files||[],omitted:receipt?.historyOmitted||turn.submission?.historyOmitted||0};
+ });
+}
+function chatOpenContext(){
+ if(chatIsPortal())return;
+ return chatEnsureWorkspace().tab('context','Context',(host,drop)=>{
+  const key=chatAgent+'/'+chatOpenId,pane=el('section','chat-context-inspector'),body=el('div','chat-context-body');body.tabIndex=0;host.append(pane);pane.append(body);
+  let closed=false,selected=null,instructionOpen=false;
+  const render=()=>{
+   if(closed||!host.isConnected||key!==chatAgent+'/'+chatOpenId)return;
+   const source=chatWorkspaceSource();if(!source)return;
+   const scroll=body.scrollTop;body.replaceChildren();
+   const summary=el('dl','chat-context-summary');
+   const field=(label,value)=>{if(value){summary.append(el('dt','',label),el('dd','',value));}};
+   field('Agent',source.agent);field('Session model',source.model);field('Working folder',source.cwd);body.append(summary);
+   const project=chatCurrentProject();
+   if(project){const projectRow=el('div','chat-context-section'),edit=el('button','sprt-quiet','edit project instructions');edit.onclick=()=>chatEditProject(project);projectRow.append(el('h3','',chatWorkstreams.groups[project]||'Project'),el('p','chat-workspace-hint','Current project instructions apply to new chats. Recorded inputs below show what was sent here.'),edit);const notes=chatWorkstreams.contexts?.[project]?.instructions;if(notes){const current=el('details','');current.append(el('summary','','Current project instructions'),el('pre','chat-activity-text',notes));projectRow.append(current);}body.append(projectRow);}
+   if(source.task){const task=el('button','sprt-quiet','open linked task');task.onclick=()=>openTodoPanel(source.task);body.append(task);}
+   const data=chatWorkbenchActivity?.key===key?chatWorkbenchActivity:null,inputs=chatContextInputs(data);
+   const section=el('section','chat-context-section');section.append(el('h3','','Recorded inputs'));body.append(section);
+   if(!inputs.length){section.append(emptyRow('No recorded inputs available yet.'));body.scrollTop=scroll;return;}
+   const selector=document.createElement('select');selector.className='pp-in';selector.setAttribute('aria-label','Recorded instruction');
+   inputs.forEach((input,i)=>{const option=el('option','','Instruction '+(i+1)+' · '+input.text.replace(/\s+/g,' ').slice(0,70));option.value=input.id;selector.append(option);});
+   const input=inputs.find(x=>x.id===selected)||inputs.at(-1);selected=input.id;selector.value=selected;selector.onchange=()=>{selected=selector.value;instructionOpen=false;render();};section.append(selector);
+   const target=input.recipient;if(target)section.append(el('p','chat-context-target','Sent to '+(target.agent||source.agent)+(target.model?' · '+target.model:'')));
+   if(input.omitted)section.append(el('p','chat-workspace-hint',input.omitted+' earlier turns omitted from this submission.'));
+   if(input.task&&input.task!==source.task){const task=el('button','sprt-quiet','open task supplied with this instruction');task.onclick=()=>openTodoPanel(input.task);section.append(task);}
+   const instruction=el('details','chat-context-instruction');instruction.open=instructionOpen;instruction.append(el('summary','','Instruction text'),el('pre','chat-activity-text',input.text));instruction.addEventListener('toggle',()=>{if(instruction.isConnected)instructionOpen=instruction.open;});section.append(instruction);
+   for(const artifact of input.artifacts){const open=el('button','chat-context-reference','open referenced artifact');open.title='Revision '+artifact.revision;open.onclick=()=>chatOpenWorkingArtifact({id:artifact.id,revision:artifact.revision,task:input.task});section.append(open,el('span','chat-workspace-hint','Revision '+artifact.revision?.slice(0,12)));}
+   for(const file of input.files){const open=el('button','chat-context-reference',file.name||'Attached file');open.onclick=()=>chatOpenAttachment(file,chatFileHref(file.hash));section.append(open);}
+   const origin=data?.context?.origin;
+   if(origin?.context){const parent=el('details','chat-context-instruction');parent.append(el('summary','','Parent context snapshot'),el('pre','chat-activity-text',origin.context));body.append(parent);}
+   body.scrollTop=scroll;
+  };
+  window.addEventListener('chat-workbench-activity',render);render();
+  return {element:pane,close:()=>{closed=true;window.removeEventListener('chat-workbench-activity',render);pane.remove();drop();},getView:()=>({selected,scrollTop:body.scrollTop,instructionOpen:body.querySelector('.chat-context-instruction')?.open||false}),restoreView:async view=>{if(!host.isConnected||!host.clientHeight)return false;selected=view.selected||null;instructionOpen=!!view.instructionOpen;render();body.scrollTop=Math.max(0,Number(view.scrollTop)||0);return true;}};
+ },{kind:'context'});
 }

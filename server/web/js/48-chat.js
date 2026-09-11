@@ -686,7 +686,7 @@ function chatEditProject(id){
      const latest=await r.json();reviewSource(latest);
      throw Error('Project changed elsewhere. Compare the saved version below; your edits are retained.');
     }
-    if(!r.ok)throw Error('Project context was not saved.');snapshot=await r.json();chatApplyWorkstreams(snapshot);chatRenderWorkstreamFilter();renderChatInboxRows();
+    if(!r.ok)throw Error('Project context was not saved.');snapshot=await r.json();chatApplyWorkstreams(snapshot);chatRenderWorkstreamFilter();renderChatInboxRows();window.dispatchEvent(new Event('chat-workbench-activity'));
     dirty=name.value.trim()!==savedName||notes.value!==savedNotes;if(!dirty){draft?.set(null);draft?.flush();}else{draft?.set({name:name.value,instructions:notes.value,recordVersion:snapshot.record_version});}status.textContent=dirty?'Saved; newer edits remain':'Saved';
    }catch(e){status.textContent=e.message;}finally{save.disabled=sourceConflict||!!draft?.conflict;}
   };
@@ -1822,7 +1822,7 @@ function renderChatTranscript(d) {
   if(activeTask)s.task=activeTask;
   s.related=d.related||[];s.handoffBody=d.body||"";s.continuations=d.continuations||[];s.sharedFiles=d.sharedFiles||[];
   chatCurSession = s;
-  if(typeof chatWorkbenchActivityUpdate==="function")chatWorkbenchActivityUpdate(d.timeline||parseChatTurns(d.body||""),[...(d.operations||[]),...(d.sharedOperations||[])],d.proposals||[]);
+  if(typeof chatWorkbenchActivityUpdate==="function")chatWorkbenchActivityUpdate(d.timeline||parseChatTurns(d.body||""),[...(d.operations||[]),...(d.sharedOperations||[])],d.proposals||[],{deliveries:s.deliveries||[],origin:s.origin||null});
   chatLastUpdated = chatTranscriptSignature(d);
   const who = s.spirit || (s.agent ? chatAgentLabel(s.agent) : "");
   const portal = chatIsPortal();

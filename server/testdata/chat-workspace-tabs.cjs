@@ -119,6 +119,26 @@ const {chromium}=require('playwright'),fs=require('fs'),path=require('path'),ass
  assert.equal(await p.locator('.chat-activity-event').count(),1);
  assert.ok((await p.locator('.chat-activity-event').innerText()).includes('rerun'));
  await p.setViewportSize({width:390,height:844});assert.equal(await p.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);await p.screenshot({path:'/tmp/manifest-workbench-activity-phone.png'});
+ await p.evaluate(()=>{
+  chatWorkbenchActivityUpdate([{n:1,who:'user',text:'Use the original plan'},{n:2,who:'user',text:'Second request <button>literal</button>'}],[],[],{deliveries:[{userTurn:1,context:{recipient:{agent:'claude',model:'opus'},artifacts:[{id:'plan',revision:'b'.repeat(64)}]}}]});
+  chatOpenContext();
+ });
+ await p.getByLabel('Recorded instruction').selectOption('1');
+ await p.getByText('Sent to claude · opus',{exact:true}).waitFor();
+ await p.getByText('Instruction text',{exact:true}).click();
+ await p.getByText('Use the original plan',{exact:true}).waitFor();
+ await p.evaluate(async()=>{chatWorkspaceTabs.close();await Promise.all([...chatWorkspaceStates.values()].map(s=>s.flush()));chatWorkspaceStates.clear();await chatRestoreWorkspace();});
+ await p.waitForFunction(()=>document.querySelector('.chat-context-instruction')?.open);
+ assert.equal(await p.getByLabel('Recorded instruction').inputValue(),'1');
+ assert.equal(await p.getByRole('button',{name:'open referenced artifact',exact:true}).getAttribute('title'),'Revision '+'b'.repeat(64));
+ await p.evaluate(()=>{window.contextOriginalOpen=chatOpenWorkingArtifact;chatOpenWorkingArtifact=ref=>window.contextOpened=ref;});await p.getByRole('button',{name:'open referenced artifact',exact:true}).click();assert.equal(await p.evaluate(()=>contextOpened.revision),'b'.repeat(64));await p.evaluate(()=>chatOpenWorkingArtifact=contextOriginalOpen);
+ await p.getByLabel('Recorded instruction').selectOption('2');
+ assert.equal(await p.getByRole('button',{name:'open referenced artifact',exact:true}).count(),0,'references belong to their recorded instruction');
+ await p.getByText('Instruction text',{exact:true}).click();
+ assert.equal(await p.locator('.chat-context-instruction button').count(),0,'instruction markup is inert');
+ await p.waitForFunction(()=>{const strip=document.querySelector('.chat-workspace-tabs').getBoundingClientRect(),tab=document.querySelector('[role=tab][aria-selected=true]').getBoundingClientRect();return tab.left>=strip.left&&tab.right<=strip.right;});
+ await p.screenshot({path:'/tmp/manifest-workbench-context-phone.png'});
+ assert.equal(await p.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);
  assert.deepEqual(errors,[]);
  console.log('PASS: real artifact draft survives pane and tab switches, scoped model defaults, keyboard tabs, mobile return, route disposal.');
 }finally{await b.close()}})().catch(e=>{console.error(e);process.exit(1)});
