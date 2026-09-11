@@ -369,17 +369,17 @@ async function renderTaskChat(taskID, refetch) {
   const head = el("div", "sprt-head chat-head");
   head.append(el("span", "sprt-title chat-head-title", rec.Title || rec.title || todoRowInfo(taskID)?.text || taskID));
   const agent = taskChatAgent(d);
-  head.append(el("span", "sprt-sub chat-head-sub", ["task conversation", agent ? chatAgentLabel(agent) : "unassigned"].join(" · ")));
-  head.append(el("span", "sprt-head-meta chat-head-meta", taskID));
+  const info=el("details","chat-details");info.append(el("summary","","More"),el("p","chat-head-meta","Task activity · comments and run summaries"));
   const runtimeBadge = terminalRunBadge(d.delegation);
-  if (runtimeBadge) head.append(runtimeBadge);
+  if (runtimeBadge) info.append(runtimeBadge);
   const acts = el("span", "chat-head-acts");
-  const back = el("button", "sprt-quiet", "open task ↗");
+  const back = el("button", "sprt-quiet", "Task details");
   back.title = "open this task in TASKS";
-  back.onclick = () => { location.hash = "#/tasks/" + encodeURIComponent(taskID); };
+  back.onclick = () => openTodoPanel(taskID,{returnRoute:location.hash});
   acts.append(back);
   head.append(acts);
   head.append(chatArtifactActions(d));
+  head.append(info);
   chatMountHeader(head);
   (d.thread || []).forEach((c) => host.append(chatTaskThreadEntry(c, taskID)));
   if (d.inflight) host.append(el("div", "chat-thinking", "✦ " + (d.inflight.name || "agent") + " is working…"));
@@ -2262,6 +2262,7 @@ async function chatTermEnd(se) {
 // Terminal tab's): remember the stage + the row, then route.
 function chatTermOpenInTerminal(se) {
   try { localStorage.setItem("manifest.termStage", "term"); } catch (e) {}
+  try { sessionStorage.setItem("manifest.terminalReturn",JSON.stringify({id:se.id,route:location.hash})); } catch(e) {}
   if (typeof termOpenId !== "undefined") termOpenId = se.id;
   location.hash = "#/terminal/" + encodeURIComponent(se.id);
 }
@@ -2405,9 +2406,9 @@ function chatTermHead(o) {
   details.append(el("summary", "", "More"), chatConversationInfo(se.name || se.kind), status, el("div", "chat-head-meta", sub.join(" · ") + " · " + meta.join(" · ")));
   const taskLinks=(o.conversation?.links||[]).filter(link=>link.kind==="task");
   if(taskLinks.length===1) {
-    const task=el("a","sprt-quiet","Task ↗");
-    task.href=chatTaskThreadHash(taskLinks[0].id);
-    task.title="Open the task for this coding session";
+    const task=el("button","sprt-quiet","Task details");
+    task.onclick=()=>openTodoPanel(taskLinks[0].id,{returnRoute:location.hash});
+    task.title="View task details without leaving this conversation";
     details.append(task);
   }
   for(const warning of o.conversation?.warnings||[])details.append(el("div","chat-head-meta",warning));

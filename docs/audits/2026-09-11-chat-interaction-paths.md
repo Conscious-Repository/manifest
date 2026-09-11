@@ -16,3 +16,13 @@ Reference: owner's supplied Codex screenshots and requested conversation-first w
 Verification uses isolated browser fixtures with actual renderer/dialog code. Covered desktop/390px header, More controls, Terminal/Conversation switching, per-file selection, untracked disclosure, literal script-like text, empty review, coding fields, cancellation, and dialog bounds. No real agent input or external action was dispatched.
 
 Remaining limits: Changes is a captured working-tree review, not a live filesystem browser or selective Git staging UI. Untracked file contents are not included. The recipient chooser preserves the existing execution semantics; switching agents does not redirect work already accepted. Physical-device acceptance and real-send UX remain owner testing. Further changes should follow concrete feedback rather than adding all controls visible in Codex.
+
+## Task and terminal context follow-up
+
+The coding transcript is the execution conversation; the task activity thread contains task comments and run summaries. These are not identical records. The coding header now offers Task details in the existing task panel while preserving its originating chat route, instead of routing into another chat. Closing or continuing from the task panel returns to that conversation. Task activity remains reachable through existing task routes; this is not a data/history merge.
+
+Terminal deep links now reveal the selected pane before reusing an existing attachment, reset a deliberately paused attachment on explicit navigation, and expose Back to conversation for a chat-origin link. A confirmed ended process remains ended: the empty state explains how to resume from chat. No automatic launch or input replay was added.
+
+Guidance: [OpenAI's Codex introduction](https://openai.com/index/introducing-the-codex-app/) describes reviewing work within the thread; [NN/g consistency and standards](https://www.nngroup.com/articles/consistency-and-standards/) supports predictable labels and navigation. Applied here as context-preserving task inspection and exact-session terminal navigation, rather than claiming identical underlying task/terminal semantics.
+
+Fixture coverage: reopening an existing exact attachment reveals it without reconnecting; opening and closing task details retains the coding-chat route. Terminal recovery and backend tests also run. Real terminal commands are not used for QA.

@@ -1,3 +1,4 @@
+let todoPanelReturnRoute="";
 // ================= TODO PANEL =================
 // Click a list row or board card → a sticky right panel (the AION-inspector
 // idiom: the list never reflows) carrying the todo's DESCRIPTION, its PLAN
@@ -92,8 +93,9 @@ function openTodoPanel(rOrId, opts) {
   if (!todoSelId) todoPanelOrigin = document.activeElement;
   todoSelId = id;
   todoComposerPreset = opts && opts.mode ? opts : null;
+  todoPanelReturnRoute=opts?.returnRoute?.startsWith("#/chat")?opts.returnRoute:"";
   const suffix = "#/tasks/" + encodeURIComponent(id);
-  if (location.hash !== suffix) {
+  if (!todoPanelReturnRoute && location.hash !== suffix) {
     try { history.replaceState(null, "", suffix); } catch (e) {}
   }
   ensureTodoPanelPoll();
@@ -104,7 +106,7 @@ function openTodoPanel(rOrId, opts) {
 function closeTodoPanel() {
   todoSelId = null;
   todoPanelData = null;
-  try { history.replaceState(null, "", "#/tasks"); } catch (e) {}
+  try { history.replaceState(null, "", todoPanelReturnRoute || "#/tasks"); } catch (e) {}
   renderTodoPanel(false);
   document.querySelectorAll(".panel-sel").forEach((node) => node.classList.remove("panel-sel"));
   if (todoPanelOrigin && todoPanelOrigin.isConnected) todoPanelOrigin.focus();
@@ -615,8 +617,8 @@ function todoComposer(d, opts) {
   const taskID = opts.taskID || todoSelId;
   const box = el("div", "tdo-p-composer");
   if(d.chat?.canonical && d.chat.id){
-    const open=el("button","sprt-quiet","Continue conversation →");
-    open.onclick=()=>{ closeTodoPanel(); location.hash="#/chat/task/"+encodeURIComponent(taskID); };
+    const open=el("button","sprt-quiet",todoPanelReturnRoute?"Back to conversation":"Continue conversation →");
+    open.onclick=()=>{ const route=todoPanelReturnRoute||"#/chat/task/"+encodeURIComponent(taskID);closeTodoPanel();location.hash=route; };
     box.append(open);return box;
   }
   const draft = todoComposerDrafts.get(taskID) || { text: "", files: [], mentions: [] };

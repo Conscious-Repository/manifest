@@ -23,11 +23,12 @@ const TERM_STAGES = [
 ];
 function showTerminal() {
   if (location.hash.startsWith("#/terminal/")) {
-    try { termOpenId = decodeURIComponent(location.hash.slice("#/terminal/".length)); termStage = "term"; } catch (e) {}
+    try { termOpenId = decodeURIComponent(location.hash.slice("#/terminal/".length)); termStage = "term"; termAttachmentPaused=false; } catch (e) {}
   }
   try { termStage = localStorage.getItem("manifest.termStage") || termStage; } catch (e) {}
   if (!TERM_STAGES.some((s) => s.stage === termStage)) termStage = "term";
   if (location.hash.startsWith("#/terminal/")) termStage = "term";
+  if(termOpenId)termRevealSession();
   renderTermTabbar(); termApplyStage(); termFitShell();
   if (typeof ensureTerminalEvents === "function") ensureTerminalEvents();
   if (!termListenersReady) {
@@ -62,9 +63,11 @@ function termRenderControls() {
     reconnect.onclick = async () => { detachTerm(); await loadTermSessions(); };
     const separate = el("a", "term-key", "New tab ↗"); separate.id = "termSeparate"; separate.target = "_blank"; separate.rel = "noopener";
     const status = el("span", "term-connection", "Select a session"); status.id = "termConnection"; status.setAttribute("role", "status");
-    toolbar.append(sessions, launcher, keyboard, latest, reconnect, separate, status);
+    const back=el("a","term-key","Back to conversation");back.id="termBackToChat";toolbar.append(back,sessions, launcher, keyboard, latest, reconnect, separate, status);
     pane.prepend(toolbar);
   }
+  const back=document.getElementById("termBackToChat");back.hidden=true;
+  try {const origin=JSON.parse(sessionStorage.getItem("manifest.terminalReturn")||"null");if(origin?.id===termOpenId&&origin.route?.startsWith("#/chat")){back.href=origin.route;back.hidden=false;}}catch(e){}
   const select = toolbar.querySelector("select");
   select.replaceChildren();
   if (!termSessions.length) select.append(el("option", "", "No running sessions"));
@@ -127,7 +130,7 @@ async function loadTermSessions(quiet) {
     if (termOpenId && !selected && termConnectivity === "connected") {
       // A known stopped pane is never reopened from Terminal history.
       detachTerm();
-      renderTermEmpty("pane ended · resume conversations in Chats");
+      renderTermEmpty("This session has ended. Return to its conversation and send a message to resume it.");
     } else if (termInst && selected && termInst.id === selected.id && termInst.runtimeKey !== termRuntimeKey(selected)) {
       detachTerm();
       renderTermEmpty("pane changed · select the session to attach");
@@ -341,6 +344,7 @@ function detachTerm() {
 function attachTerm(id, recovery) {
   const session = termSessions.find((se) => se.id === id && se.live);
   if (!session) { renderTermEmpty("pane unavailable · resume conversations in Chats"); return; }
+  termRevealSession();
   const runtimeKey = termRuntimeKey(session);
   if (typeof Terminal === "undefined") { showToast("terminal library not loaded"); return; }
   if (termInst && termInst.id === id && termInst.runtimeKey === runtimeKey && termInst.ws.readyState <= 1) return;
@@ -499,3 +503,5 @@ cmdRegistry.register(() => [
   { id: "act:new-claude-term", name: "open Claude terminal", hint: "terminal · action", keywords: "claude code open terminal",
     act: () => { closeCmdbar(); location.hash = "#/terminal"; setTimeout(() => { termLaunch.kind = "claude"; termCreate("claude"); }, 250); } },
 ]);
+
+function termRevealSession(){const shell=document.querySelector(".term-shell");if(shell){shell.classList.add("term-session-active");shell.classList.remove("term-nav-open");}}

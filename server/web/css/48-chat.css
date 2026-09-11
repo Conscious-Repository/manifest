@@ -498,3 +498,6 @@ button.chat-attach-chip { min-height: 44px; max-width: 100%; background: transpa
 .working-changes-view summary { cursor: pointer; min-height: 36px; display: flex; align-items: center; }
 .working-changes-view li { overflow-wrap: anywhere; font-size: 12px; }
 .working-snapshot-meta pre { font: 12px/1.5 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; }
+.chat-main .task-composer > * { width: 100%; min-width: 0; }
+.chat-main .task-composer .tdo-p-textarea { width: 100%; box-sizing: border-box; font: 16px/1.6 var(--sans); }
+.chat-thread-header .chat-artifact-actions { min-width: 0; flex-wrap: wrap; }
