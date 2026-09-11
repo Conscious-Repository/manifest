@@ -616,3 +616,8 @@ button.chat-attach-chip { min-height: 44px; max-width: 100%; background: transpa
 .chat-jump-latest[hidden] { display:none; }
 .chat-jump-latest:hover { border-color:var(--accent-soft); }
 @media(max-width:860px){ .chat-jump-latest { width:44px; height:44px; } }
+
+.chat-response-footer { display:flex; align-items:center; gap:12px; margin-top:6px; }
+.chat-copy-response { border:0; border-radius:6px; padding:6px 8px; background:transparent; color:var(--base-50); font:12px var(--sans); cursor:pointer; min-height:32px; }
+.chat-copy-response:hover, .chat-copy-response:focus-visible { background:var(--hover); color:var(--base-90); }
+@media(max-width:860px){ .chat-copy-response { min-height:44px; min-width:44px; } }

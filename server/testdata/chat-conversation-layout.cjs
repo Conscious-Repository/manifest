@@ -16,10 +16,14 @@ const root=path.join(__dirname,'../web');
  });
  const source=fs.readFileSync(path.join(root,'js/48-chat.js'),'utf8');
  await page.addScriptTag({content:source.slice(source.indexOf('const chatActivityOpen'),source.indexOf('// ---- the live strip:'))});
+ const workspace=fs.readFileSync(path.join(root,'js/49-chat-workspace.js'),'utf8');
+ await page.addScriptTag({content:workspace.slice(workspace.indexOf('function chatCopyResponseControl('))});
+ await page.evaluate(()=>Object.defineProperty(navigator,'clipboard',{configurable:true,value:{writeText:async text=>{window.copied=text;}}}));
  await page.evaluate(()=>{
   window.turns=[{id:'u1',who:'user',text:'Make candidate review easier to use on my phone.',ts:1},{id:'a1',who:'assistant',ts:1,blocks:[{t:'step',cast:'read',input:'/fixture/candidates.js',result:'original file'},{t:'step',cast:'test',input:'focused checks',result:'one failed check',error:true},{t:'say',text:'I found the source of the cramped layout. The candidate summary now comes first, followed by the stage control and supporting evidence. You can keep reviewing without losing your place.'}]}];
   chatTermPaintLines(document.getElementById('transcript'),turns);
  });
+ await page.getByRole('button',{name:'Copy response',exact:true}).click();assert.equal(await page.evaluate(()=>copied),await page.evaluate(()=>turns[1].blocks.at(-1).text));
  assert.equal(await page.locator('.chat-term-activity').getAttribute('open'),null);
  await page.getByText('Activity · 2 steps · 1 failed',{exact:true}).click();
  await page.locator('.chat-term-step-details').first().locator('summary').click();

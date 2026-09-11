@@ -177,3 +177,16 @@ function chatUpdateJump(){
  button.hidden=main.classList.contains('landing')||transcript.clientHeight===0||transcript.scrollHeight-transcript.scrollTop-transcript.clientHeight<=80;
  if(!button.hidden){const bounds=transcript.getBoundingClientRect(),parent=main.getBoundingClientRect();button.style.top=Math.max(0,bounds.bottom-parent.top-52)+'px';}
 }
+
+function chatCopyResponseControl(blocks){
+ const text=blocks.filter(block=>block.t==='say').map(block=>block.text||'').filter(Boolean).join('\n\n');
+ if(!text)return null;
+ const button=el('button','chat-copy-response','Copy');button.setAttribute('aria-label','Copy response');button.title='Copy response as text';
+ button.onclick=async()=>{
+  button.disabled=true;
+  try{await navigator.clipboard.writeText(text);button.textContent='Copied';button.setAttribute('aria-label','Response copied');}
+  catch(error){button.textContent='Try again';button.title='Clipboard unavailable. Select the response text to copy it.';button.setAttribute('aria-label','Copy failed; try again');}
+  finally{button.disabled=false;setTimeout(()=>{if(button.isConnected){button.textContent='Copy';button.setAttribute('aria-label','Copy response');}},2000);}
+ };
+ return button;
+}

@@ -78,3 +78,7 @@ Text/code artifacts with a non-Markdown extension now render as escaped source t
 ### Reading and acceptance sweep
 
 Replaced the hidden Latest menu action with a scroll-aware floating down-arrow above the composer. It follows the transcript's actual geometry, including phone and terminal resizing, disappears at the bottom, and restores composer focus when used. Reading bookmarks and follow-output behavior remain intact. Added a browser regression for scroll, bounds, focus and landing suppression. A broader frontend sweep covered lifecycle, draft/device recovery, sharing, review, workspace tabs, resizing and terminal recovery; stale launcher-copy assertions were updated. The separate acceptance record distinguishes tested UI paths from unverified physical-device/provider execution.
+
+### Response actions
+
+Regular and coding responses now expose Copy without requiring text selection. The action copies only `say` blocks, preserving source Markdown and excluding tool/thinking traces. It reports success or clipboard failure and remains touch-sized on phones. The conversation-layout fixture verifies the exact copied response through a mocked clipboard; a live desktop/phone read with local assets verifies the actual control without clipboard mutation or message sends.

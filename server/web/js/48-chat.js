@@ -1593,7 +1593,8 @@ function chatPaintTurns(host, turns, ctx) {
     const wrap = el("div", "chat-turn chat-spirit");
     wrap.dataset.chatReadTurn=String(t.n);
     const planRevision=t.planRevision||ctx?.planRevisions?.find(p=>p.replyTurn===t.n);
-    chatProposalBlocks(t,planRevision).forEach(b=>wrap.append(chatBlockEl(b)));
+    const responseBlocks=chatProposalBlocks(t,planRevision);
+    responseBlocks.forEach(b=>wrap.append(chatBlockEl(b)));
     if(planRevision)wrap.append(chatPlanReviewButton(planRevision));
     if (ctx && ctx.operations) ctx.operations.filter(item => Number(item.record.turn) + 1 === t.n).forEach(item => wrap.append(manifestOperationCard(item)));
     const foot = el("div", "chat-turn-foot");
@@ -1609,6 +1610,7 @@ function chatPaintTurns(host, turns, ctx) {
       promote.onclick = () => ctx.promote(t);
       foot.append(promote);
     }
+    if(typeof chatCopyResponseControl==="function"){const copy=chatCopyResponseControl(responseBlocks);if(copy)foot.append(copy);}
     if (foot.childElementCount) wrap.append(foot);
     host.append(wrap);
   });
@@ -2605,7 +2607,10 @@ function chatTermPaintLines(host, turns) {
     const meta = [];
     if (t.ts) meta.push(fmtWhen(t.ts));
     if (t.usd) meta.push("$" + t.usd);
-    if (meta.length) out.append(el("div", "chat-term-meta", meta.join(" · ")));
+    const footer=el('div','chat-response-footer');
+    if(typeof chatCopyResponseControl==='function'){const copy=chatCopyResponseControl(blocks);if(copy)footer.append(copy);}
+    if(meta.length)footer.append(el('span','chat-term-meta',meta.join(' · ')));
+    if(footer.childElementCount)out.append(footer);
     host.append(out);
   });
 }
