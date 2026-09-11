@@ -139,7 +139,16 @@ function chatMountSideFrame(host,spec){
  info.append(el('summary','','Context from '+spec.title),el('p','','Snapshot of recent complete turns at creation. Older history may be omitted; tool traces and attachment contents are excluded. Selected artifact versions are included separately. This is a saved private conversation; closing its tab does not delete it.'));
  const link=el('a','sprt-quiet','Open full chat ↗');link.href=spec.route;link.target='_blank';link.rel='noopener';strip.append(info,link);
  const frame=document.createElement('iframe');frame.title='Side chat · '+spec.title;frame.className='chat-side-frame';frame.src=location.pathname+'?chatPane=1'+spec.route;
- host.append(strip,frame);return {};
+ host.append(strip,frame);
+ const accepted=new Set();
+ const receive=e=>{
+  if(e.origin!==location.origin||e.source!==frame.contentWindow||!host.isConnected||e.data?.type!=='manifest-side-finding')return;
+  const {id,text}=e.data;if(typeof id!=='string'||id.length>80||typeof text!=='string'||!text.trim()||text.length>32000)return;
+  const input=document.querySelector('#chatComposer textarea');if(!input||input.disabled)return;
+  if(!accepted.has(id)){input.value=(input.value.trim()?input.value+'\n\n':'')+'From side chat ('+spec.route+'):\n'+text;input.dispatchEvent(new Event('input',{bubbles:true}));accepted.add(id);}
+  frame.contentWindow.postMessage({type:'manifest-side-finding-ack',id},location.origin);if(window.matchMedia('(max-width: 900px)').matches)chatWorkspaceTabs?.show(false);input.focus();
+ };
+ window.addEventListener('message',receive);return {close:()=>window.removeEventListener('message',receive)};
 }
 function chatWorkspaceSideSetup(source,restore=null){
  const key=restore?.key||'side-setup-'+crypto.randomUUID(),w=chatEnsureWorkspace(),saved=restore?.view||{};
@@ -179,7 +188,7 @@ function chatWorkspaceSideSetup(source,restore=null){
     if(!host.isConnected)return;
     host.replaceChildren();
     const spec={kind:'side',title:source.title,route:result.conversation.route};
-    chatMountSideFrame(host,spec);w.entries.get(key).button.textContent='Side chat';w.entries.get(key).spec=spec;w.save();
+    w.entries.get(key).api=chatMountSideFrame(host,spec);w.entries.get(key).button.textContent='Side chat';w.entries.get(key).spec=spec;w.save();
    }catch(e){status.textContent=e.message||'Could not create side chat. Retry safely.';start.textContent='Retry creation';}finally{start.disabled=false;}
   };
   wrap.append(heading,hint,field('Agent',pick),field('Model',model),advanced,status,start);host.append(wrap);host.addEventListener('input',()=>w.save());return {getView:()=>({agent:pick.value,model:model.value,cwd:cwd.value,pending:remembered})};
@@ -239,6 +248,13 @@ function chatCopyResponseControl(blocks){
   catch(error){button.textContent='Try again';button.title='Clipboard unavailable. Select the response text to copy it.';button.setAttribute('aria-label','Copy failed; try again');}
   finally{button.disabled=false;setTimeout(()=>{if(button.isConnected){button.textContent='Copy';button.setAttribute('aria-label','Copy response');}},2000);}
  };
+ if(chatEmbedded){
+  const actions=el('span','chat-response-actions'),send=el('button','chat-copy-response','Add to parent draft');send.title='Append this response to the parent composer without sending';const id=crypto.randomUUID();
+  send.onclick=()=>{if(text.length>32000){send.textContent='Response too long · copy an excerpt';return;}send.disabled=true;window.parent.postMessage({type:'manifest-side-finding',id,text},location.origin);
+   const receive=e=>{if(e.origin!==location.origin||e.source!==window.parent||e.data?.type!=='manifest-side-finding-ack'||e.data.id!==id)return;clearTimeout(timer);window.removeEventListener('message',receive);send.textContent='Added to parent draft';};
+   window.addEventListener('message',receive);const timer=setTimeout(()=>{window.removeEventListener('message',receive);send.disabled=false;send.textContent='Retry adding to parent';},5000);
+  };actions.append(button,send);return actions;
+ }
  return button;
 }
 

@@ -75,6 +75,21 @@ const {chromium}=require('playwright'),fs=require('fs'),path=require('path'),ass
  assert.equal(await p.evaluate(()=>sideRequests.length),1,'restoring setup never creates a conversation');
  await p.getByRole('button',{name:'Retry creation',exact:true}).click();await p.waitForFunction(()=>sideRequests.length===2);
  assert.deepEqual(await p.evaluate(()=>sideRequests[1]),request,'retry preserves exact payload and request identity');
+ await p.waitForFunction(()=>document.querySelectorAll('.chat-side-frame').length>=1);
+ await p.setViewportSize({width:1440,height:900});await p.locator('#chatComposer textarea').fill('Existing parent draft');
+ await p.evaluate(()=>window.postMessage({type:'manifest-side-finding',id:'forged',text:'Wrong source'},location.origin));
+ const child=await (await p.locator('.chat-side-frame').last().elementHandle()).contentFrame();
+ await child.evaluate(()=>parent.postMessage({type:'manifest-side-finding',id:'finding-one',text:'Selected side finding'},location.origin));
+ await p.waitForFunction(()=>document.querySelector('#chatComposer textarea').value.includes('Selected side finding'));
+ const parentDraft=await p.locator('#chatComposer textarea').inputValue();assert.ok(parentDraft.startsWith('Existing parent draft'));assert.ok(!parentDraft.includes('Wrong source'));
+ await child.evaluate(()=>parent.postMessage({type:'manifest-side-finding',id:'finding-one',text:'Selected side finding'},location.origin));
+ await p.waitForTimeout(30);assert.equal(await p.locator('#chatComposer textarea').inputValue(),parentDraft,'replayed return does not duplicate the draft');
+ await child.evaluate(()=>{window.el=(tag,cls,text)=>{const e=document.createElement(tag);e.className=cls||'';e.textContent=text||'';return e;};});
+ await child.addScriptTag({content:fs.readFileSync(path.join(root,'js/49-chat-workspace.js'),'utf8')});
+ await child.evaluate(()=>document.body.append(chatCopyResponseControl([{t:'say',text:'Finding through the response action'}])));
+ await child.getByRole('button',{name:'Add to parent draft',exact:true}).click();
+ await child.getByRole('button',{name:'Added to parent draft',exact:true}).waitFor();
+ assert.ok((await p.locator('#chatComposer textarea').inputValue()).includes('Finding through the response action'));
  await p.addScriptTag({content:components.slice(components.indexOf('function attachmentWorkspace('),components.indexOf('function artifactLineChanges('))});
  await p.addScriptTag({content:chat.slice(chat.indexOf('function chatOpenAttachment('),chat.indexOf('function chatChangesButton('))});
  await p.evaluate(()=>{
