@@ -344,3 +344,30 @@ func TestTranscriptEndpoint(t *testing.T) {
 		t.Fatalf("virgin session: %d %s", w.Code, w.Body.String())
 	}
 }
+
+func TestCodexRunLifecycleEvidence(t *testing.T) {
+	start := `{"type":"event_msg","timestamp":"2026-09-11T10:00:00Z","payload":{"type":"task_started","turn_id":"run-one"}}` + "\n"
+	complete := `{"type":"event_msg","timestamp":"2026-09-11T10:01:00Z","payload":{"type":"task_complete","turn_id":"run-one"}}` + "\n"
+	tr := parseCodexTranscript(strings.NewReader(start + complete))
+	if tr.Run == nil || tr.Run.State != "completed" || tr.Run.ID != "run-one" || tr.Run.Evidence == "" {
+		t.Fatal(tr.Run)
+	}
+	tail := parseCodexTranscript(strings.NewReader(complete), int64(len(start)))
+	if tail.Run.Evidence != tr.Run.Evidence {
+		t.Fatal("unstable tail evidence", tail.Run, tr.Run)
+	}
+	user := `{"type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"continue working"}]}}` + "\n"
+	if got := parseCodexTranscript(strings.NewReader(start + complete + user)); got.Run.State != "unknown" {
+		t.Fatal(got.Run)
+	}
+	second := strings.ReplaceAll(start, "run-one", "run-two")
+	if got := parseCodexTranscript(strings.NewReader(start + complete + second + complete)); got.Run.State != "running" || got.Run.ID != "run-two" {
+		t.Fatal("stale completion changed current run", got.Run)
+	}
+	if got := parseCodexTranscript(strings.NewReader(strings.TrimSuffix(start+complete, "\n"))); got.Run.State != "running" {
+		t.Fatal("partial record consumed", got.Run)
+	}
+	if got := parseCodexTranscript(strings.NewReader(user)); got.Run != nil {
+		t.Fatal("message fabricated lifecycle", got.Run)
+	}
+}

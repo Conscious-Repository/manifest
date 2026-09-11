@@ -713,6 +713,7 @@ function chatEntryState(entry){
    else if(['idle','done'].includes(ob.agentState)){label='Idle · result unverified';}
    else label='Connected · checking state';
   }
+  if(execution==='unknown'&&session.run?.state==='completed'&&session.run.evidence){execution='completed';label='Run finished';}
  }else{
   const deliveries=session.deliveries||[],latest=deliveries.at(-1);
   if(session.status==='thinking'){execution='running';label='Working';}
@@ -2500,6 +2501,7 @@ async function loadChatTermSession(id) {
   await chatPrepareReadingPosition(d.conversation);
   if (id !== chatOpenId || !chatIsTerm()) return;
   se = chatTermApplyState(chatTermFind(id) || se);
+  se.run=d.run||null;
   // the other backends' channels have nothing to say here
   if (chatPollTimer) { clearInterval(chatPollTimer); chatPollTimer = null; }
   if (chatES) { chatES.close(); chatES = null; chatESFor = ""; }
@@ -2939,6 +2941,7 @@ async function chatTermTail(o) {
   let d;
   try { d = await (await fetch(chatTermBase(o.id) + "/transcript?after=" + o.offset)).json(); } catch (e) { return; }
   if (chatTermOpen !== o) return;
+  const runChanged=JSON.stringify(o.se.run||null)!==JSON.stringify(d.run||null);o.se.run=d.run||null;const listed=chatTermFind(o.id);if(listed)listed.run=o.se.run;if(runChanged&&!document.querySelector('.chat-row-menu[open]'))renderChatInboxRows();
   const planningChanged=JSON.stringify([o.planningTimeline,o.planningOperations,o.planRevisions||{},o.proposals||[]])!==JSON.stringify([d.planningTimeline,d.planningOperations,d.planRevisions||{},d.proposals||[]]);
   o.planningTimeline=d.planningTimeline;
   o.planningOperations=d.planningOperations;

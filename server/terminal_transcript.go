@@ -54,14 +54,24 @@ type termBlock struct {
 	ID     string `json:"id,omitempty"`
 }
 
+// terminalRunEvidence is derived only from explicit provider lifecycle records.
+// IDs bind to the provider turn or immutable source record, never screen text.
+type terminalRunEvidence struct {
+	ID       string `json:"id"`
+	State    string `json:"state"`
+	At       string `json:"at"`
+	Evidence string `json:"evidence"`
+}
+
 // termTranscript is the projection of one session file (or its tail).
 type termTranscript struct {
 	// Set by the live projection, not the parser cache. An unreadable history
 	// must not be mistaken for an empty conversation during sharing review.
-	Available bool       `json:"-"`
-	Turns     []termTurn `json:"turns"`
-	Title     string     `json:"title,omitempty"` // claude ai-title
-	Cost      float64    `json:"cost,omitempty"`  // claude cost-state totalCostUSD
+	Run       *terminalRunEvidence `json:"run,omitempty"`
+	Available bool                 `json:"-"`
+	Turns     []termTurn           `json:"turns"`
+	Title     string               `json:"title,omitempty"` // claude ai-title
+	Cost      float64              `json:"cost,omitempty"`  // claude cost-state totalCostUSD
 	// Offset is the byte offset just past the last COMPLETE line parsed —
 	// pass it back as ?after= to receive only newer records.
 	Offset int64 `json:"offset"`
@@ -324,6 +334,7 @@ type codexRecord struct {
 	Type      string `json:"type"`
 	Payload   struct {
 		Type    string `json:"type"`
+		TurnID  string `json:"turn_id"`
 		Role    string `json:"role"`
 		ID      string `json:"id"`
 		CallID  string `json:"call_id"`
@@ -344,17 +355,43 @@ type codexRecord struct {
 // parseCodexTranscript projects a codex rollout: response_item.message by
 // role (developer rows and the CLI's own <…> boilerplate user rows skipped),
 // custom_tool_call / function_call as steps paired with their _output,
-// reasoning summaries as thinking. event_msg rows duplicate the message
-// rows and are ignored.
+// reasoning summaries as thinking. Duplicate event messages are ignored; explicit
+// task lifecycle events provide separate run evidence.
 func parseCodexTranscript(r io.Reader, base ...int64) termTranscript {
 	b := &transcriptBuilder{}
 	scanLines(r, &b.out.Offset, func(line []byte) {
 		b.record(line, base)
 		var rec codexRecord
-		if json.Unmarshal(line, &rec) != nil || rec.Type != "response_item" {
+		if json.Unmarshal(line, &rec) != nil {
 			return
 		}
 		p := rec.Payload
+		if rec.Type == "event_msg" {
+			switch p.Type {
+			case "task_started":
+				id := p.TurnID
+				if id == "" {
+					id = b.recordID
+				}
+				b.out.Run = &terminalRunEvidence{ID: id, State: "running", At: rec.Timestamp, Evidence: b.recordID}
+			case "task_complete":
+				if p.TurnID != "" && b.out.Run != nil && b.out.Run.ID != p.TurnID {
+					return
+				}
+				id := p.TurnID
+				if id == "" && b.out.Run != nil {
+					id = b.out.Run.ID
+				}
+				if id == "" {
+					id = b.recordID
+				}
+				b.out.Run = &terminalRunEvidence{ID: id, State: "completed", At: rec.Timestamp, Evidence: b.recordID}
+			}
+			return
+		}
+		if rec.Type != "response_item" {
+			return
+		}
 		switch p.Type {
 		case "message":
 			var parts []string
@@ -374,6 +411,9 @@ func parseCodexTranscript(r io.Reader, base ...int64) termTranscript {
 			case "user":
 				if !strings.HasPrefix(strings.TrimSpace(text), "<") { // <recommended_plugins>, <environment_context>, …
 					b.user(rec.Timestamp, text)
+					if b.out.Run != nil && b.out.Run.State == "completed" {
+						b.out.Run = &terminalRunEvidence{ID: b.recordID, State: "unknown", At: rec.Timestamp, Evidence: b.recordID}
+					}
 				}
 			case "assistant":
 				b.text(rec.Timestamp, "say", text)

@@ -46,7 +46,7 @@ func (s *Server) handleTermTranscript(w http.ResponseWriter, r *http.Request) {
 	}
 	planningTimeline, _ := s.terminalPlanningTimeline(r.Context(), se)
 	writeJSON(w, map[string]any{
-		"turns": tr.Turns, "title": tr.Title, "cost": tr.Cost,
+		"turns": tr.Turns, "title": tr.Title, "cost": tr.Cost, "run": full.Run,
 		"conversation":       s.terminalConversation(se),
 		"sharedConversation": s.terminalSharedConversation(se),
 		"origin":             se.Origin, "draft": se.isDraft(),

@@ -374,6 +374,7 @@ func (s *Server) handleTermSessions(w http.ResponseWriter, r *http.Request) {
 		termSession
 		Live         bool                   `json:"live"`
 		Conversation conversationDescriptor `json:"conversation"`
+		Run          *terminalRunEvidence   `json:"run,omitempty"`
 		AgentState   string                 `json:"agentState"`
 		Connectivity string                 `json:"connectivity"`
 		Process      string                 `json:"process"`
@@ -395,7 +396,15 @@ func (s *Server) handleTermSessions(w http.ResponseWriter, r *http.Request) {
 			ob, _ = s.observeTerm(r.Context(), se)
 			l = ob.Process == "running"
 		}
-		out = append(out, row{se, l, s.terminalConversation(se), ob.AgentState, ob.Connectivity, ob.Process})
+		var run *terminalRunEvidence
+		if se.Kind == "codex" {
+			if path := s.terminal.transcriptPath(se); path != "" {
+				if tr, ok := readTranscript(se.Kind, path, 0); ok {
+					run = tr.Run
+				}
+			}
+		}
+		out = append(out, row{se, l, s.terminalConversation(se), run, ob.AgentState, ob.Connectivity, ob.Process})
 	}
 	sort.SliceStable(out, func(i, j int) bool {
 		if out[i].Pinned != out[j].Pinned {
