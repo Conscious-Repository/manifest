@@ -132,7 +132,7 @@ function chatWorkspaceChooser(host){
   }).catch(()=>{const retry=el('button','sprt-quiet','Retry loading files');retry.onclick=()=>{host.replaceChildren();chatWorkspaceChooser(host);};chooser.append(retry);});
  }
  if(source)action('Side chat','Start with this conversation’s context','chat',()=>chatWorkspaceSideSetup(source));
- const keys=el('details','chat-workspace-shortcuts');keys.append(el('summary','','Keyboard shortcuts'),el('p','','Ctrl+Alt: N new chat · F search · M composer · I workspace · ↑/↓ switch chat · J next needing attention'));chooser.append(keys);
+ const keys=el('details','chat-workspace-shortcuts');keys.append(el('summary','','Keyboard shortcuts'),el('p','','Ctrl+Alt: N new chat · F search · M composer · I workspace · ↑/↓ switch chat · J next needing attention · X request stop (Enter confirms)'));chooser.append(keys);
  host.append(chooser);
 }
 function chatMountSideFrame(host,spec){
@@ -276,7 +276,7 @@ function chatPopulateModelSelect(select,kind,requested=''){
 
 // Explicit control+option/alt shortcuts avoid ordinary typing and browser tabs.
 function chatWorkbenchShortcut(event){
- if(!event.ctrlKey||!event.altKey||event.metaKey||event.shiftKey||event.isComposing||event.defaultPrevented)return;
+ if(!event.ctrlKey||!event.altKey||event.metaKey||event.shiftKey||event.isComposing||event.repeat||event.defaultPrevented)return;
  if(!location.hash.startsWith('#/chat')||document.querySelector('dialog[open]'))return;
  let target=null;
  switch(event.code){
@@ -284,6 +284,7 @@ function chatWorkbenchShortcut(event){
   case 'KeyF':target=document.querySelector('.chat-inbox-search');break;
   case 'KeyM':target=document.querySelector('#chatComposer textarea');break;
   case 'KeyI':target=document.querySelector('.chat-workspace-toggle');break;
+  case 'KeyX':target=document.querySelector('#chatThreadHeader .chat-stop-agent');break;
   case 'ArrowDown':case 'ArrowUp':case 'KeyJ':{
    const rows=[...document.querySelectorAll('#chatInboxRows .chat-rail-row')].filter(row=>row.getClientRects().length);
    const current=rows.findIndex(row=>row.classList.contains('open')),step=event.code==='ArrowUp'?-1:1;
@@ -293,6 +294,6 @@ function chatWorkbenchShortcut(event){
   default:return;
  }
  if(!target||target.disabled||!target.getClientRects().length)return;
- event.preventDefault();if(['KeyF','KeyM'].includes(event.code))target.focus();else target.click();
+ event.preventDefault();if(event.code==='KeyX'){target.focus();if(!target.classList.contains('armed'))target.click();return;}if(['KeyF','KeyM'].includes(event.code))target.focus();else target.click();
 }
 document.addEventListener('keydown',chatWorkbenchShortcut);

@@ -27,3 +27,9 @@ Artifact view state now records preview versus comparison mode. Restoring a comp
 ## Keyboard navigation checkpoint
 
 Added Ctrl+Alt shortcuts for new chat (N), search (F), composer (M), inspector (I), visible previous/next chat (arrows), and next visible input/review/failure item (J). Help is available in the workspace chooser. Modal dialogs, composition, ordinary typing and non-chat routes are excluded. The shortcut fixture verifies focus, navigation, attention targeting and exclusions; the existing workspace browser fixture passes. Stop-run keyboard handling and full accessibility/live audit remain open. Computer-use live audit was attempted but the tool reported the Mac locked; unlock was requested while repository work continued.
+
+## Visible native stop control
+
+A positively live native session now exposes Stop in the header using the existing armed confirmation and kill path. Ctrl+Alt+X arms and focuses it; another shortcut press does not confirm it, and held-key repeats are ignored. Enter/click confirms through the existing control. Live header repaint preserves an armed enabled control. Ended/unknown sessions do not receive a new stop action. Phone tests exposed overflow in the confirmation label; the label now wraps within its control.
+
+Verified: shortcut regression (no repeated-key confirmation), desktop/390px header and confirmation bounds, server suite, focused CSS duplicate-selector validation and build. Other adapters still need their supported interruption paths audited; this does not invent unsupported stop capabilities.

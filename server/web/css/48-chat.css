@@ -677,3 +677,4 @@ button.chat-attach-chip { min-height: 44px; max-width: 100%; background: transpa
 .working-file-review { min-height:var(--control-touch); font:var(--fs-md) var(--sans); }
 
 .chat-response-actions { display:inline-flex; align-items:center; flex-wrap:wrap; gap:var(--sp-4); }
+.chat-thread-header .chat-stop-agent { max-width:8ch; min-width:0; white-space:normal; overflow-wrap:anywhere; flex-shrink:1; }

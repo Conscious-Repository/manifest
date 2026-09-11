@@ -7,7 +7,7 @@ const {chromium}=require('playwright'),fs=require('fs'),path=require('path'),ass
  await page.evaluate(()=>{
  window.el=(tag,cls,text)=>{const e=document.createElement(tag);e.className=cls||'';e.textContent=text||'';return e;};
  document.documentElement.dataset.theme="jarvis";
- Object.assign(window,{chatTermKinds:{codex:'Codex'},chatRecipients:new Map(),chatTermEnabled:true,chatRoster:[],terminalStateDot:()=>el('span','','●'),terminalStateLabel:()=> 'working',chatAgentLabel:x=>x,fmtWhen:()=> 'today',chatTermEndIsKill:()=>true,armedDelete:()=>el('button','','End session'),chatTermRename:()=>{},chatTermEnd:()=>{},chatTermOpenInTerminal:()=>{},chatLifecycleActions:()=>document.createDocumentFragment(),chatOpenTerminalPane:se=>{window.openedTerminal=se.id;},chatChangesButton:()=>el('button','sprt-quiet','Changes'),chatTaskThreadHash:()=> '#/task',chatChooseTerminalRecipient:()=>{},chatTermKey:()=>{}});
+ Object.assign(window,{chatTermKinds:{codex:'Codex'},chatRecipients:new Map(),chatTermEnabled:true,chatRoster:[],terminalStateDot:()=>el('span','','●'),terminalStateLabel:()=> 'working',chatAgentLabel:x=>x,fmtWhen:()=> 'today',chatTermEndIsKill:()=>true,armedDelete:label=>el('button','sprt-quiet sprt-delete',label),chatTermRename:()=>{},chatTermEnd:()=>{},chatTermOpenInTerminal:()=>{},chatLifecycleActions:()=>document.createDocumentFragment(),chatOpenTerminalPane:se=>{window.openedTerminal=se.id;},chatChangesButton:()=>el('button','sprt-quiet','Changes'),chatTaskThreadHash:()=> '#/task',chatChooseTerminalRecipient:()=>{},chatTermKey:()=>{}});
  window.o={se:{id:'fixture',kind:'codex',name:'codex · '+('Fix the concrete defects and audit usability. '.repeat(15)),cwd:'/fixture',backend:'herdr'},live:true,conversation:{links:[{kind:'task',id:'fixture'}]},turns:[],screen:['Codex is working','> Review the changes']};window.chatTermOpen=o;
  });
  const source=fs.readFileSync(path.join(root,'js/48-chat.js'),'utf8');
@@ -16,7 +16,7 @@ const {chromium}=require('playwright'),fs=require('fs'),path=require('path'),ass
  await page.evaluate(()=>{chatMountHeader(chatTermHead(o));chatTermPaintStrip();});
  for(const width of [1440,390]){
  await page.setViewportSize({width,height:850});
- assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false,'overflow '+width);
+ assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false,'overflow '+width);await page.locator('.chat-stop-agent').evaluate(e=>e.textContent='Confirm stop');assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false,'confirmation overflow '+width);await page.locator('.chat-stop-agent').evaluate(e=>e.textContent='Stop');
  const title=await page.locator('.chat-head-title').boundingBox();assert.ok(title.height<40,'title is a scrolling paragraph');
  await page.locator('.chat-terminal-view').click();assert.equal(await page.evaluate(()=>openedTerminal),'fixture');
  await page.locator('.chat-details > summary').click();await page.getByRole('button',{name:'Rename',exact:true}).waitFor();await page.locator('.chat-details > summary').click();
