@@ -661,15 +661,20 @@ a.rec-place-name:hover { text-decoration: underline; }
 /* THE FUNNEL — stage cards over the pipeline, Ashby's strip. Each card is a
    filter, so the count on it is exactly what clicking it shows. Archived sits
    past a gap, off the arrow line: it is where people went, not a step. */
+/* ONE LINE. The strip does not wrap: the cards shrink to fit and the
+   archived note stays on the same line at the right — a wrapped note is the
+   separate row the owner asked not to have. Past what will fit, it scrolls
+   sideways, as Ashby's does. */
 .rec-funnel {
-  display: flex; flex-wrap: wrap; align-items: stretch; gap: var(--sp-2);
+  display: flex; flex-wrap: nowrap; align-items: stretch; gap: var(--sp-2);
   padding: var(--sp-3) 0 var(--sp-4);
   border-bottom: 1px solid var(--line-soft); margin-bottom: var(--sp-3);
+  overflow-x: auto; scrollbar-width: thin;
 }
 .rec-funnel-stage {
   all: unset; box-sizing: border-box; cursor: pointer;
   display: flex; flex-direction: column; gap: 2px;
-  min-width: 118px; padding: var(--sp-2) var(--sp-3);
+  flex: 1 1 0; min-width: 92px; padding: var(--sp-2) var(--sp-3);
   border: 1px solid var(--line-soft); border-radius: var(--radius-lg);
   background: var(--base-05);
 }
@@ -680,9 +685,11 @@ a.rec-place-name:hover { text-decoration: underline; }
 .rec-funnel-count { font-family: var(--mono); font-size: var(--fs-2xs); color: var(--base-50); }
 .rec-funnel-arrow { align-self: center; color: var(--base-40); font-size: var(--fs-sm); }
 /* archived is a quiet note at the end of the line, never a card */
-.rec-funnel-hist { align-self: center; margin-left: auto; font-size: var(--fs-xs); color: var(--base-50); white-space: nowrap; }
+.rec-funnel-hist { align-self: center; flex: 0 0 auto; margin-left: auto; padding-left: var(--sp-3); font-size: var(--fs-xs); color: var(--base-50); white-space: nowrap; }
+.rec-funnel-name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .rec-funnel-hist:hover, .rec-funnel-hist.on { color: var(--base-100); }
 @media (max-width: 860px) {
+  .rec-funnel { flex-wrap: wrap; overflow-x: visible; }
   .rec-funnel-stage { min-width: 0; flex: 1 1 40%; }
   .rec-funnel-arrow { display: none; }
   .rec-funnel-hist { margin-left: 0; flex-basis: 100%; }
