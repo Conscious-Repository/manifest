@@ -24,3 +24,9 @@ Scope: the owner's Codex reference screenshots and requested Manifest affordance
 - Continue checking readability and action discovery against the supplied Codex screenshots; retain Manifest's restrained blueprint theme. General browser/file-tree capabilities and selective Git staging have not been added merely to match screenshots.
 
 Native Codex computer use is blocked in this environment. Comparison uses the owner's screenshots, not an asserted live Codex inspection. The implementation history and detailed limits are in `2026-09-11-chat-interaction-paths.md`.
+
+## Final integration check
+
+At deployed `eeaa69e`, `go test ./server ./agentchat ./chatthreads ./artifacts` and `go build ./...` passed. The deployed workspace, reading-navigation and response-copy walkthroughs passed at desktop and 390px phone widths; copy used a mocked clipboard. Earlier fixture results above cover mutating flows without real publication or provider input. The user's vault plan was updated with the current release and superseding project-grouping decision.
+
+The requested UX implementation across the existing capability set is complete. Physical-device and normal provider-session use remain validation limits and sources of subsequent feedback, rather than claims made from browser fixtures. No broad Codex feature parity, unimplemented roadmap features, or real external-action execution is asserted.
