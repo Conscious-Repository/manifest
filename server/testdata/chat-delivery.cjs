@@ -57,16 +57,17 @@ global.fetchJSONRetry=async(method,url,payload)=>{
  assert.equal(chatIsTerminalDelivery({...coding,url:'/api/terminal/session/../input'}),false);
  let releaseCreate,enteredCreate;
  const creating=new Promise(r=>enteredCreate=r),release=new Promise(r=>releaseCreate=r),sent=[];
- const nav=vm.createContext({chatTermSending:false,chatAgent:'codex',chatOpenId:'',chatRouteVersion:1,chatLanding:true,chatTermSessions:[],chatTermOpen:null,
-  location:{hash:'#/chat/a/codex/new'},renderChatComposer(){},chatTermComposerSession(){return{};},chatRecall(){return '/working/folder';},
+ let createPayload,assignment;
+ const nav=vm.createContext({chatPendingProject:'project-fixture',chatAssignNewProject:async(...args)=>{assignment=args;},chatTermSending:false,chatAgent:'codex',chatOpenId:'',chatRouteVersion:1,chatLanding:true,chatTermSessions:[],chatTermOpen:null,
+  location:{hash:'#/chat/a/codex/new'},renderChatComposer(){},chatTermComposerSession(){return{};},chatRecall(key){return key.includes('Model')?'gpt-5.5':'/working/folder';},
   chatTermFind:id=>nav.chatTermSessions.find(s=>s.id===id),chatTermBase:id=>'/api/terminal/session/'+id,
-  postJSONOk:async()=>{enteredCreate();await release;return{id:'abcdef123456',backend:'herdr'};},
+  postJSONOk:async(url,payload)=>{createPayload=payload;enteredCreate();await release;return{id:'abcdef123456',backend:'herdr'};},
   chatRememberDelivery:(scope,agent,url,payload,draftScope)=>({scope,agent,url,payload,draftScope}),
   chatDeliverRemembered:async item=>{sent.push(item);return{ok:true};},loadChatTermSessions:async()=>{},showToast(){}});
  vm.runInContext(src.slice(src.indexOf('async function chatTermSend('),src.indexOf('function renderChatTermLanding(')),nav);
  const sending=nav.chatTermSend('original coding instruction');await creating;
  nav.chatAgent='alfred';nav.chatOpenId='other-chat';nav.chatRouteVersion=2;nav.location.hash='#/chat/a/alfred/other-chat';
- releaseCreate();assert.equal(await sending,true);
+ releaseCreate();assert.equal(await sending,true);assert.equal(createPayload.model,'gpt-5.5');assert.equal(createPayload.cwd,'/working/folder');assert.deepEqual(assignment,['codex','abcdef123456',true,'project-fixture']);
  assert.equal(sent[0].agent,'codex');assert.equal(sent[0].draftScope,'codex/new');assert.equal(sent[0].url,codingURL);
  assert.equal(nav.chatOpenId,'other-chat');assert.equal(nav.location.hash,'#/chat/a/alfred/other-chat','late creation must not hijack navigation');
  console.log('Lost create response, reload recovery, safe retry, later intentional send and malformed acknowledgement passed');

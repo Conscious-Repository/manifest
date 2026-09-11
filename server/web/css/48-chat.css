@@ -590,7 +590,7 @@ button.chat-attach-chip { min-height: 44px; max-width: 100%; background: transpa
 .chat-composer:has(.chat-input:focus-visible) { outline: 1px solid var(--accent-soft); outline-offset: 1px; }
 @media(max-width:860px){.chat-composer > .chat-composer-recipient{min-height:44px;}.chat-composer > .mic-btn{min-width:44px;min-height:44px;}}
 
-.chat-project-section-label { padding: 18px 10px 8px; color: var(--base-50); font: 12px var(--sans); }
+.chat-project-section-label { display:flex; align-items:center; justify-content:space-between; padding: 18px 10px 8px; color: var(--base-50); font: 12px var(--sans); }
 .chat-project-group { margin-bottom: 8px; }
 .chat-project-heading { display: flex; align-items: center; gap: 9px; padding: 9px 10px; min-height: 40px; box-sizing: border-box; list-style: none; cursor: pointer; font: 14px var(--sans); color: var(--base-80); }
 .chat-project-heading::-webkit-details-marker { display: none; }
@@ -623,3 +623,14 @@ button.chat-attach-chip { min-height: 44px; max-width: 100%; background: transpa
 @media(max-width:860px){ .chat-copy-response { min-height:44px; min-width:44px; } }
 
 .chat-workspace-tab.has-draft > [role="tab"]::after { content:" •"; color:var(--accent-soft); }
+
+/* Tabs already provide the artifact title and close controls. */
+.chat-tab-workspace .artifact-workspace-head { display:none; }
+.chat-tab-workspace .artifact-workspace-controls { gap:8px; padding:12px 16px; flex-wrap:wrap; }
+.chat-tab-workspace .artifact-workspace-controls select { flex:0 1 180px; min-width:120px; }
+.chat-tab-workspace .artifact-workspace-body { padding:16px; }
+.working-untracked ul { list-style:none; padding:0; }
+.working-untracked-file { display:flex; flex-direction:column; gap:3px; padding:8px 0; font-size:14px; }
+.working-untracked-file small { opacity:.65; font-size:12px; overflow-wrap:anywhere; }
+.chat-project-section-label button { font-size:20px; min-width:32px; min-height:32px; }
+.chat-agent-dialog label { display:flex; flex-direction:column; gap:8px; margin-top:16px; }

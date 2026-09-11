@@ -871,7 +871,7 @@ function artifactWorkingChangesView(text){
   const show=()=>{content.replaceChildren();for(const line of files[Number(pick.value)].content.split("\n")){const cls=line.startsWith("+")&&!line.startsWith("+++")?"added":line.startsWith("-")&&!line.startsWith("---")?"removed":"context";content.append(el("span","working-diff-"+cls,line));}};
   pick.onchange=show;show();view.append(pick,content);
  }
- if(untracked.length){const details=el("details","working-untracked");details.append(el("summary","",untracked.length+" untracked files · contents not included"));const list=el("ul","");for(const raw of untracked){let name=raw;try{name=JSON.parse(raw);}catch(e){}list.append(el("li","",name));}details.append(list);view.append(details);}
+ if(untracked.length){const details=el("details","working-untracked");details.append(el("summary","",untracked.length+" untracked files · contents not included"));const list=el("ul","");for(const raw of untracked){let name=raw;try{name=JSON.parse(raw);}catch(e){}const row=el("li","working-untracked-file");row.title=name;row.append(el("span","",name.split("/").at(-1)));const folder=name.includes("/")?name.slice(0,name.lastIndexOf("/")):"";if(folder)row.append(el("small","",folder));list.append(row);}details.append(list);view.append(details);}
  const meta=el("details","working-snapshot-meta");meta.append(el("summary","","Snapshot details"),el("pre","",tracked.slice(0,starts[0]??tracked.length).replace("No tracked changes against HEAD.","").trim()));view.append(meta);
  return view;
 }

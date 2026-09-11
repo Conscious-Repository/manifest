@@ -500,12 +500,14 @@ function renderChatHeadActions() {
   add.onclick = () => reviewDialog("New chat",({body,actions,close})=>{
     body.closest('dialog').classList.add('chat-new-dialog');
     const cancel=el('button','sprt-quiet','Cancel');cancel.onclick=close;actions.append(cancel);
+    const project=document.createElement('select');project.className='pp-in';project.setAttribute('aria-label','New chat project');
+    for(const [id,label] of [['','Standalone chat'],...Object.entries(chatWorkstreams.groups)]){const o=el('option','',label);o.value=id;project.append(o);}project.value=chatWorkstreams.groups[chatWorkstreamFilter]?chatWorkstreamFilter:'';body.append(project);
     const choices=[...chatRoster.filter(a=>a.enabled&&!chatIsTerm(a.name)&&chatPrivateCreationAgent(a.name)===a.name).map(a=>[a.name,a.label,a.model]),...(chatTermEnabled?Object.entries(chatTermKinds):[]),['','Spirits']];
     choices.forEach(([agent,label,model])=>{
       const button=el('button','chat-new-choice');
       button.append(el('span','',label));
       if(model)button.append(el('span','chat-new-model',shortModel(model)));
-      button.onclick=()=>{close();location.hash=agent?'#/chat/a/'+encodeURIComponent(agent)+'/new':'#/chat/new';};
+      button.onclick=()=>{chatPendingProject=project.value;close();location.hash=agent?'#/chat/a/'+encodeURIComponent(agent)+'/new':'#/chat/new';};
       body.append(button);
     });
   });
@@ -515,6 +517,7 @@ function renderChatHeadActions() {
 
 // ---- rail: agent sections ----
 
+let chatPendingProject = "";
 let chatSearchQuery = "";
 let chatInboxFilter = "all";
 let chatPins={};
@@ -583,7 +586,7 @@ function chatWorkstreamMember(key){const id=chatWorkstreams.members[key];return 
 function chatRenderWorkstreamFilter(){
   const select=document.getElementById("chatWorkstreamFilter");if(!select||document.activeElement===select)return;
   select.replaceChildren();
-  [["all","All workstreams"],["standalone","Standalone chats"],...Object.entries(chatWorkstreams.groups).sort((a,b)=>a[1].localeCompare(b[1]))].forEach(([id,label])=>{const o=el("option","",label);o.value=id;select.append(o);});
+  [["all","All projects"],["standalone","Standalone chats"],...Object.entries(chatWorkstreams.groups).sort((a,b)=>a[1].localeCompare(b[1]))].forEach(([id,label])=>{const o=el("option","",label);o.value=id;select.append(o);});
   if(!["all","standalone"].includes(chatWorkstreamFilter)&&!chatWorkstreams.groups[chatWorkstreamFilter])chatWorkstreamFilter="all";
   select.value=chatWorkstreamFilter;
 }
@@ -593,23 +596,37 @@ async function chatSaveWorkstream(key,expected,id,name){
     const r=await fetch(chatWorkstreamURL,{cache:"no-store"});if(!r.ok)throw Error("Could not load workstreams.");
     const state=await r.json();if(state.key!=="inbox"||state.slot!=="workstreams"||!Number.isSafeInteger(state.revision))throw Error("Invalid workstream state.");
     const groups={...state.value?.groups},members={...state.value?.members};
-    if((members[key]||"")!==expected)throw Error("This chat’s workstream changed on another device. Close and reopen this choice.");
+    if(key&&(members[key]||"")!==expected)throw Error("This chat’s workstream changed on another device. Close and reopen this choice.");
     let selected=id;
     if(name){selected=Object.keys(groups).find(k=>groups[k].toLowerCase()===name.toLowerCase())||newID;groups[selected]=groups[selected]||name;}
     if(selected&&!groups[selected])throw Error("That workstream is no longer available.");
-    if(selected)members[key]=selected;else delete members[key];
+    if(key){if(selected)members[key]=selected;else delete members[key];}
     const saved=await fetch(chatWorkstreamURL,{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify({revision:state.revision,value:{groups,members}})});
     if(saved.status===409)continue;if(!saved.ok)throw Error("Workstream change was not saved.");
-    chatApplyWorkstreams(await saved.json());return;
+    chatApplyWorkstreams(await saved.json());return selected;
   }
   throw Error("Workstreams changed on another device. Try again.");
 }
+async function chatAssignNewProject(agent,id,terminal,project){
+ if(!project)return;
+ try{await chatSaveWorkstream(chatInboxKey({agent,terminal,session:{id}}),'',project,'');}
+ catch(e){showToast('Chat created, but project assignment failed. Move it using its Project menu.');}
+}
+function chatCreateProject(){
+ reviewDialog('New project',({body,actions,close})=>{
+  const name=document.createElement('input');name.className='pp-in';name.maxLength=80;name.placeholder='Project name';name.setAttribute('aria-label','Project name');
+  const error=el('p','');error.setAttribute('role','alert');body.append(name,error);
+  const cancel=el('button','sprt-quiet','Cancel'),save=el('button','','Create project');cancel.onclick=close;
+  const create=async()=>{if(!name.value.trim()){name.focus();return;}save.disabled=true;try{await chatSaveWorkstream('', '', '',name.value.trim());close();chatRenderWorkstreamFilter();renderChatInboxRows();}catch(e){error.textContent=e.message;}finally{save.disabled=false;}};
+  save.onclick=create;name.onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();create();}};actions.append(cancel,save);setTimeout(()=>name.focus(),0);
+ });
+}
 function chatChooseWorkstream(entry){
   const key=chatInboxKey(entry),expected=chatWorkstreams.members[key]||"";
-  const dialog=el("dialog","chat-workstream-dialog"),form=el("form",""),title=el("h3","","Workstream");
-  const select=document.createElement("select");select.setAttribute("aria-label","Choose workstream");
-  [["","Standalone chat"],...Object.entries(chatWorkstreams.groups).sort((a,b)=>a[1].localeCompare(b[1])),["new","New workstream…"]].forEach(([id,label])=>{const o=el("option","",label);o.value=id;select.append(o);});select.value=expected;
-  const name=document.createElement("input");name.placeholder="Workstream name";name.setAttribute("aria-label","Workstream name");name.maxLength=80;name.hidden=true;
+  const dialog=el("dialog","chat-workstream-dialog"),form=el("form",""),title=el("h3","","Project");
+  const select=document.createElement("select");select.setAttribute("aria-label","Choose project");
+  [["","Standalone chat"],...Object.entries(chatWorkstreams.groups).sort((a,b)=>a[1].localeCompare(b[1])),["new","New project…"]].forEach(([id,label])=>{const o=el("option","",label);o.value=id;select.append(o);});select.value=expected;
+  const name=document.createElement("input");name.placeholder="Project name";name.setAttribute("aria-label","Project name");name.maxLength=80;name.hidden=true;
   select.onchange=()=>{name.hidden=select.value!=="new";if(!name.hidden)name.focus();};
   const error=el("p","",""),actions=el("div","chat-workstream-actions"),cancel=el("button","sprt-quiet","Cancel"),save=el("button","","Save");error.setAttribute("role","alert");cancel.type="button";cancel.onclick=()=>dialog.close();save.type="submit";actions.append(cancel,save);
   form.append(title,el("p","",entry.session.title||entry.session.name||"Chat"),select,name,error,actions);
@@ -636,7 +653,7 @@ function renderChatInboxRows() {
   const filterLabel=document.querySelector(".chat-filter-menu > summary");if(filterLabel)filterLabel.textContent="Filters"+((chatInboxFilter!=="all"||chatWorkstreamFilter!=="all")?" · on":"");
   const entries = chatInboxEntries();
   if(chatLifecycleFilter==="deleted")host.append(el("p","chat-head-meta","Deleted from your Chats. Restore anytime. Task and provider history are retained."));
-  if (!entries.length) { host.append(emptyRow(chatSearchQuery || chatWorkstreamFilter!=="all" || chatInboxFilter!=="all" ? "No matching conversations" : "No conversations yet")); return; }
+  if (!entries.length) host.append(emptyRow(chatSearchQuery || chatWorkstreamFilter!=="all" || chatInboxFilter!=="all" ? "No matching conversations" : "No conversations yet"));
   const rows=entries.map(entry => {
     const row = entry.terminal ? chatTermRow(entry.session) : chatRailRow(entry.session, entry.agent);
     row.classList.toggle("open", entry.agent === chatAgent && entry.session.id === chatOpenId);
@@ -660,7 +677,7 @@ function renderChatInboxRows() {
     });
     menuBody.onkeydown=e=>{if(!["ArrowDown","ArrowUp","Home","End"].includes(e.key))return;e.preventDefault();e.stopPropagation();const buttons=[...menuBody.querySelectorAll("button:not(:disabled)")],index=buttons.indexOf(document.activeElement);buttons[e.key==="Home"?0:e.key==="End"?buttons.length-1:(index+(e.key==="ArrowDown"?1:-1)+buttons.length)%buttons.length]?.focus();};
     (row.querySelector(".chat-rail-top")||row).append(menu);
-    const group=chatWorkstreamMember(key),workstream=el("button","sprt-quiet chat-workstream-link",group?chatWorkstreams.groups[group]:"Workstream…");
+    const group=chatWorkstreamMember(key),workstream=el("button","sprt-quiet chat-workstream-link",group?chatWorkstreams.groups[group]:"Project…");
     workstream.setAttribute("aria-label","Change workstream for "+(entry.session.title||entry.session.name||entry.session.id));
     workstream.onclick=e=>{e.stopPropagation();chatChooseWorkstream(entry);};workstream.onkeydown=e=>e.stopPropagation();menuBody.append(workstream);
     if(group&&meta)meta.append(el("span","chat-row-group",chatWorkstreams.groups[group]));
@@ -681,7 +698,11 @@ function chatRenderProjectGroups(host,entries,rows){
   if(!groups.has(key))groups.set(key,{label:assigned?chatWorkstreams.groups[assigned]:cwd.split('/').at(-1),detail:assigned?'Workstream':cwd+(entry.session.device?' · '+entry.session.device:''),rows:[],entries:[]});
   groups.get(key).rows.push(rows[index]);groups.get(key).entries.push(entry);
  });
- if(groups.size)host.append(el('div','chat-project-section-label','Projects'));
+ if(chatLifecycleFilter==='active'&&!chatSearchQuery&&chatInboxFilter==='all')for(const [id,label] of Object.entries(chatWorkstreams.groups)){
+  if(chatWorkstreamFilter!=='all'&&chatWorkstreamFilter!==id)continue;
+  if(!groups.has('workstream:'+id))groups.set('workstream:'+id,{label,detail:'Project',rows:[],entries:[]});
+ }
+ const heading=el('div','chat-project-section-label','Projects'),add=el('button','sprt-quiet','+');add.setAttribute('aria-label','New project');add.title='New project';add.onclick=chatCreateProject;heading.append(add);host.append(heading);
  for(const [key,group] of groups){
   const section=el('details','chat-project-group'),summary=el('summary','chat-project-heading'),list=el('div','chat-project-chats');
   section.open=!!chatSearchQuery||!state.collapsed.has(key);summary.title=group.detail;
@@ -692,7 +713,8 @@ function chatRenderProjectGroups(host,entries,rows){
   section.append(summary,list);section.addEventListener('toggle',()=>{if(section.open)state.collapsed.delete(key);else state.collapsed.add(key);});
   const all=!!chatSearchQuery||state.expanded.has(key);
   group.rows.forEach((row,index)=>{if(all||index<5||row.classList.contains('open')||chatPins[chatInboxKey(group.entries[index])])list.append(row);});
-  const remaining=group.rows.length-list.children.length;
+  if(key.startsWith('workstream:')){const start=el('button','sprt-quiet chat-project-more','New chat');start.onclick=()=>{chatWorkstreamFilter=key.slice(11);chatRenderWorkstreamFilter();document.querySelector('#chatHeadActions button')?.click();};list.append(start);}
+  const remaining=group.rows.length-group.rows.filter(row=>row.parentNode===list).length;
   if(remaining>0||all&&group.rows.length>5&&!chatSearchQuery){const more=el('button','sprt-quiet chat-project-more',remaining>0?'Show more':'Show less');more.onclick=()=>{if(state.expanded.has(key))state.expanded.delete(key);else state.expanded.add(key);renderChatInboxRows();};list.append(more);}
   host.append(section);
  }
@@ -904,6 +926,12 @@ async function renderChatLanding() {
   if (main) main.classList.add("landing");
   host.innerHTML = "";
   host.append(el("div", "chat-greeting", chatGreeting()));
+  if(Object.keys(chatWorkstreams.groups).length){
+    const project=document.createElement('select');project.className='chat-landing-cwd';project.setAttribute('aria-label','Chat project');
+    for(const [id,label] of [['','Standalone chat'],...Object.entries(chatWorkstreams.groups)]){const o=el('option','',label);o.value=id;project.append(o);}
+    project.value=chatWorkstreams.groups[chatPendingProject]?chatPendingProject:'';chatPendingProject=project.value;project.onchange=()=>{chatPendingProject=project.value;};
+    const field=el('label','chat-new-folder','Project');field.append(project);host.append(field);
+  }
 
   if (chatIsTerm()) { renderChatTermLanding(host); return; }
   if (chatAgent) {
@@ -1899,7 +1927,7 @@ function renderChatComposer(session) {
     chatCaptureSyncedDraft(draftKey);
     const draftState=chatSyncedDrafts.get(draftKey),sentDraft=draftState?.value;
     if(draftState?.conflict){showToast("Resolve the draft conflict before sending.");return;}
-    const sendAgent=chatAgent, sendSession=chatOpenId, sendRoute=chatRouteVersion;
+    const sendAgent=chatAgent, sendSession=chatOpenId, sendRoute=chatRouteVersion,sendProject=chatPendingProject;
     const durable=!!chatRosterEntry(sendAgent)?.durableSend;
     chatSending = true;
     send.disabled = true;
@@ -1965,6 +1993,7 @@ function renderChatComposer(session) {
         // Lazy creation uses the same request ID when its response is lost.
         const r = remembered ? await chatDeliverRemembered(remembered) : await postJSONOk(endpoint, payload);
         acceptedDraft();
+        await chatAssignNewProject(sendAgent,r.id,false,sendProject);
         if(sendRoute!==chatRouteVersion)return;
         chatOpenId = r.id;
         chatLanding = false;
@@ -1976,6 +2005,7 @@ function renderChatComposer(session) {
           spirit: chatPendingSpirit || "concierge", model: chatPendingModel || "", text,
         });
         acceptedDraft();
+        await chatAssignNewProject(sendAgent,r.id,false,sendProject);
         if(sendRoute!==chatRouteVersion)return;
         chatOpenId = r.id;
         chatLanding = false;
@@ -2854,6 +2884,7 @@ async function chatTermSend(text,context={}) {
   if (!text) return true;
   if (chatTermSending) return false;
   chatTermSending = true;
+  const project=chatPendingProject;
   const agent=chatAgent,route=chatRouteVersion,sourceScope=chatAgent+"/"+(chatOpenId||"new");
   renderChatComposer(chatTermComposerSession());
   try {
@@ -2861,9 +2892,10 @@ async function chatTermSend(text,context={}) {
     const wasDraft = chatTermFind(id)?.launchPhase === "draft";
     if (!id) {
       const cwd = chatRecall("manifest.chatTermCwd." + agent);
-      const se = await postJSONOk("/api/terminal/session", { kind: agent, cwd, draft: true });
+      const se = await postJSONOk("/api/terminal/session", { kind: agent, cwd, model:chatRecall("manifest.chatTermModel."+agent), draft: true });
       chatTermSessions.unshift(Object.assign({ live: false }, se));
       id = se.id;
+      await chatAssignNewProject(agent,id,true,project);
       created = true;
       // the row exists now whatever the delivery does: route to it first so a
       // failed first send leaves the thread open (text back in the composer),
@@ -2912,6 +2944,9 @@ function renderChatTermLanding(host) {
   cwd.value = chatRecall("manifest.chatTermCwd." + kind);
   cwd.oninput = () => { try { localStorage.setItem("manifest.chatTermCwd." + kind, cwd.value.trim()); } catch (e) {} };
   cwd.onkeydown = (e) => { if (e.key === "Enter") { e.preventDefault(); focusChatInput(); } };
+  const model=document.createElement('select');model.className='chat-landing-cwd';model.setAttribute('aria-label','Model');model.onchange=()=>{try{localStorage.setItem('manifest.chatTermModel.'+kind,model.value);}catch(e){}};
+  const modelField=el('label','chat-new-folder','Model');modelField.append(model);host.append(modelField);
+  if(typeof chatPopulateModelSelect==='function')chatPopulateModelSelect(model,kind,chatRecall('manifest.chatTermModel.'+kind));
   const field=el('label','chat-new-folder','Working folder');field.append(cwd);host.append(field);
   const recent=document.createElement('datalist');recent.id='chatRecentFolders';
   [...new Set(chatTermSessions.filter(s=>!s.device&&s.cwd).map(s=>s.cwd))].slice(0,30).forEach(path=>{const option=document.createElement('option');option.value=path;recent.append(option);});host.append(recent);
@@ -3233,7 +3268,7 @@ function chatAddSharedTerminal(session,agent){
     const cwd=document.createElement("input"),model=document.createElement("input");cwd.className=model.className="pp-in";
     cwd.value=saved?.payload?.cwd||chatRecall("manifest.chatTermCwd."+kind.value)||"";model.value=saved?.payload?.model||"";
     cwd.placeholder="Default home folder";model.placeholder="Installed default";
-    for(const [label,input] of [["Agent",kind],["Working folder on Metis",cwd],["Model (optional)",model]]){const field=el("label","",label);input.setAttribute("aria-label",label);field.append(input);body.append(field);}
+    for(const [label,input] of [["Agent",kind],["Working folder on Metis",cwd],["Model",model]]){const field=el("label","",label);input.setAttribute("aria-label",label);field.append(input);body.append(field);}
     const status=el("p","");status.setAttribute("role","status");body.append(status);
     const add=el("button","sprt-quiet","Add to shared conversation"),cancel=el("button","sprt-quiet","Cancel");cancel.onclick=close;actions.append(cancel,add);
     add.onclick=async()=>{
@@ -3271,7 +3306,7 @@ function chatStartRelated(source,targetAgent){
     const cwd=document.createElement("input");cwd.className="pp-in";cwd.setAttribute("aria-label","Coding working folder");cwd.placeholder="Default home folder";
     cwd.value=remembered?.cwd||"";
     const model=document.createElement("input");model.className="pp-in";model.setAttribute("aria-label","Coding model");model.placeholder="Installed default";model.value=remembered?.model||"";
-    const codingFields=el("div","");codingFields.append(field("Working folder on metis",cwd),field("Model (optional)",model));body.append(codingFields);
+    const codingFields=el("div","");codingFields.append(field("Working folder on metis",cwd),field("Model",model));body.append(codingFields);
     const syncCoding=()=>{codingFields.hidden=!pick.value.startsWith("terminal:");if(!codingFields.hidden&&!cwd.value)cwd.value=chatRecall("manifest.chatTermCwd."+pick.value.slice(9))||"";};pick.onchange=syncCoding;syncCoding();
     const ref=remembered?.artifacts?.[0]||selected;
     if(ref)body.append(el("p","","Includes the selected artifact version as context for the next send."));
@@ -3303,15 +3338,15 @@ function chatChooseTerminalRecipient(source){
   reviewDialog("Choose agent",({body,actions,close})=>{
     body.closest("dialog").classList.add("chat-agent-dialog");
     const pick=document.createElement("select");pick.className="pp-in";pick.setAttribute("aria-label","Next message recipient");
-    const native=document.createElement("option");native.value="native";native.textContent=chatAgentLabel(se.kind)+(se.model?" · "+shortModel(se.model):"");pick.append(native);
+    const native=document.createElement("option");native.value="native";native.textContent=chatAgentLabel(se.kind);pick.append(native);
     chatRoster.filter(a=>a.enabled&&a.durableSend).forEach(a=>{const option=document.createElement("option");option.value=a.name;option.textContent=a.label+(a.model?" · "+shortModel(a.model):"");pick.append(option);});
-    if(chatTermEnabled)Object.entries(chatTermKinds).forEach(([kind,label])=>{const option=document.createElement("option");option.value="terminal:"+kind;option.textContent=label+" · new coding session";pick.append(option);});
-    pick.value=current?.backend==="terminal"?"terminal:"+current.agent:current?.backend==="hermes"?current.agent:"native";
+    if(chatTermEnabled)Object.entries(chatTermKinds).filter(([kind])=>kind!==se.kind).forEach(([kind,label])=>{const option=document.createElement("option");option.value="terminal:"+kind;option.textContent=label;pick.append(option);});
+    pick.value=current?.backend==="terminal"?(current.agent===se.kind?"native":"terminal:"+current.agent):current?.backend==="hermes"?current.agent:"native";
     body.append(el("p","","Choose who receives your next message. Current work keeps running."),pick);
     const cwd=document.createElement("input");cwd.className="pp-in";cwd.setAttribute("aria-label","Continuation working folder");
-    const model=document.createElement("input");model.className="pp-in";model.setAttribute("aria-label","Continuation coding model");model.placeholder="Installed default";
-    const fields=el("div","");const folderLabel=el("label","","Working folder on metis"),modelLabel=el("label","","Model (optional)");folderLabel.append(cwd);modelLabel.append(model);fields.append(folderLabel,modelLabel);body.append(fields);
-    const sync=()=>{fields.hidden=!pick.value.startsWith("terminal:");const prior=(source.codingRecipients||[]).filter(p=>p.agent===pick.value.slice(9)).at(-1);cwd.value=prior?.cwd||se.cwd||"";model.value=prior?.model||"";};pick.onchange=sync;sync();
+    const model=document.createElement("select");model.className="pp-in";model.setAttribute("aria-label","Continuation coding model");model.placeholder="Installed default";
+    const fields=el("div","");const folderLabel=el("label","","Working folder on metis"),modelLabel=el("label","","Model");folderLabel.append(cwd);modelLabel.append(model);fields.append(folderLabel,modelLabel);body.append(fields);
+    const sync=()=>{const kind=pick.value==='native'?se.kind:pick.value.slice(9);fields.hidden=pick.value!=='native'&&!pick.value.startsWith('terminal:');const prior=(source.codingRecipients||[]).filter(p=>p.agent===kind).at(-1);cwd.value=pick.value==='native'?(current?.backend==='terminal'?(source.codingRecipients||[]).find(p=>p.id===current.id)?.cwd||se.cwd||'':se.cwd||''):prior?.cwd||se.cwd||'';if(typeof chatPopulateModelSelect==='function')chatPopulateModelSelect(model,kind,pick.value==='native'?(current?.model||se.model||''):(prior?.model||''));};pick.onchange=sync;sync();
     const status=el("p","");status.setAttribute("role","status");body.append(status);
     const here=el("button","sprt-quiet chat-agent-confirm","Use agent"),cancel=el("button","sprt-quiet","Cancel");
     cancel.onclick=close;
@@ -3319,8 +3354,9 @@ function chatChooseTerminalRecipient(source){
       here.disabled=true;
       try{
         let recipient=null;
-        if(pick.value!=="native"){
-          const coding=pick.value.startsWith("terminal:"),agent=coding?pick.value.slice(9):pick.value,entry=chatRosterEntry(agent);
+        const choice=pick.value==='native'&&((model.value&&model.value!==(se.model||model.dataset.default||''))||cwd.value.trim()!==(se.cwd||''))?'terminal:'+se.kind:pick.value;
+        if(choice!=="native"){
+          const coding=choice.startsWith("terminal:"),agent=coding?choice.slice(9):choice,entry=chatRosterEntry(agent);
           let child=coding?(source.codingRecipients||[]).find(p=>p.agent===agent&&p.cwd===cwd.value.trim()&&(!model.value.trim()||p.model===model.value.trim())):(source.planningRecipients||[]).find(p=>p.agent===agent);
           if(!child){
             const payload={agent,model:coding?model.value.trim():entry?.model||"",mode:"continue",title:se.name||se.kind,task,...(coding?{backend:"terminal",cwd:cwd.value.trim()}:{})};
@@ -3355,9 +3391,9 @@ function chatChooseRecipient(source){
     body.append(el("p","","Choose who receives your next message. Current work keeps running."),pick,
       el("p","","The next message includes recent history and selected files."));
     const cwd=document.createElement("input");cwd.className="pp-in";cwd.setAttribute("aria-label","Continuation working folder");cwd.placeholder="Default home folder";
-    const model=document.createElement("input");model.className="pp-in";model.setAttribute("aria-label","Continuation coding model");model.placeholder="Installed default";
-    const fields=el("div","");const folderLabel=el("label","","Working folder on metis"),modelLabel=el("label","","Model (optional)");folderLabel.append(cwd);modelLabel.append(model);fields.append(folderLabel,modelLabel);body.append(fields);
-    const sync=()=>{fields.hidden=!pick.value.startsWith("terminal:");const existing=(source.continuations||[]).filter(v=>v.agent===pick.value.slice(9)).at(-1);cwd.value=existing?.cwd||"";model.value=existing?.model||"";};pick.onchange=sync;sync();
+    const model=document.createElement("select");model.className="pp-in";model.setAttribute("aria-label","Continuation coding model");model.placeholder="Installed default";
+    const fields=el("div","");const folderLabel=el("label","","Working folder on metis"),modelLabel=el("label","","Model");folderLabel.append(cwd);modelLabel.append(model);fields.append(folderLabel,modelLabel);body.append(fields);
+    const sync=()=>{fields.hidden=!pick.value.startsWith("terminal:");const existing=(source.continuations||[]).filter(v=>v.agent===pick.value.slice(9)).at(-1);cwd.value=existing?.cwd||"";if(typeof chatPopulateModelSelect==='function')chatPopulateModelSelect(model,pick.value.slice(9),existing?.model||'');};pick.onchange=sync;sync();
     const status=el("p","");status.setAttribute("role","status");body.append(status);
     const cancel=el("button","sprt-quiet","Cancel"),here=el("button","sprt-quiet chat-agent-confirm","Use agent");
     cancel.onclick=close;

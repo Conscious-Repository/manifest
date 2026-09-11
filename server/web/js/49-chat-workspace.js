@@ -111,11 +111,11 @@ function chatWorkspaceSideSetup(source){
   options.forEach(a=>{const o=document.createElement('option');o.value=a.value;o.textContent=a.label;pick.append(o);});
   const recipient=chatRecipients.get(source.agent+'/'+source.id),initial=recipient?(recipient.backend==='terminal'?'terminal:':'')+recipient.agent:(source.backend==='terminal'?'terminal:':'')+source.agent;
   pick.value=initial;
-  const model=document.createElement('input');model.setAttribute('aria-label','Side chat model');model.value=recipient?.model||source.model;model.placeholder='Configured default';
+  const model=document.createElement('select');model.setAttribute('aria-label','Side chat model');model.value=recipient?.model||source.model;model.placeholder='Configured default';
   const cwd=document.createElement('input');cwd.setAttribute('aria-label','Side chat working folder');cwd.value=source.cwd||'';cwd.placeholder='Default working folder';
   const field=(label,input)=>{const l=el('label','',label);l.append(input);return l;};
-  const folder=field('Working folder',cwd),advanced=el('details','chat-side-options');advanced.append(el('summary','','Model and working folder'),field('Model',model),folder);
-  const sync=()=>{folder.hidden=!pick.value.startsWith('terminal:');};sync();pick.onchange=()=>{model.value=pick.value===initial?(recipient?.model||source.model):options.find(a=>a.value===pick.value)?.model||'';sync();};
+  const folder=field('Working folder',cwd),advanced=el('details','chat-side-options');advanced.append(el('summary','','Working folder'),folder);
+  const sync=()=>{folder.hidden=!pick.value.startsWith('terminal:');chatPopulateModelSelect(model,pick.value.startsWith('terminal:')?pick.value.slice(9):pick.value,pick.value===initial?(recipient?.model||source.model):options.find(a=>a.value===pick.value)?.model||'');};sync();pick.onchange=()=>{model.value=pick.value===initial?(recipient?.model||source.model):options.find(a=>a.value===pick.value)?.model||'';sync();};
   const status=el('p','chat-workspace-hint');status.setAttribute('role','status');
   const start=el('button','chat-side-start','Open side chat');start.disabled=!pick.value;
   // Recovery is scoped to this setup tab. Keep the accepted request identity on
@@ -143,7 +143,7 @@ function chatWorkspaceSideSetup(source){
     host.append(strip,frame);w.entries.get(key).button.textContent='Side chat';
    }catch(e){status.textContent=e.message||'Could not create side chat. Retry safely.';}finally{start.disabled=false;}
   };
-  wrap.append(heading,hint,field('Agent',pick),advanced,status,start);host.append(wrap);return {};
+  wrap.append(heading,hint,field('Agent',pick),field('Model',model),advanced,status,start);host.append(wrap);return {};
  });
 }
 
@@ -201,4 +201,19 @@ function chatCopyResponseControl(blocks){
   finally{button.disabled=false;setTimeout(()=>{if(button.isConnected){button.textContent='Copy';button.setAttribute('aria-label','Copy response');}},2000);}
  };
  return button;
+}
+
+let chatCodingCatalogPromise;
+function chatPopulateModelSelect(select,kind,requested=''){
+ const ticket=Symbol();select._modelTicket=ticket;select.replaceChildren();
+ const initial=el('option','',requested||'Configured default');initial.value=requested;select.append(initial);select.value=requested;
+ if(!['codex','claude'].includes(kind))return;
+ if(!chatCodingCatalogPromise)chatCodingCatalogPromise=fetch('/api/terminal/models').then(r=>{if(!r.ok)throw Error('Models unavailable');return r.json();}).catch(e=>{chatCodingCatalogPromise=null;throw e;});
+ chatCodingCatalogPromise.then(all=>{
+  if(select._modelTicket!==ticket)return;
+  const catalog=all[kind];if(!catalog)return;select.dataset.default=catalog.default||'';const value=requested||catalog.default||'';
+  select.replaceChildren();for(const m of catalog.models||[]){const o=el('option','',m.label);o.value=m.id;select.append(o);}
+  if(value&&!Array.from(select.options).some(o=>o.value===value)){const o=el('option','',value+' · current');o.value=value;select.prepend(o);}
+  select.value=value;select.dispatchEvent(new Event('change'));select.title='Models configured for this server';
+ }).catch(()=>{if(select._modelTicket===ticket)select.title='Model list unavailable. Using the displayed configured/current model.';});
 }
