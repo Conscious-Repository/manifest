@@ -1054,6 +1054,20 @@ type AshbySyncState struct {
 	// Webhooks is the bounded set of delivery keys the receiver (Phase 7)
 	// already applied, oldest first — a redelivery is skipped, not re-run.
 	Webhooks []string `json:"webhooks,omitempty"`
+	// ArchivedInAshby is what the ATS holds that the board deliberately does
+	// not: every archived application the last FULL sync listed, in total and
+	// by job id. The import skips them (a rejection is not worth a record),
+	// but "59 archived" on the board next to "548 archived" in Ashby was
+	// read as the board lying (owner, 2026-09-11) — so the number the ATS
+	// would show is carried here and shown beside the board's own.
+	ArchivedInAshby *AshbyArchivedCounts `json:"archivedInAshby,omitempty"`
+}
+
+// AshbyArchivedCounts is the ATS-side archive as of one full sync.
+type AshbyArchivedCounts struct {
+	Total int            `json:"total"`
+	ByJob map[string]int `json:"byJob,omitempty"` // ashby job id → archived applications
+	AsOf  string         `json:"asOf"`
 }
 
 const (
@@ -1912,6 +1926,10 @@ type AshbySyncBackResult struct {
 	// to hide: without this the owner cannot tell "nobody applied" from
 	// "eight people applied to a job you never mirrored".
 	SkippedJobs map[string]int `json:"skippedJobs,omitempty"`
+	// ArchivedInAshby is the ATS-side archive counted on this sync (full
+	// syncs only — an incremental application.list carries changes, not the
+	// whole set, so it cannot be counted from).
+	ArchivedInAshby *AshbyArchivedCounts `json:"archivedInAshby,omitempty"`
 }
 
 // SyncBack mirrors Ashby-authoritative state INBOUND:
@@ -2164,6 +2182,21 @@ func (a *AshbySync) syncBack(ctx context.Context, st *AshbySyncState, full bool,
 		if id := strings.TrimSpace(a.store.LoadRole(slug).Get("ashby_job_id")); id != "" {
 			roleByJob[id] = slug
 		}
+	}
+	// the archived count is taken over the WHOLE application list, which only
+	// a full sync has — an incremental list is the changes since the token
+	if full {
+		counts := &AshbyArchivedCounts{ByJob: map[string]int{}, AsOf: res.Synced}
+		for _, app := range apps {
+			if strings.EqualFold(app.Status, "Archived") {
+				counts.Total++
+				if app.JobID != "" {
+					counts.ByJob[app.JobID]++
+				}
+			}
+		}
+		st.ArchivedInAshby = counts
+		res.ArchivedInAshby = counts
 	}
 	candByID := map[string]AshbyCandidate{}
 	for _, c := range cands {

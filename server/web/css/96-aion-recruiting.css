@@ -679,9 +679,11 @@ a.rec-place-name:hover { text-decoration: underline; }
 .rec-funnel-name { font-size: var(--fs-sm); color: var(--base-100); }
 .rec-funnel-count { font-family: var(--mono); font-size: var(--fs-2xs); color: var(--base-50); }
 .rec-funnel-arrow { align-self: center; color: var(--base-40); font-size: var(--fs-sm); }
-.rec-funnel-gap { flex: 1 1 var(--sp-6); min-width: var(--sp-4); }
-.rec-funnel-archived { background: transparent; }
+/* archived is a quiet note at the end of the line, never a card */
+.rec-funnel-hist { align-self: center; margin-left: auto; font-size: var(--fs-xs); color: var(--base-50); white-space: nowrap; }
+.rec-funnel-hist:hover, .rec-funnel-hist.on { color: var(--base-100); }
 @media (max-width: 860px) {
   .rec-funnel-stage { min-width: 0; flex: 1 1 40%; }
-  .rec-funnel-arrow, .rec-funnel-gap { display: none; }
+  .rec-funnel-arrow { display: none; }
+  .rec-funnel-hist { margin-left: 0; flex-basis: 100%; }
 }

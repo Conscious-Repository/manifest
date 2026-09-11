@@ -40,7 +40,11 @@ func (s *Server) handleRecruitingView(w http.ResponseWriter, _ *http.Request) {
 	if !s.recruitingReady(w) {
 		return
 	}
-	writeJSON(w, s.recruiting.View())
+	v := s.recruiting.View()
+	if s.ashbySync != nil {
+		v.AshbyArchived = s.ashbySync.State().ArchivedInAshby
+	}
+	writeJSON(w, v)
 }
 
 func (s *Server) handleRecruitingSeeds(w http.ResponseWriter, _ *http.Request) {

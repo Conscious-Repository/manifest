@@ -205,6 +205,12 @@ type View struct {
 	SeedClasses      []string    `json:"seedClasses"`
 	CriterionClasses []string    `json:"criterionClasses"`
 	Owner            string      `json:"owner"`
+	// AshbyArchived is the ATS-side archive as of the last full sync — what
+	// Ashby would show, carried beside the board's own archived count so the
+	// two never read as a disagreement. Attached by the server (the record
+	// store does not know the sync); nil when Ashby is not configured or has
+	// never been fully synced since the count existed.
+	AshbyArchived *AshbyArchivedCounts `json:"ashbyArchived,omitempty"`
 }
 
 // View loads the whole board. Roles sort pinned-first then by title; pinned

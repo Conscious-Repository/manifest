@@ -1051,6 +1051,15 @@ func TestAshbySyncBackMirrorsAshbyArchiveOntoTheBoard(t *testing.T) {
 	if strings.Join(out.Archived, ",") != "cand/ava-applicant" {
 		t.Fatalf("archived: %+v", out)
 	}
+	// and the ATS-SIDE archive is counted on a full sync — both applications
+	// are archived in Ashby, whatever the board did with them — then kept in
+	// the state so the board can show Ashby's number beside its own
+	if out.ArchivedInAshby == nil || out.ArchivedInAshby.Total != 2 || out.ArchivedInAshby.ByJob["job_mri"] != 2 {
+		t.Fatalf("the sync did not count Ashby's archive: %+v", out.ArchivedInAshby)
+	}
+	if st := h.sync.State().ArchivedInAshby; st == nil || st.Total != 2 || st.AsOf != out.Synced {
+		t.Fatalf("the count was not persisted: %+v", st)
+	}
 	ava, err := os.ReadFile(filepath.Join(h.vault, "system/aion/recruiting/candidates/ava-applicant.md"))
 	if err != nil {
 		t.Fatal(err)

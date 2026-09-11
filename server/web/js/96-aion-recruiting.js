@@ -181,6 +181,14 @@ function recCandidateContext(c, roleId) {
 const REC_PIPELINE = ["new", "reviewing", "shortlist", "intro", "outreach", "New Lead", "Reached Out", "replied", "Replied",
   "Application Review", "Initial Screen", "First Round", "Second Round", "Offer", "Hired"];
 let recStageFilter = ""; // one pipeline stage, or "" for the whole funnel
+// the ATS-side archive rides on the full view only; every partial refresh
+// (an accept, a stage move) replaces recCache with a view that lacks it, so
+// the last one seen is kept rather than flickering to "board only"
+let recAshbyArchivedLast = null;
+function recAshbyArchived() {
+  if (recCache && recCache.ashbyArchived) recAshbyArchivedLast = recCache.ashbyArchived;
+  return recAshbyArchivedLast;
+}
 
 function recPipelineStage(c) {
   return c.ashbyApplicationId ? (c.ashbyStage || c.ashbyStatus || "Stage unavailable") : c.stage;
@@ -217,15 +225,19 @@ function recFunnel(rows) {
     card.onclick = () => { recStageFilter = recStageFilter === st ? "" : st; paintBoardBody(); };
     strip.append(card);
   });
-  // history sits apart, the way Ashby keeps Archived off the arrow line: it
-  // is where people went, not a step they are at
-  const gap = el("span", "rec-funnel-gap", "");
-  strip.append(gap);
-  const archived = (recCache.candidates || []).filter((c) => recRoleCandidates(c) && !recCandidateActive(c)).length;
-  const hist = el("button", "rec-funnel-stage rec-funnel-archived" + (recCut === "archived" ? " on" : ""));
-  hist.append(el("span", "rec-funnel-name", "Archived"));
-  hist.append(el("span", "rec-funnel-count", archived + (archived === 1 ? " candidate" : " candidates")));
-  hist.title = recCut === "archived" ? "back to the open pipeline" : "the people who left the pipeline";
+  // history is a note at the end of the line, not a card: it is where people
+  // went, not a step they are at, and it does not get a stage's weight. Two
+  // numbers, because they are two different things — the records archived
+  // HERE, and everything Ashby holds archived (rejections the import never
+  // makes records of), so the board never reads as disagreeing with the ATS.
+  const archivedHere = (recCache.candidates || []).filter((c) => recRoleCandidates(c) && !recCandidateActive(c)).length;
+  const ats = recAshbyArchived();
+  const role = recRole ? (recCache.roles || []).find((r) => r.slug === recRole) : null;
+  const inAshby = ats ? (role && role.ashbyJobId ? (ats.byJob || {})[role.ashbyJobId] || 0 : ats.total) : null;
+  const hist = el("button", "linkish rec-funnel-hist" + (recCut === "archived" ? " on" : ""));
+  hist.textContent = "archived " + archivedHere + (inAshby == null ? "" : " here · " + inAshby + " in Ashby");
+  hist.title = (recCut === "archived" ? "back to the open pipeline" : "show the people who left the pipeline")
+    + (ats ? " · Ashby count as of " + ats.asOf + " (a full re-sync refreshes it)" : " · run a full re-sync to see Ashby's archived count");
   hist.onclick = () => { recCut = recCut === "archived" ? "open" : "archived"; recStageFilter = ""; if (recPaint) recPaint(); };
   strip.append(hist);
   return strip;
