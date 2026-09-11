@@ -3139,13 +3139,14 @@ function chatOpenWorkingArtifact(spec) {
     const r=await fetch(path); if(!r.ok)throw new Error(await r.text());return r.json();
   };
   w.tab(tabKey,spec.plan?"Plan":"Review",(host,drop)=>artifactWorkspace(host,{
-    load, revision:spec.revision,proposal:spec.proposal,
+    load, revision:spec.revision,proposal:spec.proposal,review:!chatIsPortal(),
     save:spec.plan ? (text,expectedRevision)=>postJSONOk("/api/tasks/plan",{id:taskID,text,expectedRevision}):(text,expectedRevision)=>postJSONOk("/api/artifacts/text",{id:spec.id,content:text,expectedRevision}),
     canEdit:spec.plan ? null : a=>/\.(md|txt|json|csv|tsv|yaml|yml|toml|js|jsx|ts|tsx|py|go|html|css|sql|sh|xml|svg)$/i.test(a.ref||"") && a.provenance?.source!=="task-plan",
     saveNotice:spec.plan ? null : "Saved as a new artifact version. Use Discuss this version to ask the agent to apply it to working files.",
     onClose:drop,
     onDiscuss: (taskID||spec.discuss) && (key.startsWith("task:") || chatRosterEntry(chatAgent)?.durableSend || chatIsTerm()) ? ref=>{
       chatArtifactSelections.set(key,{...ref,task:taskID,discuss:!!spec.discuss});
+      if(ref.reviewNote){const input=document.querySelector('#chatComposer textarea');if(input){const request='Please revise '+ref.title+' (version '+ref.version+(ref.reviewStart?', lines '+ref.reviewStart+'–'+ref.reviewEnd:'')+'):\n'+ref.reviewNote;input.value=(input.value.trim()?input.value+'\n\n':'')+request;input.dispatchEvent(new Event('input',{bubbles:true}));}}
       if(key.startsWith("chat:"))chatRenderArtifactContext(taskID,key);
       if(key.startsWith("chat:"))chatCaptureSyncedDraft(key.slice(5));
       else if(key.startsWith("task:"))todoSaveArtifactSelection(taskID);

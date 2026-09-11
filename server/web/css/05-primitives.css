@@ -283,8 +283,8 @@
 .artifact-workspace-body pre { overflow: auto; }
 .artifact-diff { font: var(--fs-sm)/1.6 var(--mono); tab-size: 2; }
 .artifact-diff span { display: block; white-space: pre-wrap; overflow-wrap: anywhere; }
-.artifact-diff-added { background: var(--hover); border-left: 2px solid var(--accent); }
-.artifact-diff-removed { background: var(--surface-field); border-left: 2px solid var(--muted); }
+.artifact-diff-added { background: var(--diff-added-bg); border-left: 2px solid var(--good); }
+.artifact-diff-removed { background: var(--diff-removed-bg); border-left: 2px solid var(--danger); }
 .artifact-diff-summary { font-size: var(--fs-sm); }
 .artifact-workspace-body img { max-width: 100%; }
 .artifact-workspace-body iframe { width: 100%; height: 100%; min-height: 320px; border: 0; }
@@ -326,3 +326,16 @@
 .form-actions .sprt-quiet { background:transparent; border-color:transparent; color:var(--muted); }
 .form-actions button:disabled { opacity:.5; cursor:default; }
 .form-actions button:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+
+.artifact-review-controls { border-bottom:1px solid var(--line); padding-bottom:var(--sp-7); margin-bottom:var(--sp-7); font:var(--fs-md)/1.5 var(--sans); }
+.artifact-review-controls > summary { cursor:pointer; font-weight:500; }
+.artifact-review-form { display:flex; flex-direction:column; gap:var(--sp-6); }
+.artifact-review-form :is(select,textarea,input) { box-sizing:border-box; min-width:0; width:100%; color:var(--text); background:var(--surface-field); border:1px solid var(--line); border-radius:var(--radius-lg); padding:var(--sp-4) var(--sp-6); font:var(--fs-md)/1.5 var(--sans); }
+.artifact-review-form input { width:45%; margin:var(--sp-4) var(--sp-4) 0 0; }
+.artifact-review-help { color:var(--muted); }
+.artifact-review-entry { border-top:1px solid var(--line); padding:var(--sp-6) 0; }
+.artifact-review-entry p { white-space:pre-wrap; overflow-wrap:anywhere; }
+
+:is(.artifact-diff,.working-file-diff) .numbered-diff-row { display:grid; grid-template-columns:4ch 4ch minmax(max-content,1fr); min-height:1.6em; }
+:is(.artifact-diff,.working-file-diff) .diff-line-number { text-align:right; padding-right:var(--sp-4); color:var(--muted); user-select:none; border-right:1px solid var(--line); }
+:is(.artifact-diff,.working-file-diff) .diff-line-text { white-space:pre; padding-left:var(--sp-4); font:inherit; background:transparent; }

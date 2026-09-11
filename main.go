@@ -334,6 +334,7 @@ func main() {
 			vaultwriter.Capability{Name: "todo-plans", Zone: record.ZoneSystem,
 				Pattern: filepath.ToSlash(filepath.Join(cfg.SystemRoot, "todo-plans")) + "/**",
 				Actor:   vaultwriter.ActorUserAction},
+			vaultwriter.Capability{Name: "artifact-reviews", Zone: record.ZoneSystem, Pattern: filepath.ToSlash(filepath.Join(cfg.SystemRoot, "workbench", "reviews")) + "/**", Actor: vaultwriter.ActorUserAction},
 			vaultwriter.Capability{Name: "chat-projects", Zone: record.ZoneSystem, Pattern: filepath.ToSlash(filepath.Join(cfg.SystemRoot, "workbench", "projects.md")), Actor: vaultwriter.ActorUserAction},
 			vaultwriter.Capability{Name: "writing", Zone: record.ZoneSystem, Pattern: filepath.ToSlash(filepath.Join(cfg.SystemRoot, "writing")) + "/**", Actor: vaultwriter.ActorUserAction},
 			vaultwriter.Capability{Name: "writing-agent", Zone: record.ZoneSystem, Pattern: filepath.ToSlash(filepath.Join(cfg.SystemRoot, "writing")) + "/**", Actor: vaultwriter.ActorApprovedProposal},
@@ -769,6 +770,7 @@ func main() {
 	// approvals inbox is the excalibur surface (warden findings today, the
 	// goals-Phase-2 EA later). Save-to-vault stays the one vault write.
 	srv.UseVault(vw)
+	srv.UseArtifactReviews(filepath.ToSlash(filepath.Join(cfg.SystemRoot, "workbench", "reviews")))
 	if err := srv.UseChatProjects(filepath.ToSlash(filepath.Join(cfg.SystemRoot, "workbench"))); err != nil {
 		log.Printf("chat projects unavailable: %v", err)
 	}

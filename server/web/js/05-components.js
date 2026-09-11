@@ -646,14 +646,52 @@ function artifactLineChanges(before,after){
   return out;
 }
 
+function artifactDiffLine(kind,text,before,after,prefix='artifact-diff-'){
+ const row=el('span',prefix+kind+' numbered-diff-row');
+ for(const [side,value] of [['before',before],['after',after]]){const number=el('span','diff-line-number',value==null?'':String(value));number.setAttribute('aria-hidden','true');row.append(number);if(value!=null)row.dataset[side+'Line']=value;}
+ row.append(el('code','diff-line-text',text));return row;
+}
+
 function artifactDiffView(before,after,label){
   const changes=artifactLineChanges(before,after);
   const added=changes.filter(x=>x.kind==="added").length,removed=changes.filter(x=>x.kind==="removed").length;
   const view=el("div","artifact-diff-review");
   view.append(el("p","artifact-diff-summary",added||removed?`${added} lines added · ${removed} lines removed`:"No text changes."));
   const diff=el("pre","artifact-diff");diff.setAttribute("aria-label",label);
-  for(const line of changes)diff.append(el("span","artifact-diff-"+line.kind,(line.kind==="added"?"+ ":line.kind==="removed"?"− ":"  ")+line.text));
+  let beforeLine=1,afterLine=1;
+  for(const line of changes){const old=line.kind!=="added"?beforeLine++:null,next=line.kind!=="removed"?afterLine++:null;diff.append(artifactDiffLine(line.kind,(line.kind==="added"?"+ ":line.kind==="removed"?"− ":"  ")+line.text,old,next));}
   view.append(diff);return view;
+}
+
+// Review decisions are immutable, version-bound owner records. They do not
+// approve tools, close tasks, or send the drafted revision request.
+function artifactReviewControls(artifact,revision,number,onDiscuss){
+ const host=el('details','artifact-review-controls'),summary=el('summary','','Review · v'+number),state=el('p','','loading…'),form=el('div','artifact-review-form');host.append(summary,state,form);
+ const choice=document.createElement('select');choice.setAttribute('aria-label','Review decision');
+ for(const [value,label] of [['accepted','accept this version'],['changes_requested','request changes'],['comment','comment'],['ready_for_review','mark ready for review']]){const option=el('option','',label);option.value=value;choice.append(option);}
+ const note=document.createElement('textarea');note.rows=3;note.placeholder='Review notes';note.setAttribute('aria-label','Review notes');
+ const range=el('details',''),start=document.createElement('input'),end=document.createElement('input');start.type=end.type='number';start.min=end.min='1';start.placeholder='First line';end.placeholder='Last line';start.setAttribute('aria-label','First reviewed line');end.setAttribute('aria-label','Last reviewed line');range.append(el('summary','','Specific lines'),start,end);range.hidden=/\.(diff|pdf|png|jpe?g|gif|webp)$/i.test(artifact.ref||'');
+ const actions=el('div','form-actions'),save=el('button','','record decision');actions.append(save);form.append(choice,note,range,actions,el('p','artifact-review-help',onDiscuss?'Records your review. A change request is placed in the composer for you to send.':'Records your review of this version. No message is sent.'));
+ const history=el('div','artifact-review-history');host.append(history);let snapshot=null,recorded=false;
+ const endpoint='/api/artifacts/reviews?id='+encodeURIComponent(artifact.id)+'&revision='+encodeURIComponent(revision),storage='manifest.artifactReview.v1.'+artifact.id+'.'+revision;
+ try{const draft=JSON.parse(localStorage.getItem(storage)||'null');if(draft){choice.value=draft.state;note.value=draft.note||'';start.value=draft.start||'';end.value=draft.end||'';}}catch(e){}
+ const clearPending=()=>{try{localStorage.removeItem(storage);}catch(e){}};
+ const label=value=>({not_requested:'Not reviewed',ready_for_review:'Ready for review',accepted:'Accepted',changes_requested:'Changes requested',comment:'Comment'})[value]||value;
+ const show=value=>{if(!value||value.revision!==revision||typeof value.record_version!=='string'||!Array.isArray(value.entries))throw Error('Invalid review response; reload before continuing.');snapshot=value;state.textContent=label(value.state)+' · version '+number;summary.textContent='Review · '+label(value.state);history.replaceChildren();
+  for(const item of value.entries.filter(e=>e.revision===revision).slice().reverse()){const row=el('div','artifact-review-entry');row.append(el('small','',label(item.state)+' · '+new Date(item.at).toLocaleString()+(item.start?' · lines '+item.start+'–'+item.end:'')));if(item.note)row.append(el('p','',item.note));history.append(row);}
+ };
+ const load=async()=>{save.disabled=true;try{const r=await fetch(endpoint,{cache:'no-store'});if(!r.ok)throw Error('Reviews could not be loaded.');show(await r.json());}catch(e){state.textContent=e.message;}finally{save.disabled=!snapshot;}};
+ const changed=()=>{recorded=false;save.disabled=!snapshot;save.textContent=choice.value==='changes_requested'&&onDiscuss?'record and draft request':'record decision';};choice.onchange=note.oninput=start.oninput=end.oninput=changed;
+ save.onclick=async()=>{if(!snapshot||recorded)return;if(['changes_requested','comment'].includes(choice.value)&&!note.value.trim()){note.focus();return;}
+  const content={state:choice.value,note:note.value,start:Number(start.value)||0,end:Number(end.value||start.value)||0};let request={...content,request_id:crypto.randomUUID(),record_version:snapshot.record_version};
+  try{const previous=JSON.parse(localStorage.getItem(storage)||'null');if(previous&&['state','note','start','end'].every(k=>previous[k]===content[k]))request=previous;localStorage.setItem(storage,JSON.stringify(request));}catch(e){}
+  save.disabled=true;try{const r=await fetch(endpoint,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(request)});
+   if(r.status===409){show(await r.json());clearPending();throw Error('Review changed elsewhere. Check the history, then record your decision again.');}
+   if(!r.ok)throw Error(await r.text());const result=await r.json();if(!result.entries?.some(e=>e.id===request.request_id&&e.revision===revision&&e.state===content.state&&(e.note||'')===content.note&&(e.start||0)===content.start&&(e.end||0)===content.end))throw Error('Review acknowledgement is incomplete. Retry uses the same decision ID.');show(result);clearPending();recorded=true;save.textContent='recorded';
+   if(host.isConnected&&content.state==='changes_requested'&&onDiscuss)onDiscuss({id:artifact.id,revision,title:artifact.title||'Artifact',version:number,reviewNote:content.note,reviewStart:content.start,reviewEnd:content.end});
+  }catch(e){state.textContent=e.message||'Review not confirmed. Retry uses the same decision ID.';}finally{save.disabled=!snapshot||recorded;}
+ };
+ load();return host;
 }
 
 // A shared, version-aware workspace. The caller owns placement and discussion
@@ -743,6 +781,7 @@ function artifactWorkspace(mount, options) {
     const download = el("a", "sprt-quiet", "Open file ↗");
     download.href = contentURL; download.target = "_blank"; download.rel = "noopener";
     controls.append(download);
+    if(opts.review)body.prepend(artifactReviewControls(current,selected,selectedNumber,binary?null:opts.onDiscuss));
     const previous=current.revisions.find(r=>r.n===selectedNumber-1);
     if(previous&&!binary){
       const compare=el("button","sprt-quiet","Compare v"+previous.n);
@@ -868,7 +907,13 @@ function artifactWorkingChangesView(text){
   const pick=document.createElement("select");pick.className="pp-in";pick.setAttribute("aria-label","Changed file");
   files.forEach((f,i)=>{const option=el("option","",f.path);option.value=i;pick.append(option);});
   const content=el("pre","working-file-diff");
-  const show=()=>{content.replaceChildren();for(const line of files[Number(pick.value)].content.split("\n")){const cls=line.startsWith("+")&&!line.startsWith("+++")?"added":line.startsWith("-")&&!line.startsWith("---")?"removed":"context";content.append(el("span","working-diff-"+cls,line));}};
+  const show=()=>{content.replaceChildren();let before=null,after=null;for(const line of files[Number(pick.value)].content.split("\n")){
+      const hunk=line.match(/^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@/);
+      if(hunk){before=Number(hunk[1]);after=Number(hunk[2]);content.append(artifactDiffLine('context',line,null,null,'working-diff-'));continue;}
+      const cls=line.startsWith("+")&&(before!==null||!line.startsWith("+++"))?"added":line.startsWith("-")&&(before!==null||!line.startsWith("---"))?"removed":"context";
+      const inHunk=before!==null&&after!==null&&(cls!=='context'||line.startsWith(' ')),old=inHunk&&cls!=='added'?before++:null,next=inHunk&&cls!=='removed'?after++:null;
+      content.append(artifactDiffLine(cls,line,old,next,'working-diff-'));
+    }};
   pick.onchange=show;show();view.append(pick,content);
  }
  if(untracked.length){const details=el("details","working-untracked");details.append(el("summary","",untracked.length+" untracked files · contents not included"));const list=el("ul","");for(const raw of untracked){let name=raw;try{name=JSON.parse(raw);}catch(e){}const row=el("li","working-untracked-file");row.title=name;row.append(el("span","",name.split("/").at(-1)));const folder=name.includes("/")?name.slice(0,name.lastIndexOf("/")):"";if(folder)row.append(el("small","",folder));list.append(row);}details.append(list);view.append(details);}

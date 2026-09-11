@@ -92,6 +92,8 @@
   --control-min: 24px; /* dense pointer targets; coarse pointers grow in 95-mobile.css */
   --control-height: 28px;
   --control-touch: 44px;
+  --diff-added-bg: color-mix(in srgb,var(--good) 12%,var(--surface-field));
+  --diff-removed-bg: color-mix(in srgb,var(--danger) 12%,var(--surface-field));
   --focus-width: 2px;
 
   --radius: 4px;

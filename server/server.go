@@ -60,12 +60,13 @@ import (
 var webFiles embed.FS
 
 type Server struct {
-	chatShareWriters sync.Map // source identity -> writer/publication RWMutex
-	chatState        *chatstate.Store
-	chatProjectsPath string
-	svc              *daily.Service
-	goals            *goals.Store
-	tasksStore       *tasks.Store // the third surface — vault-root `tasks.md` (nilable)
+	chatShareWriters    sync.Map // source identity -> writer/publication RWMutex
+	chatState           *chatstate.Store
+	chatProjectsPath    string
+	artifactReviewsRoot string
+	svc                 *daily.Service
+	goals               *goals.Store
+	tasksStore          *tasks.Store // the third surface — vault-root `tasks.md` (nilable)
 	// ownerInitials identify "me" in the unified todo projection (stage 4):
 	// empty/"me"/containing-these-initials owners are mine.
 	ownerInitials string
@@ -381,6 +382,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/artifacts/get", s.handleArtifactGet)        // ?id=&content=1&rev=
 	mux.HandleFunc("POST /api/artifacts/create", s.handleArtifactCreate) // {kind,title,ref|content,task,run,…}
 	mux.HandleFunc("POST /api/artifacts/text", s.handleArtifactText)
+	mux.HandleFunc("GET /api/artifacts/reviews", s.handleArtifactReviews)
+	mux.HandleFunc("POST /api/artifacts/reviews", s.handleArtifactReviews)
 	mux.HandleFunc("POST /api/artifacts/revise", s.handleArtifactRevise) // {id, content|ref, note}
 	// P2 graph: the entity/edge graph over stored claims + derived edges (graph.go)
 	mux.HandleFunc("GET /api/graph", s.handleGraph)                    // vocabulary + counts
