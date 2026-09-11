@@ -1,0 +1,11 @@
+const assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm');
+const src=fs.readFileSync(require('node:path').join(__dirname,'../web/js/49-chat-workspace.js'),'utf8');
+let focused=0,clicked=0,prevented=0,dialog=false;
+const make=(active,state)=>({dataset:{execution:state},classList:{contains:()=>active},getClientRects:()=>[{}],querySelector:()=>null,click(){clicked++;this.used=true;}});
+const rows=[make(true,'completed'),make(false,'running'),make(false,'waiting_user')];
+const ctx=vm.createContext({location:{hash:'#/chat/a/codex/one'},document:{addEventListener(){},querySelector:s=>s==='dialog[open]'?(dialog?{}:null):{getClientRects:()=>[{}],focus:()=>focused++,click:()=>clicked++},querySelectorAll:()=>rows}});
+vm.runInContext(src.slice(src.indexOf('function chatWorkbenchShortcut(')),ctx);
+const key=(code,extra={})=>ctx.chatWorkbenchShortcut({code,ctrlKey:true,altKey:true,preventDefault:()=>prevented++,...extra});
+key('KeyM');assert.equal(focused,1);key('KeyJ');assert.equal(rows[2].used,true);key('ArrowDown');assert.equal(rows[1].used,true);
+const prior=clicked;dialog=true;key('KeyN');assert.equal(clicked,prior);dialog=false;key('KeyN',{isComposing:true});key('KeyN',{ctrlKey:false});assert.equal(clicked,prior);
+assert.equal(prevented,3);console.log('PASS keyboard focus, next attention, thread switching, dialog and typing isolation');

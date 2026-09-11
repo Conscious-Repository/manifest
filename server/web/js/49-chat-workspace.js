@@ -59,7 +59,7 @@ function chatWorkspaceHeader(head){
  const summary=more?.querySelector(':scope > summary');if(summary){summary.textContent='···';summary.setAttribute('aria-label','Conversation options');summary.title='Conversation options';more.classList.add('chat-options-compact');}
  const button=el('button','sprt-quiet chat-workspace-toggle chat-icon-button');button.append(chatWorkspaceIcon('panel'));
  button.setAttribute('aria-label','Toggle workspace');button.setAttribute('aria-expanded',String(!!chatWorkspaceTabs&&!chatWorkspaceTabs.pane.hidden));
- button.title='Plans, files and side chats';
+ button.title='Plans, files and side chats · Ctrl+Alt+I';button.setAttribute('aria-keyshortcuts','Control+Alt+i');
  button.onclick=()=>{if(chatWorkspaceTabs)chatWorkspaceTabs.show(chatWorkspaceTabs.pane.hidden);else chatEnsureWorkspace();};head.append(button);
 }
 function chatEnsureWorkspace(restoring=false){
@@ -132,6 +132,7 @@ function chatWorkspaceChooser(host){
   }).catch(()=>{const retry=el('button','sprt-quiet','Retry loading files');retry.onclick=()=>{host.replaceChildren();chatWorkspaceChooser(host);};chooser.append(retry);});
  }
  if(source)action('Side chat','Start with this conversation’s context','chat',()=>chatWorkspaceSideSetup(source));
+ const keys=el('details','chat-workspace-shortcuts');keys.append(el('summary','','Keyboard shortcuts'),el('p','','Ctrl+Alt: N new chat · F search · M composer · I workspace · ↑/↓ switch chat · J next needing attention'));chooser.append(keys);
  host.append(chooser);
 }
 function chatMountSideFrame(host,spec){
@@ -272,3 +273,26 @@ function chatPopulateModelSelect(select,kind,requested=''){
   select.value=value;select.dispatchEvent(new Event('change'));select.title='Models configured for this server';
  }).catch(()=>{if(select._modelTicket===ticket)select.title='Model list unavailable. Using the displayed configured/current model.';});
 }
+
+// Explicit control+option/alt shortcuts avoid ordinary typing and browser tabs.
+function chatWorkbenchShortcut(event){
+ if(!event.ctrlKey||!event.altKey||event.metaKey||event.shiftKey||event.isComposing||event.defaultPrevented)return;
+ if(!location.hash.startsWith('#/chat')||document.querySelector('dialog[open]'))return;
+ let target=null;
+ switch(event.code){
+  case 'KeyN':target=document.querySelector('#chatHeadActions button');break;
+  case 'KeyF':target=document.querySelector('.chat-inbox-search');break;
+  case 'KeyM':target=document.querySelector('#chatComposer textarea');break;
+  case 'KeyI':target=document.querySelector('.chat-workspace-toggle');break;
+  case 'ArrowDown':case 'ArrowUp':case 'KeyJ':{
+   const rows=[...document.querySelectorAll('#chatInboxRows .chat-rail-row')].filter(row=>row.getClientRects().length);
+   const current=rows.findIndex(row=>row.classList.contains('open')),step=event.code==='ArrowUp'?-1:1;
+   for(let n=1;n<=rows.length;n++){const row=rows[(current+step*n+rows.length*2)%rows.length];if(event.code!=='KeyJ'||row.dataset.execution==='waiting_user'||row.dataset.execution==='failed'||row.querySelector('.chat-row-attention')){target=row;break;}}
+   break;
+  }
+  default:return;
+ }
+ if(!target||target.disabled||!target.getClientRects().length)return;
+ event.preventDefault();if(['KeyF','KeyM'].includes(event.code))target.focus();else target.click();
+}
+document.addEventListener('keydown',chatWorkbenchShortcut);

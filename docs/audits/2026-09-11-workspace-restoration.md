@@ -23,3 +23,7 @@ Extended Chromium coverage exercises response loss, navigation, state-store reop
 ## Comparison-mode restoration
 
 Artifact view state now records preview versus comparison mode. Restoring a comparison reloads the selected immutable version and its preceding revision before applying scroll. It does not enter editing or save a version. The actual artifact-editor browser fixture closes and rebuilds the preview and verifies comparison mode remains selected. Edit-mode restoration remains outstanding.
+
+## Keyboard navigation checkpoint
+
+Added Ctrl+Alt shortcuts for new chat (N), search (F), composer (M), inspector (I), visible previous/next chat (arrows), and next visible input/review/failure item (J). Help is available in the workspace chooser. Modal dialogs, composition, ordinary typing and non-chat routes are excluded. The shortcut fixture verifies focus, navigation, attention targeting and exclusions; the existing workspace browser fixture passes. Stop-run keyboard handling and full accessibility/live audit remain open. Computer-use live audit was attempted but the tool reported the Mac locked; unlock was requested while repository work continued.
