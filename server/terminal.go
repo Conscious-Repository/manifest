@@ -372,12 +372,13 @@ func (s *Server) handleTermSessions(w http.ResponseWriter, r *http.Request) {
 	live := s.terminal.liveSet()
 	type row struct {
 		termSession
-		Live         bool                   `json:"live"`
-		Conversation conversationDescriptor `json:"conversation"`
-		Run          *terminalRunEvidence   `json:"run,omitempty"`
-		AgentState   string                 `json:"agentState"`
-		Connectivity string                 `json:"connectivity"`
-		Process      string                 `json:"process"`
+		ActivityOffset int64                  `json:"activityOffset"`
+		Live           bool                   `json:"live"`
+		Conversation   conversationDescriptor `json:"conversation"`
+		Run            *terminalRunEvidence   `json:"run,omitempty"`
+		AgentState     string                 `json:"agentState"`
+		Connectivity   string                 `json:"connectivity"`
+		Process        string                 `json:"process"`
 	}
 	out := make([]row, 0, len(list))
 	for _, se := range list {
@@ -397,14 +398,16 @@ func (s *Server) handleTermSessions(w http.ResponseWriter, r *http.Request) {
 			l = ob.Process == "running"
 		}
 		var run *terminalRunEvidence
-		if se.Kind == "codex" {
+		var activityOffset int64
+		if se.Kind == "codex" || se.Kind == "claude" {
 			if path := s.terminal.transcriptPath(se); path != "" {
 				if tr, ok := readTranscript(se.Kind, path, 0); ok {
 					run = tr.Run
+					activityOffset = tr.Offset
 				}
 			}
 		}
-		out = append(out, row{se, l, s.terminalConversation(se), run, ob.AgentState, ob.Connectivity, ob.Process})
+		out = append(out, row{se, activityOffset, l, s.terminalConversation(se), run, ob.AgentState, ob.Connectivity, ob.Process})
 	}
 	sort.SliceStable(out, func(i, j int) bool {
 		if out[i].Pinned != out[j].Pinned {

@@ -1,6 +1,6 @@
 const assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm'),path=require('node:path');
 const src=fs.readFileSync(path.join(__dirname,'../web/js/48-chat.js'),'utf8');
-const ctx=vm.createContext({chatLastY:0,chatStick:true});
+const ctx=vm.createContext({chatMarkViewed:()=>{},chatLastY:0,chatStick:true});
 vm.runInContext(src.slice(src.indexOf('function chatReadingAnchor(host)'),src.indexOf('window.addEventListener("pagehide",()=>{for(const saved of chatReadingStates')),ctx);
 function viewport(scrollTop,start,height){
  const host={scrollTop,scrollHeight:3000,clientHeight:500,getBoundingClientRect:()=>({top:100})};

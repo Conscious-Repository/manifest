@@ -256,3 +256,16 @@ func TestWorkspaceViewSurvivesRestart(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestSeenMarkersSurviveRestart(t *testing.T) {
+	root := t.TempDir()
+	value := json.RawMessage(`{"seen":{"terminal:codex/one":{"marker":"offset-20","at":42}}}`)
+	saved, err := New(root).Write("inbox", "seen", 0, value)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := New(root).Read("inbox", "seen")
+	if err != nil || !bytes.Equal(got.Value, saved.Value) {
+		t.Fatal(got, err)
+	}
+}

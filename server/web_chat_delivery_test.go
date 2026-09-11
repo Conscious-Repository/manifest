@@ -110,7 +110,7 @@ func TestChatAttentionAndPriorityUI(t *testing.T) {
 	if err != nil {
 		t.Skip("node unavailable")
 	}
-	for _, fixture := range []string{"chat-attention.cjs", "chat-priority.cjs"} {
+	for _, fixture := range []string{"chat-attention.cjs", "chat-priority.cjs", "chat-seen.cjs"} {
 		t.Run(fixture, func(t *testing.T) {
 			if out, err := exec.Command(node, "testdata/"+fixture).CombinedOutput(); err != nil {
 				t.Fatalf("%v\n%s", err, out)

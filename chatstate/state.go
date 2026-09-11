@@ -36,7 +36,7 @@ type Store struct {
 
 func New(root string) *Store { return &Store{root: root} }
 func valid(key, slot string) bool {
-	return (key == "inbox" && (slot == "pins" || slot == "workstreams" || slot == "lifecycle")) || (keyRE.MatchString(key) && (slot == "draft" || slot == "view" || slot == "workspace" || slot == "deliveries")) || (landingKeyRE.MatchString(key) && (slot == "draft" || slot == "deliveries")) || ((artifactKeyRE.MatchString(key) || projectKeyRE.MatchString(key)) && slot == "edit")
+	return (key == "inbox" && (slot == "pins" || slot == "workstreams" || slot == "lifecycle" || slot == "seen")) || (keyRE.MatchString(key) && (slot == "draft" || slot == "view" || slot == "workspace" || slot == "deliveries")) || (landingKeyRE.MatchString(key) && (slot == "draft" || slot == "deliveries")) || ((artifactKeyRE.MatchString(key) || projectKeyRE.MatchString(key)) && slot == "edit")
 }
 func (s *Store) path(key, slot string) string { return filepath.Join(s.root, key+"-"+slot+".json") }
 

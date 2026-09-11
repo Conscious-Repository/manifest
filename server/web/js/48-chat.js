@@ -105,6 +105,7 @@ function chatMountHeader(head) {
   if(head && typeof chatWorkspaceHeader === "function")chatWorkspaceHeader(head);
   slot.replaceChildren(...(head ? [head] : []));
   slot.hidden = !head;
+  if(head)queueMicrotask(()=>chatMarkViewed());
 }
 const chatDrafts = new Map();
 let chatDraftKey = "";
@@ -468,7 +469,7 @@ async function loadChatRoster() {
 // Load conversation summaries together so the inbox can sort across agents.
 async function loadChatSessions() {
   const agents = chatRoster.filter(a => !chatIsTerm(a.name)).map(a => a.name);
-  await Promise.all([chatLoadPins(),chatLoadLifecycle(),chatLoadWorkstreams(),chatLoadReviewStatus(),...["", ...agents].map(async agent => {
+  await Promise.all([chatLoadPins(),chatLoadLifecycle(),chatLoadWorkstreams(),chatLoadReviewStatus(),chatLoadSeen(),...["", ...agents].map(async agent => {
     try {
       const res = await fetch(chatBaseFor(agent));
       if (!res.ok) return; // retain the last good directory during an outage
@@ -520,6 +521,19 @@ function renderChatHeadActions() {
 let chatPendingProject = "";
 let chatSearchQuery = "";
 let chatInboxFilter = "all";
+let chatSeen={},chatSeenRevision=-1;
+const chatSeenPending=new Set();
+function chatActivityMarker(session){return JSON.stringify([session.updated||'',session.activityOffset||0,session.run?.evidence||'',session.turns||0]);}
+async function chatLoadSeen(){try{const r=await fetch('/api/chat/state/inbox/seen',{cache:'no-store'});if(r.ok){const s=await r.json();if(s.revision>=chatSeenRevision){chatSeenRevision=s.revision;chatSeen=s.value?.seen||{};}}}catch(e){}}
+async function chatMarkViewed(){
+ const host=document.getElementById('chatTranscript');if(document.hidden||!host?.clientHeight||host.scrollHeight-host.scrollTop-host.clientHeight>80||chatIsPortal())return;
+ const terminal=chatIsTerm(),session=terminal?chatTermFind(chatOpenId):chatCurSession;
+ if(!session||session.id!==chatOpenId)return;const key=chatInboxKey({terminal,agent:chatAgent,session}),marker=chatActivityMarker(session),at=Date.now();
+ if(chatSeen[key]?.marker===marker||chatSeenPending.has(key))return;chatSeenPending.add(key);
+ try{for(let n=0;n<3;n++){const r=await fetch('/api/chat/state/inbox/seen',{cache:'no-store'});if(!r.ok)return;const state=await r.json();if((state.value?.seen?.[key]?.at||0)>at)return;
+ const seen={...state.value?.seen,[key]:{marker,at}},saved=await fetch('/api/chat/state/inbox/seen',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({revision:state.revision,value:{...state.value,seen}})});if(saved.status===409)continue;if(!saved.ok)return;const result=await saved.json();if(result.revision>=chatSeenRevision){chatSeenRevision=result.revision;chatSeen=result.value?.seen||{};document.querySelectorAll("#chatInboxRows .chat-rail-row").forEach(row=>{if(row.dataset.inboxKey===key&&row.dataset.activity===marker){row.dataset.unread="false";row.querySelector(".chat-unread")?.remove();}});}return;
+ }}catch(e){}finally{chatSeenPending.delete(key);}
+}
 let chatPins={};
 let chatPinsRevision=-1;
 const chatPinURL="/api/chat/state/inbox/pins";
@@ -772,6 +786,7 @@ function renderChatInboxRows() {
     if (meta) meta.prepend(el("span", "chat-inbox-agent", entry.terminal ? chatTermKinds[entry.agent] : entry.agent ? chatAgentLabel(entry.agent) : entry.session.spirit || "Spirits"));
     const key=chatInboxKey(entry),pinned=chatPins[key]===true;
     const state=chatEntryState(entry);row.dataset.execution=state.execution;
+    const changed=chatSeen[key]&&chatSeen[key].marker!==chatActivityMarker(entry.session);if(changed&&meta)meta.prepend(el("span","chat-unread","new"));row.dataset.unread=String(!!changed);row.dataset.inboxKey=key;row.dataset.activity=chatActivityMarker(entry.session);
     if(meta){const status=el('span','chat-row-state',state.label);status.title=entry.terminal?'Live runtime observation; a process being idle is not proof of a completed run.':'Status from the current session and its durable delivery receipt.';meta.prepend(status);
      if(state.review.ready||state.review.changes){status.classList.add('chat-row-attention');status.textContent=(state.review.changes?state.review.changes+' need revision':state.review.ready+' ready for review')+' · '+state.label;}
     }
@@ -1451,6 +1466,7 @@ function chatSaveReadingPosition() {
   const saved = chatReadingStates.get(host.dataset.readKey);
   const value = chatReadingAnchor(host);
   if (saved && value) saved.set(value);
+  chatMarkViewed();
 }
 function chatRestoreReadingPosition(host, value) {
   if (!value || value.following !== false || typeof value.turn !== "string") return false;
@@ -2501,7 +2517,7 @@ async function loadChatTermSession(id) {
   await chatPrepareReadingPosition(d.conversation);
   if (id !== chatOpenId || !chatIsTerm()) return;
   se = chatTermApplyState(chatTermFind(id) || se);
-  se.run=d.run||null;
+  se.run=d.run||null;se.activityOffset=d.offset||0;
   // the other backends' channels have nothing to say here
   if (chatPollTimer) { clearInterval(chatPollTimer); chatPollTimer = null; }
   if (chatES) { chatES.close(); chatES = null; chatESFor = ""; }
@@ -2941,7 +2957,7 @@ async function chatTermTail(o) {
   let d;
   try { d = await (await fetch(chatTermBase(o.id) + "/transcript?after=" + o.offset)).json(); } catch (e) { return; }
   if (chatTermOpen !== o) return;
-  const runChanged=JSON.stringify(o.se.run||null)!==JSON.stringify(d.run||null);o.se.run=d.run||null;const listed=chatTermFind(o.id);if(listed)listed.run=o.se.run;if(runChanged&&!document.querySelector('.chat-row-menu[open]'))renderChatInboxRows();
+  const runChanged=JSON.stringify(o.se.run||null)!==JSON.stringify(d.run||null);o.se.run=d.run||null;const listed=chatTermFind(o.id);if(listed){listed.run=o.se.run;listed.activityOffset=d.offset||0;}if(runChanged&&!document.querySelector('.chat-row-menu[open]'))renderChatInboxRows();
   const planningChanged=JSON.stringify([o.planningTimeline,o.planningOperations,o.planRevisions||{},o.proposals||[]])!==JSON.stringify([d.planningTimeline,d.planningOperations,d.planRevisions||{},d.proposals||[]]);
   o.planningTimeline=d.planningTimeline;
   o.planningOperations=d.planningOperations;
