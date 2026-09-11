@@ -685,11 +685,14 @@ a.rec-place-name:hover { text-decoration: underline; }
 .rec-funnel-count { font-family: var(--mono); font-size: var(--fs-2xs); color: var(--base-50); }
 .rec-funnel-arrow { align-self: center; color: var(--base-40); font-size: var(--fs-sm); }
 /* archived is a quiet note at the end of the line, never a card */
-.rec-funnel-hist { align-self: center; flex: 0 0 auto; margin-left: auto; padding-left: var(--sp-3); font-size: var(--fs-xs); color: var(--base-50); white-space: nowrap; }
-.rec-funnel-hist:hover, .rec-funnel-hist.on { color: var(--base-100); }
+/* the archive as a quiet note beside HISTORY — that chip IS the archived
+   cut, so the two numbers (here · in Ashby) belong next to it, right-aligned
+   on that row, and the funnel keeps its full width for the stage names */
+.rec-archived-note { margin-left: auto; align-self: center; font-size: var(--fs-xs); color: var(--base-50); white-space: nowrap; }
+.rec-archived-note:hover, .rec-archived-note.on { color: var(--base-100); }
 @media (max-width: 860px) {
   .rec-funnel { flex-wrap: wrap; overflow-x: visible; }
   .rec-funnel-stage { min-width: 0; flex: 1 1 40%; }
   .rec-funnel-arrow { display: none; }
-  .rec-funnel-hist { margin-left: 0; flex-basis: 100%; }
+  .rec-archived-note { margin-left: 0; flex-basis: 100%; }
 }
