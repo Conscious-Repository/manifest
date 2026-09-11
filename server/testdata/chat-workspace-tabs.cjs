@@ -139,6 +139,21 @@ const {chromium}=require('playwright'),fs=require('fs'),path=require('path'),ass
  await p.waitForFunction(()=>{const strip=document.querySelector('.chat-workspace-tabs').getBoundingClientRect(),tab=document.querySelector('[role=tab][aria-selected=true]').getBoundingClientRect();return tab.left>=strip.left&&tab.right<=strip.right;});
  await p.screenshot({path:'/tmp/manifest-workbench-context-phone.png'});
  assert.equal(await p.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);
+ await p.evaluate(()=>{
+  const prior=fetch;window.fileQueries=[];window.fetch=async(url,opts)=>{if(url.startsWith('/api/artifacts?')){fileQueries.push(url);return {ok:true,json:async()=>({artifacts:[{id:'plan',title:'Standalone result',ref:'reports/result.md',head:'a'.repeat(64),kind:'report',revisions:[{n:1}]}]})};}return prior(url,opts);};chatOpenFiles();
+ });
+ await p.getByRole('button',{name:'Standalone result',exact:true}).waitFor();
+ assert.ok((await p.evaluate(()=>fileQueries[0])).includes('conversation_id=abcdef12'));
+ await p.getByLabel('Filter files').fill('result');
+ await p.evaluate(async()=>{chatWorkspaceTabs.close();await Promise.all([...chatWorkspaceStates.values()].map(s=>s.flush()));chatWorkspaceStates.clear();await chatRestoreWorkspace();});
+ await p.getByRole('button',{name:'Standalone result',exact:true}).waitFor();
+ assert.equal(await p.getByLabel('Filter files').inputValue(),'result');
+ await p.evaluate(()=>{window.fileOriginalOpen=chatOpenWorkingArtifact;chatOpenWorkingArtifact=ref=>window.fileOpened=ref;});
+ await p.getByRole('button',{name:'Standalone result',exact:true}).click();assert.equal(await p.evaluate(()=>fileOpened.revision),'a'.repeat(64));await p.evaluate(()=>chatOpenWorkingArtifact=fileOriginalOpen);
+ await p.getByLabel('Filter files').fill('missing');await p.getByText('No matching files.',{exact:true}).waitFor();
+ await p.getByLabel('Filter files').fill('');
+ assert.equal(await p.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);
+ await p.screenshot({path:'/tmp/manifest-workbench-files-phone.png'});
  assert.deepEqual(errors,[]);
  console.log('PASS: real artifact draft survives pane and tab switches, scoped model defaults, keyboard tabs, mobile return, route disposal.');
 }finally{await b.close()}})().catch(e=>{console.error(e);process.exit(1)});

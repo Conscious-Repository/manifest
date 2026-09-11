@@ -26,6 +26,7 @@ async function chatRestoreWorkspace(){
   else if(tab.spec?.kind==='side'&&/^#\/chat\//.test(tab.spec.route||''))w.tab(tab.key,'Side chat',host=>chatMountSideFrame(host,tab.spec),tab.spec);
   else if(tab.spec?.kind==='activity')chatOpenActivity();
   else if(tab.spec?.kind==='context')chatOpenContext();
+  else if(tab.spec?.kind==='files')chatOpenFiles();
   else if(tab.spec?.kind==='project'&&chatWorkstreams.groups[tab.spec.id])chatEditProject(tab.spec.id);
   const opened=w.entries.get(tab.key);if(opened?.api?.restoreView&&tab.view)opened.restoreView=tab.view;
  }
@@ -120,6 +121,7 @@ function chatEnsureWorkspace(restoring=false){
 function chatWorkspaceChooser(host){
  const source=chatWorkspaceSource(),chooser=el('div','chat-workspace-chooser');
  const action=(name,description,icon,fn)=>{const b=el('button','chat-workspace-option');b.title=description;b.append(chatWorkspaceIcon(icon),el('span','',name));b.onclick=fn;chooser.append(b);};
+ if(source)action('Files','Browse outputs and referenced files','file',()=>chatOpenFiles());
  if(source)action('Activity','Inspect recorded instructions, narration and tool output','review',()=>chatOpenActivity());
  const project=chatCurrentProject();
  if(source)action('Context','Inspect recorded inputs and project instructions','folder',()=>chatOpenContext());
@@ -402,4 +404,41 @@ function chatOpenContext(){
   window.addEventListener('chat-workbench-activity',render);render();
   return {element:pane,close:()=>{closed=true;window.removeEventListener('chat-workbench-activity',render);pane.remove();drop();},getView:()=>({selected,scrollTop:body.scrollTop,instructionOpen:body.querySelector('.chat-context-instruction')?.open||false}),restoreView:async view=>{if(!host.isConnected||!host.clientHeight)return false;selected=view.selected||null;instructionOpen=!!view.instructionOpen;render();body.scrollTop=Math.max(0,Number(view.scrollTop)||0);return true;}};
  },{kind:'context'});
+}
+
+function chatOpenFiles(){
+ if(chatIsPortal())return;
+ const source=chatWorkspaceSource();if(!source)return;
+ return chatEnsureWorkspace().tab('files','Files',(host,drop)=>{
+  const pane=el('section','chat-files-inspector'),toolbar=el('div','chat-files-toolbar'),search=document.createElement('input'),refresh=el('button','sprt-quiet','refresh'),status=el('p','chat-workspace-hint'),list=el('div','chat-files-list');
+  search.type='search';search.placeholder='Filter files';search.setAttribute('aria-label','Filter files');list.tabIndex=0;status.setAttribute('role','status');toolbar.append(search,refresh);pane.append(toolbar,status,list);host.append(pane);
+  let rows=[],closed=false,pending=null,ready=Promise.resolve();
+  const render=()=>{
+   const scroll=list.scrollTop;list.replaceChildren();const q=search.value.trim().toLowerCase();
+   for(const {artifact:a,roles} of rows){
+    if(q&&![a.title,a.ref,a.kind].join(' ').toLowerCase().includes(q))continue;
+    const item=el('div','chat-file-row'),open=el('button','chat-file-open',a.title||a.ref||'Untitled file');open.disabled=!!a.unknown||!a.id;
+    open.onclick=()=>chatOpenWorkingArtifact({id:a.id,revision:a.head,task:source.task});
+    const metadata=[...roles,a.kind,a.revisions?.length?'v'+a.revisions.length:'',a.provenance?.run?'Run '+a.provenance.run:''].filter(Boolean);
+    item.append(open,el('div','chat-file-meta',metadata.join(' · ')));if(a.ref)item.append(el('div','chat-file-path',a.ref));list.append(item);
+   }
+   if(!list.childElementCount)list.append(emptyRow(rows.length?'No matching files.':'No registered files for this conversation yet.'));
+   list.scrollTop=scroll;
+  };
+  const load=async()=>{
+   pending?.abort();const controller=new AbortController();pending=controller;refresh.disabled=true;status.textContent='loading…';
+   try{
+    const query=new URLSearchParams({conversation_backend:source.backend==='terminal'?'terminal':'agent',conversation_agent:source.agent,conversation_id:source.id});
+    const get=async url=>{const r=await fetch(url,{signal:controller.signal,cache:'no-store'});if(!r.ok)throw Error('Files could not be loaded. Refresh to retry.');return r.json();};
+    const [scope,task]=await Promise.all([get('/api/artifacts?'+query),source.task?get('/api/tasks/panel?id='+encodeURIComponent(source.task)):Promise.resolve(null)]);
+    if(closed||pending!==controller)return;
+    const found=new Map();const add=(a,role)=>{const key=a.id||a.ref;if(!key)return;const row=found.get(key)||{artifact:a,roles:[]};if(!row.roles.includes(role))row.roles.push(role);found.set(key,row);};
+    for(const a of scope.artifacts||[])add(a,'Conversation output');for(const a of task?.artifacts?.outputs||[])add(a,'Task output');for(const a of task?.artifacts?.inputs||[])add(a,'Task input');
+    rows=[...found.values()];status.textContent=rows.length+' file'+(rows.length===1?'':'s');render();
+   }catch(e){if(!closed&&pending===controller&&e.name!=='AbortError')status.textContent=e.message;}
+   finally{if(!closed&&pending===controller)refresh.disabled=false;}
+  };
+  search.oninput=render;refresh.onclick=()=>{ready=load();};ready=load();
+  return {element:pane,close:()=>{closed=true;pending?.abort();pane.remove();drop();},getView:()=>({query:search.value,scrollTop:list.scrollTop}),restoreView:async view=>{await ready;if(!host.isConnected||!host.clientHeight)return false;search.value=typeof view.query==='string'?view.query:'';render();list.scrollTop=Math.max(0,Number(view.scrollTop)||0);return true;}};
+ },{kind:'files'});
 }

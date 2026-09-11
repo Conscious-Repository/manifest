@@ -251,6 +251,27 @@ func (s *Server) handleArtifactsList(w http.ResponseWriter, r *http.Request) {
 		Run: strings.TrimSpace(q.Get("run")), Harness: strings.TrimSpace(q.Get("harness")),
 		Ref: strings.TrimSpace(q.Get("ref")),
 	}
+	if q.Has("conversation_backend") || q.Has("conversation_agent") || q.Has("conversation_id") {
+		backend, agent, id := q.Get("conversation_backend"), q.Get("conversation_agent"), q.Get("conversation_id")
+		if agent == "" || id == "" || (backend != "terminal" && backend != "agent") {
+			http.Error(w, "complete conversation identity required", http.StatusBadRequest)
+			return
+		}
+		if backend == "terminal" && s.terminal != nil {
+			if se, ok := s.terminal.find(id); ok && se.Kind == agent {
+				f.Session = s.runtimeArtifactScope(se)
+			}
+		} else if backend == "agent" && s.agentChat != nil {
+			if se, _, _, ok := s.agentChat.store.Get(agent, id); ok {
+				f.Session = privateArtifactScope(se)
+			}
+		}
+		if f.Session == "" {
+			http.Error(w, "conversation not found", http.StatusNotFound)
+			return
+		}
+		w.Header().Set("Cache-Control", "private, no-store")
+	}
 	if f.Harness != "" { // a tag on the wire names the primary
 		if h := s.findHarness(f.Harness); h != nil {
 			f.Harness = h.Name

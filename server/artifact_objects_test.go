@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"manifest/agentchat"
 	"manifest/artifacts"
 	"manifest/ledger"
 	"manifest/spirits"
@@ -354,4 +355,57 @@ func TestArtifactsWithoutRegistry(t *testing.T) {
 func jsonString(s string) string {
 	b, _ := json.Marshal(s)
 	return string(b)
+}
+
+func TestArtifactConversationListIsExactAndContinuationAware(t *testing.T) {
+	s, _, _ := artifactFixture(t)
+	s.terminal = &termCfg{regPath: filepath.Join(t.TempDir(), "terminals.json")}
+	source := termSession{ID: "aaaabbbbccccdddd", Kind: "codex", Backend: "herdr"}
+	s.terminal.upsert(source)
+	for _, scope := range []string{s.runtimeArtifactScope(source), "other-conversation"} {
+		_, err := s.artifactReg.Put(artifacts.Put{Kind: artifacts.KindReport, Title: "Same title", Ref: scope + ".md", Content: []byte(scope), Provenance: artifacts.Provenance{Session: scope}})
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	child := termSession{ID: "eeeeffffaaaabbbb", Kind: "claude", Backend: "herdr", Origin: &agentchat.Origin{Mode: "continue", Backend: "terminal", Agent: "codex", ID: source.ID}}
+	s.terminal.upsert(child)
+	childCode, childOut := artifactsDo(t, s, "GET", "/api/artifacts?conversation_backend=terminal&conversation_agent=claude&conversation_id="+child.ID, "")
+	if childCode != 200 || childOut["count"] != float64(1) {
+		t.Fatal(childCode, childOut)
+	}
+	endpoint := "/api/artifacts?conversation_backend=terminal&conversation_agent=codex&conversation_id=" + source.ID
+	code, out := artifactsDo(t, s, "GET", endpoint, "")
+	if code != 200 || out["count"] != float64(1) {
+		t.Fatal(code, out)
+	}
+	for _, query := range []string{"conversation_id=" + source.ID, "conversation_backend=terminal&conversation_agent=claude&conversation_id=" + source.ID, "conversation_backend=terminal&conversation_agent=codex&conversation_id=unknown"} {
+		code, out = artifactsDo(t, s, "GET", "/api/artifacts?"+query, "")
+		if code != 400 && code != 404 {
+			t.Fatal("invalid identity listed unrelated artifacts", code, out)
+		}
+	}
+}
+
+func TestArtifactConversationListAgentScope(t *testing.T) {
+	s, st, _ := agentChatFixture(t, echoStub)
+	ws, _ := workspaceFixture(t)
+	s.artifactReg = ws.artifactReg
+	id, err := st.Create("alfred", "", "Standalone", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, _, _, ok := st.Get("alfred", id)
+	if !ok {
+		t.Fatal("missing fixture")
+	}
+	for _, scope := range []string{privateArtifactScope(session), "unrelated"} {
+		if _, err = s.artifactReg.Put(artifacts.Put{Kind: artifacts.KindReport, Ref: scope + ".md", Content: []byte(scope), Provenance: artifacts.Provenance{Session: scope}}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	code, out := artifactsDo(t, s, "GET", "/api/artifacts?conversation_backend=agent&conversation_agent=alfred&conversation_id="+id, "")
+	if code != 200 || out["count"] != float64(1) {
+		t.Fatal(code, out)
+	}
 }

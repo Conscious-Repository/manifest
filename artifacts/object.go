@@ -367,6 +367,7 @@ func (r *Registry) Content(hash string) ([]byte, error) {
 
 // Filter narrows List; every set field must match.
 type Filter struct {
+	Session string // Provenance.Session
 	Kind    string
 	Task    string // Provenance.Task
 	Run     string // Provenance.Run
@@ -375,6 +376,9 @@ type Filter struct {
 }
 
 func (f Filter) matches(a Artifact) bool {
+	if f.Session != "" && a.Provenance.Session != f.Session {
+		return false
+	}
 	if f.Kind != "" && a.Kind != f.Kind {
 		return false
 	}
