@@ -674,23 +674,24 @@ function artifactReviewControls(artifact,revision,number,onDiscuss){
  const actions=el('div','form-actions'),save=el('button','','record decision');actions.append(save);form.append(choice,note,range,actions,el('p','artifact-review-help',onDiscuss?'Records your review. A change request is placed in the composer for you to send.':'Records your review of this version. No message is sent.'));
  const history=el('div','artifact-review-history');host.append(history);let snapshot=null,recorded=false;
  const endpoint='/api/artifacts/reviews?id='+encodeURIComponent(artifact.id)+'&revision='+encodeURIComponent(revision),storage='manifest.artifactReview.v1.'+artifact.id+'.'+revision;
- try{const draft=JSON.parse(localStorage.getItem(storage)||'null');if(draft){choice.value=draft.state;note.value=draft.note||'';start.value=draft.start||'';end.value=draft.end||'';}}catch(e){}
- const clearPending=()=>{try{localStorage.removeItem(storage);}catch(e){}};
+ try{const draft=JSON.parse(localStorage.getItem(storage+'.draft')||localStorage.getItem(storage)||'null');if(draft){choice.value=draft.state;note.value=draft.note||'';start.value=draft.start||'';end.value=draft.end||'';}}catch(e){}
+ const clearPending=()=>{try{localStorage.removeItem(storage);localStorage.removeItem(storage+'.draft');}catch(e){}};
  const label=value=>({not_requested:'Not reviewed',ready_for_review:'Ready for review',accepted:'Accepted',changes_requested:'Changes requested',comment:'Comment'})[value]||value;
  const show=value=>{if(!value||value.revision!==revision||typeof value.record_version!=='string'||!Array.isArray(value.entries))throw Error('Invalid review response; reload before continuing.');snapshot=value;state.textContent=label(value.state)+' · version '+number;summary.textContent='Review · '+label(value.state);history.replaceChildren();
-  for(const item of value.entries.filter(e=>e.revision===revision).slice().reverse()){const row=el('div','artifact-review-entry');row.append(el('small','',label(item.state)+' · '+new Date(item.at).toLocaleString()+(item.start?' · lines '+item.start+'–'+item.end:'')));if(item.note)row.append(el('p','',item.note));history.append(row);}
+  for(const item of value.entries.filter(e=>e.revision===revision).slice().reverse()){const row=el('div','artifact-review-entry');row.append(el('small','',label(item.state)+' · '+new Date(item.at).toLocaleString()+(item.start?' · '+(/\.diff$/i.test(artifact.ref||'')?'snapshot lines ':'lines ')+item.start+'–'+item.end:'')));if(item.note)row.append(el('p','',item.note));history.append(row);}
  };
  const load=async()=>{save.disabled=true;try{const r=await fetch(endpoint,{cache:'no-store'});if(!r.ok)throw Error('Reviews could not be loaded.');show(await r.json());}catch(e){state.textContent=e.message;}finally{save.disabled=!snapshot;}};
- const changed=()=>{recorded=false;save.disabled=!snapshot;save.textContent=choice.value==='changes_requested'&&onDiscuss?'record and draft request':'record decision';};choice.onchange=note.oninput=start.oninput=end.oninput=changed;
+ const changed=()=>{try{localStorage.setItem(storage+'.draft',JSON.stringify({state:choice.value,note:note.value,start:Number(start.value)||0,end:Number(end.value||start.value)||0}));}catch(e){}recorded=false;save.disabled=!snapshot;save.textContent=choice.value==='changes_requested'&&onDiscuss?'record and draft request':'record decision';};choice.onchange=note.oninput=start.oninput=end.oninput=changed;
  save.onclick=async()=>{if(!snapshot||recorded)return;if(['changes_requested','comment'].includes(choice.value)&&!note.value.trim()){note.focus();return;}
   const content={state:choice.value,note:note.value,start:Number(start.value)||0,end:Number(end.value||start.value)||0};let request={...content,request_id:crypto.randomUUID(),record_version:snapshot.record_version};
   try{const previous=JSON.parse(localStorage.getItem(storage)||'null');if(previous&&['state','note','start','end'].every(k=>previous[k]===content[k]))request=previous;localStorage.setItem(storage,JSON.stringify(request));}catch(e){}
   save.disabled=true;try{const r=await fetch(endpoint,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(request)});
    if(r.status===409){show(await r.json());clearPending();throw Error('Review changed elsewhere. Check the history, then record your decision again.');}
-   if(!r.ok)throw Error(await r.text());const result=await r.json();if(!result.entries?.some(e=>e.id===request.request_id&&e.revision===revision&&e.state===content.state&&(e.note||'')===content.note&&(e.start||0)===content.start&&(e.end||0)===content.end))throw Error('Review acknowledgement is incomplete. Retry uses the same decision ID.');show(result);clearPending();recorded=true;save.textContent='recorded';window.dispatchEvent(new CustomEvent('artifact-review-recorded',{detail:{id:artifact.id,revision}}));
-   if(host.isConnected&&content.state==='changes_requested'&&onDiscuss)onDiscuss({id:artifact.id,revision,title:artifact.title||'Artifact',version:number,reviewNote:content.note,reviewStart:content.start,reviewEnd:content.end});
+   if(!r.ok)throw Error(await r.text());const result=await r.json();if(!result.entries?.some(e=>e.id===request.request_id&&e.revision===revision&&e.state===content.state&&(e.note||'')===content.note&&(e.start||0)===content.start&&(e.end||0)===content.end))throw Error('Review acknowledgement is incomplete. Retry uses the same decision ID.');show(result);recorded=choice.value===content.state&&note.value===content.note&&(Number(start.value)||0)===content.start&&(Number(end.value||start.value)||0)===content.end;if(recorded)clearPending();else{try{localStorage.removeItem(storage);}catch(e){}}save.textContent=recorded?'recorded':'record and draft request';window.dispatchEvent(new CustomEvent('artifact-review-recorded',{detail:{id:artifact.id,revision}}));
+   if(host.isConnected&&content.state==='changes_requested'&&onDiscuss)onDiscuss({id:artifact.id,revision,title:artifact.title||'Artifact',version:number,reviewNote:content.note,reviewStart:content.start,reviewEnd:content.end,reviewLineKind:/\.diff$/i.test(artifact.ref||'')?'snapshot':'file'});
   }catch(e){state.textContent=e.message||'Review not confirmed. Retry uses the same decision ID.';}finally{save.disabled=!snapshot||recorded;}
  };
+ host.prepareChange=context=>{choice.value='changes_requested';start.value=context.start;end.value=context.end;note.value=(note.value.trim()?note.value+'\n\n':'')+'File: '+context.path+'\n';host.open=true;changed();note.focus();note.setSelectionRange(note.value.length,note.value.length);};
  load();return host;
 }
 
@@ -765,13 +766,14 @@ function artifactWorkspace(mount, options) {
     const ext = (current.ref || "").split(".").pop().toLowerCase();
     const contentURL = "/api/artifacts/content?id="+encodeURIComponent(current.id)+"&rev="+encodeURIComponent(selected);
     const binary = ["pdf", "png", "jpg", "jpeg", "gif", "webp"].includes(ext);
+    const reviewControls=opts.review?artifactReviewControls(current,selected,selectedNumber,binary?null:opts.onDiscuss):null;
     if (binary) {
       const media = document.createElement(ext === "pdf" ? "iframe" : "img");
       media.src = contentURL; media.title = title.textContent; media.alt = title.textContent;
       body.append(media);
       notice.textContent = "Preview only. This file has not been sent to the agent.";
     } else if(ext==="diff"){
-      body.append(artifactWorkingChangesView(current.content||""));
+      body.append(artifactWorkingChangesView(current.content||"",reviewControls?context=>reviewControls.prepareChange(context):null));
     } else if(ext && !['md','markdown','mdown'].includes(ext)) {
       const source=el('pre','artifact-source-preview');source.append(el('code','',current.content||''));body.append(source);
     } else {
@@ -781,7 +783,7 @@ function artifactWorkspace(mount, options) {
     const download = el("a", "sprt-quiet", "Open file ↗");
     download.href = contentURL; download.target = "_blank"; download.rel = "noopener";
     controls.append(download);
-    if(opts.review)body.prepend(artifactReviewControls(current,selected,selectedNumber,binary?null:opts.onDiscuss));
+    if(reviewControls)body.prepend(reviewControls);
     const previous=current.revisions.find(r=>r.n===selectedNumber-1);
     if(previous&&!binary){
       const compare=el("button","sprt-quiet","Compare v"+previous.n);
@@ -899,12 +901,12 @@ function reviewDialog(title,build){
 
 
 // Presentation only: immutable snapshot bytes remain available through Open file.
-function artifactWorkingChangesView(text){
+function artifactWorkingChangesView(text,onReview=null){
  const view=el("div","working-changes-view");
  const marker="\nUntracked files (contents not included):\n",cut=text.indexOf(marker);
  const tracked=cut<0?text:text.slice(0,cut),untracked=cut<0?[]:text.slice(cut+marker.length).trim().split("\n");
  const starts=[...tracked.matchAll(/^diff --git /gm)].map(m=>m.index);
- const files=starts.map((start,i)=>{const content=tracked.slice(start,starts[i+1]??tracked.length);const path=content.match(/^\+\+\+ b\/(.+)$/m)?.[1]||content.match(/^--- a\/(.+)$/m)?.[1]||content.split("\n")[0].replace("diff --git ","");return {path,content};});
+ const files=starts.map((start,i)=>{const content=tracked.slice(start,starts[i+1]??tracked.length);const path=content.match(/^\+\+\+ b\/(.+)$/m)?.[1]||content.match(/^--- a\/(.+)$/m)?.[1]||content.split("\n")[0].replace("diff --git ","");return {path,content,start:tracked.slice(0,start).split("\n").length,end:tracked.slice(0,start+content.trimEnd().length).split("\n").length};});
  view.append(el("p","working-changes-summary",files.length?files.length+" changed "+(files.length===1?"file":"files"):"No tracked changes"));
  if(files.length){
   const tools=el('div','working-file-actions');
@@ -920,7 +922,7 @@ function artifactWorkingChangesView(text){
    const stats=el('span','working-file-stats',state+(binary?' · binary':' · +'+added+' −'+removed));
    heading.append(name,stats);section.append(heading);view.append(section);
    let rendered=false;
-   const render=()=>{if(rendered||!section.open)return;rendered=true;const content=el('pre','working-file-diff');content.tabIndex=0;content.setAttribute('aria-label','Diff for '+file.path);
+   const render=()=>{if(rendered||!section.open)return;rendered=true;if(onReview){const review=el('button','sprt-quiet working-file-review','request changes');review.setAttribute('aria-label','Request changes to '+file.path);review.onclick=()=>onReview({path:file.path,start:file.start,end:file.end});section.append(review);}const content=el('pre','working-file-diff');content.tabIndex=0;content.setAttribute('aria-label','Diff for '+file.path);
     let before=null,after=null;for(const line of file.content.split('\n')){
      const hunk=line.match(/^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@/);
      if(hunk){before=Number(hunk[1]);after=Number(hunk[2]);content.append(artifactDiffLine('context',line,null,null,'working-diff-'));continue;}

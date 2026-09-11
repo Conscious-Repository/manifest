@@ -47,3 +47,11 @@ numbers.
   hunk gutters. Phone review screenshot inspected.
 - No real provider instruction, external action, production deployment, or
   physical-phone test was performed. The complete plan remains in progress.
+
+## File-scoped revision requests
+
+Each expanded file in a working diff offers `request changes`, which selects a change-request review and anchors it to the file's exact line range in the immutable diff snapshot. Notes include the file path; snapshot line numbers are distinguished from source-file line numbers. Nothing is recorded or dispatched until the owner chooses to record the review. Unsent review notes recover locally per artifact revision. A newer note typed during acknowledgement is retained rather than cleared with the older submitted decision.
+
+Artifact discussion now selects the active standalone/native chat context when opened there, instead of requiring a linked task or diverting to task-draft state. The recorded request still only prepares the composer.
+
+Checks: full server suite, subsequent focused CSS/navigation checks, build, Chromium review retry/draft recovery, file-range selection, and workspace/editor regressions. This supplies file-level diff anchoring; arbitrary hunk/line selection, syntax highlighting, and complete live review-to-agent validation remain outstanding.

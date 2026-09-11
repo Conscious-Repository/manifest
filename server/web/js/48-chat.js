@@ -3191,7 +3191,7 @@ function chatChangesButton(runtime){
 }
 function chatOpenWorkingArtifact(spec) {
   const taskID = spec.task || chatTaskID;
-  const key = spec.selectionKey || (taskID ? "task:"+taskID : location.hash);
+  const key = spec.selectionKey || (chatOpenId&&!chatTaskID ? "chat:"+chatAgent+"/"+chatOpenId : taskID ? "task:"+taskID : location.hash);
   const w=chatEnsureWorkspace();
   const tabKey=spec.plan?"plan:"+taskID:"artifact:"+spec.id;
   if(w.entries.has(tabKey)){w.select(tabKey);if(spec.revision||spec.proposal)w.entries.get(tabKey).api?.refresh?.(spec.revision,spec.proposal);return;}
@@ -3205,9 +3205,9 @@ function chatOpenWorkingArtifact(spec) {
     canEdit:spec.plan ? null : a=>/\.(md|txt|json|csv|tsv|yaml|yml|toml|js|jsx|ts|tsx|py|go|html|css|sql|sh|xml|svg)$/i.test(a.ref||"") && a.provenance?.source!=="task-plan",
     saveNotice:spec.plan ? null : "Saved as a new artifact version. Use Discuss this version to ask the agent to apply it to working files.",
     onClose:drop,
-    onDiscuss: (taskID||spec.discuss) && (key.startsWith("task:") || chatRosterEntry(chatAgent)?.durableSend || chatIsTerm()) ? ref=>{
+    onDiscuss: (key.startsWith("chat:")||key.startsWith("task:")) && (key.startsWith("task:") || chatRosterEntry(chatAgent)?.durableSend || chatIsTerm()) ? ref=>{
       chatArtifactSelections.set(key,{...ref,task:taskID,discuss:!!spec.discuss});
-      if(ref.reviewNote){const input=document.querySelector('#chatComposer textarea');if(input){const request='Please revise '+ref.title+' (version '+ref.version+(ref.reviewStart?', lines '+ref.reviewStart+'–'+ref.reviewEnd:'')+'):\n'+ref.reviewNote;input.value=(input.value.trim()?input.value+'\n\n':'')+request;input.dispatchEvent(new Event('input',{bubbles:true}));}}
+      if(ref.reviewNote){const input=document.querySelector('#chatComposer textarea');if(input){const request='Please revise '+ref.title+' (version '+ref.version+(ref.reviewStart?', '+(ref.reviewLineKind==='snapshot'?'snapshot lines ':'lines ')+ref.reviewStart+'–'+ref.reviewEnd:'')+'):\n'+ref.reviewNote;input.value=(input.value.trim()?input.value+'\n\n':'')+request;input.dispatchEvent(new Event('input',{bubbles:true}));}}
       if(key.startsWith("chat:"))chatRenderArtifactContext(taskID,key);
       if(key.startsWith("chat:"))chatCaptureSyncedDraft(key.slice(5));
       else if(key.startsWith("task:"))todoSaveArtifactSelection(taskID);

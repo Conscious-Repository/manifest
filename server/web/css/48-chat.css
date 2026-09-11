@@ -673,3 +673,5 @@ button.chat-attach-chip { min-height: 44px; max-width: 100%; background: transpa
 .working-file-stats { color:var(--muted); font:var(--fs-sm)/1.5 var(--sans); white-space:nowrap; }
 
 .working-file-actions button { min-height:var(--control-touch); font:var(--fs-md) var(--sans); }
+
+.working-file-review { min-height:var(--control-touch); font:var(--fs-md) var(--sans); }
