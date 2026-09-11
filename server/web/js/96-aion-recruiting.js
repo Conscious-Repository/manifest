@@ -168,8 +168,67 @@ function recCandidateContext(c, roleId) {
     stage:terminal ? String(a.status || a.stage).toLowerCase() : "ashby"};
 }
 // Group by the actual ATS stage, not the legacy local scout column.
+// THE FUNNEL (owner, 2026-09-11, from Ashby's pipeline strip): the stages a
+// candidate moves through, in order, as cards with counts that FILTER. Not an
+// overhaul — the lanes below already group by this stage — just the one row
+// that lets you stand at "First Round" and see only those four.
+//
+// Two vocabularies live here on purpose. An applicant's stage is Ashby's
+// official one (Application Review … Hired); a sourced person's is the
+// board's own (new, reviewing, shortlist, intro, outreach, replied). The strip
+// orders both on one line and appends anything it does not know at the end,
+// so a stage that exists is never hidden by a list that forgot it.
+const REC_PIPELINE = ["new", "reviewing", "shortlist", "intro", "outreach", "New Lead", "Reached Out", "replied", "Replied",
+  "Application Review", "Initial Screen", "First Round", "Second Round", "Offer", "Hired"];
+let recStageFilter = ""; // one pipeline stage, or "" for the whole funnel
+
 function recPipelineStage(c) {
   return c.ashbyApplicationId ? (c.ashbyStage || c.ashbyStatus || "Stage unavailable") : c.stage;
+}
+
+function recPipelineIndex(stage) {
+  const i = REC_PIPELINE.indexOf(stage);
+  return i < 0 ? REC_PIPELINE.length : i;
+}
+
+// recFunnel paints the strip over `rows` (the current role × origin × cut,
+// BEFORE the stage filter) so every card's count is what clicking it shows.
+function recFunnel(rows) {
+  const counts = {};
+  rows.forEach((c) => { const st = recPipelineStage(c); counts[st] = (counts[st] || 0) + 1; });
+  // the stages on the strip: every one that has somebody in this view, plus
+  // the applicant pipeline itself so the funnel reads as a funnel — an empty
+  // "Offer" is a fact about the pipeline, not clutter
+  const present = new Set(Object.keys(counts));
+  ["Application Review", "Initial Screen", "First Round", "Second Round", "Offer", "Hired"].forEach((st) => {
+    if (rows.some((c) => !!c.ashbyApplicationId) || present.has(st)) present.add(st);
+  });
+  const stages = [...present].sort((a, b) => recPipelineIndex(a) - recPipelineIndex(b) || a.localeCompare(b));
+  if (recStageFilter && !stages.includes(recStageFilter)) recStageFilter = "";
+
+  const strip = el("div", "rec-funnel");
+  stages.forEach((st, i) => {
+    if (i) strip.append(el("span", "rec-funnel-arrow", "\u2192"));
+    const n = counts[st] || 0;
+    const card = el("button", "rec-funnel-stage" + (recStageFilter === st ? " on" : "") + (n ? "" : " empty"));
+    card.append(el("span", "rec-funnel-name", st));
+    card.append(el("span", "rec-funnel-count", n + (n === 1 ? " candidate" : " candidates")));
+    card.title = recStageFilter === st ? "show every stage" : "show only " + st;
+    card.onclick = () => { recStageFilter = recStageFilter === st ? "" : st; paintBoardBody(); };
+    strip.append(card);
+  });
+  // history sits apart, the way Ashby keeps Archived off the arrow line: it
+  // is where people went, not a step they are at
+  const gap = el("span", "rec-funnel-gap", "");
+  strip.append(gap);
+  const archived = (recCache.candidates || []).filter((c) => recRoleCandidates(c) && !recCandidateActive(c)).length;
+  const hist = el("button", "rec-funnel-stage rec-funnel-archived" + (recCut === "archived" ? " on" : ""));
+  hist.append(el("span", "rec-funnel-name", "Archived"));
+  hist.append(el("span", "rec-funnel-count", archived + (archived === 1 ? " candidate" : " candidates")));
+  hist.title = recCut === "archived" ? "back to the open pipeline" : "the people who left the pipeline";
+  hist.onclick = () => { recCut = recCut === "archived" ? "open" : "archived"; recStageFilter = ""; if (recPaint) recPaint(); };
+  strip.append(hist);
+  return strip;
 }
 function recCurrentRoleID() {
   const r=(recCache.roles || []).find(r=>r.slug===recRole);
@@ -1411,7 +1470,12 @@ function paintBoardBody() {
   // borrow the gate, the stages or the origin cut
   if (recPeopleFacet === "known") { paintConnectors(board, foot); return; }
   const all = recCache.candidates || [];
-  const rows = recReviewCandidates();
+  const base = recReviewCandidates();
+  // the funnel is drawn over the unfiltered cut, then the lanes are filtered
+  // by the stage you are standing at — so a card's count is what its click
+  // will show, and clicking the same card again shows everything
+  if (recPeopleFacet === "considering" && base.length && !recLoadError) board.append(recFunnel(base));
+  const rows = recStageFilter ? base.filter((c) => recPipelineStage(c) === recStageFilter) : base;
 
   // empty vs broken are DIFFERENT states (problem 12): a fetch failure names
   // itself and offers a retry — never a silent empty board.
@@ -1428,6 +1492,8 @@ function paintBoardBody() {
   if (!rows.length) {
     board.append(emptyRow(!all.length
       ? "no candidates yet — paste a link above, or run a source"
+      : recStageFilter
+        ? "nobody at " + recStageFilter + " in this view"
       : recOrigin === "inbound"
         ? "No applicants match this view. Check Recruiting or All candidates."
         : "No candidate matches — the pipeline itself is fine."));
@@ -1462,7 +1528,7 @@ function paintBoardBody() {
     connectors.forEach((p) => board.append(recConnectorRow(p)));
     if (!connectors.length) board.append(emptyRow("No introduction contacts match this view."));
     if (foot) foot.textContent = rows.length + " candidate records · " + connectors.length + " introduction contacts";
-  } else if (foot) foot.textContent = rows.length + " of " + all.length + " · archive is reversible, there is no delete";
+  } else if (foot) foot.textContent = rows.length + " of " + all.length + (recStageFilter ? " · at " + recStageFilter : "") + " · archive is reversible, there is no delete";
 }
 
 // recStateCell — "the state that wants you": ● to triage for an untriaged
@@ -4063,11 +4129,8 @@ function recResumeOutline(raw) {
 
 function recReviewCandidates() {
   const rows = (recCache.candidates || []).filter(recVisible).map(c=>recCandidateContext(c,recCurrentRoleID()));
-  const stages = ["New Lead", "Reached Out", "Replied", "Application Review", "Initial Screen", "First Round", "Second Round", "Offer", "Hired"];
-  return rows.sort((a,b) => {
-    const ai=stages.indexOf(recPipelineStage(a)),bi=stages.indexOf(recPipelineStage(b));
-    return (ai<0 ? stages.length : ai)-(bi<0 ? stages.length : bi) || (a.inbound || "").localeCompare(b.inbound || "");
-  });
+  return rows.sort((a,b) =>
+    recPipelineIndex(recPipelineStage(a)) - recPipelineIndex(recPipelineStage(b)) || (a.inbound || "").localeCompare(b.inbound || ""));
 }
 
 
