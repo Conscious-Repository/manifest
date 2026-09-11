@@ -103,7 +103,7 @@ function chatMountHeader(head) {
     const latest = el("button", "sprt-quiet chat-latest", "Latest ↓");
     latest.title = "Return to the latest output";
     latest.onclick = () => { chatStick = true; chatPin(); chatSaveReadingPosition(); };
-    head.append(latest);
+    (head.querySelector(".chat-details")||head).append(latest);
   }
   slot.replaceChildren(...(head ? [head] : []));
   slot.hidden = !head;
@@ -610,10 +610,16 @@ function renderChatInboxRows() {
     const pin=el("button","sprt-quiet chat-inbox-pin",pinned?"Unpin":"Pin");pin.setAttribute("aria-label",(pinned?"Unpin ":"Pin ")+(entry.session.title||entry.session.name||entry.session.id));pin.setAttribute("aria-pressed",String(pinned));
     pin.onclick=async e=>{e.stopPropagation();pin.disabled=true;try{await chatSetPinned(key,!pinned);renderChatInboxRows();}catch(error){showToast(error.message);}finally{pin.disabled=false;}};
     pin.onkeydown=e=>e.stopPropagation();
-    (row.querySelector(".chat-rail-top")||row).append(pin);
+    const menu=el("details","chat-row-menu");
+    const menuLabel=el("summary","","⋯");menuLabel.setAttribute("aria-label","Conversation actions");
+    menuLabel.onclick=e=>e.stopPropagation();menuLabel.onkeydown=e=>e.stopPropagation();menu.append(menuLabel);
+    const menuBody=el("div","chat-row-menu-body");menuBody.append(pin);
+    row.querySelectorAll(".chat-rail-x").forEach(action=>{action.classList.remove("chat-rail-x");action.textContent=action.textContent==="✎"?"Rename":action.title||action.textContent;menuBody.append(action);});menu.append(menuBody);
+    (row.querySelector(".chat-rail-top")||row).append(menu);
     const group=chatWorkstreamMember(key),workstream=el("button","sprt-quiet chat-workstream-link",group?chatWorkstreams.groups[group]:"Workstream…");
     workstream.setAttribute("aria-label","Change workstream for "+(entry.session.title||entry.session.name||entry.session.id));
-    workstream.onclick=e=>{e.stopPropagation();chatChooseWorkstream(entry);};workstream.onkeydown=e=>e.stopPropagation();(meta||row).append(workstream);
+    workstream.onclick=e=>{e.stopPropagation();chatChooseWorkstream(entry);};workstream.onkeydown=e=>e.stopPropagation();menuBody.append(workstream);
+    if(group&&meta)meta.append(el("span","chat-row-group",chatWorkstreams.groups[group]));
     row.onclick = () => { location.hash = entry.agent ? "#/chat/a/" + encodeURIComponent(entry.agent) + "/" + encodeURIComponent(entry.session.id) : "#/chat/" + encodeURIComponent(entry.session.id); };
     host.append(row);
   });
@@ -638,7 +644,8 @@ function renderChatRail() {
     select.value = chatInboxFilter;
     select.onchange = () => { chatInboxFilter = select.value; renderChatInboxRows(); };
     const workstreams=document.createElement("select");workstreams.id="chatWorkstreamFilter";workstreams.className="chat-inbox-filter";workstreams.setAttribute("aria-label","Filter chats by workstream");workstreams.onchange=()=>{chatWorkstreamFilter=workstreams.value;renderChatInboxRows();};
-    controls.append(search, select, workstreams);
+    const filters=el("div","chat-inbox-filters");filters.append(select,workstreams);
+    controls.append(search, filters);
     host.append(controls, el("div", "chat-inbox-rows"));
     host.lastChild.id = "chatInboxRows";
   }
@@ -1352,8 +1359,8 @@ function chatHead(s) {
   }else if(chatRosterEntry(agent)?.durableSend){
     const recipient=chatRecipients.get(agent+"/"+s.id)||{agent,model:s.model||""};
     const model=recipient.model||chatRosterEntry(recipient.agent)?.model||"";
-    const to=el("button","sprt-quiet chat-head-sub","To "+chatAgentLabel(recipient.agent)+(model?" · "+shortModel(model):""));
-    to.title="Choose who receives your next message";to.onclick=()=>chatChooseRecipient(s);head.append(to);
+    const to=el("button","sprt-quiet chat-head-sub","Agent: "+chatAgentLabel(recipient.agent));
+    to.title="Choose agent and model"+(model?" · "+shortModel(model):"");to.onclick=()=>chatChooseRecipient(s);head.append(to);
     if(recipient.backend==="terminal"){const native=(s.continuations||[]).find(v=>v.id===recipient.id);if(native){head.append(terminalStateDot(native));if(native.cwd)head.append(chatChangesButton(native));}}
   }else head.append(el("span", "sprt-sub chat-head-sub", sub.filter(Boolean).join(" · ")));
   if(["kairos-private","zeck-private"].includes(agent)){
@@ -1372,9 +1379,9 @@ function chatHead(s) {
   const meta = [fmtWhen(s.updated || s.created)];
   if (!portal) meta.push("$" + (s.spentUsd || 0).toFixed(4) + (s.ceilingUsd ? " / $" + s.ceilingUsd.toFixed(2) : ""));
   const info = el("details", "chat-details");
-  info.append(el("summary", "", "Details"), el("div", "chat-head-meta", meta.filter(Boolean).join(" · ")));
+  info.append(el("summary", "", "More"), el("div","chat-detail-title",s.title||s.id), el("div", "chat-head-meta", meta.filter(Boolean).join(" · ")));
   const acts = el("span", "chat-head-acts");
-  const ren = el("button", "sprt-quiet", "✎");
+  const ren = el("button", "sprt-quiet", "Rename");
   ren.title = "rename";
   if (!agent && s.status === "thinking") { ren.disabled = true; ren.title = "rename after the turn finishes"; }
   ren.onclick = () => chatRename(title, s, agent);
@@ -1405,6 +1412,7 @@ function chatHead(s) {
       loadChat();
     } catch (e) { showToast("delete failed"); }
   }));
+  [...head.children].filter(e=>e.tagName==="BUTTON"&&["Share…","Recover sharing","Add coding agent"].includes(e.textContent)).forEach(e=>info.append(e));
   info.append(acts);
   head.append(info);
   return head;
@@ -1414,7 +1422,7 @@ function chatHead(s) {
 // transcript and its scroll position stay.
 function chatRepaintHead() {
   const cur = document.querySelector("#chatThreadHeader .chat-head");
-  if (cur && chatCurSession && !chatHeadRenaming(cur)) chatMountHeader(chatHead(chatCurSession));
+  if (cur && chatCurSession && !chatHeadRenaming(cur) && !cur.querySelector(".chat-details[open]")) chatMountHeader(chatHead(chatCurSession));
 }
 
 // chatHeadRenaming — the head's title is mid-rename (the inline input has
@@ -2313,6 +2321,7 @@ async function loadChatTermSession(id) {
 // chatTermLeave — the stage moved to another section/thread (or the landing):
 // stop the tail, hide the strip.
 function chatTermLeave() {
+  document.querySelector(".chat-main")?.classList.remove("terminal-focus");
   chatTermOpen = null;
   if (chatTermFast) { clearInterval(chatTermFast); chatTermFast = null; }
   const strip = document.getElementById("chatTermStrip");
@@ -2372,14 +2381,14 @@ function chatTermHead(o) {
   const sub = [chatTermKinds[se.kind], se.cwd || "~"];
   if(se.model)sub.push(se.model);
   sub.push(se.backend === "herdr" ? "agent " + terminalStateLabel(se) : (o.live ? "process running" : (se.resumeId || se.started ? "resumable" : "not started")));
-  head.append(terminalStateDot(se));
+  const stateDot=terminalStateDot(se);
   const status = el("span", "sprt-sub chat-head-sub", chatTermKinds[se.kind] + " · " + (se.backend === "herdr" ? terminalStateLabel(se) : o.live ? "running" : "stopped"));
   status.title = sub.join(" · ");
-  head.append(status);
+  head.append(stateDot);
   if(o.sharedConversation){const shared=el("a","sprt-quiet",o.sharedConversation.scope==="team:ooda"?"OODA team conversation":"AION team conversation");shared.href=o.sharedConversation.route;shared.title="This session's history and future messages are shared with the team.";head.append(shared);}
   if(se.backend==="herdr"&&se.origin?.mode!=="continue"&&(chatTermEnabled||chatRoster.some(a=>a.enabled&&a.durableSend))){
     const recipient=chatRecipients.get(se.kind+"/"+se.id);
-    const to=el("button","sprt-quiet chat-head-sub","To "+chatAgentLabel(recipient?.agent||se.kind));
+    const to=el("button","sprt-quiet chat-head-sub","Agent: "+chatAgentLabel(recipient?.agent||se.kind));
     to.onclick=()=>chatChooseTerminalRecipient(o);head.append(to);
     const planning=(o.planningRecipients||[]).find(p=>p.id===recipient?.id&&p.agent===recipient?.agent);
     if(planning?.status==="thinking")head.append(el("span","chat-head-sub",chatAgentLabel(planning.agent)+" is working"));
@@ -2389,13 +2398,13 @@ function chatTermHead(o) {
   const meta = [fmtWhen(se.lastUsed)];
   if (o.cost) meta.push("$" + o.cost.toFixed(2));
   const details = el("details", "chat-details");
-  details.append(el("summary", "", "Details"), el("div", "chat-head-meta", sub.join(" · ") + " · " + meta.join(" · ")));
+  details.append(el("summary", "", "More"), el("div", "chat-detail-title", se.name || se.kind), status, el("div", "chat-head-meta", sub.join(" · ") + " · " + meta.join(" · ")));
   const taskLinks=(o.conversation?.links||[]).filter(link=>link.kind==="task");
   if(taskLinks.length===1) {
     const task=el("a","sprt-quiet","Task ↗");
     task.href=chatTaskThreadHash(taskLinks[0].id);
     task.title="Open the task for this coding session";
-    head.append(task);
+    details.append(task);
   }
   for(const warning of o.conversation?.warnings||[])details.append(el("div","chat-head-meta",warning));
   if(chatRoster.some(a=>a.enabled&&a.durableSend)) {
@@ -2406,16 +2415,26 @@ function chatTermHead(o) {
   }
   for(const item of o.related||[]) {const link=el("a","sprt-quiet",(item.relation==="origin"?"From: ":"Related: ")+item.title);link.href=item.route;details.append(link);}
   const acts = el("span", "chat-head-acts");
-  const ren = el("button", "sprt-quiet", "✎");
+  const ren = el("button", "sprt-quiet", "Rename");
   ren.title = "rename";
   ren.onclick = () => chatTermRename(title, se);
   acts.append(ren);
   const addressed=chatRecipients.get(se.kind+"/"+se.id);
   const selectedRuntime=addressed?.backend==="terminal"?(o.codingRecipients||[]).find(p=>p.id===addressed.id&&p.agent===addressed.agent):null;
-  const raw = el("button", "sprt-quiet", selectedRuntime?"Open "+chatAgentLabel(selectedRuntime.agent)+" terminal ↗":"open in terminal ↗");
+  const raw = el("button", "sprt-quiet", selectedRuntime?"Open "+chatAgentLabel(selectedRuntime.agent)+" in Terminal ↗":"Open in Terminal page ↗");
   raw.title = "the raw pane (xterm) in the Terminal tab";
   raw.onclick = () => chatTermOpenInTerminal(selectedRuntime||se);
-  if(selectedRuntime||se.launchPhase!=="draft")head.append(raw);
+  if(selectedRuntime||se.launchPhase!=="draft") {
+    details.append(raw);
+    const terminal=el("button","sprt-quiet chat-terminal-view",document.querySelector(".chat-main")?.classList.contains("terminal-focus")?"Conversation":se.agentState==="blocked"?"Terminal · needs input":"Terminal");
+    terminal.title="Switch between conversation and full terminal screen";
+    terminal.onclick=()=>{
+      if(selectedRuntime||!o.live){chatTermOpenInTerminal(selectedRuntime||se);return;}
+      const main=document.querySelector(".chat-main"), focused=main.classList.toggle("terminal-focus");
+      const strip=chatTermStripEl();if(strip)strip.open=focused;
+      terminal.textContent=focused?"Conversation":"Terminal";
+    };head.append(terminal);
+  }
   const reviewRuntime=selectedRuntime||se;
   if(!se.device&&reviewRuntime.cwd){
     head.append(chatChangesButton(reviewRuntime));
@@ -2429,7 +2448,7 @@ function chatTermHead(o) {
 
 function chatTermRepaintHead() {
   const cur = document.querySelector("#chatThreadHeader .chat-head");
-  if (cur && chatTermOpen && !chatHeadRenaming(cur)) chatMountHeader(chatTermHead(chatTermOpen));
+  if (cur && chatTermOpen && !chatHeadRenaming(cur) && !cur.querySelector(".chat-details[open]")) chatMountHeader(chatTermHead(chatTermOpen));
 }
 
 function renderChatTermTranscript() {
@@ -2590,12 +2609,12 @@ function chatTermStripEl() {
   const main = document.querySelector(".chat-main");
   const comp = document.getElementById("chatComposer");
   if (!main || !comp) return null;
-  strip = el("div", "chat-term-strip");
+  strip = el("details", "chat-term-strip");
   strip.id = "chatTermStrip";
   strip.hidden = true;
-  const head = el("div", "chat-term-strip-head");
+  const head = el("summary", "chat-term-strip-head");
   head.append(el("span", "micro-label", "Live terminal"));
-  head.append(el("span", "chat-landing-hint", "Use these keys for the prompt below · for Tab / Shift-Tab, open Terminal"));
+  head.append(el("span", "chat-landing-hint", "Expand screen and controls · for Tab / Shift-Tab, open Terminal"));
   const screen = el("pre", "chat-term-screen");
   const keys = el("div", "chat-term-keys");
   chatTermQuickKeys.forEach((label) => {
@@ -2617,7 +2636,7 @@ function chatTermPaintStrip() {
   const strip = chatTermStripEl();
   const o = chatTermOpen;
   if (!strip) return;
-  if (!o || !o.live) { strip.hidden = true; return; }
+  if (!o || !o.live) { strip.hidden = true; document.querySelector(".chat-main")?.classList.remove("terminal-focus"); return; }
   strip.hidden = false;
   const screen = strip.querySelector(".chat-term-screen");
   const follow = screen.scrollHeight - screen.clientHeight - screen.scrollTop < 24;

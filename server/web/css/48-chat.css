@@ -5,8 +5,8 @@
 /* the shell adopts the terminal cockpit's proportions: the shared page gutter
    and a fixed height (set by chatFitShell) so the transcript scrolls inside
    while the composer stays pinned. */
-.chat-shell { display: flex; gap: var(--sp-8); height: calc(100vh - 150px); padding: 0 var(--page-gutter); }
-.chat-rail { width: var(--rail-w); flex: none; display: flex; flex-direction: column; min-height: 0; overflow-y: auto; border-right: 1px solid var(--line); padding-right: var(--sp-7); padding-top: var(--sp-3); }
+.chat-shell { --rail-w: 260px; display: flex; gap: 20px; height: calc(100vh - 150px); padding: 0 var(--page-gutter); }
+.chat-rail { width: var(--rail-w); flex: none; display: flex; flex-direction: column; min-height: 0; overflow-y: auto; border-right: 1px solid var(--line); padding-right: 16px; padding-top: var(--sp-3); }
 .chat-new { width: 100%; height: auto; padding: var(--sp-4) 0; border-radius: var(--radius-lg); margin-bottom: var(--sp-6); flex: none; }
 .chat-spirit-pick { display: flex; flex-wrap: wrap; gap: var(--sp-3); margin: var(--sp-3) 0 var(--sp-5); }
 /* Quiet, separated conversation rows, matching the app lists. */
@@ -312,7 +312,7 @@ button.chat-attach-chip { min-height: 44px; max-width: 100%; background: transpa
 }
 
 /* Conversation inbox: search stays above a single recent-chat list. */
-.chat-inbox-controls { position: sticky; top: 0; z-index: 2; background: var(--surface-panel); padding-bottom: var(--sp-6); display: flex; flex-direction: column; gap: var(--sp-4); }
+.chat-inbox-controls { position: sticky; top: 0; z-index: 2; background: transparent; padding-bottom: 12px; display: flex; flex-direction: column; gap: 8px; }
 .chat-inbox-search, .chat-inbox-filter, .chat-new-picker { box-sizing: border-box; width: 100%; min-height: 40px; border: 1px solid var(--line); border-radius: var(--radius-lg); background: var(--surface-field); color: var(--base-100); font: inherit; padding: var(--sp-4) var(--sp-6); }
 .chat-inbox-filter { color: var(--base-60); }
 .chat-inbox-rows { min-height: 0; }
@@ -412,3 +412,55 @@ button.chat-attach-chip { min-height: 44px; max-width: 100%; background: transpa
 .chat-email-body { font-family: var(--sans); font-size: var(--fs-lg); line-height: 1.6; }
 .chat-email-watch { border-top: 1px solid var(--line); margin-top: var(--sp-7); padding-top: var(--sp-7); overflow-wrap: anywhere; }
 .chat-email-watch summary { min-height: 44px; padding: var(--sp-5) 0; box-sizing: border-box; cursor: pointer; }
+
+/* Conversation first: a quiet list, one-line header, and bounded reading width. */
+.chat-inbox-filters { display: flex; gap: 6px; min-width: 0; }
+.chat-inbox-filters select { flex: 1; min-width: 0; width: 50%; font-size: 12px; padding: 7px; min-height: 36px; }
+.chat-inbox-search { font-family: var(--sans); font-size: 14px; min-height: 40px; }
+.chat-inbox-rows .chat-rail-row { padding: 12px 10px; margin: 2px 0; border-bottom: 0; }
+.chat-inbox-rows .chat-rail-title { font-family: var(--sans); font-size: 14px; font-weight: 500; }
+.chat-inbox-rows .chat-rail-meta { font-size: 11px; margin-top: 5px; }
+.chat-inbox-rows .chat-rail-x { display: none !important; }
+.chat-row-menu { position: relative; flex: none; }
+.chat-row-menu > summary { list-style: none; cursor: pointer; padding: 2px 7px; min-width: 24px; text-align: center; color: var(--base-60); }
+.chat-row-menu > summary::-webkit-details-marker { display: none; }
+.chat-row-menu-body { position: absolute; right: 0; top: 100%; z-index: 8; min-width: 170px; padding: 8px; background: var(--surface-panel); border: 1px solid var(--line); box-shadow: 0 8px 24px #0003; }
+.chat-row-menu-body button { display: block; width: 100%; max-width: none; margin: 0; padding: 8px; text-align: left; min-height: 36px; }
+.chat-row-group { overflow: hidden; text-overflow: ellipsis; }
+.chat-thread-header .chat-head { padding: 12px 8px; gap: 10px; flex-wrap: nowrap; min-height: 56px; box-sizing: border-box; }
+.chat-thread-header .chat-head-title { flex: 1 1 0; white-space: nowrap; max-height: none; overflow: hidden; text-overflow: ellipsis; font-family: var(--sans); font-size: 16px; line-height: 1.5; }
+.chat-thread-header .chat-head > .sprt-quiet { font: 13px var(--sans); min-height: 36px; padding: 6px; }
+.chat-thread-header .chat-details { margin-left: 0; flex: none; position: relative; font-family: var(--sans); }
+.chat-thread-header .chat-details > summary { min-height: 36px; padding: 8px; box-sizing: border-box; }
+.chat-thread-header .chat-details[open] { position: absolute; right: 8px; top: 8px; z-index: 10; width: min(340px,calc(100% - 16px)); max-height: 60vh; padding: 8px 12px; background: var(--surface-panel); border: 1px solid var(--line); box-shadow: 0 8px 24px #0003; }
+.chat-details[open] > :not(summary) { display: block; margin: 8px 0; white-space: normal; overflow-wrap: anywhere; }
+.chat-detail-title { font-size: 14px; font-weight: 600; }
+.chat-main .chat-transcript { padding: 24px max(12px,calc((100% - 780px)/2)); }
+.chat-main .chat-term-out, .chat-main .chat-turn { max-width: 100%; }
+.chat-main .chat-composer { width: min(100%,800px); margin: 12px auto 0; box-sizing: border-box; padding: 12px 16px; border-radius: 14px; }
+.chat-main .chat-composer .chat-input { font: 16px/1.6 var(--sans); min-height: 48px; }
+.chat-main.term .chat-term-strip { margin: 8px 0 0; padding: 8px 12px; max-height: 34%; }
+.chat-term-strip > summary { cursor: pointer; min-height: 36px; }
+.chat-main.terminal-focus #chatTranscript { display: none; }
+.chat-main.terminal-focus .chat-term-strip { flex: 1; max-height: none; min-height: 0; overflow: auto; }
+.chat-main.terminal-focus .chat-term-screen { max-height: none; }
+@media (max-width: 860px) {
+ .chat-shell { gap: 0; }
+ .chat-rail { width: auto; padding-right: 0; }
+ .chat-inbox-rows .chat-rail-row { display: block; max-width: none; }
+ .chat-inbox-filters select { min-height: 44px; font-size: 14px; }
+ .chat-row-menu > summary { min-height: 36px; min-width: 30px; }
+ .chat-row-menu-body button { min-height: 44px; }
+ .chat-thread-header .chat-head { flex-wrap: wrap; gap: 4px 8px; padding: 8px; }
+ .chat-thread-header .chat-head-title { flex: 1 1 calc(100% - 70px); font-size: 15px; }
+ .chat-thread-header .chat-head > .sprt-quiet { min-height: 44px; }
+ .chat-main .chat-transcript { padding: 16px 8px; }
+ .chat-main .chat-composer { margin-top: 8px; padding: 10px; }
+ .chat-main.term .chat-term-strip { max-height: 30%; }
+ .chat-main.terminal-focus .chat-term-strip { max-height: none; }
+}
+.chat-main .chat-term-turns { width: 100%; max-width: 780px; margin: 0 auto; }
+.chat-main:not(.terminal-focus) .chat-term-strip { display: none; }
+.chat-main.terminal-focus .chat-term-strip > summary { display: none; }
+.chat-main.terminal-focus .chat-term-strip { border: 1px solid var(--line); border-radius: 4px; }
+.chat-head .chat-terminal-view { color: var(--base-80); }
