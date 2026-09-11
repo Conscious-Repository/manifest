@@ -674,6 +674,9 @@ func main() {
 		// a linked bank account whose bridge connection needs re-auth, or
 		// that quietly stopped syncing — both page instead of rotting silent
 		emitters = append(emitters, srv.BankFeedAttentionEmitter())
+		// Alfred's cron plane: a silent ticker, a missed fire, an errored
+		// fire — each pages the FEED (excalibur-deprecation H1, 2026-09-11)
+		emitters = append(emitters, srv.HermesCronEmitter())
 		deepseekState := filepath.Join(cfg.DataDir, "portals", "deepseek.state.json")
 		srv.UseDeepseekState(deepseekState)
 		emitters = append(emitters, signals.DegradedPortal(deepseekState))
