@@ -24,6 +24,7 @@ async function chatRestoreWorkspace(){
   else if(tab.spec?.kind==='side-setup'&&tab.spec.source?.id)chatWorkspaceSideSetup(tab.spec.source,{key:tab.key,view:tab.view});
   else if(tab.spec?.kind==='attachment'&&typeof tab.spec.file?.name==='string'&&typeof tab.spec.href==='string'&&tab.spec.href.startsWith('/api/'))chatOpenAttachment(tab.spec.file,tab.spec.href);
   else if(tab.spec?.kind==='side'&&/^#\/chat\//.test(tab.spec.route||''))w.tab(tab.key,'Side chat',host=>chatMountSideFrame(host,tab.spec),tab.spec);
+  else if(tab.spec?.kind==='activity')chatOpenActivity();
   else if(tab.spec?.kind==='project'&&chatWorkstreams.groups[tab.spec.id])chatEditProject(tab.spec.id);
   const opened=w.entries.get(tab.key);if(opened?.api?.restoreView&&tab.view)opened.restoreView=tab.view;
  }
@@ -116,6 +117,7 @@ function chatEnsureWorkspace(restoring=false){
 function chatWorkspaceChooser(host){
  const source=chatWorkspaceSource(),chooser=el('div','chat-workspace-chooser');
  const action=(name,description,icon,fn)=>{const b=el('button','chat-workspace-option');b.title=description;b.append(chatWorkspaceIcon(icon),el('span','',name));b.onclick=fn;chooser.append(b);};
+ if(source)action('Activity','Inspect recorded instructions, narration and tool output','review',()=>chatOpenActivity());
  const project=chatCurrentProject();
  if(project)action('Context','Review project instructions and reference links','folder',()=>chatEditProject(project));
  if(source?.backend==='terminal'){
@@ -297,3 +299,61 @@ function chatWorkbenchShortcut(event){
  event.preventDefault();if(event.code==='KeyX'){target.focus();if(!target.classList.contains('armed'))target.click();return;}if(['KeyF','KeyM'].includes(event.code))target.focus();else target.click();
 }
 document.addEventListener('keydown',chatWorkbenchShortcut);
+
+// Read-only projection of the same authorized transcript used by the center.
+// It subscribes to existing transcript renders; it never starts another poller.
+let chatWorkbenchActivity=null;
+function chatWorkbenchActivityUpdate(turns,operations=[],proposals=[]){
+ if(chatIsPortal())return;
+ const next={key:chatAgent+'/'+chatOpenId,turns,operations,proposals};
+ const signature=JSON.stringify(next);if(chatWorkbenchActivity?.signature===signature)return;
+ chatWorkbenchActivity={...structuredClone(next),signature};
+ window.dispatchEvent(new Event('chat-workbench-activity'));
+}
+function chatActivityRows(data){
+ const rows=[];
+ for(const [i,turn] of (data?.turns||[]).entries()){
+  const id=String(turn.id??turn.n??i),at=turn.ts||turn.at||'';
+  if(turn.who==='user'||turn.who==='system'){
+   rows.push({id:id+':message',kind:turn.who==='user'?'instructions':'narration',title:turn.who==='user'?'Instruction':'System note',text:turn.text||'',at});continue;
+  }
+  for(const [j,b] of chatTurnBlocks(turn).entries()){
+   const kind=b.error?'errors':b.t==='say'||b.t==='think'?'narration':'tools';
+   rows.push({id:id+':'+j,kind,title:b.error?'Failed · '+(b.cast||'tool'):b.t==='say'?'Agent':b.t==='think'?'Thinking':b.cast||'Tool',text:b.text||b.input||'',output:b.result||'',at});
+  }
+ }
+ return rows;
+}
+function chatOpenActivity(){
+ if(chatIsPortal())return;
+ return chatEnsureWorkspace().tab('activity','Activity',(host,drop)=>{
+  const key=chatAgent+'/'+chatOpenId,pane=el('section','chat-activity-inspector');
+  const toolbar=el('div','chat-activity-toolbar'),filter=document.createElement('select'),status=el('span','chat-activity-count');
+  filter.className='pp-in';filter.setAttribute('aria-label','Filter activity');
+  for(const [value,label] of [['all','All activity'],['instructions','Instructions'],['narration','Agent narration'],['tools','Tools and commands'],['errors','Errors'],['approvals','Approvals']]){const option=el('option','',label);option.value=value;filter.append(option);}
+  toolbar.append(filter,status);const list=el('div','chat-activity-list');list.tabIndex=0;list.setAttribute('aria-label','Recorded activity');
+  pane.append(toolbar,list);host.append(pane);let closed=false;const expanded=new Set();
+  const render=()=>{
+   if(closed||!host.isConnected||key!==chatAgent+'/'+chatOpenId)return;
+   const data=chatWorkbenchActivity?.key===key?chatWorkbenchActivity:null,position=list.scrollTop;
+   const rows=chatActivityRows(data).filter(r=>filter.value==='all'||r.kind===filter.value||(filter.value==='tools'&&r.kind==='errors'));
+   list.replaceChildren();status.textContent=rows.length+' event'+(rows.length===1?'':'s');
+   if(filter.value==='approvals'){
+    // Existing cards retain their canonical authorization, confirmation and receipts.
+    for(const operation of data?.operations||[])list.append(manifestOperationCard(operation));
+    appendTaskApprovals(list,{proposals:data?.proposals||[]});
+    status.textContent='';
+   }else for(const row of rows){
+    const item=el('details','chat-activity-event');item.dataset.eventId=row.id;item.open=expanded.has(row.id);if(row.kind==='errors')item.classList.add('has-error');
+    const summary=el('summary',''),title=el('span','chat-activity-event-title',row.title),excerpt=el('span','chat-activity-excerpt',row.text.replace(/\s+/g,' ').slice(0,180));
+    summary.append(title,excerpt);if(row.at)summary.append(el('time','chat-activity-time',typeof fmtWhen==='function'?fmtWhen(row.at):row.at));item.append(summary);
+    if(row.text)item.append(el('pre','chat-activity-text',row.text));if(row.output)item.append(el('pre','chat-activity-text',row.output));
+    item.addEventListener('toggle',()=>{if(!item.isConnected)return;if(item.open)expanded.add(row.id);else expanded.delete(row.id);});list.append(item);
+   }
+   if(!list.childElementCount)list.append(emptyRow(data?'No matching activity.':'Recorded activity is not available yet.'));
+   list.scrollTop=position;
+  };
+  filter.onchange=()=>{list.scrollTop=0;render();};window.addEventListener('chat-workbench-activity',render);render();
+  return {element:pane,close:()=>{closed=true;window.removeEventListener('chat-workbench-activity',render);pane.remove();drop();},getView:()=>{for(const item of list.querySelectorAll('details.chat-activity-event')){if(item.open)expanded.add(item.dataset.eventId);else expanded.delete(item.dataset.eventId);}return {filter:filter.value,scrollTop:list.scrollTop,expanded:[...expanded]};},restoreView:async view=>{if(!host.isConnected||!host.clientHeight)return false;if([...filter.options].some(o=>o.value===view.filter))filter.value=view.filter;expanded.clear();for(const id of view.expanded||[])if(typeof id==='string')expanded.add(id);render();list.scrollTop=Math.max(0,Number(view.scrollTop)||0);return true;}};
+ },{kind:'activity'});
+}

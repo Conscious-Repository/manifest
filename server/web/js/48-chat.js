@@ -1822,6 +1822,7 @@ function renderChatTranscript(d) {
   if(activeTask)s.task=activeTask;
   s.related=d.related||[];s.handoffBody=d.body||"";s.continuations=d.continuations||[];s.sharedFiles=d.sharedFiles||[];
   chatCurSession = s;
+  if(typeof chatWorkbenchActivityUpdate==="function")chatWorkbenchActivityUpdate(d.timeline||parseChatTurns(d.body||""),[...(d.operations||[]),...(d.sharedOperations||[])],d.proposals||[]);
   chatLastUpdated = chatTranscriptSignature(d);
   const who = s.spirit || (s.agent ? chatAgentLabel(s.agent) : "");
   const portal = chatIsPortal();
@@ -2710,6 +2711,7 @@ function chatTermPaintTurns() {
   if (!body || !o) return;
   const previousScroll=host?.scrollTop||0;
   body.innerHTML = "";
+  if(typeof chatWorkbenchActivityUpdate==="function")chatWorkbenchActivityUpdate(o.planningTimeline||o.turns,o.planningOperations||[],o.proposals||[]);
   if(o.planningTimeline)chatPaintTurns(body,o.planningTimeline,null);
   else chatTermPaintLines(body, o.turns);
   for(const operation of o.planningOperations||[])body.append(manifestOperationCard(operation));

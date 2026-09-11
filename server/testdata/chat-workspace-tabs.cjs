@@ -99,6 +99,26 @@ const {chromium}=require('playwright'),fs=require('fs'),path=require('path'),ass
  await p.waitForFunction(()=>document.querySelector('[aria-label="Attachment preview"] pre'));
  await p.evaluate(async()=>{document.querySelector('[aria-label="Attachment preview"] .artifact-workspace-body').scrollTop=120;chatWorkspaceTabs.close();await Promise.all([...chatWorkspaceStates.values()].map(s=>s.flush()));chatWorkspaceStates.clear();await chatRestoreWorkspace();});
  await p.waitForFunction(()=>document.querySelector('[aria-label="Attachment preview"] .artifact-workspace-body')?.scrollTop===120);
+ await p.addScriptTag({content:chat.slice(chat.indexOf('function chatTurnBlocks('),chat.indexOf('// chatBlockEl paints'))});
+ await p.evaluate(()=>{
+  window.emptyRow=text=>el('div','empty',text);window.fmtWhen=at=>at;
+  chatWorkbenchActivityUpdate([{id:'first',who:'user',text:'Inspect the project'},{id:'second',who:'assistant',blocks:[{t:'say',text:'Reading files'},{t:'step',cast:'exec',input:'<button>literal</button>',result:'output',error:true}]}]);chatOpenActivity();
+ });
+ assert.equal(await p.locator('.chat-activity-event').count(),3);
+ assert.equal(await p.locator('.chat-activity-list button').count(),0,'raw commands remain literal text');
+ await p.getByLabel('Filter activity').selectOption('errors');
+ assert.equal(await p.locator('.chat-activity-event').count(),1);
+ await p.locator('.chat-activity-event summary').click();
+ await p.waitForFunction(()=>document.querySelector('.chat-activity-event')?.open);
+ await p.evaluate(async()=>{chatWorkspaceTabs.close();await Promise.all([...chatWorkspaceStates.values()].map(s=>s.flush()));chatWorkspaceStates.clear();await chatRestoreWorkspace();});
+ await p.waitForFunction(()=>document.querySelector('.chat-activity-event')?.open);
+ assert.equal(await p.getByLabel('Filter activity').inputValue(),'errors');
+ await p.evaluate(()=>chatWorkbenchActivityUpdate([{id:'new',who:'assistant',blocks:[{t:'step',cast:'test',input:'rerun',result:'passed'}]}]));
+ await p.getByText('No matching activity.',{exact:true}).waitFor();
+ await p.getByLabel('Filter activity').selectOption('tools');
+ assert.equal(await p.locator('.chat-activity-event').count(),1);
+ assert.ok((await p.locator('.chat-activity-event').innerText()).includes('rerun'));
+ await p.setViewportSize({width:390,height:844});assert.equal(await p.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);await p.screenshot({path:'/tmp/manifest-workbench-activity-phone.png'});
  assert.deepEqual(errors,[]);
  console.log('PASS: real artifact draft survives pane and tab switches, scoped model defaults, keyboard tabs, mobile return, route disposal.');
 }finally{await b.close()}})().catch(e=>{console.error(e);process.exit(1)});
