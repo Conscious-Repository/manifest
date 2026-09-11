@@ -689,6 +689,7 @@ function artifactWorkspace(mount, options) {
         if(state.value){editor.value=state.value.text||"";}
         else {render();return;}
       }
+      pane.dataset.draft=String(!!state.value);
       chatRenderStateNotice(recovery,state);
     };
     await editState.refresh();
@@ -710,6 +711,7 @@ function artifactWorkspace(mount, options) {
   function render() {
     generation++;
     editing = false;
+    pane.dataset.draft=String(!!editState?.value);
     title.textContent = current.title || current.ref || "Artifact";
     controls.replaceChildren(); body.replaceChildren(); notice.textContent = "";
     const versions = document.createElement("select");
@@ -778,6 +780,7 @@ function artifactWorkspace(mount, options) {
   function editVersion(restore,resume=false,proposal=null) {
     generation++;
     editing = true;
+    pane.dataset.draft='true';
     const original = current.content || "";
     const started=resume&&editState?.value ? editState.value : {text:proposal?proposal.content:original,artifact:current.id,baseRevision:proposal?proposal.baseRevision:current.head,sourceRevision:selected,restore};
     if(editState&&!resume)editState.set(started);

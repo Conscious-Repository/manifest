@@ -61,7 +61,17 @@ function chatEnsureWorkspace(){
    const back=t.api?.element?.querySelector('.artifact-workspace-head button');
    if(back){const dispose=back.onclick;back.onclick=()=>w.show(false);t.api.close=dispose;}
    const heading=t.api?.element?.querySelector('.artifact-workspace-title');
-   if(heading){const update=()=>{if(heading.textContent&&heading.textContent!=='Loading…'){button.textContent=heading.textContent;button.title=heading.textContent;}};const observer=new MutationObserver(update);observer.observe(heading,{childList:true,characterData:true,subtree:true});const dispose=t.api.close;t.api.close=()=>{observer.disconnect();dispose?.();};update();}
+   if(heading){
+    const update=()=>{
+     const name=heading.textContent&&heading.textContent!=='Loading…'?heading.textContent:title;
+     const draft=t.api.element.dataset.draft==='true';
+     button.textContent=name;button.setAttribute('aria-label',name);button.title=name+(draft?' · Unfinished edit':'');
+     button.setAttribute('aria-description',draft?'Unfinished edit':'');row.classList.toggle('has-draft',draft);
+     close.setAttribute('aria-label','Close '+name+' tab');close.title=draft?'Close tab; your draft remains saved':'Close tab';
+    };
+    const observer=new MutationObserver(update);observer.observe(heading,{childList:true,characterData:true,subtree:true});observer.observe(t.api.element,{attributes:true,attributeFilter:['data-draft']});
+    const dispose=t.api.close;t.api.close=()=>{observer.disconnect();dispose?.();};update();
+   }
    return t;
   },
   chooser(){clearChooser();chooserHost=el('div','chat-workspace-picker');pane.classList.add('choosing');if(entries.size){chooserHost.classList.add('chat-workspace-popover');pane.append(chooserHost);}else body.append(chooserHost);chatWorkspaceChooser(chooserHost);w.show();},

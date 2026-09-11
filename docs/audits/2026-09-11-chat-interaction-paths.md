@@ -82,3 +82,7 @@ Replaced the hidden Latest menu action with a scroll-aware floating down-arrow a
 ### Response actions
 
 Regular and coding responses now expose Copy without requiring text selection. The action copies only `say` blocks, preserving source Markdown and excluding tool/thinking traces. It reports success or clipboard failure and remains touch-sized on phones. The conversation-layout fixture verifies the exact copied response through a mocked clipboard; a live desktop/phone read with local assets verifies the actual control without clipboard mutation or message sends.
+
+### Tab identification and unfinished edits
+
+Artifact tabs now show a quiet unfinished-edit dot with an accessible description, and close-control labels track the resolved file title. The indicator follows local draft state across preview/edit/save and remains visible when another tab is selected. Workspace fixtures cover renamed heading/close labels, draft indication, keyboard tab selection and hide/show retention; artifact edit/save and duplicate-CSS checks passed. An explicit tab accessible name keeps the decorative dot out of its name.

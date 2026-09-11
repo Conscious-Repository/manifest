@@ -13,6 +13,11 @@ const {chromium}=require('playwright'),fs=require('fs'),path=require('path'),ass
  await p.evaluate(()=>chatWorkspaceHeader(document.querySelector('header')));await p.getByLabel('Toggle workspace').click();assert.equal(await p.getByLabel('Chat workspace').isVisible(),true);
  await p.evaluate(()=>chatEnsureWorkspace().tab('plan','Plan',(host,drop)=>artifactWorkspace(host,{load:async()=>structuredClone(a),save:async()=>{},onClose:drop})));
  await p.getByRole('button',{name:'Edit',exact:true}).click();await p.getByLabel('File content').fill('unsaved reversible draft');
+ await p.waitForFunction(()=>document.querySelector('.chat-workspace-tab.has-draft'));
+ assert.equal(await p.getByRole('tab',{name:'Plan',exact:true}).getAttribute('aria-description'),'Unfinished edit');
+ await p.evaluate(()=>{document.querySelector('.artifact-workspace-title').textContent='Roadmap';});
+ await p.getByLabel('Close Roadmap tab',{exact:true}).waitFor();
+ await p.evaluate(()=>{document.querySelector('.artifact-workspace-title').textContent='Plan';});
  await p.getByLabel('Hide workspace').click();assert.equal(await p.locator('.chat-main').evaluate(e=>e.style.flex),'');await p.getByLabel('Toggle workspace').click();assert.equal(await p.getByLabel('File content').inputValue(),'unsaved reversible draft');
  await p.getByLabel('Add workspace tab').click();assert.equal(await p.locator('.chat-workspace-popover').isVisible(),true);assert.equal(await p.getByLabel('File content').isVisible(),true);await p.getByRole('button',{name:'Side chat',exact:true}).click();assert.equal(await p.getByLabel('Side chat agent').inputValue(),'terminal:codex');assert.equal(await p.getByLabel('Side chat model').inputValue(),'gpt-6-astra');
  await p.getByLabel('Side chat agent').selectOption('alfred');assert.equal(await p.getByLabel('Side chat model').inputValue(),'selected');await p.getByRole('button',{name:'Open side chat',exact:true}).click();await p.locator('.chat-side-frame').waitFor();assert.deepEqual(await p.evaluate(()=>savedWorkstream),['agent:alfred/side1234','','work-1','']);assert.equal(await p.evaluate(()=>created.payload.mode),'side');assert.equal(await p.evaluate(()=>created.payload.model),'selected');
