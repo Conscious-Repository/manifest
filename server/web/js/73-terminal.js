@@ -4,6 +4,8 @@
 let termSessions = [];
 let termOpenId = "";
 let termInst = null;
+let termAttachmentPaused = false;
+const TERM_RETRY_DELAYS = [1200, 2400, 4800, 9600, 15000, 15000];
 let termStage = "term";
 let termLaunch = { kind: "shell", cwd: "", device: "" };
 let termDevices = [];
@@ -97,6 +99,7 @@ function termSetStage(stage) {
   termStage = stage;
   try { localStorage.setItem("manifest.termStage", stage); } catch (e) {}
   renderTermTabbar(); termApplyStage();
+  if (stage === "term") loadTermSessions(true);
 }
 function termApplyStage() {
   Object.entries({ term: "termStageTerm", files: "termStageFiles", activity: "termStageActivity" }).forEach(([k, id]) => {
@@ -111,11 +114,12 @@ async function loadTermSessions(quiet) {
   termInventoryRequest = (async () => {
     let data;
     try {
-      const response = await fetch("/api/terminal/live");
+      const response = await fetch("/api/terminal/live", { signal: AbortSignal.timeout(10000) });
       if (!response.ok) throw new Error("live inventory unavailable");
       data = await response.json();
     } catch (e) { data = { sessions: [], enabled: true, connectivity: "unavailable" }; }
     termSessions = (data.sessions || []).filter((se) => se.live);
+    const restored = termConnectivity !== "connected" && data.connectivity === "connected";
     termConnectivity = data.connectivity || "unavailable";
     renderTermSessions(data.enabled !== false);
     renderTermLauncher(data.enabled !== false);
@@ -124,8 +128,19 @@ async function loadTermSessions(quiet) {
       // A known stopped pane is never reopened from Terminal history.
       detachTerm();
       renderTermEmpty("pane ended · resume conversations in Chats");
-    } else if (!els.terminalView.hidden && selected && termStage === "term" && (!quiet || !termInst)) attachTerm(selected.id);
-    else if (!quiet && termStage === "term") renderTermEmpty();
+    } else if (termInst && selected && termInst.id === selected.id && termInst.runtimeKey !== termRuntimeKey(selected)) {
+      detachTerm();
+      renderTermEmpty("pane changed · select the session to attach");
+      termConnectionStatus("Pane changed · select a session");
+    } else if (!els.terminalView.hidden && !document.hidden && selected && termStage === "term") {
+      if (termInst && termInst.id === selected.id && termInst.ws.readyState === 3) {
+        const retry = termInst.retry;
+        if (retry && (retry.state !== "exhausted" || restored)) {
+          if (restored && retry.state === "exhausted") retry.attempt = 0;
+          attachTerm(selected.id, retry);
+        }
+      } else if (!quiet || (!termInst && !termAttachmentPaused)) attachTerm(selected.id);
+    } else if (!quiet && termStage === "term") renderTermEmpty();
   })();
   try { await termInventoryRequest; } finally {
     termInventoryRequest = null;
@@ -273,10 +288,49 @@ function renderTermEmpty(message) {
   blank.append(el("div", "term-blank-line", message || "Open a terminal or select a running session")); host.append(blank);
 }
 
-// --- the PTY attach (unchanged core) ---
+// --- PTY attachment recovery; never launch or replay input ---
+function termConnectionStatus(text) {
+  const connection = document.getElementById("termConnection");
+  if (connection) connection.textContent = text;
+}
+function termScheduleRetry(inst) {
+  if (termInst !== inst || inst.retry.timer) return;
+  const retry = inst.retry;
+  if (els.terminalView.hidden || document.hidden || termStage !== "term" || termOpenId !== inst.id) {
+    retry.state = "paused";
+    termConnectionStatus("Disconnected · recovery paused");
+    return;
+  }
+  if (retry.attempt >= TERM_RETRY_DELAYS.length) {
+    retry.state = "exhausted";
+    termConnectionStatus("Disconnected · use Reconnect");
+    return;
+  }
+  const delay = TERM_RETRY_DELAYS[retry.attempt++];
+  retry.state = "waiting";
+  termConnectionStatus("Disconnected · retrying in " + (delay / 1000) + "s");
+  retry.timer = setTimeout(async () => {
+    retry.timer = null;
+    if (termInst !== inst) return;
+    if (els.terminalView.hidden || document.hidden || termStage !== "term" || termOpenId !== inst.id) {
+      retry.state = "paused";
+      termConnectionStatus("Disconnected · recovery paused");
+      return;
+    }
+    retry.state = "checking";
+    termConnectionStatus("Disconnected · checking session…");
+    await loadTermSessions(true);
+    if (termInst === inst) termScheduleRetry(inst);
+  }, delay);
+}
 
 function detachTerm() {
+  termAttachmentPaused = true;
+  termConnectionStatus("Detached · use Reconnect");
   if (termInst) {
+    clearTimeout(termInst.retry?.timer);
+    clearTimeout(termInst.connectTimer);
+    termInst.ws.onclose = null;
     try { termInst.ro.disconnect(); } catch (e) {}
     try { termInst.ws.close(); } catch (e) {}
     try { termInst.term.dispose(); } catch (e) {}
@@ -284,13 +338,15 @@ function detachTerm() {
   }
 }
 
-function attachTerm(id) {
+function attachTerm(id, recovery) {
   const session = termSessions.find((se) => se.id === id && se.live);
   if (!session) { renderTermEmpty("pane unavailable · resume conversations in Chats"); return; }
   const runtimeKey = termRuntimeKey(session);
   if (typeof Terminal === "undefined") { showToast("terminal library not loaded"); return; }
-  if (termInst && termInst.id === id && termInst.runtimeKey === runtimeKey && termInst.ws.readyState === 1) return;
+  if (termInst && termInst.id === id && termInst.runtimeKey === runtimeKey && termInst.ws.readyState <= 1) return;
+  const attempt = recovery ? recovery.attempt : 0;
   detachTerm();
+  termAttachmentPaused = false;
   const shell = document.querySelector(".term-shell");
   if (shell) { shell.classList.add("term-session-active"); shell.classList.remove("term-nav-open"); }
   termFitShell();
@@ -344,10 +400,18 @@ function attachTerm(id) {
   const proto = location.protocol === "https:" ? "wss:" : "ws:";
   const ws = new WebSocket(proto + "//" + location.host + "/api/terminal/ws?" + termAttachQuery(session) + "&c=" + term.cols + "&r=" + term.rows);
   ws.binaryType = "arraybuffer";
-  termInst = { term, fit, ws, id, runtimeKey };
+  termInst = { term, fit, ws, id, runtimeKey, retry: { state: "connecting", attempt, timer: null } };
+
+  termInst.connectTimer = setTimeout(() => {
+    if (termInst && termInst.ws === ws && ws.readyState === 0) ws.close();
+  }, 10000);
 
   ws.onopen = () => {
-    if (termInst && termInst.ws === ws && connection) connection.textContent = "Connected";
+    if (!termInst || termInst.ws !== ws) return;
+    clearTimeout(termInst.connectTimer);
+    termInst.retry.state = "connected";
+    termInst.connectedAt = Date.now();
+    if (connection) connection.textContent = "Connected";
     sendTermResize();
   };
   ws.onmessage = (ev) => {
@@ -355,17 +419,13 @@ function attachTerm(id) {
     else term.write(new Uint8Array(ev.data));
   };
   ws.onclose = () => {
-    if (!(termInst && termInst.ws === ws && !els.terminalView.hidden)) return;
-    if (connection) connection.textContent = "Disconnected · retrying";
+    if (!termInst || termInst.ws !== ws) return;
+    clearTimeout(termInst.connectTimer);
     term.write("\r\n\x1b[2m[attachment disconnected]\x1b[0m\r\n");
-    // A browser socket closing says nothing about the process. Reattach only
-    // after fresh live inventory proves the exact same pane still exists.
-    setTimeout(async () => {
-      if (els.terminalView.hidden || termStage !== "term" || !termInst || termInst.ws !== ws) return;
-      await loadTermSessions(true);
-      const current = termSessions.find((se) => se.id === id && se.live);
-      if (!els.terminalView.hidden && termStage === "term" && termOpenId === id && termInst && termInst.ws === ws && current && termRuntimeKey(current) === runtimeKey) attachTerm(id);
-    }, 1200);
+    // An HTTP upgrade can succeed before the runtime attach fails. Only a
+    // sustained connection earns a fresh retry budget, not every onopen.
+    if (termInst.connectedAt != null && Date.now() - termInst.connectedAt >= 10000) termInst.retry.attempt = 0;
+    termScheduleRetry(termInst);
   };
   term.onData((d) => { if (ws.readyState === 1) ws.send(JSON.stringify({ t: "i", d })); });
 

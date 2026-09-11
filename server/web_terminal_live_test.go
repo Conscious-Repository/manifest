@@ -86,3 +86,13 @@ global.showToast=message=>{throw new Error(message);};
 		t.Fatalf("live terminal browser fixture: %v\n%s", err, out)
 	}
 }
+
+func TestTerminalAttachmentRecovery(t *testing.T) {
+	node, err := exec.LookPath("node")
+	if err != nil {
+		t.Skip("node unavailable")
+	}
+	if out, err := exec.Command(node, "testdata/terminal-recovery.cjs").CombinedOutput(); err != nil {
+		t.Fatalf("%v\n%s", err, out)
+	}
+}

@@ -13,7 +13,7 @@
 //                    one order at a time (a send while one runs is a 409)
 //   claude/codex     /api/terminal/sessions + …/session/<id>/{transcript,screen,
 //                    input}: the CLI writes its own jsonl, manifest reads it
-//                    (Stage S); the tmux is the process; input = send-keys
+//                    (Stage S); the runtime owns the process; input uses its adapter
 // The poll while a session is thinking is the live progress channel for every
 // backend — the file IS the stream (run-report idiom). Globals
 // chatOpenSession/chatCompose are the hooks the palette, floating chat (P4),
@@ -1713,7 +1713,7 @@ function renderChatComposer(session) {
   };
   // a portal agent takes one order at a time: a send while it runs 409s, so
   // the button says so instead (the placeholder already says why)
-  // a claude/codex send may relaunch the tmux and wait for its prompt (~10 s):
+  // a claude/codex send may resume the process and wait for its prompt (~10 s):
   // one in flight at a time
   const uploading=!!chatUploads.get(draftKey);
   const busy = uploading || chatSending || !!(session && session.busy && !nativeRecipient()) || (chatIsTerm() && chatTermSending);
@@ -1863,7 +1863,7 @@ function renderChatComposer(session) {
       if(selected)payload.artifacts=[{id:selected.id,revision:selected.revision}];
     }
     if (chatIsTerm()) {
-      // claude/codex: tmux send-keys (relaunching a dead session first); a
+      // claude/codex: runtime input (explicitly resuming an ended session first); a
       // landing send creates the registry row, then delivers
       try { if (!await chatTermSend(text,selected?{task:selected.task,artifacts:[{id:selected.id,revision:selected.revision}]}:{})) {
         showToast("Send not confirmed. Your draft is retained.");
@@ -2002,7 +2002,7 @@ const chatTermPlaceholderRe = /^(sh|cc|cdx)\d+$/; // the registry's minted names
 let chatTermOpen = null;
 let chatTermFast = null;
 
-// chatTermList — the section's rows: this box only (the jsonl and the tmux are
+// chatTermList — the section's rows: this box only (the transcript and the runtime are
 // local; remote rows stay the Terminal tab's).
 function chatTermList(kind) { return chatTermSessions.filter((s) => s.kind === kind && !s.device); }
 function chatHasCanonicalParent(session){const o=session.origin;return o?.mode==="continue"&&!o.backend&&(chatAgentSessions[o.agent]||[]).some(s=>s.id===o.id);}
@@ -2118,7 +2118,7 @@ function terminalStateRepaint() {
   chatTermSyncOpen();
 }
 
-// chatTermSection — one section head (name · ✦ while any tmux is live ·
+// chatTermSection — one section head (name · ✦ while any process is live ·
 // status dot · count) and, when open, ＋ new + the rows: live first, then
 // the last N by lastUsed, the rest folded under "history".
 function chatTermSection(kind) {
@@ -2468,7 +2468,7 @@ function chatTermPaintTurns() {
     body.append(el("div", "chat-term-line chat-term-sys", o.se.launchPhase === "draft"
       ? "Review your draft below. Sending starts the coding session."
       : o.se.kind === "codex"
-      ? "codex keeps its rollout under ~/.codex/sessions — not wired to this row yet; the screen below is the session"
+      ? "No Codex transcript turns are available yet; check the live screen or open Terminal"
       : (o.live ? "no turns in the session file yet" : "nothing in the session file — a send starts it")));
   }
   if(host&&!chatStick)host.scrollTop=previousScroll;
@@ -2515,7 +2515,7 @@ function chatTermPaintLines(host, turns) {
 
 // chatTermCmdLine — what you sent, as the command it was: `❯ text`, the time
 // it landed as a dim trailing note. A [file::] token (never on these turns —
-// a tmux takes keys, not files) would show as its bare text.
+// a terminal takes keys, not files) would show as its bare text.
 function chatTermCmdLine(t) {
   const line = el("div", "chat-term-line chat-term-cmd");
   line.append(el("span", "chat-term-glyph", chatTermPromptGlyph));
@@ -2562,9 +2562,10 @@ function chatTermBlockEl(b) {
 
 // ---- the live strip: the pane's last lines + quick keys ----
 // Mounted once between the transcript and the composer (so it stays in view
-// while the transcript scrolls); shown only while the tmux is live. This is
+// while the transcript scrolls); shown only while the process is live. This is
 // how a permission prompt or a menu becomes visible and answerable.
-const chatTermQuickKeys = ["enter", "esc", "tab", "shift-tab", "↑", "↓", "←", "→", "ctrl-c"];
+// Common keys verified through both runtime adapters. Raw Terminal also supports Tab.
+const chatTermQuickKeys = ["enter", "esc", "↑", "↓", "←", "→", "ctrl-c"];
 
 function chatTermStripEl() {
   let strip = document.getElementById("chatTermStrip");
@@ -2577,7 +2578,7 @@ function chatTermStripEl() {
   strip.hidden = true;
   const head = el("div", "chat-term-strip-head");
   head.append(el("span", "micro-label", "Live terminal"));
-  head.append(el("span", "chat-landing-hint", "Use the keys to respond to the prompt shown below"));
+  head.append(el("span", "chat-landing-hint", "Use these keys for the prompt below · for Tab / Shift-Tab, open Terminal"));
   const screen = el("pre", "chat-term-screen");
   const keys = el("div", "chat-term-keys");
   chatTermQuickKeys.forEach((label) => {
@@ -2634,10 +2635,10 @@ async function chatTermScreenFetch() {
 }
 
 // chatTermKey — a quick key: the terminal key bar's codes (TERM_KEY_CODES,
-// 73-terminal.js); y/n go as the bare letter.
+// 73-terminal.js), restricted to the controls supported by both adapters.
 async function chatTermKey(label) {
   const o = chatTermOpen;
-  if (!o) return;
+  if (!o || !chatTermQuickKeys.includes(label)) return;
   const codes = typeof TERM_KEY_CODES !== "undefined" ? TERM_KEY_CODES : {};
   const key = codes[label] || label;
   try {
@@ -2654,7 +2655,7 @@ function ensureChatTermFast() {
   chatTermFast = setInterval(chatTermTick, 1500);
 }
 
-// one tail in flight: a slow reply (tmux list-sessions under load) must not
+// one tail in flight: a slow inventory reply must not
 // let the next tick re-ask from the same offset — two identical tails would
 // merge the same turns twice
 let chatTermTailing = false;
@@ -2771,7 +2772,7 @@ async function chatTermSend(text,context={}) {
     const r = chatTermFind(id)?.backend==="herdr"
       ? await chatDeliverRemembered(chatRememberDelivery(agent+"/"+id,agent,url,payload,sourceScope))
       : await postJSONOk(url,payload);
-    // a virgin row's first send boots its tmux — that is a start, not a relaunch
+    // a draft row's first send starts its process — that is a start, not a relaunch
     if (r.relaunched && !created && !wasDraft) showToast("Session relaunched — " + ((chatTermFind(id) || {}).name || id), null, "info");
     await loadChatTermSessions(true);
     if (chatTermOpen && chatTermOpen.id === id) {
@@ -2788,13 +2789,13 @@ async function chatTermSend(text,context={}) {
   }
 }
 
-// ---- landing: a new session on metis, in the folder typed here ----
+// ---- landing: a new local herdr session, in the folder typed here ----
 function renderChatTermLanding(host) {
   const kind = chatAgent;
   chatTermSurface(true); // the composer is the prompt of the session to come
   const who = el("div", "chat-spirit-pick");
   who.append(el("span", "pill light on", chatTermKinds[kind]));
-  who.append(el("span", "chat-landing-hint", "metis · tmux"));
+  who.append(el("span", "chat-landing-hint", "this server · herdr"));
   host.append(who);
   if (!chatTermEnabled) {
     host.append(emptyRow("The terminal is not enabled on this server — sessions can't start here."));

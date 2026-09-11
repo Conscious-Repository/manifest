@@ -63,7 +63,7 @@ global.fetchJSONRetry=async(method,url,payload)=>{
   postJSONOk:async()=>{enteredCreate();await release;return{id:'abcdef123456',backend:'herdr'};},
   chatRememberDelivery:(scope,agent,url,payload,draftScope)=>({scope,agent,url,payload,draftScope}),
   chatDeliverRemembered:async item=>{sent.push(item);return{ok:true};},loadChatTermSessions:async()=>{},showToast(){}});
- vm.runInContext(src.slice(src.indexOf('async function chatTermSend('),src.indexOf('// ---- landing: a new session')),nav);
+ vm.runInContext(src.slice(src.indexOf('async function chatTermSend('),src.indexOf('function renderChatTermLanding(')),nav);
  const sending=nav.chatTermSend('original coding instruction');await creating;
  nav.chatAgent='alfred';nav.chatOpenId='other-chat';nav.chatRouteVersion=2;nav.location.hash='#/chat/a/alfred/other-chat';
  releaseCreate();assert.equal(await sending,true);
