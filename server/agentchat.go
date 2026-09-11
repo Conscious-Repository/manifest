@@ -328,7 +328,15 @@ func (s *Server) handleAgentChatSessions(w http.ResponseWriter, r *http.Request)
 			}
 		}
 	}
-	writeJSON(w, map[string]any{"agent": agent, "sessions": rows})
+	type row struct {
+		agentchat.Session
+		Conversation conversationDescriptor `json:"conversation"`
+	}
+	out := make([]row, 0, len(rows))
+	for _, session := range rows {
+		out = append(out, row{session, sessionConversation(session)})
+	}
+	writeJSON(w, map[string]any{"agent": agent, "sessions": out})
 }
 
 // POST /api/agents/chat/{agent}/sessions {title?, model?, text?} — create, and

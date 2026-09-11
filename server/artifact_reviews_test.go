@@ -93,6 +93,13 @@ func TestArtifactReviewExactVersionReplayAndConflict(t *testing.T) {
 	if w := call("POST", hash, request); w.Code != 400 {
 		t.Fatal("invalid source range accepted", w.Code)
 	}
+	// The sidebar projects only the current head; older acceptance cannot hide
+	// an unreviewed revision, and linked task scopes are distinct.
+	status := httptest.NewRecorder()
+	s.Handler().ServeHTTP(status, httptest.NewRequest("GET", "/api/chat/review-status", nil))
+	if status.Code != 200 || !bytes.Contains(status.Body.Bytes(), []byte(`"unreviewed":1`)) || !bytes.Contains(status.Body.Bytes(), []byte(`"accepted":0`)) {
+		t.Fatal(status.Code, status.Body.String())
+	}
 	// Review cannot change artifact content, revision, or original immutable event.
 	got, _ := s.artifactReg.Get(id)
 	if got.Head != next.Artifact.Head || len(got.Revisions) != 2 {

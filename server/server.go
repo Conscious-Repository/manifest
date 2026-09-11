@@ -383,6 +383,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/artifacts/create", s.handleArtifactCreate) // {kind,title,ref|content,task,run,…}
 	mux.HandleFunc("POST /api/artifacts/text", s.handleArtifactText)
 	mux.HandleFunc("GET /api/artifacts/reviews", s.handleArtifactReviews)
+	mux.HandleFunc("GET /api/chat/review-status", s.handleChatReviewStatus)
 	mux.HandleFunc("POST /api/artifacts/reviews", s.handleArtifactReviews)
 	mux.HandleFunc("POST /api/artifacts/revise", s.handleArtifactRevise) // {id, content|ref, note}
 	// P2 graph: the entity/edge graph over stored claims + derived edges (graph.go)

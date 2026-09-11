@@ -1,0 +1,14 @@
+const assert=require('node:assert/strict'),fs=require('fs'),path=require('path'),vm=require('vm');
+const src=fs.readFileSync(path.join(__dirname,'../web/js/48-chat.js'),'utf8');
+const ctx=vm.createContext({chatReviewStatus:{},chatReviewTaskStatus:{},chatAttentionFilter:'all',terminalStates:new Map()});
+vm.runInContext(src.slice(src.indexOf('function chatEntryState('),src.indexOf('async function chatSetPriority(')),ctx);
+const native=(agentState,process='running',connectivity='connected')=>({terminal:true,session:{id:'native',agentState,process,connectivity}});
+assert.equal(ctx.chatEntryState(native('working')).execution,'running');assert.equal(ctx.chatEntryState(native('blocked')).execution,'waiting_user');
+for(const entry of [native('working','stopped'),native('blocked','stopped'),native('done'),native('idle'),native('working','stopped','unavailable'),native('done','stopped')])assert.equal(ctx.chatEntryState(entry).execution,'unknown','advisory observation cannot prove completion');
+assert.equal(ctx.chatEntryState({terminal:true,session:{launchPhase:'draft'}}).execution,'draft');
+const planning=(status,delivery)=>({session:{turns:4,status,deliveries:[{id:'run-one',state:delivery}],conversation:{key:'one'}}});
+assert.equal(ctx.chatEntryState(planning('idle','completed')).execution,'completed');assert.equal(ctx.chatEntryState(planning('thinking','completed')).execution,'running','a new active run supersedes prior completion');assert.equal(ctx.chatEntryState(planning('idle','failed')).execution,'failed');assert.equal(ctx.chatEntryState(planning('idle','queued')).execution,'queued');
+ctx.chatReviewStatus.one={ready:1,accepted:2};ctx.chatAttentionFilter='review';assert.equal(ctx.chatEntryMatchesAttention(planning('thinking','running')),true);assert.equal(ctx.chatEntryState(planning('thinking','running')).execution,'running','review and execution stay independent');ctx.chatReviewStatus.one={accepted:3};assert.equal(ctx.chatEntryMatchesAttention(planning('idle','completed')),false,'accepted outputs alone are not pending review');
+ctx.chatAttentionFilter='waiting_user';assert.equal(ctx.chatEntryMatchesAttention(native('blocked')),true);assert.equal(ctx.chatEntryMatchesAttention(native('working')),false);
+const linked=planning('idle','completed');linked.session.task='task-one';linked.session.conversation.links=[{kind:'task',id:'task-one'}];ctx.chatReviewTaskStatus['task-one']={ready:2};assert.equal(ctx.chatEntryState(linked).review.ready,2,'one linked task is counted once');
+console.log('PASS attention projection: durable receipts, advisory terminal states, independent review counts, filters.');

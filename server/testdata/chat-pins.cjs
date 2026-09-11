@@ -2,7 +2,7 @@ const assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('nod
 const src=fs.readFileSync(require('node:path').join(__dirname,'../web/js/48-chat.js'),'utf8');
 let state={key:'inbox',slot:'pins',revision:0,value:null},race=true,puts=0;
 const clone=x=>JSON.parse(JSON.stringify(x));
-const context=vm.createContext({fetch:async(url,options={})=>{
+const context=vm.createContext({window:{addEventListener(){}},fetch:async(url,options={})=>{
  assert.equal(url,'/api/chat/state/inbox/pins');
  if(options.method!=='PUT')return{ok:true,json:async()=>clone(state)};
  puts++;const body=JSON.parse(options.body);

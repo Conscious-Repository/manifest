@@ -372,10 +372,11 @@ func (s *Server) handleTermSessions(w http.ResponseWriter, r *http.Request) {
 	live := s.terminal.liveSet()
 	type row struct {
 		termSession
-		Live         bool   `json:"live"`
-		AgentState   string `json:"agentState"`
-		Connectivity string `json:"connectivity"`
-		Process      string `json:"process"`
+		Live         bool                   `json:"live"`
+		Conversation conversationDescriptor `json:"conversation"`
+		AgentState   string                 `json:"agentState"`
+		Connectivity string                 `json:"connectivity"`
+		Process      string                 `json:"process"`
 	}
 	out := make([]row, 0, len(list))
 	for _, se := range list {
@@ -394,7 +395,7 @@ func (s *Server) handleTermSessions(w http.ResponseWriter, r *http.Request) {
 			ob, _ = s.observeTerm(r.Context(), se)
 			l = ob.Process == "running"
 		}
-		out = append(out, row{se, l, ob.AgentState, ob.Connectivity, ob.Process})
+		out = append(out, row{se, l, s.terminalConversation(se), ob.AgentState, ob.Connectivity, ob.Process})
 	}
 	sort.SliceStable(out, func(i, j int) bool {
 		if out[i].Pinned != out[j].Pinned {

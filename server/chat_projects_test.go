@@ -97,7 +97,7 @@ func TestChatProjectsVaultMigrationAndConflict(t *testing.T) {
 }
 
 func TestChatProjectsRejectInvalidMembership(t *testing.T) {
-	for _, raw := range []string{`null`, `{}`, `{"groups":{},"members":{"chat":"missing"}}`, `{"groups":{"id":" "},"members":{}}`, `{"groups":{},"members":{},"contexts":{"missing":{"instructions":"text"}}}`, `{"groups":{"one":"Name"},"members":{},"contexts":{"one":{"instructions":false}}}`} {
+	for _, raw := range []string{`{"groups":{},"members":{},"priorities":{"chat":9}}`, `{"groups":{},"members":{},"priorities":{"chat":1.5}}`, `null`, `{}`, `{"groups":{},"members":{"chat":"missing"}}`, `{"groups":{"id":" "},"members":{}}`, `{"groups":{},"members":{},"contexts":{"missing":{"instructions":"text"}}}`, `{"groups":{"one":"Name"},"members":{},"contexts":{"one":{"instructions":false}}}`} {
 		if validateProjects(json.RawMessage(raw)) == nil {
 			t.Fatal("accepted", raw)
 		}

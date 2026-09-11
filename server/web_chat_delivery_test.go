@@ -104,3 +104,17 @@ func TestChatRecoveryOnFocus(t *testing.T) {
 		t.Fatalf("focus recovery: %v\n%s", err, out)
 	}
 }
+
+func TestChatAttentionAndPriorityUI(t *testing.T) {
+	node, err := exec.LookPath("node")
+	if err != nil {
+		t.Skip("node unavailable")
+	}
+	for _, fixture := range []string{"chat-attention.cjs", "chat-priority.cjs"} {
+		t.Run(fixture, func(t *testing.T) {
+			if out, err := exec.Command(node, "testdata/"+fixture).CombinedOutput(); err != nil {
+				t.Fatalf("%v\n%s", err, out)
+			}
+		})
+	}
+}

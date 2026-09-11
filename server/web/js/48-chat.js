@@ -468,7 +468,7 @@ async function loadChatRoster() {
 // Load conversation summaries together so the inbox can sort across agents.
 async function loadChatSessions() {
   const agents = chatRoster.filter(a => !chatIsTerm(a.name)).map(a => a.name);
-  await Promise.all([chatLoadPins(),chatLoadLifecycle(),chatLoadWorkstreams(),...["", ...agents].map(async agent => {
+  await Promise.all([chatLoadPins(),chatLoadLifecycle(),chatLoadWorkstreams(),chatLoadReviewStatus(),...["", ...agents].map(async agent => {
     try {
       const res = await fetch(chatBaseFor(agent));
       if (!res.ok) return; // retain the last good directory during an outage
@@ -579,7 +579,7 @@ let chatWorkstreams={groups:{},members:{}},chatWorkstreamsRevision=-1,chatWorkst
 const chatWorkstreamURL="/api/chat/state/inbox/workstreams";
 function chatApplyWorkstreams(state){
   if(state.key!=="inbox"||state.slot!=="workstreams"||!Number.isSafeInteger(state.revision)||state.revision<chatWorkstreamsRevision)return;
-  chatWorkstreamsRevision=state.revision;chatWorkstreams={groups:state.value?.groups||{},members:state.value?.members||{},contexts:state.value?.contexts||{},recordVersion:state.record_version||"",recordPath:state.record_path||""};
+  chatWorkstreamsRevision=state.revision;chatWorkstreams={groups:state.value?.groups||{},members:state.value?.members||{},contexts:state.value?.contexts||{},priorities:state.value?.priorities||{},recordVersion:state.record_version||"",recordPath:state.record_path||""};
 }
 async function chatLoadWorkstreams(){try{const r=await fetch(chatWorkstreamURL,{cache:"no-store"});if(r.ok)chatApplyWorkstreams(await r.json());}catch(e){}}
 function chatWorkstreamMember(key){const id=chatWorkstreams.members[key];return chatWorkstreams.groups[id]?id:"";}
@@ -693,15 +693,65 @@ function chatChooseWorkstream(entry){
   form.onsubmit=async e=>{e.preventDefault();const creating=select.value==="new",label=name.value.trim();if(creating&&!label){error.textContent="Enter a workstream name.";name.focus();return;}save.disabled=true;try{await chatSaveWorkstream(key,expected,creating?"":select.value,creating?label:"");dialog.close();chatRenderWorkstreamFilter();renderChatInboxRows();}catch(e){error.textContent=e.message;}finally{save.disabled=false;}};
   dialog.append(form);dialog.addEventListener("close",()=>dialog.remove(),{once:true});document.body.append(dialog);dialog.showModal();select.focus();
 }
+let chatReviewStatus={},chatReviewTaskStatus={},chatReviewTicket=0,chatAttentionFilter='all';
+async function chatLoadReviewStatus(){
+ const ticket=++chatReviewTicket;
+ try{const r=await fetch('/api/chat/review-status',{cache:'no-store'});if(!r.ok)return;const data=await r.json();if(ticket===chatReviewTicket){chatReviewStatus=data.by_scope||{};chatReviewTaskStatus=data.by_task||{};}}catch(e){}
+}
+window.addEventListener('artifact-review-recorded',()=>{chatLoadReviewStatus().then(renderChatInboxRows);});
+function chatEntryState(entry){
+ const session=entry.session,review={...chatReviewStatus[session.conversation?.key]};
+ const tasks=new Set([session.task,...(session.conversation?.links||[]).filter(l=>l.kind==='task').map(l=>l.id)].filter(Boolean));for(const task of tasks)for(const field of ['ready','changes','accepted','unreviewed'])review[field]=(review[field]||0)+(chatReviewTaskStatus[task]?.[field]||0);
+ let execution='unknown',label='Status unavailable';
+ if(entry.terminal){
+  const ob=typeof terminalStates!=='undefined'&&terminalStates.get(session.id)||session;
+  if(session.launchPhase==='draft'||ob.process==='not-started'){execution='draft';label='Not started';}
+  else if(ob.connectivity==='connected'){
+   if(ob.process==='stopped'){label='Process stopped';}
+   else if(ob.agentState==='working'){execution='running';label='Working';}
+   else if(ob.agentState==='blocked'){execution='waiting_user';label='Needs input';}
+   else if(['idle','done'].includes(ob.agentState)){label='Idle · result unverified';}
+   else label='Connected · checking state';
+  }
+ }else{
+  const deliveries=session.deliveries||[],latest=deliveries.at(-1);
+  if(session.status==='thinking'){execution='running';label='Working';}
+  else if(latest?.state==='completed'){execution='completed';label='Run finished';}
+  else if(latest?.state==='failed'||session.status==='error'){execution='failed';label='Run failed';}
+  else if(latest?.state==='queued'){execution='queued';label='Queued';}
+  else if(latest?.state==='interrupted'){label='Interrupted · check run';}
+  else if(!latest&&!session.turns){execution='draft';label='Not started';}
+  else label='Idle · result unverified';
+ }
+ return {execution,label,review};
+}
+function chatEntryMatchesAttention(entry){
+ const state=chatEntryState(entry);
+ if(chatAttentionFilter==='all')return true;
+ if(chatAttentionFilter==='review')return (state.review.ready||0)+(state.review.changes||0)>0;
+ if(chatAttentionFilter==='running')return ['running','queued'].includes(state.execution);
+ return state.execution===chatAttentionFilter;
+}
+async function chatSetPriority(key,expected,priority){
+ for(let attempt=0;attempt<3;attempt++){
+  const r=await fetch(chatWorkstreamURL,{cache:'no-store'});if(!r.ok)throw Error('Projects could not be loaded.');const state=await r.json(),priorities={...state.value?.priorities};
+  if((priorities[key]??1)!==expected)throw Error('Priority changed on another device. Reopen this menu.');
+  if(priority===1)delete priorities[key];else priorities[key]=priority;
+  const saved=await fetch(chatWorkstreamURL,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({revision:state.revision,record_version:state.record_version,value:{...state.value,priorities}})});
+  if(saved.status===409)continue;if(!saved.ok)throw Error('Priority was not saved.');chatApplyWorkstreams(await saved.json());return;
+ }
+ throw Error('Projects changed elsewhere. Try again.');
+}
 function chatInboxEntries() {
   const entries = chatSessions.map(session => ({agent: "", session}));
   chatRoster.filter(a => !chatIsTerm(a.name)).forEach(agent => (chatAgentSessions[agent.name] || []).filter(session=>!chatHasNativeParent(session)).forEach(session => entries.push({agent: agent.name, session})));
   if (chatTermEnabled) Object.keys(chatTermKinds).forEach(agent => chatTermList(agent).filter(session=>!chatHasCanonicalParent(session)&&!chatHasNativeParent(session)).forEach(session => entries.push({agent, session, terminal: true})));
   const query = chatSearchQuery.trim().toLowerCase();
-  return entries.filter(entry => (chatLifecycle[chatInboxKey(entry)]||"active")===chatLifecycleFilter).filter(entry => (chatWorkstreamFilter==="all"||(chatWorkstreamFilter==="standalone"?!chatWorkstreamMember(chatInboxKey(entry)):chatWorkstreamMember(chatInboxKey(entry))===chatWorkstreamFilter)) && (chatInboxFilter === "all" || entry.agent === chatInboxFilter || (entry.terminal&&[...(chatAgentSessions[chatInboxFilter]||[]),...chatTermSessions.filter(s=>s.kind===chatInboxFilter)].some(s=>s.origin?.mode==="continue"&&s.origin?.backend==="terminal"&&s.origin?.id===entry.session.id&&s.origin?.agent===entry.agent)))
+  return entries.filter(chatEntryMatchesAttention).filter(entry => (chatLifecycle[chatInboxKey(entry)]||"active")===chatLifecycleFilter).filter(entry => (chatWorkstreamFilter==="all"||(chatWorkstreamFilter==="standalone"?!chatWorkstreamMember(chatInboxKey(entry)):chatWorkstreamMember(chatInboxKey(entry))===chatWorkstreamFilter)) && (chatInboxFilter === "all" || entry.agent === chatInboxFilter || (entry.terminal&&[...(chatAgentSessions[chatInboxFilter]||[]),...chatTermSessions.filter(s=>s.kind===chatInboxFilter)].some(s=>s.origin?.mode==="continue"&&s.origin?.backend==="terminal"&&s.origin?.id===entry.session.id&&s.origin?.agent===entry.agent)))
     && [entry.session.title, entry.session.name, entry.session.cwd, chatAgentLabel(entry.agent), entry.session.spirit].filter(Boolean).join(" ").toLowerCase().includes(query))
     .sort((a, b) => {
       const pinned=Number(chatPins[chatInboxKey(b)]===true)-Number(chatPins[chatInboxKey(a)]===true);if(pinned)return pinned;
+      const priority=(chatWorkstreams.priorities?.[chatInboxKey(b)]??1)-(chatWorkstreams.priorities?.[chatInboxKey(a)]??1);if(priority)return priority;
       const time = entry => Date.parse(entry.session.updated || entry.session.lastUsed || entry.session.created || "") || 0;
       return time(b) - time(a);
     });
@@ -710,16 +760,20 @@ function renderChatInboxRows() {
   const host = document.getElementById("chatInboxRows");
   if (!host) return;
   host.replaceChildren();
-  const filterLabel=document.querySelector(".chat-filter-menu > summary");if(filterLabel)filterLabel.textContent="Filters"+((chatInboxFilter!=="all"||chatWorkstreamFilter!=="all")?" · on":"");
+  const filterLabel=document.querySelector(".chat-filter-menu > summary");if(filterLabel)filterLabel.textContent="Filters"+((chatInboxFilter!=="all"||chatWorkstreamFilter!=="all"||chatAttentionFilter!=="all")?" · on":"");
   const entries = chatInboxEntries();
   if(chatLifecycleFilter==="deleted")host.append(el("p","chat-head-meta","Deleted from your Chats. Restore anytime. Task and provider history are retained."));
-  if (!entries.length) host.append(emptyRow(chatSearchQuery || chatWorkstreamFilter!=="all" || chatInboxFilter!=="all" ? "No matching conversations" : "No conversations yet"));
+  if (!entries.length) host.append(emptyRow(chatSearchQuery || chatWorkstreamFilter!=="all" || chatInboxFilter!=="all" || chatAttentionFilter!=="all" ? "No matching conversations" : "No conversations yet"));
   const rows=entries.map(entry => {
     const row = entry.terminal ? chatTermRow(entry.session) : chatRailRow(entry.session, entry.agent);
     row.classList.toggle("open", entry.agent === chatAgent && entry.session.id === chatOpenId);
     const meta = row.querySelector(".chat-rail-meta");
     if (meta) meta.prepend(el("span", "chat-inbox-agent", entry.terminal ? chatTermKinds[entry.agent] : entry.agent ? chatAgentLabel(entry.agent) : entry.session.spirit || "Spirits"));
     const key=chatInboxKey(entry),pinned=chatPins[key]===true;
+    const state=chatEntryState(entry);row.dataset.execution=state.execution;
+    if(meta){const status=el('span','chat-row-state',state.label);status.title=entry.terminal?'Live runtime observation; a process being idle is not proof of a completed run.':'Status from the current session and its durable delivery receipt.';meta.prepend(status);
+     if(state.review.ready||state.review.changes){status.classList.add('chat-row-attention');status.textContent=(state.review.changes?state.review.changes+' need revision':state.review.ready+' ready for review')+' · '+state.label;}
+    }
     const pin=el("button","sprt-quiet chat-inbox-pin",pinned?"Unpin":"Pin");pin.setAttribute("aria-label",(pinned?"Unpin ":"Pin ")+(entry.session.title||entry.session.name||entry.session.id));pin.setAttribute("aria-pressed",String(pinned));
     pin.onclick=async e=>{e.stopPropagation();pin.disabled=true;try{await chatSetPinned(key,!pinned);renderChatInboxRows();}catch(error){showToast(error.message);}finally{pin.disabled=false;}};
     pin.onkeydown=e=>e.stopPropagation();
@@ -740,6 +794,9 @@ function renderChatInboxRows() {
     const group=chatWorkstreamMember(key),workstream=el("button","sprt-quiet chat-workstream-link",group?chatWorkstreams.groups[group]:"Project…");
     workstream.setAttribute("aria-label","Change workstream for "+(entry.session.title||entry.session.name||entry.session.id));
     workstream.onclick=e=>{e.stopPropagation();chatChooseWorkstream(entry);};workstream.onkeydown=e=>e.stopPropagation();menuBody.append(workstream);
+    const priority=document.createElement('select');priority.setAttribute('aria-label','Chat priority');
+    for(const [value,label] of [[3,'urgent'],[2,'high'],[1,'normal'],[0,'low']]){const option=el('option','','priority · '+label);option.value=value;priority.append(option);}const previous=chatWorkstreams.priorities?.[key]??1;priority.value=previous;
+    priority.onclick=e=>e.stopPropagation();priority.onkeydown=e=>e.stopPropagation();priority.onchange=async()=>{priority.disabled=true;try{await chatSetPriority(key,previous,Number(priority.value));renderChatInboxRows();}catch(e){showToast(e.message);priority.value=previous;}finally{priority.disabled=false;}};menuBody.append(priority);
     if(group&&meta)meta.append(el("span","chat-row-group",chatWorkstreams.groups[group]));
     row.onclick = () => { location.hash = entry.agent ? "#/chat/a/" + encodeURIComponent(entry.agent) + "/" + encodeURIComponent(entry.session.id) : "#/chat/" + encodeURIComponent(entry.session.id); };
     return row;
@@ -801,6 +858,7 @@ function renderChatRail() {
     select.onchange = () => { chatInboxFilter = select.value; renderChatInboxRows(); };
     const workstreams=document.createElement("select");workstreams.id="chatWorkstreamFilter";workstreams.className="chat-inbox-filter";workstreams.setAttribute("aria-label","Filter chats by workstream");workstreams.onchange=()=>{chatWorkstreamFilter=workstreams.value;renderChatInboxRows();};
     const filters=el("div","chat-inbox-filters");filters.append(select,workstreams);
+    const attention=document.createElement('select');attention.className='chat-inbox-filter';attention.setAttribute('aria-label','Filter by attention');for(const [value,label] of [['all','All states'],['running','Running or queued'],['waiting_user','Needs input'],['review','Needs review or revision'],['failed','Failed']]){const option=el('option','',label);option.value=value;attention.append(option);}attention.value=chatAttentionFilter;attention.onchange=()=>{chatAttentionFilter=attention.value;renderChatInboxRows();};filters.append(attention);
     const lifecycle=document.createElement("select");lifecycle.className="chat-inbox-filter";lifecycle.setAttribute("aria-label","Conversation list");
     [["active","Chats"],["archived","Archived chats"],["deleted","Trash"]].forEach(([value,label])=>{const option=el("option","",label);option.value=value;lifecycle.append(option);});
     lifecycle.value=chatLifecycleFilter;lifecycle.onchange=()=>{chatLifecycleFilter=lifecycle.value;renderChatInboxRows();};

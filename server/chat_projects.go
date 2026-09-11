@@ -59,14 +59,20 @@ func validateProjects(value json.RawMessage) error {
 		return chatstate.ErrInvalid
 	}
 	var v struct {
-		Groups   map[string]string `json:"groups"`
-		Members  map[string]string `json:"members"`
-		Contexts map[string]struct {
+		Priorities map[string]int    `json:"priorities"`
+		Groups     map[string]string `json:"groups"`
+		Members    map[string]string `json:"members"`
+		Contexts   map[string]struct {
 			Instructions string `json:"instructions"`
 		} `json:"contexts"`
 	}
 	if json.Unmarshal(value, &v) != nil || v.Groups == nil || v.Members == nil {
 		return chatstate.ErrInvalid
+	}
+	for key, priority := range v.Priorities {
+		if key == "" || priority < 0 || priority > 3 {
+			return chatstate.ErrInvalid
+		}
 	}
 	for id, name := range v.Groups {
 		if id == "" || strings.TrimSpace(name) == "" || len(name) > 320 {
