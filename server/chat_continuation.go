@@ -37,7 +37,7 @@ func codingContinuationContext(source agentchat.Session, body string) (string, i
 	for _, part := range parts[start:] {
 		out.WriteString(part)
 	}
-	return out.String(), start
+	return sideSnapshotContext(source.Origin, out.String()), start
 }
 
 type codingContinuationView struct {
@@ -208,7 +208,8 @@ func conversationTimeline(source agentchat.Session, body string, views []codingC
 
 func logicalContinuationContext(source agentchat.Session, body string, views []codingContinuationView) (string, int) {
 	turns := conversationTimeline(source, body, views)
-	return timelineContinuationContext(sessionConversation(source).Key, turns)
+	text, omitted := timelineContinuationContext(sessionConversation(source).Key, turns)
+	return sideSnapshotContext(source.Origin, text), omitted
 }
 
 // Native-root conversations include only explicit continuations. Never
@@ -302,4 +303,17 @@ func timelineContinuationContext(key string, turns []conversationTimelineTurn) (
 		start = i
 	}
 	return fmt.Sprintf("Read-only conversation context from %s. Original source IDs and authors follow. Tool traces and attachment contents are excluded unless selected separately. %d earlier turns omitted.\n%s", key, start, strings.Join(parts[start:], "")), start
+}
+
+// Carry a side chat's frozen parent context through an explicit agent switch.
+// Keep nested side-chat ancestry bounded without modifying either transcript.
+func sideSnapshotContext(origin *agentchat.Origin, current string) string {
+	if origin == nil || origin.Mode != "side" || origin.Context == "" {
+		return current
+	}
+	inherited := origin.Context
+	if len(inherited) > agentChatWindowChars {
+		inherited = "[Earlier inherited context omitted for length]\n" + inherited[len(inherited)-agentChatWindowChars:]
+	}
+	return "Frozen parent snapshot (read-only):\n" + inherited + "\nEnd frozen parent snapshot.\n" + current
 }

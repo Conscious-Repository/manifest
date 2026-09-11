@@ -108,6 +108,7 @@ function chatMountHeader(head) {
     latest.onclick = () => { chatStick = true; chatPin(); chatSaveReadingPosition(); };
     (head.querySelector(".chat-details")||head).append(latest);
   }
+  if(head && typeof chatWorkspaceHeader === "function")chatWorkspaceHeader(head);
   slot.replaceChildren(...(head ? [head] : []));
   slot.hidden = !head;
 }
@@ -2982,10 +2983,8 @@ function chatOpenTerminalPane(session){
   showTerminal();apply(height);
 }
 function chatOpenAttachment(file,href){
-  chatCloseWorkspace();
-  const shell=document.querySelector(".chat-shell");shell.classList.add("has-artifact");
-  chatWorkspace=attachmentWorkspace(shell,file,href,()=>{shell.classList.remove("has-artifact");chatWorkspace=null;});
-  chatInstallPaneResize(shell);
+  const w=chatEnsureWorkspace();
+  w.tab("attachment:"+href,file.name||"Attachment",(host,drop)=>attachmentWorkspace(host,file,href,drop));
 }
 function chatChangesButton(runtime){
   const button=el("button","sprt-quiet","Changes");button.title="Capture current Git changes in this runtime's working folder";
@@ -2993,31 +2992,30 @@ function chatChangesButton(runtime){
   return button;
 }
 function chatOpenWorkingArtifact(spec) {
-  chatCloseWorkspace();
   const taskID = spec.task || chatTaskID;
   const key = spec.selectionKey || (taskID ? "task:"+taskID : location.hash);
-  const shell = document.querySelector(".chat-shell");
-  shell.classList.add("has-artifact");
+  const w=chatEnsureWorkspace();
+  const tabKey=spec.plan?"plan:"+taskID:"artifact:"+spec.id;
+  if(w.entries.has(tabKey)){w.select(tabKey);if(spec.revision||spec.proposal)w.entries.get(tabKey).api?.refresh?.(spec.revision,spec.proposal);return;}
   const load = async () => {
     const path = spec.plan ? "/api/tasks/plan/workspace?id="+encodeURIComponent(taskID) : "/api/artifacts/get?id="+encodeURIComponent(spec.id);
     const r=await fetch(path); if(!r.ok)throw new Error(await r.text());return r.json();
   };
-  chatWorkspace=artifactWorkspace(shell,{
+  w.tab(tabKey,spec.plan?"Plan":"Review",(host,drop)=>artifactWorkspace(host,{
     load, revision:spec.revision,proposal:spec.proposal,
     save:spec.plan ? (text,expectedRevision)=>postJSONOk("/api/tasks/plan",{id:taskID,text,expectedRevision}):(text,expectedRevision)=>postJSONOk("/api/artifacts/text",{id:spec.id,content:text,expectedRevision}),
     canEdit:spec.plan ? null : a=>/\.(md|txt|json|csv|tsv|yaml|yml|toml|js|jsx|ts|tsx|py|go|html|css|sql|sh|xml|svg)$/i.test(a.ref||"") && a.provenance?.source!=="task-plan",
     saveNotice:spec.plan ? null : "Saved as a new artifact version. Use Discuss this version to ask the agent to apply it to working files.",
-    onClose:()=>{shell.classList.remove("has-artifact");chatWorkspace=null;},
+    onClose:drop,
     onDiscuss: (taskID||spec.discuss) && (key.startsWith("task:") || chatRosterEntry(chatAgent)?.durableSend || chatIsTerm()) ? ref=>{
       chatArtifactSelections.set(key,{...ref,task:taskID,discuss:!!spec.discuss});
       if(key.startsWith("chat:"))chatRenderArtifactContext(taskID,key);
       if(key.startsWith("chat:"))chatCaptureSyncedDraft(key.slice(5));
       else if(key.startsWith("task:"))todoSaveArtifactSelection(taskID);
-      if(window.matchMedia("(max-width: 900px)").matches)chatCloseWorkspace();
+      if(window.matchMedia("(max-width: 900px)").matches)w.show(false);
       document.querySelector("#chatComposer textarea")?.focus();
     }:null
-  });
-  chatInstallPaneResize(shell);
+  }));
 }
 function chatRenderArtifactContext(taskID,key,host){
  key=key||"task:"+taskID;

@@ -823,16 +823,18 @@ function artifactWorkspace(mount, options) {
     };
     controls.append(save,review,cancel,discard); chatRenderStateNotice(recovery,editState);input.focus();
   }
-  (async () => { try {
-    const a = await opts.load(); await show(a,opts.revision || a.head);
-    if(opts.proposal&&current&&pane.isConnected){
-      const p=opts.proposal;
+  async function refresh(revision,proposal) { try {
+    if(editing){notice.textContent="Your edit is preserved. Return to preview before opening another version.";return;}
+    const a = await opts.load(); await show(a,revision || a.head);
+    if(proposal&&current&&pane.isConnected){
+      const p=proposal;
       if(p.artifactId!==current.id||p.baseRevision!==selected||typeof p.content!=="string")notice.textContent="Proposed revision does not match this artifact version.";
       else if(editState?.value||editState?.conflict||editState?.error)notice.textContent="Finish or discard your existing edit before reviewing this proposal. Your draft is preserved.";
       else{editVersion(false,false,p);notice.textContent="Proposed revision · review before saving. Execution will not start.";}
     }
-  } catch(e) { notice.textContent=e.message; title.textContent="Artifact unavailable"; } })();
-  return {element:pane, close:()=>close.click(), isEditing:()=>editing};
+  } catch(e) { notice.textContent=e.message; title.textContent="Artifact unavailable"; } }
+  refresh(opts.revision,opts.proposal);
+  return {element:pane, close:()=>close.click(), isEditing:()=>editing, refresh};
 }
 
 // A compact, keyboard-accessible review surface for explicit user actions.

@@ -77,7 +77,7 @@ type Origin struct {
 }
 
 func validOrigin(o Origin) bool {
-	if o.Mode != "" && (o.Mode != "continue" || o.Backend != "terminal") {
+	if o.Mode != "" && o.Mode != "side" && (o.Mode != "continue" || o.Backend != "terminal") {
 		return false
 	}
 	if o.Backend == "" {

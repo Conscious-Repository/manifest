@@ -38,7 +38,7 @@ func (s *Server) handleChatRelated(w http.ResponseWriter, r *http.Request) {
 		s.handleRelatedCodingChat(w, r, b, origin)
 		return
 	}
-	if b.Backend != "" || (b.Mode != "" && (b.Mode != "continue" || origin.Backend != "terminal")) {
+	if b.Backend != "" || (b.Mode != "" && b.Mode != "side" && (b.Mode != "continue" || origin.Backend != "terminal")) {
 		httpError(w, errBadRequest("unsupported related chat backend"))
 		return
 	}
@@ -63,7 +63,7 @@ func (s *Server) handleChatRelated(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, map[string]any{"id": accepted.ID, "agent": accepted.Agent, "conversation": sessionConversation(accepted)})
 		return
 	}
-	source, _, _, ok := s.agentChat.store.Get(origin.Agent, origin.ID)
+	source, sourceBody, _, ok := s.agentChat.store.Get(origin.Agent, origin.ID)
 	if origin.Backend == "terminal" {
 		ok = false
 		if s.terminal != nil {
@@ -74,6 +74,11 @@ func (s *Server) handleChatRelated(w http.ResponseWriter, r *http.Request) {
 				}
 				ok = true
 				source = agentchat.Session{Agent: origin.Agent, ID: origin.ID, Origin: se.Origin}
+				if origin.Mode == "side" {
+					timeline := s.terminalRootTimeline(r.Context(), se, s.terminalPlanningChildren(se), s.terminalCodingContinuations(r.Context(), se))
+					origin.Context, origin.HistoryOmitted = timelineContinuationContext(s.terminalConversation(se).Key, timeline)
+					origin.Context = sideSnapshotContext(se.Origin, origin.Context)
+				}
 				for _, link := range s.terminalConversation(se).Links {
 					if link.Kind == "task" {
 						source.Task = link.ID
@@ -85,6 +90,9 @@ func (s *Server) handleChatRelated(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		http.NotFound(w, r)
 		return
+	}
+	if origin.Mode == "side" && origin.Backend == "" {
+		origin.Context, origin.HistoryOmitted = logicalContinuationContext(source, sourceBody, s.codingContinuations(r.Context(), source))
 	}
 	profile, err := s.resolveAgentChat(r.Context(), b.Agent)
 	if err != nil {

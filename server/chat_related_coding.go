@@ -27,7 +27,7 @@ func (s *Server) handleRelatedCodingChat(w http.ResponseWriter, r *http.Request,
 		httpError(w, errBadRequest("invalid related coding chat request"))
 		return
 	}
-	if b.Mode != "" && b.Mode != "continue" {
+	if b.Mode != "" && b.Mode != "continue" && b.Mode != "side" {
 		httpError(w, errBadRequest("unsupported coding continuation mode"))
 		return
 	}
@@ -108,9 +108,10 @@ func (s *Server) handleRelatedCodingChat(w http.ResponseWriter, r *http.Request,
 			}
 			ok = true
 			source = agentchat.Session{Agent: origin.Agent, ID: origin.ID, Title: parent.Name, Origin: parent.Origin}
-			if origin.Mode == "continue" {
+			if origin.Mode == "continue" || origin.Mode == "side" {
 				timeline := s.terminalRootTimeline(r.Context(), parent, s.terminalPlanningChildren(parent), s.terminalCodingContinuations(r.Context(), parent))
 				origin.Context, origin.HistoryOmitted = timelineContinuationContext(s.terminalConversation(parent).Key, timeline)
+				origin.Context = sideSnapshotContext(parent.Origin, origin.Context)
 			}
 			for _, link := range s.terminalConversation(parent).Links {
 				if link.Kind == "task" {
@@ -123,8 +124,11 @@ func (s *Server) handleRelatedCodingChat(w http.ResponseWriter, r *http.Request,
 		http.NotFound(w, r)
 		return
 	}
-	if origin.Mode == "continue" && origin.Backend == "" {
+	if (origin.Mode == "continue" || origin.Mode == "side") && origin.Backend == "" {
 		origin.Context, origin.HistoryOmitted = codingContinuationContext(source, sourceBody)
+		if origin.Mode == "side" {
+			origin.Context, origin.HistoryOmitted = logicalContinuationContext(source, sourceBody, s.codingContinuations(r.Context(), source))
+		}
 	}
 	if origin.Task != "" && origin.Task != source.Task {
 		link := s.taskChatLink(origin.Task, s.listThread(origin.Task), "")
