@@ -715,7 +715,7 @@ function artifactWorkspace(mount, options) {
   notice.setAttribute("role", "status");
   pane.append(header, controls, notice, body);
   mount.append(pane);
-  let current, selected, selectedNumber, generation = 0, editing = false, editState, editor, previewMode="preview", openComparison=null;
+  let current, selected, selectedNumber, generation = 0, editing = false, editState, editor, previewMode="preview", openComparison=null, openDraftReview=null;
   const recovery = el("div", "artifact-edit-recovery");
   pane.insertBefore(recovery,body);
   async function prepareEditState(id){
@@ -749,7 +749,7 @@ function artifactWorkspace(mount, options) {
   }
   function render() {
     generation++;
-    previewMode="preview";openComparison=null;
+    previewMode="preview";openComparison=null;openDraftReview=null;
     editing = false;
     pane.dataset.draft=String(!!editState?.value);
     title.textContent = current.title || current.ref || "Artifact";
@@ -819,9 +819,9 @@ function artifactWorkspace(mount, options) {
       controls.append(edit);
     }
   }
-  function editVersion(restore,resume=false,proposal=null) {
+  function editVersion(restore,resume=false,proposal=null,focus=true) {
     generation++;
-    editing = true;
+    editing = true;previewMode="edit";
     pane.dataset.draft='true';
     const original = current.content || "";
     const started=resume&&editState?.value ? editState.value : {text:proposal?proposal.content:original,artifact:current.id,baseRevision:proposal?proposal.baseRevision:current.head,sourceRevision:selected,restore};
@@ -837,14 +837,14 @@ function artifactWorkspace(mount, options) {
     input.addEventListener("input",remember);
     const review=el("button","sprt-quiet","Review changes");
     let reviewing=false;
-    review.onclick=async()=>{
-      if(reviewing){body.replaceChildren(input);review.textContent="Review changes";reviewing=false;input.focus();return;}
+    openDraftReview=review.onclick=async()=>{
+      if(reviewing){body.replaceChildren(input);previewMode="edit";review.textContent="Review changes";reviewing=false;if(focus)input.focus();return;}
       remember();const ticket=generation;review.disabled=true;
       try{
         const base=await fetchJSON(url(current,started.baseRevision));
         if(ticket!==generation||!pane.isConnected||!editing)return;
         body.replaceChildren(artifactDiffView(base.content||"",input.value,"Unsaved changes from starting revision"));
-        reviewing=true;review.textContent="Edit text";
+        reviewing=true;previewMode="edit-review";review.textContent="Edit text";
       }catch(e){if(ticket===generation&&pane.isConnected)notice.textContent="Could not compare the starting revision: "+e.message;}
       finally{review.disabled=false;}
     };
@@ -869,7 +869,7 @@ function artifactWorkspace(mount, options) {
       } catch(e) { notice.textContent = e.message; }
       finally { save.disabled = false;input.disabled=false;discard.disabled=false;review.disabled=false; }
     };
-    controls.append(save,review,cancel,discard); chatRenderStateNotice(recovery,editState);input.focus();
+    controls.append(save,review,cancel,discard); chatRenderStateNotice(recovery,editState);if(focus)input.focus();
   }
   async function refresh(revision,proposal) { try {
     if(editing){notice.textContent="Your edit is preserved. Return to preview before opening another version.";return;}
@@ -883,8 +883,12 @@ function artifactWorkspace(mount, options) {
   } catch(e) { notice.textContent=e.message; title.textContent="Artifact unavailable"; } }
   const ready=refresh(opts.revision,opts.proposal);
   return {element:pane, close:()=>close.click(), isEditing:()=>editing, refresh,
-    getView:()=>({revision:selected,mode:previewMode,scrollTop:body.scrollTop,expandedFiles:[...body.querySelectorAll('.working-file[open]')].map(f=>f.dataset.diffFile)}),
-    restoreView:async view=>{await ready;if(!pane.isConnected||!body.clientHeight)return false;if(view.mode==="compare"&&previewMode!=="compare"&&openComparison)await openComparison();if(!pane.isConnected||!body.clientHeight)return false;if(Array.isArray(view.expandedFiles)){body.querySelectorAll('.working-file').forEach(f=>f.open=view.expandedFiles.includes(f.dataset.diffFile));await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));}if(Number.isFinite(view.scrollTop))body.scrollTop=Math.max(0,view.scrollTop);return true;}
+    getView:()=>({revision:selected,mode:previewMode,scrollTop:body.scrollTop,editor:editing&&editor?{scrollTop:editor.scrollTop,start:editor.selectionStart,end:editor.selectionEnd,direction:editor.selectionDirection}:null,expandedFiles:[...body.querySelectorAll('.working-file[open]')].map(f=>f.dataset.diffFile)}),
+    restoreView:async view=>{await ready;if(!pane.isConnected||!body.clientHeight)return false;if((view.mode==="edit"||view.mode==="edit-review")&&opts.save&&editState?.value&&(!opts.canEdit||opts.canEdit(current))){
+      editVersion(!!editState.value.restore,true,null,false);
+      if(view.editor){editor.setSelectionRange(Math.max(0,Number(view.editor.start)||0),Math.max(0,Number(view.editor.end)||0),view.editor.direction||"none");editor.scrollTop=Math.max(0,Number(view.editor.scrollTop)||0);}
+      if(view.mode==="edit-review"&&openDraftReview)await openDraftReview();
+    }else if(view.mode==="compare"&&previewMode!=="compare"&&openComparison)await openComparison();if(!pane.isConnected||!body.clientHeight)return false;if(Array.isArray(view.expandedFiles)){body.querySelectorAll('.working-file').forEach(f=>f.open=view.expandedFiles.includes(f.dataset.diffFile));await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));}if(Number.isFinite(view.scrollTop))body.scrollTop=Math.max(0,view.scrollTop);return true;}
   };
 }
 
