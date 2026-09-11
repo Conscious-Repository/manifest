@@ -181,10 +181,12 @@ function chatUpdateJump(){
 function chatCopyResponseControl(blocks){
  const text=blocks.filter(block=>block.t==='say').map(block=>block.text||'').filter(Boolean).join('\n\n');
  if(!text)return null;
- const button=el('button','chat-copy-response','Copy');button.setAttribute('aria-label','Copy response');button.title='Copy response as text';
+ const recentlyCopied=chatCopyResponseControl.last?.text===text&&Date.now()-chatCopyResponseControl.last.at<2000;
+ const button=el('button','chat-copy-response',recentlyCopied?'Copied':'Copy');button.setAttribute('aria-label',recentlyCopied?'Response copied':'Copy response');button.title='Copy response as text';
+ if(recentlyCopied)setTimeout(()=>{if(button.isConnected){button.textContent='Copy';button.setAttribute('aria-label','Copy response');}},2000-(Date.now()-chatCopyResponseControl.last.at));
  button.onclick=async()=>{
   button.disabled=true;
-  try{await navigator.clipboard.writeText(text);button.textContent='Copied';button.setAttribute('aria-label','Response copied');}
+  try{await navigator.clipboard.writeText(text);chatCopyResponseControl.last={text,at:Date.now()};button.textContent='Copied';button.setAttribute('aria-label','Response copied');}
   catch(error){button.textContent='Try again';button.title='Clipboard unavailable. Select the response text to copy it.';button.setAttribute('aria-label','Copy failed; try again');}
   finally{button.disabled=false;setTimeout(()=>{if(button.isConnected){button.textContent='Copy';button.setAttribute('aria-label','Copy response');}},2000);}
  };

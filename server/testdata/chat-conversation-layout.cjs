@@ -30,6 +30,7 @@ const root=path.join(__dirname,'../web');
  await page.getByText('original file',{exact:true}).waitFor();
  await page.evaluate(()=>{document.getElementById('transcript').replaceChildren();chatTermPaintLines(document.getElementById('transcript'),turns);});
  assert.equal(await page.locator('.chat-term-activity').evaluate(e=>e.open),true,'activity collapsed on transcript refresh');
+ assert.equal(await page.getByRole('button',{name:'Response copied',exact:true}).count(),1,'copy feedback survives repaint');
  for(const theme of ['default','jarvis'])for(const width of [1440,390]){
   await page.setViewportSize({width,height:900});await page.evaluate(theme=>document.documentElement.dataset.theme=theme,theme);
   assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false,theme+' overflow at '+width);
