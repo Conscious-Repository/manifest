@@ -2972,7 +2972,9 @@ function chatOpenTerminalPane(session){
   grip.onkeydown=e=>{if(!["ArrowUp","ArrowDown","Home"].includes(e.key))return;e.preventDefault();apply(e.key==="Home"?280:height+(e.key==="ArrowUp"?24:-24));save();};
   grip.ondblclick=()=>{apply(280);save();};
   const observer=new ResizeObserver(()=>apply(height));observer.observe(main);
+  detachTerm();
   termEmbedded=true;termOpenId=session.id;termStage="term";termAttachmentPaused=false;
+  renderTermEmpty("Checking session…");
   const dispose=()=>{observer.disconnect();detachTerm();if(marker.parentNode)marker.replaceWith(stage);else home.append(stage);termEmbedded=false;pane.remove();chatTerminalDock=null;};
   chatTerminalDock={id:session.id,close:dispose};close.onclick=dispose;
   showTerminal();apply(height);
