@@ -337,6 +337,17 @@
   }
   .contact-name { font-size: var(--fs-xl); }
   .contact-row-right { align-items: flex-end; }
+  /* going-cold rows (2026-09-12): the red cadence note ("mentioned 379d ago
+     (usually every 10d)") is ~38 mono chars — as the auto column it ate the
+     row, the nowrap chip and the name were squeezed into two lines and the note
+     painted across them. On phones the row stacks instead: name on its own
+     line, then chip + note together beneath it, both left-aligned and free to
+     wrap. Desktop keeps the two-column layout. */
+  .contact-row.cold { display: flex; flex-wrap: wrap; justify-content: flex-start; align-items: baseline; column-gap: var(--sp-3); row-gap: var(--sp-1); }
+  .contact-row.cold .contact-row-left, .contact-row.cold .contact-row-right { display: contents; }
+  .contact-row.cold .contact-ident { order: 0; flex: 1 1 100%; }
+  .contact-row.cold .contact-cold, .contact-row.cold .contact-dot, .contact-row.cold .contact-loops, .contact-row.cold .contact-upcoming { order: 1; }
+  .contact-row.cold .contact-meta, .contact-row.cold .contact-submeta { order: 2; min-width: 0; text-align: left; }
   /* the nearby place input was 13px — touch floor + 16px so iOS doesn't auto-zoom
      the page on focus (same defect the reading shelf had; 2026-09-05) */
   .nearby-form .contact-search, .nearby-radius {
