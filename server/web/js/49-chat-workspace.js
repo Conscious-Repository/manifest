@@ -64,6 +64,9 @@ function chatWorkspaceHeader(head){
  button.setAttribute('aria-label','Toggle workspace');button.setAttribute('aria-expanded',String(!!chatWorkspaceTabs&&!chatWorkspaceTabs.pane.hidden));
  button.title='Plans, files and side chats · Ctrl+Alt+I';button.setAttribute('aria-keyshortcuts','Control+Alt+i');
  button.onclick=()=>{if(chatWorkspaceTabs)chatWorkspaceTabs.show(chatWorkspaceTabs.pane.hidden);else chatEnsureWorkspace();};head.append(button);
+ // Phones keep the opener out of the primary head: the same action sits in the
+ // ··· menu (95-mobile.css shows one or the other; show() updates both).
+ if(more){const entry=el('button','sprt-quiet chat-workspace-toggle mf-chat-ws-more','Workspace');entry.title='Plans, files and side chats';entry.setAttribute('aria-expanded',button.getAttribute('aria-expanded'));entry.onclick=button.onclick;more.insertBefore(entry,more.querySelector(':scope > .chat-head-acts'));}
 }
 function chatEnsureWorkspace(restoring=false){
  if(chatWorkspaceTabs)return chatWorkspaceTabs;
@@ -291,7 +294,7 @@ function chatWorkbenchShortcut(event){
   case 'KeyN':target=document.querySelector('#chatHeadActions button');break;
   case 'KeyF':target=document.querySelector('.chat-inbox-search');break;
   case 'KeyM':target=document.querySelector('#chatComposer textarea');break;
-  case 'KeyI':target=document.querySelector('.chat-workspace-toggle');break;
+  case 'KeyI':target=document.querySelector('.chat-head > .chat-workspace-toggle');break;
   case 'KeyX':target=document.querySelector('#chatThreadHeader .chat-stop-agent');break;
   case 'ArrowDown':case 'ArrowUp':case 'KeyJ':{
    const rows=[...document.querySelectorAll('#chatInboxRows .chat-rail-row')].filter(row=>row.getClientRects().length);

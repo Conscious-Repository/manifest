@@ -17,6 +17,9 @@
   window.mf = { phone: () => mqPhone.matches };
 
   // A phone conversation gets the viewport; its directory is an explicit fold.
+  // An open conversation reaches the fold from its own head (48-chat.js
+  // chatBackToChats → mf.openChats); this shell-level toggle stays for the
+  // landing (no head) and, as "Close chats", for the open list.
   const chatShell = document.querySelector(".chat-shell");
   const chatRail = document.getElementById("chatRail");
   if (chatShell && chatRail) {
@@ -32,6 +35,8 @@
     setOpen(false);
     toggle.onclick = () => setOpen(!chatShell.classList.contains("mf-chat-nav-open"));
     chatShell.prepend(toggle);
+    window.mf.openChats = () => { if (mqPhone.matches) { setOpen(true); toggle.focus({ preventScroll: true }); } };
+    window.mf.closeChats = () => setOpen(false);
     window.addEventListener("hashchange", () => {
       const section = /^#\/chat\/a\/[^/]+$/.test(location.hash) || location.hash === "#/chat/spirits";
       if (mqPhone.matches && !section) setOpen(false);

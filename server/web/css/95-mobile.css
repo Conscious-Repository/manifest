@@ -6,7 +6,10 @@
    860–1100 tablet band deliberately untouched (owner decision 2026-08-10).
    Rev 5 (2026-09-05, hardening pass): the touch tokens below + the last
    block — page-header wrap, touch floors, per-surface fixes measured at
-   360/390/412 (findings: /tmp/mobile_audit_findings.md of that pass). */
+   360/390/412 (findings: /tmp/mobile_audit_findings.md of that pass).
+   Rev 6 (2026-09-12, chat reference pass): the final CHAT block — composer
+   pill, back-to-chats in the head, workspace opener behind ···; fixture
+   server/testdata/chat-mobile-chrome.cjs. */
 
 /* mono-label group (ui-conventions.md §labels): the invariant recipe once;
    each selector below keeps only its own size/color/structure. */
@@ -18,6 +21,10 @@
 .mf-topbar-btn { display: none; }
 .mf-scrim { display: none; }
 .mf-sheet-wrap { display: none; }
+/* the conversation head's back-to-chats and the ··· menu's Workspace entry
+   (48-chat.js chatBackToChats, 49-chat-workspace.js chatWorkspaceHeader) */
+.mf-chat-back { display: none; }
+.chat-details[open] > .mf-chat-ws-more { display: none; }
 
 @keyframes sheetUp {
   from { transform: translateY(24px); opacity: 0.6; }
@@ -703,4 +710,47 @@
   .chat-main .chat-composer > .chat-composer-recipient {
     min-height: var(--control-touch); max-width: calc(100% - 156px);
   }
+}
+
+/* ================= CHAT — phone conversation chrome (Rev 6, 2026-09-12) =================
+   Reference pass against ChatGPT mobile. Three changes, all under 860px:
+   1. the composer is one rounded row while empty and unfocused (≈58px);
+      focused or holding text, the textarea takes its own full-width row and
+      model · voice · send stay in the lower row. Height then grows only as
+      the text wraps (48-chat.js grow()).
+   2. an open conversation's head starts with "‹ Chats" (back to the list);
+      the shell-level fold toggle is left for the landing and the open list.
+   3. the workspace opener leaves the primary head for the ··· menu; the open
+      workspace keeps its own × (Hide workspace) as the way back. */
+@media (max-width: 860px) {
+  .chat-main .chat-composer {
+    padding: var(--sp-3) var(--sp-3) var(--sp-3) var(--sp-5); gap: var(--sp-2) var(--sp-3);
+    border-radius: calc(var(--control-touch) / 2 + var(--sp-3));
+  }
+  .chat-main .chat-composer textarea.chat-input {
+    min-height: 40px; padding: 7px var(--sp-2); font: var(--fs-xl)/1.6 var(--sans);
+  }
+  /* empty + unfocused: the textarea shares the control row instead of owning one */
+  .chat-main .chat-composer:not(:focus-within):has(> textarea.chat-input:placeholder-shown) > textarea.chat-input {
+    flex: 1 1 0; width: auto; min-width: 0; order: 1;
+    min-height: var(--control-touch); max-height: var(--control-touch); padding: 9px var(--sp-2); overflow: hidden;
+  }
+  .chat-main .chat-composer:not(:focus-within):has(> textarea.chat-input:placeholder-shown) > .chat-attach { order: 0; }
+
+  .mf-chat-back {
+    display: inline-flex; align-items: center; gap: var(--sp-1); flex: none;
+    min-height: var(--touch); min-width: var(--touch); padding: 0 var(--sp-4) 0 var(--sp-2); margin: 0;
+    border: 0; border-radius: var(--radius-lg); background: none; cursor: pointer;
+    font: var(--fs-xl)/1 var(--sans); color: var(--accent);
+  }
+  .mf-chat-back-glyph { font-size: var(--fs-2xl); line-height: 1; }
+  .mf-chat-back:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+  /* the shell toggle is redundant while a conversation head is on screen */
+  .chat-shell:not(.mf-chat-nav-open):not(.has-artifact):has(#chatThreadHeader:not([hidden])) > .mf-chat-toggle { display: none; }
+  .mf-chat-toggle { min-height: var(--touch); font: var(--fs-xl)/1 var(--sans); padding: 0 var(--sp-2); }
+
+  .chat-thread-header .chat-head > .chat-workspace-toggle { display: none; }
+  .chat-details[open] > .mf-chat-ws-more { display: block; }
+  /* the open workspace's own way back (× Hide workspace) is a full touch target */
+  .chat-workspace-bar > button { min-width: var(--touch); }
 }

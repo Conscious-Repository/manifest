@@ -118,6 +118,19 @@ function chatRestoreFocus(host, key) {
   return document.activeElement === match;
 }
 
+// chatBackToChats — the phone conversation head's way back to the Chats list
+// (98-mobile.js owns the fold; 95-mobile.css shows this only under 860px, so
+// desktop renders the head unchanged).
+function chatBackToChats() {
+  const back = el("button", "mf-chat-back");
+  back.type = "button";
+  back.setAttribute("aria-label", "Back to chats");
+  back.title = "Back to chats";
+  back.append(el("span", "mf-chat-back-glyph", "‹"), el("span", "mf-chat-back-label", "Chats"));
+  back.onclick = () => mf.openChats();
+  return back;
+}
+
 // Headers occupy their own flex row; output never scrolls behind them.
 function chatMountHeader(head) {
   const transcript = document.getElementById("chatTranscript");
@@ -125,6 +138,7 @@ function chatMountHeader(head) {
   let slot = document.getElementById("chatThreadHeader");
   if (!slot) { slot = el("div", "chat-thread-header"); slot.id = "chatThreadHeader"; transcript.before(slot); }
   if(head && typeof chatWorkspaceHeader === "function")chatWorkspaceHeader(head);
+  if(head && typeof mf !== "undefined" && mf?.openChats && !head.querySelector(".mf-chat-back"))head.prepend(chatBackToChats());
   const focusKey = chatCaptureFocus(slot);
   slot.replaceChildren(...(head ? [head] : []));
   slot.hidden = !head;
