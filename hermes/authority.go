@@ -109,9 +109,18 @@ func (r *Runner) dutyAuthority(req Request) (DutyAuthority, error) {
 // successor must not treat a missing or malformed report as zero-cost success.
 func VerifyDutyUsageFile(a DutyAuthority, res Result, path string) (Result, error) {
 	b, err := os.ReadFile(path)
+	if err != nil {
+		return Result{}, refuse("missing usage evidence")
+	}
+	return VerifyDutyUsage(a, res, b)
+}
+
+// VerifyDutyUsage is the pure acceptance check shared by the runner and frozen
+// shadow replay. It does not mint a DutyVerified receipt or authorize execution.
+func VerifyDutyUsage(a DutyAuthority, res Result, b []byte) (Result, error) {
 	var u usageReport
 	fields, fieldsOK := strictUsageFields(b)
-	valid := err == nil && json.Unmarshal(b, &u) == nil && fieldsOK
+	valid := json.Unmarshal(b, &u) == nil && fieldsOK
 	if valid {
 		valid = u.Completed != nil && *u.Completed && !u.Failed
 		found := false

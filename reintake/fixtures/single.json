@@ -1,0 +1,58 @@
+{
+  "request": {
+    "ownerTriggered": true,
+    "documents": [
+      "sha256:b1caa6017447496208afc1bc11f2aaad1343de53e9f0fbdb1e71bf990418b49a"
+    ],
+    "portalVisible": false
+  },
+  "proposals": [
+    {
+      "type": "re-contract",
+      "action": "Synthetic intake proposal; semantic review only",
+      "agent": "extractor",
+      "ritual": "re-intake",
+      "applyPath": "system/realestate/contracts/fixture-single.md",
+      "proposed": "",
+      "body": "Semantic review only; original prose withheld.\n\n````re-contract\n{\n  \"kind\": \"bid\",\n  \"contractor\": \"fixture-contractor-1\",\n  \"name\": \"fixture-prose-1\",\n  \"total\": 100,\n  \"date\": \"2000-01-01\",\n  \"doc\": \"sha256:b1caa6017447496208afc1bc11f2aaad1343de53e9f0fbdb1e71bf990418b49a\",\n  \"allocations\": [\n    {\n      \"property\": \"fixture-property-1\",\n      \"node\": \"fixture-node-1/fixture-node-2\",\n      \"amount\": 100,\n      \"reason\": \"fixture-prose-2\"\n    }\n  ],\n  \"terms\": [\n    \"fixture-prose-3\",\n    \"fixture-prose-4\",\n    \"fixture-prose-5\"\n  ],\n  \"risk_items\": [\n    \"fixture-prose-6\"\n  ]\n}\n````\n"
+    }
+  ],
+  "usage": {
+    "model": "claude-sonnet-5",
+    "provider": "claude-sub",
+    "completed": true,
+    "cost_usd": 0,
+    "steps": 1
+  },
+  "expected": {
+    "source": "sha256:b1caa6017447496208afc1bc11f2aaad1343de53e9f0fbdb1e71bf990418b49a",
+    "actor": "extractor",
+    "target": "system/realestate/contracts/fixture-single.md",
+    "applyPath": "system/realestate/contracts/fixture-single.md",
+    "type": "re-contract",
+    "payload": {
+      "kind": "bid",
+      "contractor": "fixture-contractor-1",
+      "name": "fixture-prose-1",
+      "total": 100,
+      "date": "2000-01-01",
+      "doc": "sha256:b1caa6017447496208afc1bc11f2aaad1343de53e9f0fbdb1e71bf990418b49a",
+      "allocations": [
+        {
+          "property": "fixture-property-1",
+          "node": "fixture-node-1/fixture-node-2",
+          "amount": 100,
+          "reason": "fixture-prose-2"
+        }
+      ],
+      "terms": [
+        "fixture-prose-3",
+        "fixture-prose-4",
+        "fixture-prose-5"
+      ],
+      "risk_items": [
+        "fixture-prose-6"
+      ]
+    }
+  }
+}

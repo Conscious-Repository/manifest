@@ -130,9 +130,23 @@ func (e Entry) About(kind, id string) bool {
 
 // Store is one ledger directory: <dir>/<YYYY-MM-DD>.jsonl in loc's days.
 type Store struct {
-	dir string
-	loc *time.Location
-	mu  sync.Mutex
+	dir  string
+	root *os.Root // optional confined directory; owned by the caller
+	loc  *time.Location
+	mu   sync.Mutex
+}
+
+// NewInRoot reuses the ledger in a caller-owned confined directory. The caller
+// must keep root open while using the store. Shadow evidence must never append
+// to the production ledger or follow a symlink outside its private directory.
+func NewInRoot(root *os.Root, loc *time.Location) (*Store, error) {
+	if root == nil {
+		return nil, errors.New("ledger: missing confined root")
+	}
+	if loc == nil {
+		loc = time.Local
+	}
+	return &Store{dir: root.Name(), root: root, loc: loc}, nil
 }
 
 // New opens (creating if needed) a ledger directory.
@@ -182,7 +196,12 @@ func (s *Store) Append(e Entry) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	path := filepath.Join(s.dir, day+".jsonl")
-	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+	var f *os.File
+	if s.root != nil {
+		f, err = s.root.OpenFile(day+".jsonl", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
+	} else {
+		f, err = os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+	}
 	if err != nil {
 		return err
 	}
@@ -190,12 +209,22 @@ func (s *Store) Append(e Entry) error {
 	// heal a torn last line (crash mid-append): if the file doesn't end in a
 	// newline, start on a fresh one so the fragment stays its own skipped line
 	if fi, err := f.Stat(); err == nil && fi.Size() > 0 {
-		if b, err := os.ReadFile(path); err == nil && len(b) > 0 && b[len(b)-1] != '\n' {
+		if b, err := s.readFile(day + ".jsonl"); err == nil && len(b) > 0 && b[len(b)-1] != '\n' {
 			line = append([]byte{'\n'}, line...)
 		}
 	}
 	_, err = f.Write(append(line, '\n'))
+	if err == nil && s.root != nil {
+		err = f.Sync()
+	}
 	return err
+}
+
+func (s *Store) readFile(name string) ([]byte, error) {
+	if s.root != nil {
+		return s.root.ReadFile(name)
+	}
+	return os.ReadFile(filepath.Join(s.dir, name))
 }
 
 // Day reads one date's entries, in file order. Unparsable lines are skipped.
@@ -210,7 +239,7 @@ func (s *Store) Day(date string) ([]Entry, error) {
 
 // readDay is Day under the caller's lock.
 func (s *Store) readDay(date string) ([]Entry, error) {
-	b, err := os.ReadFile(filepath.Join(s.dir, date+".jsonl"))
+	b, err := s.readFile(date + ".jsonl")
 	if err != nil {
 		if os.IsNotExist(err) {
 			return []Entry{}, nil
@@ -375,7 +404,15 @@ func (s *Store) Days() []string {
 
 // days is Days under the caller's lock.
 func (s *Store) days() []string {
-	entries, _ := os.ReadDir(s.dir)
+	var entries []os.DirEntry
+	if s.root != nil {
+		if dir, err := s.root.Open("."); err == nil {
+			entries, _ = dir.ReadDir(-1)
+			dir.Close()
+		}
+	} else {
+		entries, _ = os.ReadDir(s.dir)
+	}
 	var out []string
 	for _, e := range entries {
 		name := strings.TrimSuffix(e.Name(), ".jsonl")

@@ -1,0 +1,26 @@
+[
+  {
+    "fixture": "single",
+    "run": "/private/harnesses/excalibur/artifacts/runs/2026-09-07-extractor-20260907-142350-d272.md",
+    "runSHA256": "c78152ae9ae1af9d6f6996433ffedb572cded2140c3058994b8f103068f53478",
+    "proposal": "/private/harnesses/excalibur/artifacts/approvals/approved/f49bcc06496b.md",
+    "proposalSHA256": "97d2119ed8bb0a352f41088e14c88c4be4594e81b65ecbf0c3835676b602c4eb",
+    "link": "proposal ID occurs in run artifact",
+    "requestDocOccursInRun": true,
+    "fixtureSHA256": "9565c9699e357d82ca901b0f6f64b0dbcd9d60b63ab23bb512da87c05de0a889",
+    "usage": "synthetic, not historical usage verification",
+    "sourceActorTarget": "derived: payload.doc, proposal.agent, proposal.apply-path; not native header fields"
+  },
+  {
+    "fixture": "split",
+    "run": "/private/harnesses/excalibur/artifacts/runs/2026-08-18-extractor-20260818-160420-3694.md",
+    "runSHA256": "3dfa95bfdec848219b3802b02d5a98e13f95866ffc3cfb47eaaba5332f759e18",
+    "proposal": "/private/harnesses/excalibur/artifacts/approvals/approved/80c7adc2209e.md",
+    "proposalSHA256": "ae0e1dd544b920a2b15678d5e084151482b3e40167a2de3df77c437ad598012c",
+    "link": "proposal ID occurs in run artifact",
+    "requestDocOccursInRun": true,
+    "fixtureSHA256": "ad905d6b2a6cdd584d4bed17ab2a19e879a6ae0b08aef87945ef4937e2a8c0ae",
+    "usage": "synthetic, not historical usage verification",
+    "sourceActorTarget": "derived: payload.doc, proposal.agent, proposal.apply-path; not native header fields"
+  }
+]
