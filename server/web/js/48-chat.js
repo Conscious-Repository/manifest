@@ -502,13 +502,13 @@ function renderChatHeadActions() {
     body.closest('dialog').classList.add('chat-new-dialog');
     const cancel=el('button','sprt-quiet','Cancel');cancel.onclick=close;actions.append(cancel);
     const project=document.createElement('select');project.className='pp-in';project.setAttribute('aria-label','New chat project');
-    for(const [id,label] of [['','Standalone chat'],...Object.entries(chatWorkstreams.groups)]){const o=el('option','',label);o.value=id;project.append(o);}project.value=chatWorkstreams.groups[chatWorkstreamFilter]?chatWorkstreamFilter:'';const projectLabel=el('label','chat-new-project','Project');projectLabel.append(project);body.append(projectLabel);
+    for(const [id,label] of [['','Standalone chat'],...chatProjectOptions()]){const o=el('option','',label);o.value=id;project.append(o);}project.value=chatWorkstreams.groups[chatWorkstreamFilter]?chatWorkstreamFilter:'';const projectLabel=el('label','chat-new-project','Project');projectLabel.append(project);body.append(projectLabel);
     const choices=[...chatRoster.filter(a=>a.enabled&&!chatIsTerm(a.name)&&chatPrivateCreationAgent(a.name)===a.name).map(a=>[a.name,a.label,a.model]),...(chatTermEnabled?Object.entries(chatTermKinds):[]),['','Spirits']];
     choices.forEach(([agent,label,model])=>{
       const button=el('button','chat-new-choice');
       button.append(el('span','',label));
       if(model)button.append(el('span','chat-new-model',shortModel(model)));
-      button.onclick=()=>{chatPendingProject=project.value;close();location.hash=agent?'#/chat/a/'+encodeURIComponent(agent)+'/new':'#/chat/new';};
+      button.onclick=async()=>{button.disabled=true;try{chatPendingProject=await chatResolveProject(project.value);chatUseProjectFolder(chatPendingProject,agent);close();location.hash=agent?'#/chat/a/'+encodeURIComponent(agent)+'/new':'#/chat/new';}catch(e){showToast(e.message);}finally{button.disabled=false;}};
       body.append(button);
     });
   });
@@ -593,10 +593,50 @@ let chatWorkstreams={groups:{},members:{}},chatWorkstreamsRevision=-1,chatWorkst
 const chatWorkstreamURL="/api/chat/state/inbox/workstreams";
 function chatApplyWorkstreams(state){
   if(state.key!=="inbox"||state.slot!=="workstreams"||!Number.isSafeInteger(state.revision)||state.revision<chatWorkstreamsRevision)return;
-  chatWorkstreamsRevision=state.revision;chatWorkstreams={groups:state.value?.groups||{},members:state.value?.members||{},contexts:state.value?.contexts||{},priorities:state.value?.priorities||{},recordVersion:state.record_version||"",recordPath:state.record_path||""};
+  chatWorkstreamsRevision=state.revision;chatWorkstreams={groups:state.value?.groups||{},members:state.value?.members||{},folders:state.value?.folders||{},contexts:state.value?.contexts||{},priorities:state.value?.priorities||{},recordVersion:state.record_version||"",recordPath:state.record_path||""};
 }
 async function chatLoadWorkstreams(){try{const r=await fetch(chatWorkstreamURL,{cache:"no-store"});if(r.ok)chatApplyWorkstreams(await r.json());}catch(e){}}
 function chatWorkstreamMember(key){const id=chatWorkstreams.members[key];return chatWorkstreams.groups[id]?id:"";}
+// Folder groups shown in the rail must also be selectable when starting a chat.
+function chatFolderProjects(){
+ const folders=new Map();
+ for(const session of chatTermSessions){
+  const cwd=(session.cwd||'').replace(/\/+$/,'');
+  if(session.device||!cwd||cwd==='~'||/^\/(?:home|Users)\/[^/]+$/.test(cwd))continue;
+  const key='folder:local:'+cwd;
+  if(!folders.has(key))folders.set(key,{cwd,label:cwd.split('/').at(-1),sessions:[]});
+  folders.get(key).sessions.push(session);
+ }
+ return folders;
+}
+function chatProjectOptions(){
+ const options=Object.entries(chatWorkstreams.groups);
+ for(const [key,folder] of chatFolderProjects())if(!chatWorkstreams.groups[chatWorkstreams.folders?.[key]])options.push([key,folder.label]);
+ return options.map(([id,label])=>[id,options.filter(o=>o[1]===label).length>1&&id.startsWith('folder:')?label+' · '+id.slice(13):label]);
+}
+async function chatResolveProject(selected){
+ if(!selected.startsWith('folder:'))return selected;
+ const folder=chatFolderProjects().get(selected);if(!folder)throw Error('This folder is no longer available. Reopen New chat.');
+ const newID='ws-'+crypto.randomUUID();
+ for(let attempt=0;attempt<3;attempt++){
+  const response=await fetch(chatWorkstreamURL,{cache:'no-store'});if(!response.ok)throw Error('Could not load projects.');
+  const state=await response.json(),value=state.value||{},groups={...value.groups},members={...value.members},folders={...value.folders};
+  const id=groups[folders[selected]]?folders[selected]:newID;
+  groups[id]=groups[id]||folder.label;folders[selected]=id;
+  for(const session of folder.sessions){const key=chatInboxKey({terminal:true,agent:session.kind,session});if(!members[key])members[key]=id;}
+  const saved=await fetch(chatWorkstreamURL,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({revision:state.revision,record_version:state.record_version,value:{...value,groups,members,folders}})});
+  if(saved.status===409)continue;if(!saved.ok)throw Error('Could not save this project.');
+  chatApplyWorkstreams(await saved.json());return id;
+ }
+ throw Error('Projects changed elsewhere. Try again.');
+}
+function chatUseProjectFolder(project,agent=chatAgent){
+ const key=Object.keys(chatWorkstreams.folders||{}).find(key=>chatWorkstreams.folders[key]===project);
+ if(key?.startsWith('folder:local:')&&chatIsTerm(agent)){
+  const cwd=key.slice(13);try{localStorage.setItem('manifest.chatTermCwd.'+agent,cwd);}catch(e){}
+  const input=document.querySelector('input[aria-label="Working folder"]');if(input)input.value=cwd;
+ }
+}
 function chatRenderWorkstreamFilter(){
   const select=document.getElementById("chatWorkstreamFilter");if(!select||document.activeElement===select)return;
   select.replaceChildren();
@@ -1060,12 +1100,12 @@ async function renderChatLanding() {
   if (main) main.classList.add("landing");
   host.innerHTML = "";
   host.append(el("div", "chat-greeting", chatGreeting()));
-  if(Object.keys(chatWorkstreams.groups).length){
+  if(chatProjectOptions().length){
     const project=document.createElement('select');project.className='chat-landing-cwd';project.setAttribute('aria-label','Chat project');
-    for(const [id,label] of [['','Standalone chat'],...Object.entries(chatWorkstreams.groups)]){const o=el('option','',label);o.value=id;project.append(o);}
+    for(const [id,label] of [['','Standalone chat'],...chatProjectOptions()]){const o=el('option','',label);o.value=id;project.append(o);}
     project.value=chatWorkstreams.groups[chatPendingProject]?chatPendingProject:'';chatPendingProject=project.value;project.onchange=()=>{chatPendingProject=project.value;};
     const field=el('label','chat-new-folder','Project');field.append(project);host.append(field);
-    const context=el('button','sprt-quiet','Review project context');context.hidden=!project.value||chatIsPortal();context.onclick=()=>chatEditProject(project.value);host.append(context);project.onchange=()=>{chatPendingProject=project.value;context.hidden=!project.value||chatIsPortal();};
+    const context=el('button','sprt-quiet','Review project context');context.hidden=!project.value||chatIsPortal();context.onclick=()=>chatEditProject(project.value);host.append(context);project.onchange=async()=>{project.disabled=true;try{chatPendingProject=await chatResolveProject(project.value);chatUseProjectFolder(chatPendingProject);project.replaceChildren();for(const [id,label] of [['','Standalone chat'],...chatProjectOptions()]){const option=el('option','',label);option.value=id;project.append(option);}project.value=chatPendingProject;context.hidden=!project.value||chatIsPortal();}catch(e){project.value=chatPendingProject;showToast(e.message);}finally{project.disabled=false;}};
   }
 
   if (chatIsTerm()) { renderChatTermLanding(host); return; }
