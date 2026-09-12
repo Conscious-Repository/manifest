@@ -122,7 +122,24 @@ window.addEventListener('keydown',e=>{if(e.key==='t'&&!e.metaKey&&!e.ctrlKey&&![
 document.body.classList.remove('booting');olgaRoute();
 // Use Manifest's inline picker on mobile and embedded browsers too.
 const addAreaButton=els.addArea.cloneNode(true);els.addArea.replaceWith(addAreaButton);els.addArea=addAreaButton;
-addAreaButton.onclick=()=>askText('Add area','Area name',name=>{if(name.trim())goalsApi('POST','/api/areas',{name:name.trim()});});
+addAreaButton.onclick=()=>{
+ els.pickerTitle.textContent='Add area';
+ const form=el('form','olga-task-details olga-task-add');
+ const label=el('label','olga-detail-field');const input=inputEl('e.g. Health or Travel');input.required=true;input.autocomplete='off';label.append(el('span','','Area name'),input);
+ const hint=el('p','olga-detail-hint','Areas organize your goals and tasks.');
+ const error=el('p','olga-add-error');error.setAttribute('role','alert');error.hidden=true;input.oninput=()=>{error.hidden=true;};
+ const actions=el('div','olga-add-actions');const cancel=el('button','pill light','Cancel');cancel.type='button';cancel.onclick=closePicker;
+ const save=el('button','pill olga-primary','Add area');save.type='submit';actions.append(cancel,save);form.append(label,hint,error,actions);
+ form.onsubmit=async event=>{
+  event.preventDefault();const name=input.value.trim().replace(/\s+/g,' ');if(!name||save.disabled)return;
+  if((state.goalsDoc?.areas||[]).some(a=>a.name.toLowerCase()===name.toLowerCase())){error.textContent='An area with this name already exists.';error.hidden=false;input.focus();return;}
+  save.disabled=true;cancel.disabled=true;error.hidden=true;setSaveState('saving');
+  try{await postJSONOk('/api/areas',{name});goalsSelArea=name;setSaveState('saved');closePicker();await loadGoals();}
+  catch(e){setSaveState('error');error.textContent=e.message;error.hidden=false;}
+  finally{save.disabled=false;cancel.disabled=false;}
+ };
+ els.pickerBody.replaceChildren(form);els.pickerModal.hidden=false;input.focus();
+};
 const olgaOrientArea=orientArea;
 orientArea=function(area){
  const card=olgaOrientArea(area);
