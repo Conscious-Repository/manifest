@@ -272,7 +272,7 @@ async function writeCompose(mode='comment'){
 function writeShowComposer(d){writeRenderComments(d);writingUI.margin.hidden=false;if(window.innerWidth<=1100&&window.mfSheet)writeMarginSheet();writingUI.margin.querySelector('textarea')?.focus()}
 function writeInput(d,key,value,oninput){
   const input=el('textarea','write-question');input.dataset.draft=key;input.rows=2;input.placeholder=key==='new'?'Add a comment or ask…':'Reply…';input.setAttribute('aria-label',key==='new'?'Comment on selected passage':'Reply to comment');input.value=value||'';
-  input.oninput=()=>{oninput(input.value);input.style.height='auto';input.style.height=Math.min(input.scrollHeight,220)+'px';const actions=input.nextElementSibling;actions?.querySelectorAll('button').forEach(b=>b.disabled=d.posting||!input.value.trim())};
+  input.oninput=()=>{oninput(input.value);const height=Math.min(textareaContentHeight(input),220)+'px';if(input.style.height!==height)input.style.height=height;const actions=input.nextElementSibling;actions?.querySelectorAll('button').forEach(b=>b.disabled=d.posting||!input.value.trim())};
   input.onkeydown=e=>{if((e.metaKey||e.ctrlKey)&&e.key==='Enter'){e.preventDefault();input.nextElementSibling?.querySelector('button:not(:disabled)')?.click()}};return input;
 }
 function writeRenderComments(d){

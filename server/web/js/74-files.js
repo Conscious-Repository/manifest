@@ -65,12 +65,15 @@ function fsRenderToolbar() {
   fsHosts.forEach((h) => {
     const chip = el("button", "filter-chip" + (h.name === fsHost ? " on" : ""), h.name + (h.local ? " ·local" : ""));
     chip.onclick = async () => {
-      fsHost = h.name; fsPath = ""; fsSel = "";
-      if (!(fsHost in fsHomes)) {
-        try { fsHomes[fsHost] = ((await (await fetch("/api/files/home?host=" + encodeURIComponent(fsHost))).json()).path) || ""; }
-        catch (e) { fsHomes[fsHost] = ""; }
+      const selectedHost=h.name,selection=++fsLoadVersion;
+      fsBeginLoad();
+      fsHost = selectedHost; fsPath = ""; fsSel = "";
+      if (!(selectedHost in fsHomes)) {
+        try { fsHomes[selectedHost] = ((await (await fetch("/api/files/home?host=" + encodeURIComponent(selectedHost))).json()).path) || ""; }
+        catch (e) { fsHomes[selectedHost] = ""; }
       }
-      fsPath = fsHomes[fsHost] || "";
+      if(fsHost!==selectedHost||selection!==fsLoadVersion)return;
+      fsPath = fsHomes[selectedHost] || "";
       fsRenderToolbar(); fsLoad();
     };
     chips.append(chip);
@@ -92,7 +95,7 @@ function fsRenderToolbar() {
       fsRenderToolbar();
     } catch (e) { showToast("Couldn't pin — " + (e.message || "error")); }
   });
-  if (!fsPath) pin.disabled = true;
+  pin.dataset.fsWrite='';pin.disabled=fsLoading||!fsListedPath;
   bar.append(pin);
   const up = fsTool("‹", "Up a level", fsGoUp);
   fsBindMoveTarget(up, () => fsParent(fsListedPath));
@@ -134,13 +137,13 @@ function fsRenderToolbar() {
   if (fsPrefs.showHidden) eye.classList.add("on");
   right.append(eye);
   const mkdir = fsTool("＋⌸", "New folder", fsNewFolderRow);
-  mkdir.disabled = !fsPath;
+  mkdir.dataset.fsWrite='';mkdir.disabled=fsLoading||!fsListedPath;
   right.append(mkdir);
   const fi = document.createElement("input");
   fi.type = "file"; fi.multiple = true; fi.hidden = true;
   fi.onchange = () => { if (fi.files.length) fsUpload([...fi.files], fsListedPath); fi.value = ""; };
   const upBtn = pillLight("＋ upload", () => fi.click());
-  if (!fsPath) upBtn.disabled = true;
+  upBtn.dataset.fsWrite='';upBtn.disabled=fsLoading||!fsListedPath;
   right.append(upBtn, fi);
   bar.append(right);
 }
@@ -167,20 +170,25 @@ function fsRenderCrumbs() {
 
 // --- listing ---------------------------------------------------------------
 
+let fsLoadVersion=0,fsLoading=false;
+function fsBeginLoad(){
+  fsLoading=true;
+  const body=document.getElementById('fsBody');if(body){body.inert=true;body.setAttribute('aria-busy','true');}
+  document.querySelectorAll('[data-fs-write]').forEach(button=>button.disabled=true);
+}
 async function fsLoad() {
-  const body = document.getElementById("fsBody");
-  if (!body) return;
-  let d;
+  const body=document.getElementById('fsBody');if(!body)return;
+  const version=++fsLoadVersion,host=fsHost,path=fsPath;
+  const current=()=>version===fsLoadVersion&&host===fsHost&&path===fsPath;
+  fsBeginLoad();
   try {
-    const res = await fetch("/api/files/list?host=" + encodeURIComponent(fsHost) + "&path=" + encodeURIComponent(fsPath));
-    if (!res.ok) { body.innerHTML = ""; body.append(emptyRow(await res.text())); return; }
-    d = await res.json();
-  } catch (e) { body.innerHTML = ""; body.append(emptyRow("unreachable")); return; }
-  fsEntries = d.entries || [];
-  fsListedPath = d.path || "";
-  fsRenderToolbar();
-  fsRenderCrumbs();
-  fsRenderBody();
+    const res=await fetch('/api/files/list?host='+encodeURIComponent(host)+'&path='+encodeURIComponent(path));
+    if(!res.ok)throw Error((await res.text()).trim()||'Files could not be loaded.');
+    const d=await res.json();if(!current())return;
+    fsLoading=false;fsEntries=d.entries||[];fsListedPath=d.path||'';
+    fsRenderToolbar();fsRenderCrumbs();fsRenderBody();
+  } catch(e){if(current()){fsLoading=false;fsEntries=[];fsListedPath='';fsRenderToolbar();body.replaceChildren(emptyRow(e.message||'Files could not be loaded.'));}}
+  finally{if(current()){body.inert=false;body.setAttribute('aria-busy','false');}}
 }
 
 function fsVisibleEntries() {

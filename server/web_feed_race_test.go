@@ -85,7 +85,7 @@ func TestFeedConsumeStalePaintGuards(t *testing.T) {
 	}
 	rc := jsBody(t, consume, "function renderConsume() {")
 	cGuard := mustIndex(t, rc, "renderConsume", "if (!consumeIsActiveView()) return;")
-	if wipe := mustIndex(t, rc, "renderConsume", "host.innerHTML"); cGuard > wipe {
+	if wipe := mustIndex(t, rc, "renderConsume", "surface.replaceChildren"); cGuard > wipe {
 		t.Error("renderConsume must return when the CONSUME chip is off BEFORE it wipes els.feedList — FEED owns the host then")
 	}
 }

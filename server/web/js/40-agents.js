@@ -161,10 +161,16 @@ function stopLivePoll() {
   liveIdleTicks = 0;
 }
 
+let livePollPending=false;
 async function livePoll() {
   if (!pollScopeOpen()) { stopLivePoll(); return; }
+  if(document.hidden||livePollPending)return;
+  livePollPending=true;
+  try {
   const firstPoll = !liveBaselined;
-  spiritRuns = await fetchSpiritRuns();
+  const nextRuns=await fetchSpiritRuns();
+  if(!pollScopeOpen()||document.hidden)return;
+  spiritRuns=nextRuns;
 
   // Detect finished runs for the run-finished toast. A run finishes when it
   // transitions running → terminal, OR — for a run fast enough that no poll ever
@@ -227,6 +233,7 @@ async function livePoll() {
   // completion of a fast run entirely.
   if (activeRuns() > 0) liveIdleTicks = 0;
   else if (++liveIdleTicks >= 4) stopLivePoll();     // ~12s of quiet
+  } finally { livePollPending=false; }
 }
 
 async function detectNewDigest() {

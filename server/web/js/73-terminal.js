@@ -73,9 +73,8 @@ function termRenderControls() {
   const back=document.getElementById("termBackToChat");back.hidden=true;
   try {const origin=JSON.parse(sessionStorage.getItem("manifest.terminalReturn")||"null");if(origin?.id===termOpenId&&origin.route?.startsWith("#/chat")){back.href=origin.route;back.hidden=false;}}catch(e){}
   const select = toolbar.querySelector("select");
-  select.replaceChildren();
-  if (!termSessions.length) select.append(el("option", "", "No running sessions"));
-  termSessions.forEach(session => { const option = el("option", "", session.name || session.kind); option.value = session.id; select.append(option); });
+  const options=termSessions.length?termSessions:[{id:'',name:'No running sessions'}];
+  reconcileKeyedChildren(select,options,session=>session.id,session=>session.name||session.kind,session=>{const option=el('option','',session.name||session.kind);option.value=session.id;return option;});
   select.value = termOpenId;
   const separate = document.getElementById("termSeparate");
   separate.href = "#/terminal/" + encodeURIComponent(termOpenId);
@@ -159,12 +158,12 @@ async function loadTermSessions(quiet) {
 function renderTermSessions(enabled) {
   termRenderControls();
   const host = document.getElementById("termSessionRows"); if (!host) return;
-  host.replaceChildren();
   const status = document.getElementById("termRuntimeStatus");
   if (status) status.textContent = !enabled ? "disabled" : termConnectivity === "connected" ? String(termSessions.length) + " live" : "unavailable";
-  if (!enabled) { host.append(el("div", "term-none", "not enabled on this server")); return; }
-  if (!termSessions.length) { host.append(el("div", "term-none", termConnectivity === "connected" ? "no live panes" : "runtime unavailable")); return; }
-  termSessions.forEach((se) => host.append(termSessionRow(se)));
+  if (!enabled) { host.replaceChildren(el("div", "term-none", "not enabled on this server")); return; }
+  if (!termSessions.length) { host.replaceChildren(el("div", "term-none", termConnectivity === "connected" ? "no live panes" : "runtime unavailable")); return; }
+  reconcileKeyedChildren(host,termSessions,se=>se.id,se=>JSON.stringify(se),termSessionRow);
+  [...host.children].forEach((row,i)=>row.classList.toggle('open',termSessions[i].id===termOpenId));
 }
 function termSessionRow(se) {
   const row = el("div", "term-sess" + (se.id === termOpenId ? " open" : ""));

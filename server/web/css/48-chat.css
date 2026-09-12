@@ -223,7 +223,6 @@ button.chat-attach-chip { min-height: 44px; max-width: 100%; background: transpa
 .chat-term-cmd.pending { opacity: 0.72; } /* delivered, not yet read by the agent (48-chat.js chatTermEcho) */
 /* attachments sent with a prompt: previews on their own row above the text
    (48-chat.js chatSplitUserMessage / chatAttachmentChips, 2026-09-12) */
-.chat-term-cmd { flex-wrap: wrap; }
 .chat-term-cmd > .chat-attach-chips { flex: 1 1 100%; order: -1; margin: 0 0 var(--sp-3); }
 .chat-term-sys { color: var(--base-60); }
 .chat-term-sys::before { content: "#"; flex: none; width: 1.2ch; color: var(--base-50); }

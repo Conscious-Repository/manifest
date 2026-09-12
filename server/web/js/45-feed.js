@@ -133,15 +133,10 @@ async function refreshFeedBadge() {
 }
 
 function renderFeedFilters() {
-  const host = els.feedFilters; host.innerHTML = "";
-  const cur = feedFilter();
-  FEED_FILTERS.forEach(([val, label]) => {
-    const b = el("button", "filter-chip" + (cur === val ? " on" : ""), label);
-    b.setAttribute("aria-pressed", String(cur === val));
-    // A lit chip is a filter you can take off by clicking it again — no
-    // separate "ALL" button to reach for.
-    b.onclick = () => { state.feedFilter = cur === val ? "" : val; loadFeed(); };
-    host.appendChild(b);
+  renderFilterButtons(els.feedFilters,FEED_FILTERS,feedFilter(),value=>{
+    state.feedFilter=feedFilter()===value?'':value;
+    renderFeedFilters(); // acknowledge the filter immediately, before the fetch
+    loadFeed();
   });
 }
 function renderFeed() {

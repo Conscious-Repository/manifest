@@ -47,6 +47,7 @@ function showContacts() {
 }
 
 function showContactList() {
+  contactPageVersion++;
   els.contactsListPane.hidden = false;
   els.contactPagePane.hidden = true;
   loadContactList();
@@ -166,7 +167,11 @@ function renderNearbyPanel() {
   else els.contactList.innerHTML = "", els.contactList.append(emptyRow("Choose a destination to find contacts nearby."));
 }
 
+let nearbySearchVersion=0;
 async function runNearbySearch() {
+  const version=++nearbySearchVersion;
+  const place=_nearbyPlace;
+  const current=()=>version===nearbySearchVersion&&_nearbyMode&&!els.contactsListPane.hidden;
   if (!_nearbyPlace) return;
   const radiusInput = els.contactNearby.querySelector(".nearby-radius");
   _nearbyRadius = Math.max(1, Math.min(500, Number(radiusInput && radiusInput.value) || 50));
@@ -175,14 +180,14 @@ async function runNearbySearch() {
     const qs = new URLSearchParams({ lat: _nearbyPlace.lat, lng: _nearbyPlace.lng, radiusMiles: _nearbyRadius });
     const res = await fetch("/api/contacts/nearby?" + qs.toString());
     if (!res.ok) throw new Error((await res.text()).trim() || "nearby search failed");
-    const d = await res.json(); host.innerHTML = "";
-    if (!(d.contacts || []).length) host.append(emptyRow("No contacts found within " + _nearbyRadius + " miles of " + _nearbyPlace.label + "."));
+    const d = await res.json();if(!current())return;host.innerHTML = "";
+    if (!(d.contacts || []).length) host.append(emptyRow("No contacts found within " + _nearbyRadius + " miles of " + place.label + "."));
     (d.contacts || []).forEach((c) => host.append(nearbyContactRow(c)));
     const status = els.contactNearby.querySelector(".nearby-status");
-    status.textContent = (d.contacts || []).length + " contact" + ((d.contacts || []).length === 1 ? "" : "s") + " near " + _nearbyPlace.label +
+    status.textContent = (d.contacts || []).length + " contact" + ((d.contacts || []).length === 1 ? "" : "s") + " near " + place.label +
       (d.unresolvedCount ? " · " + d.unresolvedCount + " location" + (d.unresolvedCount === 1 ? " is" : "s are") + " still resolving" : "") +
       " · distances use city centers";
-  } catch (e) { host.innerHTML = ""; host.append(emptyRow("Could not search nearby: " + errMsg(e))); }
+  } catch (e) { if(!current())return;host.innerHTML = ""; host.append(emptyRow("Could not search nearby: " + errMsg(e))); }
 }
 
 function nearbyContactRow(c) {
@@ -327,15 +332,16 @@ function openEmailReassign(row, c, doLink) {
   box.append(input, results);
   row.append(box);
   input.focus();
-  let timer;
+  let timer,version=0;
   input.addEventListener("input", () => {
-    clearTimeout(timer);
+    clearTimeout(timer);const current=++version;results.replaceChildren();
     timer = setTimeout(async () => {
       results.innerHTML = "";
       const q = input.value.trim();
       if (!q) return;
       let d = { results: [] };
       try { d = await (await fetch("/api/contacts/search?q=" + encodeURIComponent(q))).json(); } catch (e) {}
+      if(current!==version)return;
       (d.results || []).forEach((rf) => {
         const rr = el("div", "cc-result");
         rr.append(el("span", "cc-name", rf.display));
@@ -346,7 +352,9 @@ function openEmailReassign(row, c, doLink) {
   });
 }
 
+let contactPageVersion=0;
 async function showContactPage(key) {
+  const version=++contactPageVersion;
   els.contactsListPane.hidden = true;
   els.contactPagePane.hidden = false;
   els.contactPageSaved.textContent = "";
@@ -354,9 +362,10 @@ async function showContactPage(key) {
   let p;
   try {
     const res = await fetch("/api/contacts/page?key=" + encodeURIComponent(key));
-    if (!res.ok) { els.contactPage.textContent = "No such contact."; return; }
+    if (!res.ok) { if(version===contactPageVersion)els.contactPage.textContent = "No such contact."; return; }
     p = await res.json();
-  } catch (e) { els.contactPage.textContent = "Error loading contact."; return; }
+  } catch (e) { if(version===contactPageVersion)els.contactPage.textContent = "Error loading contact."; return; }
+  if(version!==contactPageVersion)return;
   renderContactPage(p);
 }
 
@@ -657,14 +666,17 @@ function openCreatePanel() {
   els.contactList.before(box);
   input.focus();
   let timer;
-  input.addEventListener("input", () => { clearTimeout(timer); timer = setTimeout(() => runCreateSearch(input.value.trim(), results), 200); });
+  input.addEventListener("input", () => { clearTimeout(timer); results._searchVersion=(results._searchVersion||0)+1;results.replaceChildren();timer = setTimeout(() => runCreateSearch(input.value.trim(), results), 200); });
 }
 
 async function runCreateSearch(q, host) {
+  const version=host._searchVersion=(host._searchVersion||0)+1;
   host.innerHTML = "";
   if (!q) return;
   let d = { results: [] };
-  try { d = await (await fetch("/api/contacts/search?q=" + encodeURIComponent(q))).json(); } catch (e) {}
+  try { const res=await fetch("/api/contacts/search?q=" + encodeURIComponent(q));if(!res.ok)throw Error('Lookup failed');d=await res.json(); }
+  catch(e){if(version===host._searchVersion){host.append(emptyRow("Couldn't check existing contacts. Try again."),pillLight('Retry',()=>runCreateSearch(q,host)));}return;}
+  if(version!==host._searchVersion)return;
   (d.results || []).forEach((r) => {
     const row = el("div", "cc-result");
     row.append(el("span", "cc-name", r.display), el("span", "cc-refs", r.refCount + " ref" + (r.refCount === 1 ? "" : "s") + (r.hasNote ? " · has note" : "")));

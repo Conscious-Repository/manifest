@@ -74,6 +74,19 @@ function reconcileKeyedChildren(host, items, keyOf, signatureOf, render) {
   keyedChildrenCache.set(host, next);
 }
 
+// Filter state and counts change in place; refreshing a list must not replace
+// the control that currently owns keyboard or touch interaction.
+function renderFilterButtons(host, choices, selected, onChange) {
+  reconcileKeyedChildren(host,choices,choice=>choice[0],()=>'',()=>el('button','filter-chip'));
+  [...host.children].forEach((button,i)=>{
+    const [value,label]=choices[i];
+    if(button.textContent!==label)button.textContent=label;
+    button.classList.toggle('on',value===selected);
+    button.setAttribute('aria-pressed',String(value===selected));
+    button.onclick=()=>onChange(value);
+  });
+}
+
 // ---- pill factory ----
 function pill(text, onclick) { const b = el("button", "pill", text); b.addEventListener("click", onclick); return b; }
 // debounce — one call per pause, not per keystroke. Four hand-rolled copies of

@@ -189,17 +189,21 @@ function consumeIsActiveView() { return feedFilter() === "consume"; }
 // `token` is the FEED render token (45-feed.js). loadFeed passes its own so the
 // two surfaces order as one; every other caller claims a fresh one. Either way a
 // response that lands after the user has left CONSUME paints nothing.
+let consumeLoadError="";
 async function loadConsume(token) {
   if (token === undefined) token = feedClaimRender();
   const q = new URLSearchParams({ view: consumeView });
   if (consumeList) q.set("list", consumeList);
   if (consumeSub) q.set("sub", consumeSub);
   if (consumeQuery.trim()) q.set("q", consumeQuery.trim());
-  let next;
+  let next,error='';
   try {
-    next = await (await fetch("/api/consume?" + q)).json();
-  } catch (e) { next = { items: [], lists: [], unread: 0, total: 0 }; }
+    const response=await fetch("/api/consume?" + q);if(!response.ok)throw Error('Reading feed unavailable');
+    next = await response.json();
+  } catch (e) { error='Could not load the reading feed. Try again.'; }
   if (feedRenderStale(token)) return;
+  consumeLoadError=error;
+  if(error){renderConsume();return;}
   consumeCache = next;
   renderConsume();
 }
@@ -207,6 +211,7 @@ async function loadConsume(token) {
 // consumeFilterChanged resets the expander and reloads. Every filter goes
 // through here so "show more" can never survive into a different list.
 function consumeFilterChanged() {
+  const header=els.feedList.querySelector('.consume-head');if(header)consumeHeader(header);
   consumeShowAll = false;
   loadConsume();
 }
@@ -216,11 +221,15 @@ const consumeSearch = debounce(() => consumeFilterChanged(), 200);
 
 function renderConsume() {
   if (!consumeIsActiveView()) return; // the chip is off — FEED owns the list now
-  const host = els.feedList; host.innerHTML = "";
+  const surface=els.feedList;
+  let head=surface.querySelector('.consume-head'),host=surface.querySelector('.consume-content');
+  if(!head||!host){surface.replaceChildren();head=consumeHeader();host=el('div','consume-content');surface.append(head,host);}
+  else consumeHeader(head);
+  host.replaceChildren();
   els.feedSignals.innerHTML = "";
   renderApprovalInspector(); // release the proposal column/sheet after replacing its cards
+  if(consumeLoadError){const notice=emptyRow(consumeLoadError);notice.setAttribute('role','status');host.append(notice,pillLight('Retry',()=>loadConsume()));return;}
 
-  host.append(consumeHeader());
   if (consumeManageOpen) host.append(consumeManagePanel());
   if (consumeCuratedOpen) host.append(consumeCuratedPanel());
   if (consumeSub) host.append(consumeSubBanner());
@@ -254,76 +263,30 @@ function consumeSubBanner() {
   return bar;
 }
 
-function consumeHeader() {
-  const head = el("div", "consume-head");
-
-  const left = el("div", "consume-head-left");
-  [["unread", "UNREAD"], ["all", "ALL"]].forEach(([val, label]) => {
-    const b = el("button", "filter-chip" + (consumeView === val ? " on" : ""), label);
-    b.onclick = () => { consumeView = val; consumeFilterChanged(); };
-    left.append(b);
-  });
-  (consumeCache.lists || []).forEach((l) => {
-    const b = el("button", "filter-chip" + (consumeList === l ? " on" : ""), l);
-    b.onclick = () => { consumeList = consumeList === l ? "" : l; consumeFilterChanged(); };
-    left.append(b);
-  });
-  head.append(left);
-
-  // ⚠ THE CARET TRAP. renderConsume wipes els.feedList on every repaint, so a
-  // freshly built input would be replaced mid-typing and the caret would jump
-  // out after the first character — the bug the contractors tab and the
-  // properties board both had to fix. The node is built ONCE and re-appended.
-  if (!consumeSearchEl) {
-    consumeSearchEl = el("input", "pp-in consume-search");
-    consumeSearchEl.type = "search";
-    consumeSearchEl.placeholder = "search titles and excerpts…";
-    consumeSearchEl.oninput = () => { consumeQuery = consumeSearchEl.value; consumeSearch(); };
+function consumeHeader(head) {
+  if(!head){
+    head=el('div','consume-head');
+    const left=el('div','consume-head-left'),views=el('span','feed-filters consume-view-filters'),lists=el('span','feed-filters consume-list-filters');
+    if(!consumeSearchEl){consumeSearchEl=el('input','pp-in consume-search');consumeSearchEl.type='search';consumeSearchEl.placeholder='search titles and excerpts…';consumeSearchEl.setAttribute('aria-label','Search reading feed');consumeSearchEl.oninput=()=>{consumeQuery=consumeSearchEl.value;feedClaimRender();consumeSearch();};}
+    left.append(views,lists,consumeSearchEl);
+    const right=el('div','consume-head-right'),count=el('span','micro-label consume-count');
+    const refresh=pillLight('refresh',async()=>{
+      refresh.disabled=true;refresh.textContent='refreshing…';
+      try{await consumePost('/api/consume/poll-all');await loadConsumeSubs();await loadConsume();}
+      finally{refresh.disabled=false;refresh.textContent='refresh';}
+    });
+    const mark=pillLight('mark all read',async()=>{const q=consumeList?'?list='+encodeURIComponent(consumeList):'';if(await consumePost('/api/consume/read-all'+q))await loadConsume();});mark.classList.add('consume-mark-all');
+    const curated=pillLight('CURATED',async()=>{consumeCuratedOpen=!consumeCuratedOpen;if(consumeCuratedOpen)await loadConsumeCurated();renderConsume();});curated.classList.add('consume-curated-toggle');
+    const manage=pillLight('MANAGE',async()=>{consumeManageOpen=!consumeManageOpen;if(consumeManageOpen)await loadConsumeSubs();renderConsume();});manage.classList.add('consume-manage-toggle');
+    right.append(count,refresh,mark,curated,manage);head.append(left,right);
   }
-  left.append(consumeSearchEl);
-
-  const right = el("div", "consume-head-right");
-  // Scoped to the active group, matching the "mark all read" beside it.
-  const unread = consumeCache.unread || 0;
-  const label = consumeList && consumeCache.total > unread
-    ? unread + " unread in " + consumeList
-    : unread + " unread";
-  right.append(el("span", "micro-label consume-count", label));
-
-  right.append(pillLight("refresh", async (e) => {
-    const btn = e && e.currentTarget;
-    if (btn) { btn.disabled = true; btn.textContent = "refreshing…"; }
-    await consumePost("/api/consume/poll-all");
-    await loadConsumeSubs();
-    await loadConsume();
-  }));
-
-  // The escape hatch after a week away. Scoped to the active group when one is
-  // filtered, so "mark all read" never quietly clears more than you can see.
-  if (unread > 0) {
-    right.append(pillLight("mark all read", async () => {
-      const q = consumeList ? "?list=" + encodeURIComponent(consumeList) : "";
-      if (!(await consumePost("/api/consume/read-all" + q))) return;
-      await loadConsume();
-    }));
-  }
-
-  // "close curated", not "close" — MANAGE beside it toggles the same way, and
-  // two bare "close" pills would not say which panel each one closes.
-  const curated = pillLight(consumeCuratedOpen ? "close curated" : "CURATED", async () => {
-    consumeCuratedOpen = !consumeCuratedOpen;
-    if (consumeCuratedOpen) await loadConsumeCurated();
-    renderConsume();
-  });
-  right.append(curated);
-
-  const manage = pillLight(consumeManageOpen ? "close" : "MANAGE", async () => {
-    consumeManageOpen = !consumeManageOpen;
-    if (consumeManageOpen) await loadConsumeSubs();
-    renderConsume();
-  });
-  right.append(manage);
-  head.append(right);
+  renderFilterButtons(head.querySelector('.consume-view-filters'),[['unread','UNREAD'],['all','ALL']],consumeView,value=>{consumeView=value;consumeFilterChanged();});
+  renderFilterButtons(head.querySelector('.consume-list-filters'),(consumeCache.lists||[]).map(value=>[value,value]),consumeList,value=>{consumeList=consumeList===value?'':value;consumeFilterChanged();});
+  const unread=consumeCache.unread||0;
+  head.querySelector('.consume-count').textContent=consumeList&&consumeCache.total>unread?unread+' unread in '+consumeList:unread+' unread';
+  head.querySelector('.consume-mark-all').hidden=unread===0;
+  head.querySelector('.consume-curated-toggle').textContent=consumeCuratedOpen?'close curated':'CURATED';
+  head.querySelector('.consume-manage-toggle').textContent=consumeManageOpen?'close':'MANAGE';
   return head;
 }
 

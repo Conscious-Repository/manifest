@@ -1,0 +1,36 @@
+const {chromium}=require('playwright'),fs=require('fs'),path=require('path'),assert=require('node:assert/strict');
+const root=path.join(__dirname,'../web'),read=p=>fs.readFileSync(path.join(root,p),'utf8');
+const part=(s,a,b)=>s.slice(s.indexOf(a),s.indexOf(b,s.indexOf(a)+1));
+(async()=>{const browser=await chromium.launch({headless:true,channel:'chromium'});try{
+const p=await browser.newPage({viewport:{width:390,height:844}}),errors=[];p.on('pageerror',e=>errors.push(e.message));
+await p.setContent('<main><div id="todosTabs" class="feed-filters"></div><div id="todosToolbar" class="tdo-toolbar"></div><div id="feedFilters"></div><div class="feed-view"><div id="feedSignals"></div><div id="feedList"></div></div><div id="termSessionRows"></div><div id="writing"></div><div id="bookShelf"></div><div id="contactList"></div></main>');
+for(const f of ['00-core','05-primitives','45-feed','46-consume','65-reading','71-write','90-todos','95-mobile'])await p.addStyleTag({content:read('css/'+f+'.css')});
+await p.addScriptTag({content:read('js/05-components.js')});
+await p.evaluate(()=>{
+ window.els=Object.fromEntries(['feedFilters','feedList','feedSignals','bookShelf','contactList'].map(id=>[id,document.getElementById(id)]));
+ window.todosTab='focus';window.todosLens='all';window.todosMode='list';window.todosQuery='';window.todosCache={rows:[{}]};window.TODOS_TABS=[['focus','ALL DOMAINS'],['aion','AION']];window.todoMatches=()=>true;window.openTodoQuickAdd=()=>{};window.renderTodos=()=>renderTodosToolbar();
+ window.state={feedFilter:''};window.feedFilter=()=>state.feedFilter;window.FEED_FILTERS=[['consume','Read'],['signal','Signals']];window.loadFeed=()=>{};
+ window.consumeLoadError="";window.consumeIsActiveView=()=>true;window.consumeCache={items:[{}],lists:['reading'],unread:1,total:1};window.consumeView='unread';window.consumeList='';window.consumeQuery='';window.consumeSearchEl=null;window.feedClaimRender=()=>{};window.consumeSearch=()=>renderConsume();window.consumeFilterChanged=()=>renderConsume();window.consumeManageOpen=false;window.consumeCuratedOpen=false;window.consumeSub='';window.consumeShowAll=false;window.CONSUME_PAGE=50;window.consumeCardEl=()=>el('div','','A reading item');window.renderApprovalInspector=()=>{};
+ window.requests=[];window.fetch=url=>new Promise(resolve=>requests.push({url,resolve}));
+});
+for(const [f,a,b] of [['90-todos','function renderTodosToolbar()','function renderTodos()'],['45-feed','function renderFeedFilters()','function renderFeed()'],['71-write','function writeInput(','function writeRenderComments('],['46-consume','function renderConsume()','// ---- the manage panel'],['65-reading','function addBook()','if (els.bookSearch)'],['60-contacts','function openCreatePanel()','if (els.contactSearch)'],['73-terminal','function renderTermSessions(enabled)','function termRuntimeKey']])await p.addScriptTag({content:part(read('js/'+f+'.js'),a,b)});
+await p.evaluate(()=>{renderTodosToolbar();renderFeedFilters();renderConsume();const input=writeInput({posting:false},'new','',()=>{});document.getElementById('writing').append(input);});
+for(const width of [320,390,768,1280])for(const theme of ['default','jarvis']){
+ await p.setViewportSize({width,height:900});await p.evaluate(theme=>document.documentElement.dataset.theme=theme,theme);
+ const bounds=await p.evaluate(()=>['#todosToolbar','.consume-head'].map(sel=>{const e=document.querySelector(sel);return [sel,e.scrollWidth,e.clientWidth]}));
+ for(const [sel,scroll,width]of bounds)assert.ok(scroll<=width+1,sel+' overflows: '+scroll+' > '+width);
+ const search=p.getByRole('searchbox',{name:'Search tasks'});await search.fill('');await search.focus();await p.evaluate(()=>window.taskInput=document.activeElement);await p.keyboard.type('Testing a longer task query');
+ assert.equal(await p.evaluate(()=>document.activeElement===taskInput&&taskInput.value===todosQuery),true,'task input stays mounted while typing');
+ await p.locator('#feedFilters button').first().focus();await p.evaluate(()=>{window.filterButton=document.activeElement;renderFeedFilters();});assert.equal(await p.evaluate(()=>document.activeElement===filterButton),true,'Feed refresh retains filter focus');
+ const consume=p.getByRole('searchbox',{name:'Search reading feed'});await consume.fill('');await consume.focus();await p.evaluate(()=>window.readInput=document.activeElement);await p.keyboard.type('More reading');assert.equal(await p.evaluate(()=>document.activeElement===readInput),true,'reading refresh retains search focus');
+ const writing=p.getByRole('textbox',{name:'Comment on selected passage'});await writing.fill('A long comment with several lines.\n'.repeat(30));
+ await p.evaluate(()=>{window.writes=[];window.observer=new MutationObserver(r=>writes.push(...r.map(x=>x.oldValue)));observer.observe(document.activeElement,{attributes:true,attributeFilter:['style'],attributeOldValue:true});});await p.keyboard.type(' Another sentence.');assert.equal(await p.evaluate(()=>writes.length),0,'capped writing field has no per-character height writes');await p.evaluate(()=>observer.disconnect());
+}
+await p.evaluate(()=>{window.termRenderControls=()=>{};window.termConnectivity='connected';window.termSessions=[{id:'a',name:'Terminal A'},{id:'b',name:'Terminal B'}];window.termOpenId='a';window.termKill=()=>{throw Error('must not end a session')};renderTermSessions(true);});
+const end=p.locator('#termSessionRows .term-x').first();await end.click();await p.evaluate(()=>{window.armedEnd=document.querySelector('#termSessionRows .term-x');renderTermSessions(true);});assert.equal(await p.evaluate(()=>armedEnd===document.querySelector('#termSessionRows .term-x')),true,'terminal polling preserves the armed control');assert.match(await end.textContent(),/sure/);
+// Invalidate catalogue results immediately, before the next debounce fires.
+await p.evaluate(()=>addBook());const book=p.locator('.book-add-input');await book.fill('Old book');await p.waitForFunction(()=>requests.length===1);await book.fill('New book');await p.evaluate(()=>requests.shift().resolve({ok:true,json:async()=>({books:[{title:'Stale book'}]})}));await p.waitForTimeout(20);assert.equal(await p.getByText('Stale book',{exact:true}).count(),0);assert.equal(await p.locator('.book-cand').count(),0,'no stale selectable catalogue results during debounce');
+await book.fill('');await p.evaluate(()=>document.querySelector('.book-add').remove());
+await p.evaluate(()=>{requests=[];openCreatePanel();});const contact=p.locator('.contact-create-input');await contact.fill('Old person');await p.waitForFunction(()=>requests.length===1);await contact.fill('New person');await p.evaluate(()=>requests.shift().resolve({ok:true,json:async()=>({results:[{display:'Stale person',key:'old'}]})}));await p.waitForTimeout(20);assert.equal(await p.getByText('Stale person',{exact:true}).count(),0);assert.equal(await p.locator('.cc-result').count(),0,'no stale selectable contact results during debounce');await contact.fill('');
+assert.deepEqual(errors,[]);console.log('PASS: mounted Tasks/Feed/reading controls; steady Writing textarea at 320/390/768/1280 in both themes; stale book/contact searches discarded during debounce.');
+}finally{await browser.close();}})().catch(e=>{console.error(e);process.exit(1)});

@@ -84,42 +84,20 @@ function todoMatches(r, lens = todosLens) {
   return lens === "all" || !!st[lens];
 }
 function renderTodosToolbar() {
-  const tabs = document.getElementById("todosTabs");
-  if (tabs) {
-    tabs.innerHTML = "";
-    TODOS_TABS.forEach(([val, label]) => {
-      const b = el("button", "filter-chip" + (todosTab === val ? " on" : ""), label);
-      b.setAttribute("aria-pressed", String(todosTab === val));
-      b.onclick = () => { todosTab = val; localStorage.setItem("todosTab", val); renderTodos(); };
-      tabs.append(b);
-    });
+  const tabs=document.getElementById('todosTabs');
+  if(tabs)renderFilterButtons(tabs,TODOS_TABS,todosTab,value=>{todosTab=value;localStorage.setItem('todosTab',value);renderTodos();});
+  const bar=document.getElementById('todosToolbar');if(!bar)return;
+  let search=bar.querySelector('#todosSearch');
+  if(!search){
+    const lenses=el('div','tdo-lenses'),modes=el('div','tdo-layouts');
+    search=inputEl('Find a task…');search.id='todosSearch';search.type='search';search.setAttribute('aria-label','Search tasks');
+    search.oninput=()=>{todosQuery=search.value;renderTodos();};
+    bar.replaceChildren(lenses,search,modes,pillLight('＋ Add task',()=>openTodoQuickAdd()));
   }
-  const bar = document.getElementById("todosToolbar");
-  if (!bar) return;
-  const searchFocused = document.activeElement && document.activeElement.id === "todosSearch";
-  const caret = searchFocused ? document.activeElement.selectionStart : null;
-  bar.innerHTML = "";
-  const lenses = el("div", "tdo-lenses");
-  [["all", "All active"], ["next", "Next actions"], ["agents", "With agents"], ["attention", "Needs attention"]].forEach(([value, label]) => {
-    const n = (todosCache.rows || []).filter((r) => todoMatches(r, value)).length;
-    const b = el("button", "filter-chip" + (todosLens === value ? " on" : ""), label + " · " + n);
-    b.setAttribute("aria-pressed", String(todosLens === value));
-    b.onclick = () => { todosLens = value; localStorage.setItem("todosLens", value); renderTodos(); };
-    lenses.append(b);
-  });
-  const search = inputEl("Find a task…");
-  search.id = "todosSearch"; search.type = "search"; search.value = todosQuery;
-  search.setAttribute("aria-label", "Search tasks");
-  search.oninput = () => { todosQuery = search.value; renderTodos(); };
-  const modes = el("div", "tdo-layouts");
-  ["list", "board"].forEach((value) => {
-    const b = el("button", "filter-chip" + (todosMode === value ? " on" : ""), value === "list" ? "List" : "Board");
-    b.setAttribute("aria-pressed", String(todosMode === value));
-    b.onclick = () => { todosMode = value; localStorage.setItem("todosMode", value); renderTodos(); };
-    modes.append(b);
-  });
-  bar.append(lenses, search, modes, pillLight("＋ Add task", () => openTodoQuickAdd()));
-  if (searchFocused) { search.focus(); if (caret !== null) search.setSelectionRange(caret, caret); }
+  if(search.value!==todosQuery)search.value=todosQuery;
+  const choices=[['all','All active'],['next','Next actions'],['agents','With agents'],['attention','Needs attention']].map(([value,label])=>[value,label+' · '+(todosCache.rows||[]).filter(r=>todoMatches(r,value)).length]);
+  renderFilterButtons(bar.querySelector('.tdo-lenses'),choices,todosLens,value=>{todosLens=value;localStorage.setItem('todosLens',value);renderTodos();});
+  renderFilterButtons(bar.querySelector('.tdo-layouts'),[['list','List'],['board','Board']],todosMode,value=>{todosMode=value;localStorage.setItem('todosMode',value);renderTodos();});
 }
 
 function renderTodos() {

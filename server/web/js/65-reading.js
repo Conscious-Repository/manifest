@@ -196,6 +196,7 @@ function addBook() {
   let timer;
   input.addEventListener("input", () => {
     clearTimeout(timer);
+    seq++;results.replaceChildren();status.textContent='';
     const q = input.value.trim();
     timer = setTimeout(() => run(q), 300); // one lookup per pause, not per key
   });

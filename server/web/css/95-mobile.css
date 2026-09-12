@@ -855,4 +855,9 @@
   #feedView .feed-card:not(.approval-card) > .feed-actions { column-gap: var(--sp-7); }
   #feedView .feed-card:not(.approval-card) > .feed-actions > .pill { flex: none; min-height: var(--touch); font-size: var(--fs-md); padding-inline: var(--sp-2); }
   #feedView .feed-top > .feed-title { min-width: 0; }
+  .write-question, .contact-create-input { font-size: var(--fs-xl); }
+  .consume-head-left, .consume-head-right { min-width: 0; max-width: 100%; }
+  .consume-head-right { flex-wrap: wrap; justify-content: flex-start; }
+  .consume-head .consume-search { min-width: 0; width: 100%; font-size: var(--fs-xl); min-height: var(--touch-sm); }
+
 }

@@ -459,3 +459,16 @@ Show received reply text promptly, with short batched paints rather than simulat
 typing. An unchanged stream frame should do no Markdown work. Send acknowledges the
 press immediately with a pending indicator; delivered status and draft clearing
 still require acknowledgement. Recovery polling must not block transcript polling.
+
+### Responsive controls across the app
+
+Keep search inputs and filter buttons mounted while results refresh. Use the
+shared `renderFilterButtons` for existing filter-chip groups; update selection,
+counts and handlers in place. Reattaching the same focused input still loses focus
+on some browsers, so preserve its containing header too.
+
+Invalidate obsolete requests as soon as the query or destination changes, including
+the debounce interval. Only the latest request may change results, errors or loading
+state. A failed lookup must not masquerade as an empty result. Polls must not overlap,
+run while hidden, or repaint a screen the user has left. Preserve armed actions on
+unchanged rows. Growing writing fields use the shared offscreen measurement helper.
