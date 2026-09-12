@@ -27,19 +27,24 @@ import (
 
 // RitualRow is one row of the RITUALS board.
 type RitualRow struct {
-	Spirit         string  `json:"spirit"`
-	Ritual         string  `json:"ritual"`
-	Path           string  `json:"path"` // repo-relative ritual file, for the editor
-	Cadence        string  `json:"cadence"`
-	CadenceHuman   string  `json:"cadenceHuman"`
-	NextFire       string  `json:"nextFire"` // RFC3339; "" for on-demand/invalid
-	CeilingUSD     float64 `json:"ceilingUsd"`
-	CeilingDefault bool    `json:"ceilingDefault"` // ceiling came from the chargebook default
-	LastOutcome    string  `json:"lastOutcome"`    // "" = never run
-	LastRunID      string  `json:"lastRunId"`
-	Valid          bool    `json:"valid"`
-	Error          string  `json:"error"`
-	Enabled        bool    `json:"enabled"` // false = paused (unscheduled; run-now still allowed)
+	Model          string            `json:"model"`
+	Provider       string            `json:"provider"`
+	Toolset        string            `json:"toolset"`
+	MaxSteps       string            `json:"maxSteps"`
+	Observation    RitualObservation `json:"observation"`
+	Spirit         string            `json:"spirit"`
+	Ritual         string            `json:"ritual"`
+	Path           string            `json:"path"` // repo-relative ritual file, for the editor
+	Cadence        string            `json:"cadence"`
+	CadenceHuman   string            `json:"cadenceHuman"`
+	NextFire       string            `json:"nextFire"` // RFC3339; "" for on-demand/invalid
+	CeilingUSD     float64           `json:"ceilingUsd"`
+	CeilingDefault bool              `json:"ceilingDefault"` // ceiling came from the chargebook default
+	LastOutcome    string            `json:"lastOutcome"`    // "" = never run
+	LastRunID      string            `json:"lastRunId"`
+	Valid          bool              `json:"valid"`
+	Error          string            `json:"error"`
+	Enabled        bool              `json:"enabled"` // false = paused (unscheduled; run-now still allowed)
 	// PausedReason is the ritual file's optional `paused_reason:` line — the one
 	// line the SCHEDULE board's Paused group shows beside a paused row. A
 	// projection of the file, never stored anywhere else.
@@ -60,6 +65,7 @@ func (s *Store) Rituals(now time.Time) []RitualRow {
 		}
 	}
 	engErr := s.engineRitualErrors()
+	observed := s.RitualObservations(now)
 
 	var rows []RitualRow
 	spDir := filepath.Join(s.root, "spirits")
@@ -74,7 +80,9 @@ func (s *Store) Rituals(now time.Time) []RitualRow {
 			if rf.IsDir() || !strings.HasSuffix(rf.Name(), ".md") {
 				continue
 			}
-			rows = append(rows, s.ritualRow(sp.Name(), rdir, rf.Name(), def, now, latest, engErr))
+			row := s.ritualRow(sp.Name(), rdir, rf.Name(), def, now, latest, engErr)
+			row.Observation = observed.For(row.Spirit, row.Ritual)
+			rows = append(rows, row)
 		}
 	}
 	sort.Slice(rows, func(i, j int) bool {
@@ -101,6 +109,21 @@ func (s *Store) ritualRow(spirit, rdir, file string, def float64, now time.Time,
 		row.Ritual = n
 	}
 	row.Cadence = strings.TrimSpace(fm["cadence"])
+	row.MaxSteps = fm["max_steps"]
+	identity, _ := os.ReadFile(filepath.Join(s.root, "spirits", spirit, "identity.md"))
+	identityFM, _ := mdfm.Split(string(identity))
+	row.Toolset = "adept · available " + identityFM["available_spellbooks"] + " · additional " + fm["additional_spellbooks"]
+	corner, _ := os.ReadFile(filepath.Join(s.root, "spirits", spirit, "cornerstone.md"))
+	for _, line := range strings.Split(string(corner), "\n") {
+		if strings.HasPrefix(line, "portal::") {
+			row.Provider = strings.TrimSpace(strings.TrimPrefix(line, "portal::"))
+			if validSlug(row.Provider) {
+				portal, _ := os.ReadFile(filepath.Join(s.root, "grimoire", "portals", row.Provider+".md"))
+				pf, _ := mdfm.Split(string(portal))
+				row.Model = pf["model"]
+			}
+		}
+	}
 	if v := strings.TrimSpace(fm["charge_usd"]); v != "" {
 		if f, e := strconv.ParseFloat(v, 64); e == nil {
 			row.CeilingUSD, row.CeilingDefault = f, false
@@ -124,7 +147,7 @@ func (s *Store) ritualRow(spirit, rdir, file string, def float64, now time.Time,
 	case row.Valid:
 		row.CadenceHuman = humanCadence(row.Cadence)
 		if row.Enabled { // paused rituals keep the phrase but never a next-fire
-			if sched, e := cron.ParseStandard(row.Cadence); e == nil {
+			if sched, e := cron.ParseStandard("CRON_TZ=America/Chicago " + row.Cadence); e == nil {
 				row.NextFire = sched.Next(now).Format(time.RFC3339)
 			}
 		}

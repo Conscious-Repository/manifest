@@ -380,6 +380,12 @@ function excaliburCard(h, portalRows) {
   head.append(el("span", "harness-chip", h.name), engineChip(h.engineAlive, h.heartbeat, h.queued));
   card.append(head);
   card.append(el("div", "harness-path", h.path));
+  const observation = h.observation || {};
+  cardLine(card, "observation", observation.health || "unknown");
+  card.append(el("div", "portal-note", "read-only / edit on metis and restart · source: " + (observation.evidence || "ritual-status.json")));
+  (observation.rituals || []).forEach((r) => {
+    cardLine(card, r.spirit + "/" + r.ritual, r.health + " · last attempt " + (r.lastAttempt ? fmtWhen(r.lastAttempt) : "unknown") + (r.lastError ? " · " + r.lastError : "") + (r.why ? " · " + r.why : ""));
+  });
   if (!h.engineAlive) {
     // disabled beats hidden (§3.1): the affordance exists, the title says whose
     // action it is. The sudo string stays out of the card.
@@ -438,7 +444,13 @@ function alfredCard(hz) {
   } else {
     cardLine(card, "gateway", "no gateway_state.json — the gateway has not run on this box");
   }
+  cardLine(card, "model pin", r.model || "unconfigured");
+  cardLine(card, "toolset authority", r.toolsets || "default-resolved · no migrated authority");
+  card.append(el("div", "portal-note", hz.authorityBoundary || "read-only / edit on metis and restart"));
+  Object.entries(r.duties || {}).forEach(([name, a]) => cardLine(card, name, (a.provider || "unconfigured") + "/" + (a.model || "unconfigured") + " · " + (a.tools || []).join(", ") + " · " + (a.mcp || "MCP unconfigured") + " · " + a.timeoutSeconds + "s / " + a.maxSteps + " steps / $" + a.ceilingUsd + " · tool-free helper only; no duty routed; live usage contract unverified"));
+  (hz.dutyRefusals || []).forEach((r) => cardLine(card, "successor refusal", r.label));
   const cron = hz.cron || {};
+  cardLine(card, "ticker health", cron.health || "unknown");
   cardLine(card, "cron", (cron.heartbeat ? "ticker heartbeat " + fmtAgo(cron.heartbeat) : "no ticker heartbeat")
     + (cron.lastSuccess ? " · last tick ok " + fmtAgo(cron.lastSuccess) : "")
     + (cron.jobs != null ? " · " + cron.jobs + " job" + (cron.jobs === 1 ? "" : "s") + " (" + (cron.enabled || 0) + " enabled)" : ""));
@@ -642,6 +654,8 @@ async function renderSettingsHosts(pane) {
     ["rsshubBase", cs.rsshubBase || "http://127.0.0.1:1200 (default)"],
   ]);
   group("HERMES", [["enabled", hm.enabled ? "true" : "false"], ["bin", hm.bin], ["timeoutSeconds", hm.timeoutSeconds || "default"], ["HERMES_HOME", d.hermesHome]]);
+  group("runtime ownership", [["manifest", "config.json · pollers, approvals, vaultwriter"], ["successor reasoning", "Manifest-owned tool-free helper; no Hermes profile/state; no duty routed; live usage contract unverified"], ["hermes", (d.hermesHome || "~/.hermes") + " · config.yaml, gateway_state.json, cron/jobs.json, cron/ticker_heartbeat, cron/ticker_last_success"], ["excalibur", "harness roots above · spirits/, chargebook.md, vessel/state/ritual-status.json, artifacts/runs/"]], "read-only / edit on metis and restart; Excalibur markdown is hot-read by its engine");
+  pane.append(el("div", "portal-note", "two-scheduler rule: Manifest pollers + supervised Hermes ticker is the approved successor topology; Excalibur still owns its existing duties during transition. no third scheduler. no duty moved."));
   group("ENVIRONMENT", env.map((e) => [e.name, e.set ? (e.value || "set") : "unset"]), "the process environment on metis — presence only; values never leave the box");
 }
 

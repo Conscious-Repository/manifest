@@ -1,0 +1,27 @@
+# hermes-gateway — Alfred: the telegram line, the digs, and the cron ticker
+# every scheduled ritual depends on (excalibur-deprecation H2, 2026-09-11).
+#
+# Before this file existed the gateway was an ORPHAN: a loaded-but-fileless
+# unit tracking MainPID=0, the real process nohup-descended, Restart=no —
+# a crash stayed crashed and a reboot forgot it entirely. The arrangement
+# below is copied from excalibur-engine.service, the engine this gateway is
+# replacing: supervised, room-membered, condition-belted on the unlock.
+
+[Unit]
+Description=Hermes Agent Gateway - Alfred (telegram + cron ticker)
+After=network-online.target tailscaled.service
+Wants=network-online.target
+# the room's belt: Alfred's duties are vault-adjacent (digs today, the
+# rituals migrating off excalibur tomorrow) — he rises after the unlock
+ConditionPathExists=/private/consciousrepo/goals.md
+
+[Service]
+User=benjamin
+WorkingDirectory=/home/benjamin/.hermes
+Environment=HERMES_HOME=/home/benjamin/.hermes
+ExecStart=/home/benjamin/.hermes/hermes-agent/venv/bin/python -m hermes_cli.main gateway run
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

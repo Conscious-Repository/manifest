@@ -37,6 +37,8 @@ import (
 // model pin (empty = unpinned → the --warn chip; the 08-30..09-01 skips were
 // exactly an unpinned job failing closed on drift), state and last outcome.
 type hermesJob struct {
+	Toolsets      []string `json:"toolsets"`
+	Bounds        string   `json:"bounds"`
 	ID            string   `json:"id"`
 	Name          string   `json:"name"`
 	Schedule      string   `json:"schedule"`      // cron expr, or the display for once/interval kinds
@@ -234,9 +236,17 @@ func hermesJobFromMap(m map[string]any) hermesJob {
 		LastError:     mstr(m, "last_error"),
 		PausedReason:  mstr(m, "paused_reason"),
 		Skills:        []string{},
+		Bounds:        "cron-owned; migrated duties not authorized",
 	}
 	if j.LastError == "" {
 		j.LastError = mstr(m, "last_delivery_error")
+	}
+	if ts, ok := m["enabled_toolsets"].([]any); ok {
+		for _, tool := range ts {
+			if t, ok := tool.(string); ok {
+				j.Toolsets = append(j.Toolsets, t)
+			}
+		}
 	}
 	j.Enabled = mbool(m, true, "enabled")
 	if strings.EqualFold(j.State, "paused") {
@@ -629,6 +639,10 @@ func (s *Server) hermesFiresIn(home string, since time.Time, jobsByID map[string
 					Runtime: "alfred", JobName: strings.TrimPrefix(e.Actor, "agent:") + " · turn",
 					Started: e.TS.UTC().Format(time.RFC3339), Why: firstLine(e.Text, 300), Source: "ledger",
 					Outcome: "completed",
+				}
+				if e.Kind == "run.refused" {
+					fire.Outcome = "refused"
+					fire.Why = e.Text
 				}
 				if e.Kind == "run.failed" {
 					fire.Outcome = "error"

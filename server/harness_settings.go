@@ -10,6 +10,7 @@ package server
 // surfaces the state + the one command.
 
 import (
+	"manifest/spirits"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -25,6 +26,7 @@ type harnessSpiritView struct {
 }
 
 type harnessSettingRow struct {
+	Observation spirits.RitualPlane `json:"observation"`
 	Name        string              `json:"name"`
 	Path        string              `json:"path"`
 	Primary     bool                `json:"primary"`
@@ -48,7 +50,8 @@ func (s *Server) handleHarnesses(w http.ResponseWriter, r *http.Request) {
 		}
 		alive, at := h.Spirits.EngineAlive()
 		row := harnessSettingRow{
-			Name: h.Name, Path: h.Spirits.Root(), Primary: h.Name == primary,
+			Observation: h.Spirits.RitualObservations(time.Now()),
+			Name:        h.Name, Path: h.Spirits.Root(), Primary: h.Name == primary,
 			EngineAlive: alive, Queued: len(h.Spirits.Queued()),
 			Portals: harnessPortals(h.Spirits.Root()),
 		}

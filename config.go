@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"errors"
+	"manifest/hermes"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -173,10 +174,11 @@ type Config struct {
 // chat, dig and scaffold turns. Work-order turns (plan/go) carry their own
 // longer per-turn budget (server.hermesTurnBudget) and ignore this value.
 type HermesConfig struct {
-	AnnotationPython string `json:"annotationPython"`
-	Enabled          bool   `json:"enabled"`
-	Bin              string `json:"bin"`
-	Model            string `json:"model"`
+	Duties           map[string]hermes.DutyAuthority `json:"duties,omitempty"`
+	AnnotationPython string                          `json:"annotationPython"`
+	Enabled          bool                            `json:"enabled"`
+	Bin              string                          `json:"bin"`
+	Model            string                          `json:"model"`
 	// Toolsets is the general -t scope (used by the go phase in Phase 2).
 	Toolsets string `json:"toolsets"`
 	// ReadToolsets is the read-only -t scope applied to plan/comment turns so a
@@ -559,6 +561,7 @@ func hostsInfo(cfg Config) server.HostsInfo {
 	h.Consume.RSSHubBase = cfg.Consume.RSSHubBase
 	h.Hermes.Enabled, h.Hermes.Bin, h.Hermes.TimeoutSeconds = cfg.Hermes.Enabled, orDefault(cfg.Hermes.Bin, "hermes"), cfg.Hermes.TimeoutSeconds
 	h.Hermes.Home = cfg.Hermes.Home
+	h.Hermes.Model, h.Hermes.Toolsets, h.Hermes.Duties = cfg.Hermes.Model, cfg.Hermes.Toolsets, cfg.Hermes.Duties
 	h.Fundraising.Enabled, h.Fundraising.SpreadsheetID = cfg.FundraisingSheets.Enabled, cfg.FundraisingSheets.SpreadsheetID
 	h.Fundraising.CredentialsPath, h.Fundraising.SyncIntervalMinutes = cfg.FundraisingSheets.CredentialsPath, cfg.FundraisingSheets.SyncIntervalMinutes
 	return h

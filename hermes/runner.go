@@ -55,11 +55,12 @@ var ErrNotEnabled = errors.New("hermes runner not enabled")
 
 // Config is the resolved runner configuration (from manifest config.json).
 type Config struct {
-	AnnotationPython string // optional interpreter for bounded, tool-free writing completions
-	Enabled          bool   // master switch — off by default so this lands dark
-	Bin              string // hermes binary path or name on $PATH (default "hermes")
-	Model            string // default -m model override ("" → the CLI's configured model)
-	Toolsets         string // default -t toolset scope ("" → the CLI's configured toolsets)
+	Duties           map[string]DutyAuthority // successor duty contracts; no default resolution
+	AnnotationPython string                   // optional interpreter for bounded, tool-free writing completions
+	Enabled          bool                     // master switch — off by default so this lands dark
+	Bin              string                   // hermes binary path or name on $PATH (default "hermes")
+	Model            string                   // default -m model override ("" → the CLI's configured model)
+	Toolsets         string                   // default -t toolset scope ("" → the CLI's configured toolsets)
 	// TimeoutSeconds is the DEFAULT bound on one agent turn (config
 	// `hosts.hermes.timeoutSeconds`); 0 → DefaultTimeout. It governs only the
 	// turns that don't ask for their own budget: a Request.TimeoutSeconds > 0
@@ -114,6 +115,7 @@ func (r *Runner) Enabled() bool { return r != nil && r.cfg.Enabled && r.cfg.Bin 
 // `-z` turn is always a fresh Hermes session (see the package comment), so the
 // caller composes whatever context the turn needs into Prompt.
 type Request struct {
+	MigratedDuty string // nonempty scopes strict successor authority; no duty routes here yet
 	// Bound locally for child Manifest MCP processes; never model-selected.
 	ManifestConversation string
 	ManifestTurn         string
@@ -141,9 +143,10 @@ type Request struct {
 
 // Result is a completed turn.
 type Result struct {
-	Reply    string  // stdout — the agent's final reply
-	SpentUSD float64 // parsed from the usage report (0 if unavailable)
-	Model    string  // model reported by the usage file, if any
+	dutyVerified bool    // set only by the bounded launcher after usage acceptance
+	Reply        string  // stdout — the agent's final reply
+	SpentUSD     float64 // parsed from the usage report (0 if unavailable)
+	Model        string  // model reported by the usage file, if any
 	// SessionID is the Hermes session the turn ran as (usage report
 	// `session_id`, e.g. "20260904_135845_2214c8"), "" if unavailable. It is
 	// a pointer into Hermes' own store (`hermes sessions search`, `hermes chat
@@ -209,6 +212,16 @@ func (r *Runner) buildArgs(req Request, usageFile string) []string {
 // Run executes one agent turn and returns the reply. It never runs the tool
 // loop unattended forever — the context timeout kills a hung turn.
 func (r *Runner) Run(ctx context.Context, req Request) (Result, error) {
+	if req.MigratedDuty != "" {
+		if r == nil {
+			return Result{}, refuse("missing duty authority")
+		}
+		a, err := r.dutyAuthority(req)
+		if err != nil {
+			return Result{}, err
+		}
+		return r.runSuccessor(ctx, req, a)
+	}
 	if !r.Enabled() {
 		return Result{}, ErrNotEnabled
 	}
@@ -289,6 +302,7 @@ func createUsageFile(tempRoot, cacheRoot string) (string, error) {
 // (v0.20.0 writes estimated_cost_usd, token counts, model, provider,
 // session_id, completed, failed — hermes_cli/oneshot.py.)
 type usageReport struct {
+	Provider      string  `json:"provider"`
 	CostUSD       float64 `json:"cost_usd"`
 	EstimatedCost float64 `json:"estimated_cost_usd"`
 	Model         string  `json:"model"`
@@ -334,3 +348,6 @@ func tail(s string, n int) string {
 	}
 	return "…" + s[len(s)-n:]
 }
+
+// DutyVerified reports evidence accepted by the fixed successor launcher.
+func (r Result) DutyVerified() bool { return r.dutyVerified }

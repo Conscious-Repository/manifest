@@ -13,6 +13,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"manifest/hermes"
 	"net/http"
 	"os"
 	"os/exec"
@@ -53,10 +54,13 @@ type HostsInfo struct {
 		RSSHubBase         string `json:"rsshubBase"`
 	} `json:"consume"`
 	Hermes struct {
-		Enabled        bool   `json:"enabled"`
-		Bin            string `json:"bin"`
-		TimeoutSeconds int    `json:"timeoutSeconds"`
-		Home           string `json:"home,omitempty"` // config.hermes.home (optional)
+		Model          string                          `json:"model"`
+		Toolsets       string                          `json:"toolsets"`
+		Duties         map[string]hermes.DutyAuthority `json:"duties,omitempty"`
+		Enabled        bool                            `json:"enabled"`
+		Bin            string                          `json:"bin"`
+		TimeoutSeconds int                             `json:"timeoutSeconds"`
+		Home           string                          `json:"home,omitempty"` // config.hermes.home (optional)
 	} `json:"hermes"`
 	Fundraising struct {
 		Enabled             bool   `json:"enabled"`
@@ -413,13 +417,16 @@ type hermesProfile struct {
 func (s *Server) handleAgentsHermes(w http.ResponseWriter, r *http.Request) {
 	home := s.hermesHome()
 	out := map[string]any{
-		"home":   home,
-		"runner": map[string]any{"enabled": s.hermes != nil, "bin": s.hermesBin()},
+		"home":              home,
+		"dutyRefusals":      s.dutyRefusals(time.Now()),
+		"authorityBoundary": "read-only / edit on metis and restart; tool-free successor helper implemented (Linux Landlock + seccomp, one step, local DeepSeek only); no duty routed; live usage contract unverified",
+		"runner":            map[string]any{"enabled": s.hermes != nil, "bin": s.hermesBin()},
 	}
 	if s.hosts != nil {
 		out["runner"] = map[string]any{
 			"enabled": s.hosts.Hermes.Enabled && s.hermes != nil,
 			"bin":     s.hermesBin(), "timeoutSeconds": s.hosts.Hermes.TimeoutSeconds,
+			"model": s.hosts.Hermes.Model, "toolsets": s.hosts.Hermes.Toolsets, "duties": s.hosts.Hermes.Duties,
 		}
 	}
 	// gateway
@@ -467,6 +474,21 @@ func (s *Server) handleAgentsHermes(w http.ResponseWriter, r *http.Request) {
 	cron["enabled"] = enabled
 	cron["unpinned"] = unpinned
 	cron["source"] = source
+	cron["health"] = "unconfigured"
+	if source == "unknown" {
+		cron["health"] = "unknown"
+	} else if enabled > 0 {
+		cron["health"] = "ok"
+		hb, he := os.Stat(filepath.Join(home, "cron", "ticker_heartbeat"))
+		success, se := os.Stat(filepath.Join(home, "cron", "ticker_last_success"))
+		if he != nil || time.Since(hb.ModTime()) > hermesTickerStale {
+			cron["health"] = "silent"
+		} else if se != nil || time.Since(success.ModTime()) > hermesTickerStale {
+			cron["health"] = "failed"
+		}
+	} else if len(jobs) > 0 {
+		cron["health"] = "paused"
+	}
 	if jerr != "" {
 		cron["outcome"] = "unknown"
 		cron["why"] = jerr

@@ -26,6 +26,6 @@ engine-deploy:
 # unit files → metis (after editing deploy/*.service|*.target|*.path)
 units-deploy:
 	scp deploy/manifest.service deploy/manifest-sync.service deploy/excalibur-engine.service \
-	    deploy/engine-room.target deploy/private-ready.path $(METIS):/tmp/
+	    deploy/engine-room.target deploy/private-ready.path deploy/hermes-gateway.service $(METIS):/tmp/
 	ssh $(METIS) 'sudo mv /tmp/manifest.service /tmp/manifest-sync.service /tmp/excalibur-engine.service \
-	    /tmp/engine-room.target /tmp/private-ready.path /etc/systemd/system/ && sudo systemctl daemon-reload'
+	    /tmp/engine-room.target /tmp/private-ready.path /tmp/hermes-gateway.service /etc/systemd/system/ && sudo mkdir -p /etc/systemd/system/engine-room.target.wants && sudo ln -sfn /etc/systemd/system/hermes-gateway.service /etc/systemd/system/engine-room.target.wants/hermes-gateway.service && sudo systemctl daemon-reload'

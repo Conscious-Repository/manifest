@@ -50,13 +50,23 @@ func (e hermesCronEmitter) Emit(now time.Time) ([]signals.Signal, error) {
 		return nil, nil
 	}
 	if _, err := os.Stat(filepath.Join(home, "cron")); err != nil {
-		return nil, nil
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return []signals.Signal{{ID: "agent-cron-registry:alfred", Kind: "agent-cron-registry", Entity: "alfred", Label: "alfred · cron directory unreadable", ActHref: "#/agents/runs", Hash: "cron directory unreadable"}}, nil
+	}
+	// An empty initial cron directory is setup state, not an enabled plane.
+	if _, err := os.Stat(filepath.Join(home, "cron", "jobs.json")); os.IsNotExist(err) {
+		_, beatErr := os.Stat(filepath.Join(home, "cron", "ticker_heartbeat"))
+		if os.IsNotExist(beatErr) && !s.hermesEnabled() && (s.hosts == nil || !s.hosts.Hermes.Enabled) {
+			return nil, nil
+		}
 	}
 	// jobs.json is the source; the CLI fallback inside hermesJobs is bounded
 	// so a FEED load never hangs on a wedged binary
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	jobs, _, _ := s.hermesJobs(ctx)
+	jobs, source, why := s.hermesJobs(ctx)
 
 	enabled := 0
 	for _, j := range jobs {
@@ -65,6 +75,9 @@ func (e hermesCronEmitter) Emit(now time.Time) ([]signals.Signal, error) {
 		}
 	}
 	var out []signals.Signal
+	if source == "unknown" {
+		out = append(out, signals.Signal{ID: "agent-cron-registry:alfred", Kind: "agent-cron-registry", Entity: "alfred", Label: "alfred · " + snipRunes(why, 160), ActHref: "#/agents/runs", Hash: why})
+	}
 
 	// 1 — the ticker itself. Only meaningful while something is scheduled.
 	tickerDead := false
@@ -87,6 +100,17 @@ func (e hermesCronEmitter) Emit(now time.Time) ([]signals.Signal, error) {
 		}
 	}
 
+	if enabled > 0 && !tickerDead {
+		ok, err := os.Stat(filepath.Join(home, "cron", "ticker_last_success"))
+		if err != nil || now.Sub(ok.ModTime()) > hermesTickerStale {
+			mark := "missing"
+			if err == nil {
+				mark = ok.ModTime().UTC().Format(time.RFC3339)
+			}
+			out = append(out, signals.Signal{ID: "agent-cron-failing:alfred", Kind: "agent-cron-failing", Entity: "alfred", Label: "alfred · ticker alive but no recent successful tick", ActHref: "#/agents/runs", Hash: mark})
+		}
+	}
+
 	for _, j := range jobs {
 		if !j.Enabled {
 			continue
@@ -103,11 +127,11 @@ func (e hermesCronEmitter) Emit(now time.Time) ([]signals.Signal, error) {
 				last, lok := hermesTime(j.LastRunAt)
 				if !lok || last.Before(next) {
 					out = append(out, signals.Signal{
-						ID:     "agent-cron-missed:" + j.ID,
-						Kind:   "agent-cron-missed",
-						Entity: name,
-						Label:  name + " · fire due " + next.Format("Jan 2 15:04") + " never ran",
-						Age:    int(now.Sub(next).Hours() / 24),
+						ID:      "agent-cron-missed:" + j.ID,
+						Kind:    "agent-cron-missed",
+						Entity:  name,
+						Label:   name + " · fire due " + next.Format("Jan 2 15:04") + " never ran",
+						Age:     int(now.Sub(next).Hours() / 24),
 						ActHref: "#/agents",
 						Hash:    j.NextRunAt,
 					})
@@ -121,9 +145,7 @@ func (e hermesCronEmitter) Emit(now time.Time) ([]signals.Signal, error) {
 			if msg == "" {
 				msg = "last fire errored"
 			}
-			if len(msg) > 120 {
-				msg = msg[:120] + "…"
-			}
+			msg = snipRunes(msg, 120)
 			age := 0
 			if last, ok := hermesTime(j.LastRunAt); ok {
 				age = int(now.Sub(last).Hours() / 24)
@@ -134,7 +156,7 @@ func (e hermesCronEmitter) Emit(now time.Time) ([]signals.Signal, error) {
 				Entity: name,
 				Label:  name + " · " + msg,
 				Age:    age, ActHref: "#/agents",
-				Hash: j.LastRunAt + "|" + msg,
+				Hash: j.LastRunAt + "|" + j.LastError,
 			})
 		}
 	}

@@ -58,7 +58,7 @@ func (s *Server) handleSpiritsRuns(w http.ResponseWriter, r *http.Request) {
 	// tagged by source. The client derives queued/running/done from these
 	// files alone — no browser-held run state (plan §1).
 	writeJSON(w, map[string]any{"data": s.mergedRuns(), "queued": s.mergedQueued(),
-		"primary": s.primaryHarnessName()})
+		"primary": s.primaryHarnessName(), "observations": s.ritualObservations(time.Now())})
 }
 
 func (s *Server) handleSpiritsRun(w http.ResponseWriter, r *http.Request) {

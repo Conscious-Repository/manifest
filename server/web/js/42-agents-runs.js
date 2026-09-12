@@ -14,7 +14,8 @@
 
 // ---- run reports (artifacts/runs/) — live strip + finished list ----
 async function loadSpiritRuns() {
-  const [runs, hr] = await Promise.all([fetchSpiritRuns(), fetchHermesRuns(spRunWindow)]);
+  const [runs, hr, hz] = await Promise.all([fetchSpiritRuns(), fetchHermesRuns(spRunWindow), fetchHermes()]);
+  hermesInfo = hz;
   spiritRuns = runs;
   hermesRuns = hr.data; hermesRunsDegraded = hr.degraded;
   renderSpiritRuns();
@@ -91,6 +92,20 @@ function runWindowCutoff() {
 // re-render doesn't close what you're reading).
 function renderSpiritRuns() {
   const host = els.spiritRunsList; host.innerHTML = "";
+  (spiritRuns.observations || []).forEach((o) => {
+    if (!["late", "unknown", "failed"].includes(o.health)) return;
+    const row = el("div", "runs-degraded");
+    row.append(el("span", "run-why", (o.spirit || "engine") + "/" + (o.ritual || "registry") + " · " + o.health + " · " + (o.due ? fmtWhen(o.due) + " · " : "") + (o.why || o.lastError || "unknown")));
+    const evidence = el("a", "sprt-ghost", "evidence · " + o.evidence);
+    evidence.href = "#/settings/agents";
+    evidence.title = "read-only source path; no run artifact was fabricated";
+    row.append(evidence); host.append(row);
+  });
+  (hermesInfo && hermesInfo.dutyRefusals || []).forEach((r) => host.append(el("div", "run-why", r.label)));
+  const cron = hermesInfo && hermesInfo.cron;
+  if (cron && cron.why) host.append(el("div", "runs-degraded", "alfred · " + cron.why));
+  ((cron && cron.list) || []).filter((j) => j.lastError).forEach((j) => host.append(el("div", "run-why", (j.name || j.id) + " · " + (j.lastRunAt ? fmtWhen(j.lastRunAt) + " · " : "") + j.lastError)));
+
   const running = (spiritRuns.data || []).filter((r) => r.outcome === "running");
   const queued = spiritRuns.queued || [];
   // excalibur reports ∪ alfred fires, newest first (both arrive newest-first)

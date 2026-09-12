@@ -52,11 +52,17 @@ func TestHermesCronEmitterPagesTheThreeFailures(t *testing.T) {
 	// healthy: fresh heartbeat, a scheduled job with a future fire → silence
 	writeJobs([]map[string]any{{
 		"id": "j1", "name": "waiting-on", "enabled": true, "state": "scheduled",
-		"model": "deepseek-v4-flash-vision-exp",
+		"model":       "deepseek-v4-flash-vision-exp",
 		"next_run_at": now.Add(time.Hour).Format(time.RFC3339),
 		"last_run_at": now.Add(-time.Hour).Format(time.RFC3339),
 	}})
 	beat(now.Add(-30 * time.Second))
+	if err := os.WriteFile(filepath.Join(cron, "ticker_last_success"), []byte("x"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chtimes(filepath.Join(cron, "ticker_last_success"), now, now); err != nil {
+		t.Fatal(err)
+	}
 	if got := emit(); len(got) != 0 {
 		t.Fatalf("a healthy plane paged: %v", got)
 	}

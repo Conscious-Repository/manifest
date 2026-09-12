@@ -108,10 +108,14 @@ function ritualRuns(r) {
 // silent   the three newest runs all completed with itemsWritten 0
 // Both late and silent are --warn, never --danger.
 function ritualHealth(r, runs) {
+  const observed = r.observation;
+  if (observed && ["late", "failed", "paused", "stopped", "unknown", "unconfigured"].includes(observed.health)) return { state: observed.health, why: observed.why || observed.lastError || "" };
   if (!r.valid) return { state: "invalid", why: r.error || "invalid frontmatter" };
   if (r.enabled === false) return { state: "paused", why: r.pausedReason || "enabled: false — run now stays a manual override" };
   const last = runs[0];
-  if (r.cadence && last && last.outcome !== "running") {
+  if (last && (last.outcome || "").startsWith("stopped")) return { state: "stopped", why: last.outcomeDetail || last.outcome };
+  if (last && (last.outcome || "").startsWith("error")) return { state: "failed", why: last.outcomeDetail || last.outcome };
+  if (!observed && r.cadence && last && last.outcome !== "running") {
     const lastAt = new Date(last.started).getTime();
     const fires = cronPrevFires(r.cadence, new Date(), 2);
     if (!isNaN(lastAt) && fires.length === 2) {
@@ -170,6 +174,7 @@ function renderSpiritRituals(rows) {
   all.slice().sort(byName).forEach((r) => groups[schedGroupOf(r)].push(r));
   groups.yours.sort((a, b) => (fireAt(a) - fireAt(b)) || byName(a, b)); // soonest first; invalid (no fire) last
   // what the Hermes projection could not read (D4 graceful degrade) — said once, quietly
+  (hermesInfo && hermesInfo.dutyRefusals || []).forEach((r) => host.append(el("div", "sched-degraded", r.label)));
   const cron = (hermesInfo && hermesInfo.cron) || null;
   if (hermesInfo === null) host.append(el("div", "sched-degraded", "alfred: /api/agents/hermes did not answer — Hermes jobs not shown"));
   else if (cron && cron.outcome === "unknown") host.append(el("div", "sched-degraded", "alfred: jobs unknown — " + (cron.why || "jobs.json unreadable")));
@@ -245,7 +250,8 @@ function hermesJobRuns(j) {
 // silent detail. Both may show; late is the current state, unpinned the risk.
 function hermesJobHealth(j, runs) {
   const out = [];
-  if (j.outcome === "unknown") return [{ state: "invalid", why: "a reshaped jobs.json entry — id or name missing" }];
+  if (j.lastError || j.lastStatus === "error") out.push({ state: "failed", why: j.lastError || "last fire errored" });
+  if (j.outcome === "unknown") return [{ state: "unknown", why: "a reshaped jobs.json entry — id or name missing" }];
   if (j.enabled === false) return [{ state: "paused", why: j.pausedReason || (j.state === "completed" ? "a one-shot job that already ran" : "paused in Hermes") }];
   if (j.scheduleKind === "cron" && j.lastRunAt) {
     const lastAt = new Date(j.lastRunAt).getTime();
@@ -284,6 +290,7 @@ function hermesJobRow(j) {
   sp.title = "Alfred (Hermes) — Settings › Agents";
   sp.onclick = (e) => { e.stopPropagation(); location.hash = "#/settings/agents"; };
   name.append(sp, el("span", "ritual-name-sep", " · "), el("span", "ritual-job-name", j.name || j.id));
+  name.append(el("span", "cad-raw", "pin " + (j.provider || "provider unknown") + " / " + (j.model || "unconfigured") + " · tools " + ((j.toolsets || []).join(", ") || "default-resolved — no migrated authority") + " · " + (j.bounds || "bounds unknown")));
   name.title = [j.prompt ? "prompt: " + j.prompt : "", (j.skills || []).length ? "skills: " + j.skills.join(", ") : "", j.deliver ? "deliver: " + j.deliver : ""].filter(Boolean).join("\n");
   row.append(name);
   // cadence — the builder's phrase when the cron is one it can say, else Hermes' display
@@ -397,6 +404,8 @@ function ritualRow(r) {
   job.href = "#/agents/ritual/" + encodeURIComponent(r.spirit) + "/" + encodeURIComponent(r.ritual);
   job.onclick = (e) => e.stopPropagation();
   name.append(sp, el("span", "ritual-name-sep", " · "), job);
+  name.append(el("span", "cad-raw", "pin " + (r.provider || "unknown") + " / " + (r.model === "discover" ? "discover — unpinned" : r.model || "unknown") + " · " + (r.toolset || "tools unknown") + " · " + (r.maxSteps || "unknown") + " steps · $" + r.ceilingUsd));
+  if (r.observation && r.observation.lastRun) name.append(el("span", "cad-raw", "last " + fmtWhen(r.observation.lastRun)));
   row.append(name);
   // cadence — human phrase over the raw cron (both visible)
   const cad = el("span", "ritual-cadence");

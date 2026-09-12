@@ -672,7 +672,7 @@ func main() {
 		// completed run of the same spirit/ritual)
 		emitters = append(emitters, srv.RunFailureEmitter())
 		// a down engine with queued work + a degraded deepseek endpoint (Phase 7)
-		emitters = append(emitters, srv.EngineDownEmitter())
+		emitters = append(emitters, srv.EngineDownEmitter(), srv.RitualMissedEmitter())
 		// delegated work whose run completed while the todo is still open —
 		// "your result is ready" (opens the report in place)
 		emitters = append(emitters, srv.DelegationDoneEmitter())
@@ -685,7 +685,7 @@ func main() {
 		emitters = append(emitters, srv.BankFeedAttentionEmitter())
 		// Alfred's cron plane: a silent ticker, a missed fire, an errored
 		// fire — each pages the FEED (excalibur-deprecation H1, 2026-09-11)
-		emitters = append(emitters, srv.HermesCronEmitter())
+		emitters = append(emitters, srv.HermesCronEmitter(), srv.HermesDutyEmitter())
 		deepseekState := filepath.Join(cfg.DataDir, "portals", "deepseek.state.json")
 		srv.UseDeepseekState(deepseekState)
 		emitters = append(emitters, signals.DegradedPortal(deepseekState))
@@ -832,7 +832,7 @@ func main() {
 		if cfg.Hermes.Enabled {
 			srv.UseHermes(hermes.NewRunner(hermes.Config{
 				Enabled: true, Bin: cfg.Hermes.Bin, Model: cfg.Hermes.Model, AnnotationPython: cfg.Hermes.AnnotationPython,
-				Toolsets: cfg.Hermes.Toolsets, TimeoutSeconds: cfg.Hermes.TimeoutSeconds,
+				Duties: cfg.Hermes.Duties, Toolsets: cfg.Hermes.Toolsets, TimeoutSeconds: cfg.Hermes.TimeoutSeconds,
 			}), orDefault(cfg.Hermes.ReadToolsets, DefaultHermesReadToolsets))
 		}
 		srv.UseAionSink(sinkFan{aionSink, reSink}) // transcript-confirm → instant extraction spool (both domains)
