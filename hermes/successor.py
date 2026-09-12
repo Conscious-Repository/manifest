@@ -86,8 +86,10 @@ def main():
         # Exactly one request. No retries, redirects, fallback, tool dispatch,
         # config loading, or continuation loop exists in this executable.
         conn = http.client.HTTPConnection(HOST, PORT, timeout=a['timeoutSeconds'])
+        # Sparks rejects tools=[]; omit both tool fields for this locally
+        # enforced tool-free authority. Response scope checks still apply.
         body = json.dumps({'model': MODEL, 'messages': [{'role': 'user', 'content': packet['prompt']}],
-                           'tools': [], 'tool_choice': 'none', 'stream': False, 'max_tokens': 4096})
+                           'stream': False, 'max_tokens': 4096})
         conn.request('POST', '/v1/chat/completions', body, {'Content-Type': 'application/json'})
         response = conn.getresponse()
         if response.status != 200:

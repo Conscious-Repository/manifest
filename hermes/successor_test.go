@@ -46,7 +46,11 @@ class Connection:
         request_count += 1
         assert request_count <= 1
         data = json.loads(body)
-        assert data['model'] == MODEL and data['tools'] == [] and data['tool_choice'] == 'none'
+        assert data['model'] == MODEL
+        # Regression: Sparks rejects an empty tools array. Tool-free authority
+        # omits both fields; all canary response-scope refusal cases use this seam.
+        assert 'tools' not in data and 'tool_choice' not in data
+        assert data['stream'] is False and data['max_tokens'] == 4096
         assert headers == {'Content-Type': 'application/json'}
     def getresponse(self): return Response()
     def close(self): pass

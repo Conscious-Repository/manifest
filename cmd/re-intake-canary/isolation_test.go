@@ -102,7 +102,7 @@ func TestCanarySourceCallGraphIsolation(t *testing.T) {
 var reviewedSuccessorSources = map[string]string{
 	"../../hermes/runner.go":    "c6c9f3eadf85cf8244b3cb20d6c8b2c8a498a8739d8527c8a1f44372d9357839",
 	"../../hermes/successor.go": "9fe3e973fc52accd9eae33bd17cf34deb5311bbb91779412807c88672c343293",
-	"../../hermes/successor.py": "86fa7729d08658637cf08a8f4dc92a038ed01d130b18048e694c31c36a7b7ec5",
+	"../../hermes/successor.py": "a3f4902cfee4fbcb90201300bed034e79dfe12ef164c6b2adfb8bb470b7beca2",
 	"../../hermes/authority.go": "807fef078582c1aeb344c45d2d4f5295e073f6e4c2dfa698115dd7d8cf4baaa9",
 	"../../hermes/fallback.go":  "361d54087bd0eb76a98ee1014717e86632c7f037ab5dab4643528f91142f98e6",
 }
