@@ -468,6 +468,7 @@ func main() {
 	svc.UseGoals(server.NewGoalsAdapter(goalsStore, tasksStore, aionStore, reStore, orDefault(cfg.OwnerInitials, "BA")))
 	svc.UseEvents(calSource)
 	srv := server.New(svc, goalsStore, calClient)
+	srv.UseReIntake(cfg.ReIntake, cfg.DataDir, cfg.Hermes.Duties["extractor/re-intake"])
 	srv.UsePlannerNotes("", sharedHomeRoot, "Benjamin", vw.BindAbs("shared-home"))
 	srv.UseChatState(filepath.Join(cfg.DataDir, "chat-state"))
 	srv.UseHosts(hostsInfo(cfg)) // Settings › Hosts & paths: the read-only config projection

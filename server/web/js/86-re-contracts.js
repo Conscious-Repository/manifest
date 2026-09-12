@@ -117,7 +117,10 @@ async function reIntakeUpload(file) {
       method: "POST", body: file,
     });
     if (!r.ok) throw new Error(await r.text());
-    showToast("Parsing " + file.name + " — the proposal will land in FEED");
+    const result = await r.json();
+    showToast(result.status === "pending"
+      ? "Pending proposal in FEED — review required; intake pilot stopped"
+      : "Parsing " + file.name + " — the proposal will land in FEED");
   } catch (e) {
     showToast("Intake failed — " + String(e.message || e).slice(0, 120));
   }

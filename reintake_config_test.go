@@ -38,3 +38,20 @@ func TestReIntakeProductionFlagExplicitOnly(t *testing.T) {
 		t.Fatal("production flag decode changed shadow or failed")
 	}
 }
+
+func TestReIntakeOwnerBoundaryIsExplicitConfiguration(t *testing.T) {
+	var cfg Config
+	if err := json.Unmarshal([]byte(`{"reIntake":{"productionEnabled":true,"ownerBoundary":"private-tailnet-owner"}}`), &cfg); err != nil {
+		t.Fatal(err)
+	}
+	if cfg.ReIntake.OwnerBoundary != "private-tailnet-owner" || !cfg.ReIntake.ProductionEnabled {
+		t.Fatal(cfg.ReIntake)
+	}
+	var absent Config
+	if err := json.Unmarshal([]byte(`{}`), &absent); err != nil {
+		t.Fatal(err)
+	}
+	if absent.ReIntake.OwnerBoundary != "" || absent.ReIntake.ProductionEnabled {
+		t.Fatal("implicit owner authority")
+	}
+}

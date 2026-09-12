@@ -398,7 +398,13 @@ async function fetchSpiritRuns() {
 function reIntakePrimarySummary(p) {
   if (!p) return "re-intake · shadow / not routed · primary policy evidence unavailable";
   return "re-intake · primary: " + p.primary + " / " + p.model +
-    " · shadow / not routed · production route disabled · owner: Excalibur · canary: " + (p.canaryStatus || "unknown") + " · cost: " + p.cost_policy + " policy; provider cost telemetry " + p.cost_telemetry +
+    " · " + (p.status || "shadow / not routed") +
+    " · productionEnabled: " + !!p.productionEnabled + " · production route " + (p.productionRoute || "disabled") +
+    " · owner: " + (p.owner || "owner") + " · lane: " + (p.productionOwner || "Excalibur") +
+    " · access: " + (p.ownerBoundary || "undeclared") +
+    " · source: " + (p.sourceRoute || "POST /api/realestate/intake?name=...") +
+    " · " + (p.handoff || "candidate → pending approval; owner confirmation required") +
+    " · pilot: " + (p.pilotStatus || "unknown") + " · canary: " + (p.canaryStatus || "unknown") + " · cost: " + p.cost_policy + " policy; provider cost telemetry " + p.cost_telemetry +
     " · provider binding: " + p.provider_binding + " · declaration: " + p.configuredAuthority +
     " · fallback: " + p.fallback + " · last attempt receipt: " + p.lastAttempt +
     (p.evidenceUpdatedAt ? " (receipt updated " + p.evidenceUpdatedAt + ")" : "") + " · last error: " + p.lastError;

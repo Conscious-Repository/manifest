@@ -30,11 +30,13 @@ const Model = "deepseek-v4.1-flash"
 const ShadowPath = "excalibur-retirement/shadow/re-intake"
 const StopAndPage = "STOP: shadow lane frozen; page owner with local evidence; wait for explicit owner action; no retry or fallback"
 
-// Config gates offline replay and the unwired production adapter independently.
-// Neither flag registers a route. Missing authority never inherits defaults.
+// Config gates offline replay and the canonical production handoff independently.
+// Production uses only the existing owner upload route. Missing authority never inherits defaults.
 type Config struct {
 	ShadowEnabled     bool `json:"shadowEnabled"`
 	ProductionEnabled bool `json:"productionEnabled"`
+	// OwnerBoundary explicitly acknowledges the existing private cockpit deployment.
+	OwnerBoundary string `json:"ownerBoundary"`
 }
 
 //go:embed fixtures/single.json fixtures/split.json

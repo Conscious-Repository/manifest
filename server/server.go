@@ -47,6 +47,7 @@ import (
 	"manifest/reading"
 	"manifest/realestate"
 	"manifest/recruiting"
+	"manifest/reintake"
 	"manifest/signals"
 	"manifest/spirits"
 	"manifest/tasks"
@@ -142,11 +143,15 @@ type Server struct {
 	bankfeedGen  atomic.Uint64
 	bankfeedLast bankSyncResult // guarded by bankfeedMu
 	// Real estate (PROPERTIES tab over system/realestate/ records). Nilable.
-	realestate     *realestate.Service
-	realestateRoot string                // vault-relative records root (default "system/realestate")
-	reFiles        *realestate.FileStore // CAS document store (overhaul §3.3). Nilable.
-	bgParcelsPath  string                // <dataDir>/realestate/bgParcels.json (map background layer)
-	rePortalPath   string                // ooda site checkout for the deals.json publish ("" = disabled)
+	realestate        *realestate.Service
+	realestateRoot    string // vault-relative records root (default "system/realestate")
+	reIntakeConfig    reintake.Config
+	reIntakeDataDir   string
+	reIntakeAuthority hermes.DutyAuthority
+	reIntakeRun       func(context.Context, string, reintake.Config, hermes.DutyAuthority, reintake.ProductionContract) (approvals.Proposal, reintake.ProductionReceipt, error)
+	reFiles           *realestate.FileStore // CAS document store (overhaul §3.3). Nilable.
+	bgParcelsPath     string                // <dataDir>/realestate/bgParcels.json (map background layer)
+	rePortalPath      string                // ooda site checkout for the deals.json publish ("" = disabled)
 	// studyFallback is where the parcel-study geojson lives on a host with no
 	// re-portal checkout. The checkout is preferred (studyParcelsPath) so the
 	// snapshot tracks the repo instead of needing a hand copy per deploy.

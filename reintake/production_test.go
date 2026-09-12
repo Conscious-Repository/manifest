@@ -261,10 +261,15 @@ func TestProductionStrictCandidate(t *testing.T) {
 	}
 }
 
-func TestProductionRouteAlwaysDisabled(t *testing.T) {
+func TestProductionRouteRequiresExplicitBoundaryAndCanonicalExtract(t *testing.T) {
 	_, cfg, a, c, _ := productionFixture(t)
 	if ValidateProductionRoute(cfg, a, c) == nil {
 		t.Fatal("enabled without source integration")
+	}
+	cfg.OwnerBoundary = OwnerBoundary
+	c.TextSource, c.Context = c.Source, "existing domain context"
+	if err := ValidateProductionRoute(cfg, a, c); err != nil {
+		t.Fatal(err)
 	}
 	cfg.ProductionEnabled = false
 	if ValidateProductionRoute(cfg, a, c) == nil {

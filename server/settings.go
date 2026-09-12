@@ -15,6 +15,7 @@ import (
 	"fmt"
 	"io"
 	"manifest/hermes"
+	"manifest/reintake"
 	"net/http"
 	"os"
 	"os/exec"
@@ -592,13 +593,27 @@ func (s *Server) reIntakePrimaryProjection(directory string) map[string]any {
 		"provider_binding": hermes.LocalProviderBinding, "endpoint": hermes.LocalEndpoint,
 		"cost_policy": hermes.LocalCostPolicy, "cost_telemetry": "unavailable",
 		"status": "shadow", "productionRouted": false,
-		"productionRoute": "disabled; source-ingest integration unavailable", "productionOwner": "Excalibur", "canaryStatus": "unknown",
+		"productionEnabled": s.reIntakeConfig.ProductionEnabled, "sourceRoute": reintake.SourceRoute,
+		"ownerBoundary": s.reIntakeConfig.OwnerBoundary, "owner": "owner",
+		"handoff":         "candidate → pending approval; owner confirmation required",
+		"pilotStatus":     reintake.PilotStatus(s.reIntakeDataDir),
+		"productionRoute": "disabled", "productionOwner": "Excalibur", "canaryStatus": "unknown",
 		"fallback":            "owner-invoked Claude Code/Codex only; unsupported/unverified; never automatic",
 		"configuredAuthority": "missing or invalid", "lastAttempt": "unknown", "lastError": "unknown",
 	}
+	if s.reIntakeConfig.ProductionEnabled {
+		out["status"] = "blocked"
+		out["productionOwner"] = "Manifest (configured; deployment ownership requires review)"
+		out["productionRoute"] = "blocked; owner boundary or authority invalid"
+		if reintake.ValidateProductionAccess(s.reIntakeConfig, s.reIntakeAuthority) == nil {
+			out["productionRoute"] = "owner upload → candidate → pending approval"
+			out["status"] = "pilot; owner review required"
+			out["productionRouted"] = true
+		}
+	}
 	if s.hosts != nil {
 		if a, ok := s.hosts.Hermes.Duties["extractor/re-intake"]; ok && a.Validate() == nil && a.CostPolicy == hermes.LocalCostPolicy {
-			out["configuredAuthority"] = "valid declaration; not routed"
+			out["configuredAuthority"] = "valid declaration"
 		}
 	}
 	root, err := os.OpenRoot(directory)

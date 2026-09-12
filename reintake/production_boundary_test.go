@@ -91,7 +91,7 @@ func TestProductionLostFinalReceiptErasesCandidate(t *testing.T) {
 	}
 }
 
-func TestProductionNoWriterOrActivationSurface(t *testing.T) {
+func TestProductionAdapterNoWriterAndOnlyCanonicalActivation(t *testing.T) {
 	// Review the small adapter's import/capability boundary. approvals contributes
 	// only its Proposal value and existing pure re-contract validators.
 	file, err := parser.ParseFile(token.NewFileSet(), "production.go", nil, 0)
@@ -123,8 +123,7 @@ func TestProductionNoWriterOrActivationSurface(t *testing.T) {
 		}
 		return true
 	})
-	// No non-test entrypoint references the adapter. The existing route continues
-	// to invoke handleREIntake, whose handoff remains Excalibur SpoolRunNow.
+	// Only the canonical intake handoff may configure or invoke the adapter.
 	for _, base := range []string{"../server", "../cmd"} {
 		err := filepath.WalkDir(base, func(path string, d os.DirEntry, e error) error {
 			if e != nil {
@@ -138,7 +137,7 @@ func TestProductionNoWriterOrActivationSurface(t *testing.T) {
 				return e
 			}
 			for _, call := range []string{"reintake.RunStaged(", "reintake.ValidateProductionRoute("} {
-				if strings.Contains(string(b), call) {
+				if strings.Contains(string(b), call) && filepath.ToSlash(path) != "../server/intake_production.go" {
 					t.Error("unexpected activation", path)
 				}
 			}

@@ -22,22 +22,26 @@ const ProductionPath = "excalibur-retirement/re-intake-production"
 const ProductionStop = "STOP: page owner with local receipt; no retry or fallback"
 const maxDocumentBytes = 16000
 
-// ProductionContract is an in-process contract, NOT authentication. A future
-// caller must authenticate the owner separately. No HTTP/CLI/poller calls this
-// adapter. Source identifies the exact staged UTF-8 document bytes, not a URL,
-// vault path, PDF extraction, or an assertion about a different original blob.
+// ProductionContract is trusted in-process input, not network authentication.
+// Source/Documents name the original CAS blob; TextSource names exact extracted
+// bytes when the canonical upload supplies an extract. Context is bounded data.
 type ProductionContract struct {
-	Owner     string   `json:"owner"`
-	Actor     string   `json:"actor"`
-	Source    string   `json:"source"`
-	Documents []string `json:"documents"`
-	Target    string   `json:"target"`
-	ApplyPath string   `json:"applyPath"`
+	Owner      string   `json:"owner"`
+	Actor      string   `json:"actor"`
+	Source     string   `json:"source"`
+	Documents  []string `json:"documents"`
+	Target     string   `json:"target"`
+	ApplyPath  string   `json:"applyPath"`
+	TextSource string   `json:"textSource,omitempty"`
+	Context    string   `json:"context,omitempty"`
 }
 
 func (c ProductionContract) Validate() error {
 	if c.Owner != "owner" || c.Actor != "extractor" || len(c.Documents) != 1 || c.Documents[0] != c.Source || !validSource(c.Source) || c.Target != c.ApplyPath || !approvals.ReContractPathAllowed(c.ApplyPath) {
 		return productionRefusal("invalid one-document owner contract")
+	}
+	if c.TextSource != "" && !validSource(c.TextSource) || len(c.Context) > 32000 || !utf8.ValidString(c.Context) || strings.ContainsRune(c.Context, 0) {
+		return productionRefusal("invalid extract or context")
 	}
 	return nil
 }
@@ -50,14 +54,26 @@ func productionRefusal(reason string) error {
 	return &hermes.Refusal{Reason: reason + "; " + ProductionStop}
 }
 
-// ValidateProductionRoute deliberately never grants activation, even with a
-// valid declaration and flag. The existing intake writes vault CAS/extract and
-// spools Excalibur; no safe authenticated source/context handoff exists yet.
+const OwnerBoundary = "private-tailnet-owner"
+const SourceRoute = "POST /api/realestate/intake?name=..."
+
+// The private cockpit has no HTTP identity layer. Activation requires the owner
+// to declare its existing private/tailnet access boundary explicitly in config.
+func ValidateProductionAccess(cfg Config, a hermes.DutyAuthority) error {
+	if !cfg.ProductionEnabled || cfg.OwnerBoundary != OwnerBoundary || validateAuthority(a) != nil {
+		return productionRefusal("production disabled or owner boundary/authority invalid")
+	}
+	return nil
+}
+
 func ValidateProductionRoute(cfg Config, a hermes.DutyAuthority, c ProductionContract) error {
-	if err := validateProduction(cfg, a, c); err != nil {
+	if err := ValidateProductionAccess(cfg, a); err != nil {
 		return err
 	}
-	return productionRefusal("production route disabled: source-ingest integration unavailable")
+	if c.TextSource == "" || strings.TrimSpace(c.Context) == "" {
+		return productionRefusal("canonical extract/context required")
+	}
+	return validateProduction(cfg, a, c)
 }
 
 func validateProduction(cfg Config, a hermes.DutyAuthority, c ProductionContract) error {
@@ -106,9 +122,9 @@ func executeProduction(ctx context.Context, a hermes.DutyAuthority, prompt strin
 	return boundedCompletion{res.Reply, res.DutyVerified(), res.Usage}, err
 }
 
-// RunStaged is the unwired bounded adapter. It receives no approval store,
+// RunStaged is the bounded adapter. It receives no approval store,
 // vaultwriter, connector, cursor, spool, portal or ledger handle. It returns an
-// unfiled candidate; filing/confirmation must be separate existing owner actions.
+// unfiled candidate; only the canonical upload may file it pending after receipt verification.
 // This pilot has one permanent receipt: success, refusal, crash and concurrency
 // all prevent another invocation. There is no reset, retry or recovery API.
 func RunStaged(ctx context.Context, dataDir string, cfg Config, a hermes.DutyAuthority, c ProductionContract) (approvals.Proposal, ProductionReceipt, error) {
@@ -158,7 +174,11 @@ func runStaged(ctx context.Context, dataDir string, cfg Config, a hermes.DutyAut
 	if err = validateProduction(cfg, a, c); err != nil {
 		return finish("refused", "configuration or contract refused", empty, nil)
 	}
-	text, err := readStaged(root, c.Source)
+	textSource := c.TextSource
+	if textSource == "" {
+		textSource = c.Source
+	}
+	text, err := readStaged(root, textSource)
 	if err != nil {
 		return finish("refused", "staging input refused", empty, nil)
 	}

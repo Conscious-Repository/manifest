@@ -24,27 +24,45 @@ import (
 
 // handleREIntake — POST /api/realestate/intake?name=<orig>: raw body bytes.
 func (s *Server) handleREIntake(w http.ResponseWriter, r *http.Request) {
+	production := s.reIntakeConfig.ProductionEnabled
 	if s.reFiles == nil || s.realestate == nil {
+		if production {
+			s.stopREIntake(w, nil)
+			return
+		}
 		http.Error(w, "intake not available", http.StatusServiceUnavailable)
 		return
 	}
-	if s.spirits == nil {
+	if production {
+		if err := s.reserveREIntake(); err != nil {
+			s.stopREIntake(w, err)
+			return
+		}
+	}
+	if !production && s.spirits == nil {
 		http.Error(w, "no engine harness configured", http.StatusServiceUnavailable)
 		return
 	}
+	fail := func(err error) {
+		if production {
+			s.stopREIntake(w, err)
+		} else {
+			httpError(w, err)
+		}
+	}
 	name := strings.TrimSpace(r.URL.Query().Get("name"))
 	if name == "" {
-		httpError(w, errBadRequest("name is required"))
+		fail(errBadRequest("name is required"))
 		return
 	}
 	data, err := io.ReadAll(http.MaxBytesReader(w, r.Body, realestate.MaxCASSize))
 	if err != nil {
-		httpError(w, errBadRequest("upload too large or unreadable"))
+		fail(errBadRequest("upload too large or unreadable"))
 		return
 	}
 	ref, err := s.reFiles.Save(data, name, r.Header.Get("Content-Type"), time.Now())
 	if err != nil {
-		httpError(w, err)
+		fail(err)
 		return
 	}
 	// the text extract — the ritual's readable window into the document
@@ -55,11 +73,18 @@ func (s *Server) handleREIntake(w http.ResponseWriter, r *http.Request) {
 	extract := "---\ncategories: [re-extract]\nsource: \"" + name + "\"\ndoc: \"" + ref.Ref + "\"\nextracted: " +
 		time.Now().Format("2006-01-02") + "\nvia: " + how + "\n---\n\n# extract — " + name + "\n\n" + text + "\n"
 	if err := s.vault.WriteCap("re-files", extractRel, []byte(extract)); err != nil {
-		httpError(w, err)
+		fail(err)
 		return
 	}
 	if s.index != nil {
-		_ = s.index.ReindexPaths([]string{extractRel})
+		if err := s.index.ReindexPaths([]string{extractRel}); err != nil && production {
+			fail(err)
+			return
+		}
+	}
+	if production {
+		s.finishREIntake(w, r, name, ref, extractRel, res)
+		return
 	}
 	req := s.intakeRequest(name, ref.Ref, extractRel)
 	if err := s.spirits.SpoolRunNow("extractor", "re-intake", req, ""); err != nil {

@@ -276,7 +276,25 @@ func (s *Store) Propose(p Proposal) (Proposal, error) {
 	if _, err := os.Stat(dest); err == nil {
 		return p, nil // already pending — dedupe
 	}
-	if err := os.WriteFile(dest, []byte(serialize(p)), 0o644); err != nil {
+	f, err := os.CreateTemp(s.dir, ".pending-*")
+	if err != nil {
+		return Proposal{}, err
+	}
+	defer os.Remove(f.Name())
+	if _, err = f.WriteString(serialize(p)); err == nil {
+		err = f.Chmod(0o644)
+	}
+	if err == nil {
+		err = f.Sync()
+	}
+	closeErr := f.Close()
+	if err != nil {
+		return Proposal{}, err
+	}
+	if closeErr != nil {
+		return Proposal{}, closeErr
+	}
+	if err := os.Rename(f.Name(), dest); err != nil {
 		return Proposal{}, err
 	}
 	return p, nil
