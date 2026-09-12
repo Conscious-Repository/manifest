@@ -1,6 +1,7 @@
 package server
 
 import (
+	"crypto/sha256"
 	"fmt"
 	"io"
 	"net/http"
@@ -33,12 +34,6 @@ func (s *Server) handleREIntake(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "intake not available", http.StatusServiceUnavailable)
 		return
 	}
-	if production {
-		if err := s.reserveREIntake(); err != nil {
-			s.stopREIntake(w, err)
-			return
-		}
-	}
 	if !production && s.spirits == nil {
 		http.Error(w, "no engine harness configured", http.StatusServiceUnavailable)
 		return
@@ -59,6 +54,14 @@ func (s *Server) handleREIntake(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		fail(errBadRequest("upload too large or unreadable"))
 		return
+	}
+	if production {
+		// Match FileStore.Save's identity without creating source artifacts.
+		source := fmt.Sprintf("sha256:%x", sha256.Sum256(data))
+		if err := s.reserveREIntake(source); err != nil {
+			s.stopREIntake(w, err)
+			return
+		}
 	}
 	ref, err := s.reFiles.Save(data, name, r.Header.Get("Content-Type"), time.Now())
 	if err != nil {

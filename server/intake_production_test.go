@@ -205,6 +205,70 @@ func TestREIntakeProductionPendingOnlyAndOneShot(t *testing.T) {
 	assertIntakeProtected(t, s, vault, harness)
 }
 
+func TestREIntakeProductionDuplicatePreflightDoesNotReserve(t *testing.T) {
+	for _, kind := range []string{"contracted", "pending"} {
+		t.Run(kind, func(t *testing.T) {
+			s, vault, _ := intakeFixture(t, true)
+			body := "synthetic duplicate bid"
+			source := fmt.Sprintf("sha256:%x", sha256.Sum256([]byte(body)))
+			if kind == "contracted" {
+				rel := "system/realestate/contracts/existing.md"
+				abs := filepath.Join(vault, rel)
+				if err := os.MkdirAll(filepath.Dir(abs), 0700); err != nil {
+					t.Fatal(err)
+				}
+				raw := realestate.NewContractRecord(realestate.Contract{Slug: "existing", Name: "Existing", Status: "accepted", Doc: source})
+				if err := os.WriteFile(abs, []byte(raw), 0600); err != nil {
+					t.Fatal(err)
+				}
+				if err := s.index.ReindexPaths([]string{rel}); err != nil {
+					t.Fatal(err)
+				}
+			} else {
+				payload, err := json.Marshal(approvals.ReContractPayload{Kind: "bid", Name: "Existing", Doc: source})
+				if err != nil {
+					t.Fatal(err)
+				}
+				_, err = s.approvals.Propose(approvals.Proposal{Type: approvals.TypeReContract, Action: "Review existing bid", Body: "````re-contract\n" + string(payload) + "\n````\n"})
+				if err != nil {
+					t.Fatal(err)
+				}
+			}
+			if err := s.checkREIntakeSource(source); err == nil {
+				t.Fatal("fixture did not establish duplicate source")
+			}
+			before, err := json.Marshal(s.approvals.List("pending"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			s.reIntakeRun = func(context.Context, string, reintake.Config, hermes.DutyAuthority, reintake.ProductionContract) (approvals.Proposal, reintake.ProductionReceipt, error) {
+				t.Fatal("duplicate reached adapter")
+				return approvals.Proposal{}, reintake.ProductionReceipt{}, nil
+			}
+			// Renaming identical bytes must not evade CAS duplicate eligibility.
+			for _, name := range []string{"bid.txt", "renamed.txt"} {
+				w := postIntake(s, name, body)
+				if w.Code != 503 || !strings.Contains(w.Body.String(), `"pageOwnerRequired":true`) || !strings.Contains(w.Body.String(), `"spooled":false`) {
+					t.Fatal(w.Code, w.Body.String())
+				}
+				if _, err := os.Lstat(filepath.Join(s.reIntakeDataDir, reintake.ProductionPath)); !os.IsNotExist(err) {
+					t.Fatal("preflight created pilot artifacts", err)
+				}
+				if _, err := os.Lstat(filepath.Join(vault, "system/realestate/files")); !os.IsNotExist(err) {
+					t.Fatal("preflight created source/extract artifacts", err)
+				}
+			}
+			after, err := json.Marshal(s.approvals.List("pending"))
+			if err != nil || !bytes.Equal(before, after) {
+				t.Fatal("preflight changed pending proposals", err)
+			}
+			if err := s.reserveREIntake(fmt.Sprintf("sha256:%x", sha256.Sum256([]byte("eligible bid")))); err != nil {
+				t.Fatal("duplicate consumed reservation for eligible source", err)
+			}
+		})
+	}
+}
+
 func TestREIntakeProductionRefusalsNeverSpoolProposeOrRetry(t *testing.T) {
 	for _, kind := range []string{"authority", "boundary", "empty-name", "no-text", "oversize-text", "writer", "index", "uncertain", "malformed", "receipt-lost", "receipt-drift", "filing"} {
 		t.Run(kind, func(t *testing.T) {

@@ -14,8 +14,9 @@ import (
 	"manifest/approvals"
 )
 
-// ReserveUpload burns the pilot before reading the request or writing source
-// artifacts. It is independent of the model latch, and survives crashes/restarts.
+// ReserveUpload burns the pilot after read-only upload eligibility checks and
+// before writing source artifacts. It is independent of the model latch and
+// survives crashes/restarts.
 // An owner-reviewed offline reset must preserve both latches and all receipts.
 func ReserveUpload(dataDir string) error {
 	root, err := productionRoot(dataDir)

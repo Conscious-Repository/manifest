@@ -20,19 +20,38 @@ func (s *Server) UseReIntake(cfg reintake.Config, dataDir string, authority herm
 	s.reIntakeRun = reintake.RunStaged
 }
 
-func (s *Server) reserveREIntake() error {
+func (s *Server) reserveREIntake(source string) error {
 	if err := reintake.ValidateProductionAccess(s.reIntakeConfig, s.reIntakeAuthority); err != nil {
 		return err
 	}
 	if s.approvals == nil || s.vault == nil || s.reIntakeRun == nil || s.realestateRootOr() != "system/realestate" {
 		return errors.New("production dependencies unavailable")
 	}
+	if err := s.checkREIntakeSource(source); err != nil {
+		return err
+	}
 	return reintake.ReserveUpload(s.reIntakeDataDir)
+}
+
+// checkREIntakeSource is read-only; duplicate refusals must not burn the pilot.
+func (s *Server) checkREIntakeSource(source string) error {
+	// Existing canonical records and pending cards participate in duplicate checks.
+	for _, c := range s.realestate.Contracts() {
+		if c.Doc == source {
+			return errors.New("source already contracted")
+		}
+	}
+	for _, p := range s.approvals.List("pending") {
+		if payload, ok := approvals.ParseReContractPayload(p.Body); ok && payload.Doc == source {
+			return errors.New("source already pending")
+		}
+	}
+	return nil
 }
 
 func (s *Server) stopREIntake(w http.ResponseWriter, _ error) {
 	// HTTP response is the synchronous owner page; never send provider diagnostics
-	// or invoke a notification connector. The reservation remains burnt on errors.
+	// or invoke a notification connector. Any existing reservation remains burnt.
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusServiceUnavailable)
 	_ = json.NewEncoder(w).Encode(map[string]any{"error": reintake.ProductionStop, "pageOwnerRequired": true, "pilotStatus": reintake.PilotStatus(s.reIntakeDataDir), "spooled": false})
@@ -49,18 +68,9 @@ func (s *Server) finishREIntake(w http.ResponseWriter, r *http.Request, name str
 		stop(err)
 		return
 	}
-	// Existing canonical records and pending cards participate in duplicate checks.
-	for _, c := range s.realestate.Contracts() {
-		if c.Doc == ref.Ref {
-			stop(errors.New("source already contracted"))
-			return
-		}
-	}
-	for _, p := range s.approvals.List("pending") {
-		if payload, ok := approvals.ParseReContractPayload(p.Body); ok && payload.Doc == ref.Ref {
-			stop(errors.New("source already pending"))
-			return
-		}
+	if err := s.checkREIntakeSource(ref.Ref); err != nil {
+		stop(err)
+		return
 	}
 	textSource, err := reintake.StageExtract(s.reIntakeDataDir, res.Text)
 	if err != nil {
