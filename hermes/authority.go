@@ -80,6 +80,9 @@ func VerifyDutyResult(a DutyAuthority, res Result, reportedProvider string, usag
 }
 
 func (r *Runner) dutyAuthority(req Request) (DutyAuthority, error) {
+	if req.Fallback != nil {
+		return DutyAuthority{}, RefuseFallback(req.Fallback)
+	}
 	a, ok := r.cfg.Duties[req.MigratedDuty]
 	if !ok {
 		return a, refuse("missing duty authority")

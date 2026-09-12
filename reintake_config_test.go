@@ -17,3 +17,17 @@ func TestReIntakeConfigDefaultOff(t *testing.T) {
 		t.Fatal("explicit shadow flag not decoded")
 	}
 }
+
+func TestReIntakePrimaryAuthorityConfig(t *testing.T) {
+	var cfg Config
+	if err := json.Unmarshal([]byte(`{"hermes":{"duties":{"extractor/re-intake":{"provider":"deepseek-local","model":"deepseek-v4.1-flash","tools":["none"],"mcp":"no_mcp","timeoutSeconds":120,"maxSteps":1,"ceilingUsd":0}}}}`), &cfg); err != nil {
+		t.Fatal(err)
+	}
+	a := cfg.Hermes.Duties["extractor/re-intake"]
+	if err := a.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	if cfg.ReIntake.ShadowEnabled || a.Provider != "deepseek-local" || a.Model != "deepseek-v4.1-flash" || a.TimeoutSeconds != 120 || a.MaxSteps != 1 || *a.CeilingUSD != 0 || len(a.Tools) != 1 || a.Tools[0] != "none" || a.MCP != "no_mcp" {
+		t.Fatal("config changed explicit primary or enabled shadow")
+	}
+}

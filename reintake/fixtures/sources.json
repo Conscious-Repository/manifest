@@ -7,8 +7,8 @@
     "proposalSHA256": "97d2119ed8bb0a352f41088e14c88c4be4594e81b65ecbf0c3835676b602c4eb",
     "link": "proposal ID occurs in run artifact",
     "requestDocOccursInRun": true,
-    "fixtureSHA256": "9565c9699e357d82ca901b0f6f64b0dbcd9d60b63ab23bb512da87c05de0a889",
-    "usage": "synthetic, not historical usage verification",
+    "fixtureSHA256": "153bbddb57ad8e2253f72532b9bcc6503ab1488660aa590628c7dee0599e89fb",
+    "usage": "synthetic DeepSeek primary declaration, not historical or live usage verification",
     "sourceActorTarget": "derived: payload.doc, proposal.agent, proposal.apply-path; not native header fields"
   },
   {
@@ -19,8 +19,8 @@
     "proposalSHA256": "ae0e1dd544b920a2b15678d5e084151482b3e40167a2de3df77c437ad598012c",
     "link": "proposal ID occurs in run artifact",
     "requestDocOccursInRun": true,
-    "fixtureSHA256": "ad905d6b2a6cdd584d4bed17ab2a19e879a6ae0b08aef87945ef4937e2a8c0ae",
-    "usage": "synthetic, not historical usage verification",
+    "fixtureSHA256": "9ee4c4cb54664ab28bea3ba2bfa1e75d6b243acc68896dc73ea41a0ee9d8ab6f",
+    "usage": "synthetic DeepSeek primary declaration, not historical or live usage verification",
     "sourceActorTarget": "derived: payload.doc, proposal.agent, proposal.apply-path; not native header fields"
   }
 ]

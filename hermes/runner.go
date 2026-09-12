@@ -115,7 +115,8 @@ func (r *Runner) Enabled() bool { return r != nil && r.cfg.Enabled && r.cfg.Bin 
 // `-z` turn is always a fresh Hermes session (see the package comment), so the
 // caller composes whatever context the turn needs into Prompt.
 type Request struct {
-	MigratedDuty string // nonempty scopes strict successor authority; no duty routes here yet
+	Fallback     *FallbackChoice // explicit owner recovery input; always refused, never defaulted
+	MigratedDuty string          // nonempty scopes strict successor authority; no duty routes here yet
 	// Bound locally for child Manifest MCP processes; never model-selected.
 	ManifestConversation string
 	ManifestTurn         string
@@ -212,6 +213,9 @@ func (r *Runner) buildArgs(req Request, usageFile string) []string {
 // Run executes one agent turn and returns the reply. It never runs the tool
 // loop unattended forever — the context timeout kills a hung turn.
 func (r *Runner) Run(ctx context.Context, req Request) (Result, error) {
+	if req.Fallback != nil {
+		return Result{}, RefuseFallback(req.Fallback)
+	}
 	if req.MigratedDuty != "" {
 		if r == nil {
 			return Result{}, refuse("missing duty authority")

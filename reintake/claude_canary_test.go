@@ -35,7 +35,7 @@ func TestClaudeCanaryReceiptRefusals(t *testing.T) {
 		``, `null`, `{}`, `{"cost_usd":0}`, `{"total_cost_usd":0,"type":"result","subtype":"success"}`,
 		`{"model":"claude-sonnet-5","provider":"claude-sub","completed":true,"cost_usd":0,"cost_usd":1,"steps":1}`,
 	} {
-		f := load(t, "single")
+		f := loadClaude(t)
 		f.Usage = json.RawMessage(raw)
 		if validateCanaryFixture(canaryAuthority(), f, []byte(canaryScope)) == nil {
 			t.Fatalf("accepted %s", raw)
@@ -49,14 +49,14 @@ func TestClaudeCanaryReceiptRefusals(t *testing.T) {
 		{`"steps":1`, `"steps":1,"tool_calls":["Read"]`},
 		{`"steps":1`, `"steps":1,"fallback":true`},
 	} {
-		f := load(t, "single")
+		f := loadClaude(t)
 		f.Usage = json.RawMessage(strings.Replace(`{"model":"claude-sonnet-5","provider":"claude-sub","completed":true,"cost_usd":0,"steps":1}`, mutation.old, mutation.new, 1))
 		if validateCanaryFixture(canaryAuthority(), f, []byte(canaryScope)) == nil {
 			t.Fatalf("accepted %s", f.Usage)
 		}
 	}
 	for _, scope := range []string{`{}`, `null`, strings.Replace(canaryScope, `"none"`, `"Read"`, 1), strings.Replace(canaryScope, `no_mcp`, `portal`, 1), strings.Replace(canaryScope, `[]`, `null`, 1), strings.Replace(canaryScope, `[]`, `["Read"]`, 1), strings.Replace(canaryScope, `false`, `true`, 1), strings.Replace(canaryScope, `false`, `null`, 1), strings.Replace(canaryScope, `:1}`, `:30001}`, 1), strings.Replace(canaryScope, `:1}`, `:-1}`, 1), strings.Replace(canaryScope, `:1}`, `:null}`, 1), strings.Replace(canaryScope, `:1}`, `:1,"fallback":false}`, 1)} {
-		if validateCanaryFixture(canaryAuthority(), load(t, "single"), []byte(scope)) == nil {
+		if validateCanaryFixture(canaryAuthority(), loadClaude(t), []byte(scope)) == nil {
 			t.Fatalf("accepted scope %s", scope)
 		}
 	}
@@ -65,7 +65,7 @@ func TestClaudeCanaryReceiptRefusals(t *testing.T) {
 func TestClaudeCanaryScopeAndAuthority(t *testing.T) {
 	for _, kind := range []string{"documents", "proposals", "portal", "payload", "provider", "model", "tools", "mcp", "cost", "steps", "time"} {
 		t.Run(kind, func(t *testing.T) {
-			f, a := load(t, "single"), canaryAuthority()
+			f, a := loadClaude(t), canaryAuthority()
 			switch kind {
 			case "documents":
 				f.Request.Documents = append(f.Request.Documents, "second")
@@ -101,7 +101,7 @@ func TestClaudeCanaryCallGraphHasNoProductionIO(t *testing.T) {
 	// Audit every call in the checker and its local validation helpers. Changes
 	// introducing a file open, runner, writer or network call fail this allowlist.
 	allowed := map[string]bool{
-		"canaryAuthority": true, "decodeStrict": true, "validateCanaryFixture": true,
+		"canaryAuthority": true, "claudeFixtureUsage": true, "json.RawMessage": true, "decodeStrict": true, "validateCanaryFixture": true,
 		"validateAuthority": true, "compare": true, "refusal": true, "structural": true,
 		"len": true, "string": true, "append": true, "make": true, "blank": true,
 		"fixtures.ReadFile": true, "a.Validate": true, "hermes.VerifyDutyUsage": true,
@@ -145,4 +145,10 @@ func TestClaudeCanaryCallGraphHasNoProductionIO(t *testing.T) {
 			})
 		}
 	}
+}
+
+func loadClaude(t *testing.T) fixture {
+	f := load(t, "single")
+	f.Usage = claudeFixtureUsage()
+	return f
 }

@@ -25,7 +25,8 @@ import (
 )
 
 const Duty = "extractor/re-intake"
-const Model = "claude-sonnet-5"
+const Provider = "deepseek-local"
+const Model = "deepseek-v4.1-flash"
 const ShadowPath = "excalibur-retirement/shadow/re-intake"
 const StopAndPage = "STOP: shadow lane frozen; page owner with local evidence; wait for explicit owner action; no retry or fallback"
 
@@ -77,13 +78,13 @@ func validateAuthority(a hermes.DutyAuthority) error {
 	if err := a.Validate(); err != nil {
 		return refusal("invalid explicit successor authority")
 	}
-	if a.Model != Model || a.Provider != "claude-sub" {
+	if a.Model != Model || a.Provider != Provider {
 		return refusal("lane model/provider pin differs")
 	}
 	if len(a.Tools) != 1 || a.Tools[0] != "none" || a.MCP != "no_mcp" {
 		return refusal("shadow requires explicit tool-free authority")
 	}
-	if a.MaxSteps > 15 || a.TimeoutSeconds > 3600 || *a.CeilingUSD > 2 {
+	if a.MaxSteps != 1 || a.TimeoutSeconds > 120 || *a.CeilingUSD != 0 {
 		return refusal("lane bounds exceed contract")
 	}
 	return nil
@@ -92,7 +93,7 @@ func validateAuthority(a hermes.DutyAuthority) error {
 // Replay accepts only named, compiled-in redacted fixtures. No request body,
 // document path, arbitrary completion, provider URL or output path is accepted.
 // Authority validation is shared with Hermes; synthetic usage can never mint its
-// private live verification receipt. The real Runner still refuses Claude.
+// private live verification receipt. Subscription options remain unsupported/unverified.
 func Replay(dataDir string, cfg Config, duties map[string]hermes.DutyAuthority, id string) (Report, error) {
 	if !cfg.ShadowEnabled {
 		return Report{}, refusal("shadow flag off")
@@ -125,9 +126,10 @@ func replay(dataDir string, duties map[string]hermes.DutyAuthority, raw []byte) 
 	}
 	report := Report{Status: "shadow-compared", Prose: "semantic-review-only; original prose withheld; no byte parity claim", FixtureSHA256: fmt.Sprintf("%x", sha256.Sum256(raw))}
 	// Deterministic fixture timestamp, not a claim about real execution time.
-	report.Entry = ledger.Entry{TS: time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC), Source: "run", Kind: "run.completed", Actor: "extractor", Harness: "manifest-shadow", Object: ledger.Object{Kind: ledger.ObjRun, ID: report.FixtureSHA256}, Text: "frozen structural comparison only", Meta: map[string]any{"duty": Duty, "itemsWritten": 0, "modelPin": Model, "usageEvidence": "synthetic fixture only", "fallback": false, "productionRouted": false}}
+	report.Entry = ledger.Entry{TS: time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC), Source: "run", Kind: "run.completed", Actor: "extractor", Harness: "manifest-shadow", Object: ledger.Object{Kind: ledger.ObjRun, ID: report.FixtureSHA256}, Text: "frozen structural comparison only", Meta: map[string]any{"duty": Duty, "itemsWritten": 0, "modelPin": Model, "providerPin": Provider, "authorityChoice": "primary", "usageEvidence": "synthetic fixture only", "fallback": false, "productionRouted": false}}
 	var f fixture
 	a, ok := duties[Duty]
+	report.Entry.Meta["authority"] = a
 	if !ok {
 		err = refusal("missing duty authority")
 	} else {

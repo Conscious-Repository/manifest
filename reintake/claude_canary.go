@@ -23,7 +23,7 @@ type ClaudeCanaryReport struct {
 
 func canaryAuthority() hermes.DutyAuthority {
 	zero := 0.0
-	return hermes.DutyAuthority{Provider: "claude-sub", Model: Model, Tools: []string{"none"}, MCP: "no_mcp", TimeoutSeconds: 30, MaxSteps: 1, CeilingUSD: &zero}
+	return hermes.DutyAuthority{Provider: "claude-sub", Model: "claude-sonnet-5", Tools: []string{"none"}, MCP: "no_mcp", TimeoutSeconds: 30, MaxSteps: 1, CeilingUSD: &zero}
 }
 
 // ClaudeCanary always refuses live readiness, including when an explicitly
@@ -46,7 +46,11 @@ func ClaudeCanary(testFixture bool) (ClaudeCanaryReport, error) {
 	if testFixture {
 		raw, _ := fixtures.ReadFile("fixtures/single.json")
 		var f fixture
-		if decodeStrict(raw, &f) != nil || validateCanaryFixture(r.Authority, f, []byte(`{"tools":["none"],"mcp":"no_mcp","tool_calls":[],"fallback":false,"elapsed_ms":1}`)) != nil {
+		if decodeStrict(raw, &f) != nil {
+			return r, refusal("canary fixture decode failed")
+		}
+		f.Usage = claudeFixtureUsage()
+		if validateCanaryFixture(r.Authority, f, []byte(`{"tools":["none"],"mcp":"no_mcp","tool_calls":[],"fallback":false,"elapsed_ms":1}`)) != nil {
 			return r, refusal("canary fixture validation failed")
 		}
 		r.FixtureValidated = true
@@ -57,10 +61,10 @@ func ClaudeCanary(testFixture bool) (ClaudeCanaryReport, error) {
 // The additional scope evidence is synthetic, never adapted from CLI output.
 // Reuse the existing authority, strict usage and re-contract comparison gates.
 func validateCanaryFixture(a hermes.DutyAuthority, f fixture, scope []byte) error {
-	if err := validateAuthority(a); err != nil {
+	if err := a.Validate(); err != nil {
 		return err
 	}
-	if *a.CeilingUSD != 0 || a.MaxSteps != 1 || a.TimeoutSeconds != 30 {
+	if a.Provider != "claude-sub" || a.Model != "claude-sonnet-5" || len(a.Tools) != 1 || a.Tools[0] != "none" || a.MCP != "no_mcp" || *a.CeilingUSD != 0 || a.MaxSteps != 1 || a.TimeoutSeconds != 30 {
 		return refusal("canary bounds differ")
 	}
 	var s struct {
@@ -74,4 +78,9 @@ func validateCanaryFixture(a hermes.DutyAuthority, f fixture, scope []byte) erro
 		return refusal("missing or uncertain canary scope evidence")
 	}
 	return compare(a, f)
+}
+
+// Synthetic claims for the refusal-only Claude checker, never a converted live receipt.
+func claudeFixtureUsage() json.RawMessage {
+	return json.RawMessage(`{"model":"claude-sonnet-5","provider":"claude-sub","completed":true,"cost_usd":0,"steps":1}`)
 }

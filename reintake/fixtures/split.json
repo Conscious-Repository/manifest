@@ -18,8 +18,8 @@
     }
   ],
   "usage": {
-    "model": "claude-sonnet-5",
-    "provider": "claude-sub",
+    "model": "deepseek-v4.1-flash",
+    "provider": "deepseek-local",
     "completed": true,
     "cost_usd": 0,
     "steps": 1

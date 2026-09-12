@@ -13,8 +13,8 @@ import (
 )
 
 func authority() hermes.DutyAuthority {
-	ceiling := 2.0
-	return hermes.DutyAuthority{Provider: "claude-sub", Model: Model, Tools: []string{"none"}, MCP: "no_mcp", TimeoutSeconds: 120, MaxSteps: 15, CeilingUSD: &ceiling}
+	ceiling := 0.0
+	return hermes.DutyAuthority{Provider: "deepseek-local", Model: Model, Tools: []string{"none"}, MCP: "no_mcp", TimeoutSeconds: 120, MaxSteps: 1, CeilingUSD: &ceiling}
 }
 func duties() map[string]hermes.DutyAuthority {
 	return map[string]hermes.DutyAuthority{Duty: authority()}
@@ -109,7 +109,7 @@ func TestReIntakeAuthorityRefusal(t *testing.T) {
 			case "missing":
 				ds = nil
 			case "model":
-				a.Model = "deepseek-v4.1-flash"
+				a.Model = "drift"
 			case "provider":
 				a.Provider = "auto"
 			case "tools":
@@ -135,13 +135,13 @@ func TestReIntakeAuthorityRefusal(t *testing.T) {
 }
 func TestReIntakeUsageRefusal(t *testing.T) {
 	for _, raw := range []string{
-		`{}`, `{"model":"drift","provider":"claude-sub","completed":true,"cost_usd":0,"steps":1}`,
-		`{"model":"claude-sonnet-5","provider":"drift","completed":true,"cost_usd":0,"steps":1}`,
-		`{"model":"claude-sonnet-5","provider":"claude-sub","completed":false,"cost_usd":0,"steps":1}`,
-		`{"model":"claude-sonnet-5","provider":"claude-sub","completed":true,"cost_usd":3,"steps":1}`,
-		`{"model":"claude-sonnet-5","provider":"claude-sub","completed":true,"cost_usd":null,"steps":1}`,
-		`{"model":"claude-sonnet-5","provider":"claude-sub","completed":true,"cost_usd":0,"steps":16}`,
-		`{"model":"claude-sonnet-5","provider":"claude-sub","completed":true,"cost_usd":0,"cost_usd":1,"steps":1}`,
+		`{}`, `{"model":"drift","provider":"deepseek-local","completed":true,"cost_usd":0,"steps":1}`,
+		`{"model":"deepseek-v4.1-flash","provider":"drift","completed":true,"cost_usd":0,"steps":1}`,
+		`{"model":"deepseek-v4.1-flash","provider":"deepseek-local","completed":false,"cost_usd":0,"steps":1}`,
+		`{"model":"deepseek-v4.1-flash","provider":"deepseek-local","completed":true,"cost_usd":3,"steps":1}`,
+		`{"model":"deepseek-v4.1-flash","provider":"deepseek-local","completed":true,"cost_usd":null,"steps":1}`,
+		`{"model":"deepseek-v4.1-flash","provider":"deepseek-local","completed":true,"cost_usd":0,"steps":16}`,
+		`{"model":"deepseek-v4.1-flash","provider":"deepseek-local","completed":true,"cost_usd":0,"cost_usd":1,"steps":1}`,
 	} {
 		f := load(t, "single")
 		f.Usage = json.RawMessage(raw)
@@ -304,7 +304,7 @@ func TestReIntakeCutoverRequiresRecordedPause(t *testing.T) {
 func TestReIntakeRealRunnerStillRefusesClaudeBeforeLaunch(t *testing.T) {
 	// /does-not-exist can never run. A specific authority refusal, not an exec
 	// error, proves neither the legacy CLI nor successor process was reached.
-	r := hermes.NewRunner(hermes.Config{Enabled: true, Bin: "/does-not-exist", Duties: duties()})
+	r := hermes.NewRunner(hermes.Config{Enabled: true, Bin: "/does-not-exist", Duties: map[string]hermes.DutyAuthority{Duty: canaryAuthority()}})
 	res, err := r.Run(context.Background(), hermes.Request{MigratedDuty: Duty, Prompt: "synthetic fixture"})
 	if err == nil || !strings.Contains(err.Error(), "unsupported zero-cost successor identity") || res.DutyVerified() || res.Reply != "" {
 		t.Fatal("Claude execution gate weakened")
@@ -336,8 +336,65 @@ func TestReIntakeEvidenceFailureStopsWithoutEscape(t *testing.T) {
 
 func TestReIntakeUsageCannotClaimTools(t *testing.T) {
 	f := load(t, "single")
-	f.Usage = json.RawMessage(`{"model":"claude-sonnet-5","provider":"claude-sub","completed":true,"cost_usd":0,"steps":1,"tool_calls":["shell"]}`)
+	f.Usage = json.RawMessage(`{"model":"deepseek-v4.1-flash","provider":"deepseek-local","completed":true,"cost_usd":0,"steps":1,"tool_calls":["shell"]}`)
 	if compare(authority(), f) == nil {
 		t.Fatal("unexpected usage authority accepted")
+	}
+}
+
+func TestReIntakePrimaryExactContract(t *testing.T) {
+	a := authority()
+	if err := validateAuthority(a); err != nil {
+		t.Fatal(err)
+	}
+	if a.Provider != "deepseek-local" || a.Model != "deepseek-v4.1-flash" || a.MaxSteps != 1 || a.TimeoutSeconds != 120 || *a.CeilingUSD != 0 {
+		t.Fatal("primary declaration drift")
+	}
+	for _, kind := range []string{"cost", "steps", "timeout", "claude", "codex"} {
+		b := authority()
+		switch kind {
+		case "cost":
+			*b.CeilingUSD = 0.01
+		case "steps":
+			b.MaxSteps = 2
+		case "timeout":
+			b.TimeoutSeconds = 121
+		case "claude":
+			b = canaryAuthority()
+		case "codex":
+			b.Provider = "codex-sub"
+			b.Model = "gpt-6-astra"
+		}
+		if validateAuthority(b) == nil {
+			t.Fatalf("accepted %s", kind)
+		}
+	}
+}
+
+func TestReIntakePrimaryUncertaintyFreezesWithoutFallback(t *testing.T) {
+	for _, claim := range []string{`"completed":false`, `"cost_usd":0.01`, `"model":"drift"`, `"provider":"drift"`, `"tool_calls":["shell"]`, `"mcp":"portal"`, `"fallback":true`, `"outcome":"uncertain"`, `"error":"timeout"`, `"error":"crash-after-effect"`} {
+		t.Run(claim, func(t *testing.T) {
+			f := load(t, "single")
+			var usage map[string]json.RawMessage
+			if err := json.Unmarshal(f.Usage, &usage); err != nil {
+				t.Fatal(err)
+			}
+			var mutation map[string]json.RawMessage
+			if err := json.Unmarshal([]byte("{"+claim+"}"), &mutation); err != nil {
+				t.Fatal(err)
+			}
+			for k, v := range mutation {
+				usage[k] = v
+			}
+			f.Usage, _ = json.Marshal(usage)
+			dir := t.TempDir()
+			r, err := replay(dir, duties(), encode(t, f))
+			if err == nil || r.StructuredParity || r.LiveUsageVerified || r.ProductionRouted || r.Entry.Meta["fallback"] != false {
+				t.Fatal("uncertainty accepted")
+			}
+			if _, err = Replay(dir, Config{true}, duties(), "single"); err == nil {
+				t.Fatal("lane not frozen")
+			}
+		})
 	}
 }
