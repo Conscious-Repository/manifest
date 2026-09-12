@@ -96,6 +96,28 @@ function chatRouteSegments(h) {
 document.addEventListener("pointerdown",e=>{document.querySelectorAll(".chat-details[open],.chat-row-menu[open],.chat-filter-menu[open]").forEach(menu=>{if(!menu.contains(e.target))menu.open=false;});});
 document.addEventListener("keydown",e=>{if(e.key!=="Escape")return;document.querySelectorAll(".chat-details[open],.chat-row-menu[open],.chat-filter-menu[open]").forEach(menu=>{menu.open=false;menu.querySelector("summary")?.focus();});});
 
+// chatFocusKey / chatCaptureFocus / chatRestoreFocus — a live-state repaint
+// rebuilds a subtree (the thread head, the rail rows). Keyboard focus inside
+// it must land on the equivalent control of the rebuilt subtree instead of
+// dropping to <body> (QA 2026-09-12: the runtime's ~2 s state tick emptied
+// focus from every header button and rail row).
+function chatFocusKey(node) {
+  if (!node || !node.tagName) return "";
+  const row = node.closest ? node.closest("[data-inbox-key]") : null;
+  return (row ? row.dataset.inboxKey : "") + "|" + node.tagName + "|" + node.className + "|" + (node.getAttribute("aria-label") || node.textContent || "").trim().slice(0, 80);
+}
+function chatCaptureFocus(host) {
+  const active = document.activeElement;
+  return host && active && active !== host && host.contains(active) ? chatFocusKey(active) : "";
+}
+function chatRestoreFocus(host, key) {
+  if (!key || !host) return false;
+  const match = [...host.querySelectorAll("button,summary,a,input,select,textarea,[tabindex]")].find((node) => chatFocusKey(node) === key);
+  if (!match) return false;
+  match.focus({ preventScroll: true });
+  return document.activeElement === match;
+}
+
 // Headers occupy their own flex row; output never scrolls behind them.
 function chatMountHeader(head) {
   const transcript = document.getElementById("chatTranscript");
@@ -103,8 +125,10 @@ function chatMountHeader(head) {
   let slot = document.getElementById("chatThreadHeader");
   if (!slot) { slot = el("div", "chat-thread-header"); slot.id = "chatThreadHeader"; transcript.before(slot); }
   if(head && typeof chatWorkspaceHeader === "function")chatWorkspaceHeader(head);
+  const focusKey = chatCaptureFocus(slot);
   slot.replaceChildren(...(head ? [head] : []));
   slot.hidden = !head;
+  if (head) chatRestoreFocus(slot, focusKey);
   if(head)queueMicrotask(()=>chatMarkViewed());
 }
 const chatDrafts = new Map();
@@ -896,7 +920,10 @@ function chatRenderProjectGroups(host,entries,rows){
 function renderChatRail() {
   const host = document.getElementById("chatRail");
   if (!host) return;
-  if (host.contains(document.activeElement) && document.activeElement.classList.contains("inline-rename")) return;
+  if (host.contains(document.activeElement) && document.activeElement.classList.contains("inline-rename")) return false;
+  // an open row menu (⋯) must not snap shut under a live-state tick; its own
+  // actions refresh the rows directly (chatSetLifecycle, pin, priority)
+  if (host.querySelector(".chat-row-menu[open]")) return false;
   if (!host.querySelector("#chatInboxRows")) {
     host.replaceChildren();
     const controls = el("div", "chat-inbox-controls");
@@ -923,9 +950,12 @@ function renderChatRail() {
     host.append(controls, el("div", "chat-inbox-rows"));
     host.lastChild.id = "chatInboxRows";
   }
+  const rows = host.querySelector("#chatInboxRows"), focusKey = chatCaptureFocus(rows);
   chatRenderWorkstreamFilter();
   renderChatInboxRows();
+  chatRestoreFocus(rows, focusKey);
   chatInstallPaneResize(host.closest(".chat-shell"));
+  return true;
 }
 
 // shortModel — one model id shortener for the rail, the head and the landing.
@@ -2372,6 +2402,8 @@ function terminalStateDot(ob) {
   const dot = statusDot(label === "working" || label === "blocked", title);
   dot.classList.add("terminal-state-dot");
   dot.dataset.agentState = label;
+  const id = ob && (ob.id || ob.manifestId);
+  if (id) dot.dataset.terminalId = id; // terminalRefreshStateDots keeps the tooltip's observed time fresh between repaints
   dot.setAttribute("aria-label", title);
   return dot;
 }
@@ -2403,12 +2435,35 @@ function terminalPaintRunBadge(badge) {
     badge.append(open);
   }
 }
+// terminalStateSignature — what a state snapshot changes on screen. observedAt
+// moves on every ~2 s tick and the pane revision on every keystroke; neither
+// is rendered beyond the state dot's tooltip, so a tick that moved nothing
+// else must not rebuild the rail rows and the thread head (QA 2026-09-12:
+// that churn closed an open row menu and dropped keyboard focus).
+let terminalStateSignature = "", terminalRepaintDeferred = false;
+function terminalStateSignatureOf() {
+  return JSON.stringify([terminalEventsConnected, [...terminalStates].map(([id, ob]) => [id, Object.assign({}, ob, { observedAt: "", revision: 0 })])]);
+}
+function terminalRefreshStateDots() {
+  document.querySelectorAll(".terminal-state-dot[data-terminal-id]").forEach((dot) => {
+    const ob = terminalStates.get(dot.dataset.terminalId);
+    if (!ob || !ob.observedAt) return;
+    const title = "agent " + terminalStateLabel(ob) + " · " + fmtWhen(ob.observedAt);
+    dot.title = title;
+    dot.setAttribute("aria-label", title);
+  });
+}
 function terminalStateRepaint() {
   window.dispatchEvent(new CustomEvent("manifest-terminal-state", { detail: { connected: terminalEventsConnected } }));
   chatTermSessions = chatTermSessions.map(chatTermApplyState);
   document.querySelectorAll("[data-terminal-run]").forEach(terminalPaintRunBadge);
-  renderChatRail();
-  chatTermSyncOpen();
+  const signature = terminalStateSignatureOf();
+  if (signature === terminalStateSignature && !terminalRepaintDeferred) { terminalRefreshStateDots(); return; }
+  terminalStateSignature = signature;
+  // a repaint declined mid-interaction (open menu, rename, armed Stop) is
+  // retried on the next tick so the surface catches up once the gesture ends
+  const railPainted = renderChatRail(), headPainted = chatTermSyncOpen();
+  terminalRepaintDeferred = railPainted === false || headPainted === false;
 }
 
 // chatTermSection — one section head (name · ✦ while any process is live ·
@@ -2627,24 +2682,25 @@ function chatTermPlaceholder() {
 // have moved under us (ended in the Terminal tab, relaunched by Alfred, …).
 function chatTermSyncOpen() {
   const o = chatTermOpen;
-  if (!o || !chatIsTerm() || chatOpenId !== o.id) return;
+  if (!o || !chatIsTerm() || chatOpenId !== o.id) return true;
   const se = chatTermFind(o.id);
   if (!se) { // forgotten elsewhere
     chatOpenId = "";
     chatRemember(chatAgent, "");
     location.hash = chatSectionHash(chatAgent);
-    return;
+    return true;
   }
   const wasLive = o.live, wasProcess = o.se.process;
   o.se = se;
   o.live = !!se.live;
-  chatTermRepaintHead();
+  const painted = chatTermRepaintHead();
   renderChatComposer(chatTermComposerSession());
   if (o.live !== wasLive) {
     chatTermPaintStrip();
     if (o.live) chatTermScreenFetch();
     else chatTermRequestFinalTail(o);
   } else if (se.process === "stopped" && wasProcess !== "stopped") chatTermRequestFinalTail(o);
+  return painted;
 }
 
 // chatTermHead — the .sprt-head anatomy: name (inline rename) · kind · folder
@@ -2722,9 +2778,14 @@ function chatTermHead(o) {
   return head;
 }
 
+// chatTermRepaintHead — false when the head is mid-interaction (rename, open
+// ···, armed Stop) and the repaint was declined; the caller retries later.
 function chatTermRepaintHead() {
   const cur = document.querySelector("#chatThreadHeader .chat-head");
-  if (cur && chatTermOpen && !chatHeadRenaming(cur) && !cur.querySelector(".chat-details[open],.chat-stop-agent.armed:not(:disabled)")) chatMountHeader(chatTermHead(chatTermOpen));
+  if (!cur || !chatTermOpen) return true;
+  if (chatHeadRenaming(cur) || cur.querySelector(".chat-details[open],.chat-stop-agent.armed:not(:disabled)")) return false;
+  chatMountHeader(chatTermHead(chatTermOpen));
+  return true;
 }
 
 function renderChatTermTranscript() {
