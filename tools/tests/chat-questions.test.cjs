@@ -22,7 +22,7 @@ test('questions expose options and free text without default submission; polls p
  const f=fixture(()=>{}),input=f.find('textarea'),form=f.find('form');assert.equal(f.find('button').disabled,true);assert.equal(f.find('input').checked,false);
  input.value='My own answer';input.oninput();f.ctx.chatQuestionPanel(f.o);
  assert.equal(f.find('textarea'),input);assert.equal(f.find('form'),form);assert.equal(input.value,'My own answer');assert.equal(f.requests.length,0);
- f.q.state='answered';f.q.answer='Elsewhere';f.ctx.chatQuestionPanel(f.o);assert(f.find('details'));assert(!f.find('textarea'));
+ f.q.state='answered';f.q.answer='Elsewhere';f.ctx.chatQuestionPanel(f.o);assert(!f.ctx.document.getElementById('chatQuestions'));assert(!f.find('textarea'));
  f.ctx.chatQuestionPanel(null);assert(!f.ctx.document.getElementById('chatQuestions'));
 });
 test('sends exact question identity to captured session once even after navigation',async()=>{
@@ -47,4 +47,14 @@ test('uncertain answers remain expanded and visibly need attention',()=>{
  assert.equal(f.find('details').open,true);
  assert.equal(f.find('summary').textContent,'Answer delivery unconfirmed');
  assert(all(f.body).some(n=>n.textContent.includes('delivery needs attention')));
+});
+
+test('resolved questions retire independently and the panel returns for new questions',()=>{
+ const f=fixture(()=>{});const next={...f.q,id:'next',title:'Next question'};f.o.questions.push(next);f.ctx.chatQuestionPanel(f.o);
+ const nextForm=all(f.body).find(n=>n.dataset.question==='next');
+ f.q.state='answered';f.ctx.chatQuestionPanel(f.o);
+ assert.equal(all(f.body).filter(n=>n.tag==='form').length,1);assert.equal(all(f.body).find(n=>n.dataset.question==='next'),nextForm);
+ next.state='sent';f.ctx.chatQuestionPanel(f.o);assert(!f.ctx.document.getElementById('chatQuestions'));
+ next.state='pending';f.ctx.chatQuestionPanel(f.o);assert(f.ctx.document.getElementById('chatQuestions'));
+ assert.equal(f.o.questions.length,2);assert.equal(f.requests.length,0);
 });

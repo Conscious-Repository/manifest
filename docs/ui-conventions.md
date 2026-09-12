@@ -401,3 +401,10 @@ input receipt boundary and original question identity; an uncertain delivery sta
 locked against a second send. Synchronous/runtime-only prompts retain a clearly
 labeled Terminal path. Shared-conversation control rights are not expanded by
 question rendering.
+
+Resolved question lifecycle: the composer-adjacent panel contains only pending
+questions and uncertain deliveries. Remove each card when its answer is sent or
+recorded in the transcript; remove the entire panel when nothing needs attention.
+Keep answers in conversation history. Never retain a “0 awaiting answer” history
+panel beside the composer, infer resolution from elapsed time, or hide uncertain
+delivery merely because the agent continued working.

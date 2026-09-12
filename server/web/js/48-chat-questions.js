@@ -12,7 +12,9 @@ function chatQuestionPanel(o) {
   const composer=document.getElementById('chatComposer');
   if(!composer)return;
   if(panel?.dataset.session!==o.id){panel?.remove();panel=null;}
-  const questions=o.questions||[];
+  // The composer is an action surface; resolved answers live in the transcript.
+  // Keep uncertain deliveries visible because they still need attention.
+  const questions=(o.questions||[]).filter(q=>q.state==='pending'||q.state==='unconfirmed');
   if(!questions.length){panel?.remove();return;}
   if(!panel){
     panel=el('section','chat-questions');panel.id='chatQuestions';panel.dataset.session=o.id;
