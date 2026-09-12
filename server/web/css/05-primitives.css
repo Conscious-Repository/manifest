@@ -339,3 +339,14 @@
 :is(.artifact-diff,.working-file-diff) .numbered-diff-row { display:grid; grid-template-columns:4ch 4ch minmax(max-content,1fr); min-height:1.6em; }
 :is(.artifact-diff,.working-file-diff) .diff-line-number { text-align:right; padding-right:var(--sp-4); color:var(--muted); user-select:none; border-right:1px solid var(--line); }
 :is(.artifact-diff,.working-file-diff) .diff-line-text { white-space:pre; padding-left:var(--sp-4); font:inherit; background:transparent; }
+
+/* Composite fields: one keyboard focus ring around the writing surface. */
+.input-surface { background: var(--surface-field); }
+:root .input-surface > textarea:not(.xterm-helper-textarea) {
+  border: 0; background: transparent; box-shadow: none;
+}
+:root .input-surface > textarea:not(.xterm-helper-textarea):focus-visible { outline: none; }
+:root .input-surface:has(> textarea:focus-visible) {
+  outline: var(--focus-width) solid var(--accent);
+  outline-offset: calc(-1 * var(--focus-width));
+}

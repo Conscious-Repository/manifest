@@ -408,3 +408,6 @@ recorded in the transcript; remove the entire panel when nothing needs attention
 Keep answers in conversation history. Never retain a “0 awaiting answer” history
 panel beside the composer, infer resolution from elapsed time, or hide uncertain
 delivery merely because the agent continued working.
+### Composite writing fields
+
+Use `.input-surface` for a composer containing a textarea and toolbar. The textarea stays borderless; keyboard focus on it draws one shared inset accent ring around the surface. Toolbar buttons keep their own focus rings. Use `--radius-message`, mono metadata, existing control tokens, and the central mobile touch sizing rules.

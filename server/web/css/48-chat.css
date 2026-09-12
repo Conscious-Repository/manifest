@@ -583,11 +583,9 @@ button.chat-attach-chip { min-height: 44px; max-width: 100%; background: transpa
 .chat-composer > .chat-input { flex: 1 0 100%; box-sizing: border-box; width: 100%; order: 0; }
 .chat-composer > .chat-composer-recipient { order: 2; margin-left: auto; max-width: calc(100% - 110px); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-height: 36px; font: 13px var(--sans); color: var(--base-70); }
 .chat-composer > .mic-btn { order: 3; flex: none; background: transparent; border: 0; box-shadow: none; }
-.chat-composer > .chat-send { order: 4; border-radius: 50%; }
+.chat-composer > .chat-send { order: 4; border-radius: var(--radius-lg); }
 .chat-composer > .chat-composer-status { order: 5; flex: 1 0 100%; font: 12px/1.4 var(--sans); color: var(--base-50); }
 .has-composer-recipient .chat-recipient-control { display: none !important; }
-.chat-composer textarea.chat-input:focus-visible { outline: none; box-shadow: none; }
-.chat-composer:has(.chat-input:focus-visible) { outline: 1px solid var(--accent-soft); outline-offset: 1px; }
 @media(max-width:860px){.chat-composer > .chat-composer-recipient{min-height:44px;}.chat-composer > .mic-btn{min-width:44px;min-height:44px;}}
 
 .chat-project-section-label { display:flex; align-items:center; justify-content:space-between; padding: 18px 10px 8px; color: var(--base-50); font: 12px var(--sans); }
@@ -737,36 +735,31 @@ button.chat-attach-chip { min-height: 44px; max-width: 100%; background: transpa
 .chat-pending-status { flex-basis: 100%; font-size: var(--fs-xs); color: var(--muted); }
 .chat-pending-more { position: relative; }
 .chat-pending-more summary { cursor: pointer; list-style: none; padding: var(--sp-4); }
-.chat-pending-menu { position: absolute; z-index: 10; right: 0; bottom: 100%; min-width: 180px; padding: var(--sp-4); background: var(--bg); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow-1); }
+.chat-pending-menu { position: absolute; z-index: 10; right: 0; bottom: 100%; min-width: 180px; padding: var(--sp-4); background: var(--surface-overlay); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow-1); }
 .chat-pending-menu button { display: block; width: 100%; text-align: left; white-space: nowrap; }
 .chat-pending-message button { min-height: 44px; }
 
 .chat-pending-more.below .chat-pending-menu { bottom: auto; top: 100%; }
 .chat-pending-message button, .chat-pending-more summary { font-size: var(--fs-md); }
 
-/* One quiet input surface; keyboard controls retain their own focus rings. */
-:root .chat-main .chat-composer {
+/* Composer uses Manifest's shared input surface and control tokens. */
+.chat-main .chat-composer {
   padding: var(--sp-7); gap: var(--sp-4) var(--sp-6);
-  border-radius: calc(var(--radius-message) + var(--sp-4));
-  border-color: var(--line); outline: none; box-shadow: none;
+  border-radius: var(--radius-message); border-color: var(--line);
 }
-:root .chat-main .chat-composer:focus-within {
-  border-color: var(--base-40); outline: none; box-shadow: none;
-}
-:root .chat-main .chat-composer textarea.chat-input,
-:root .chat-main .chat-composer textarea.chat-input:focus-visible {
-  border: 0; outline: none; box-shadow: none; background: transparent;
+.chat-main .chat-composer textarea.chat-input {
   min-height: calc(var(--sp-9) * 3); padding: var(--sp-2) var(--sp-1);
   font: var(--fs-xl)/1.5 var(--sans); border-radius: 0;
 }
-.chat-main .chat-composer > .chat-attach { order: 1; width: 44px; height: 44px; font-size: var(--fs-2xl); }
-.chat-main .chat-composer > .chat-composer-recipient { min-height: 44px; font-size: var(--fs-lg); padding: var(--sp-4); }
-.chat-main .chat-composer > .chat-send { margin-left: 0; width: 44px; height: 44px; background: var(--text); color: var(--bg); }
-.chat-main .chat-composer > .mic-btn { width: 44px; height: 44px; min-width: 44px; padding: var(--sp-5); color: var(--text); }
-.mic-btn svg { width: 22px; height: 22px; display: block; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
-.chat-main .chat-composer > .chat-composer-status { order: 1; flex: 1 1 160px; min-width: 0; align-self: center; font-size: var(--fs-xs); }
-@media(max-width:860px) {
-  :root .chat-main .chat-composer { padding: var(--sp-6); gap: var(--sp-4); }
-  .chat-main .chat-composer > .chat-composer-status { order: 5; flex-basis: 100%; }
-  .chat-main .chat-composer > .chat-composer-recipient { font-size: var(--fs-md); max-width: calc(100% - 156px); }
+.chat-main .chat-composer > :is(.chat-attach,.mic-btn,.chat-send) {
+  width: var(--control-height); height: var(--control-height); min-width: var(--control-height);
+}
+.chat-main .chat-composer > .chat-attach { order: 1; font-size: var(--fs-xl); }
+.chat-main .chat-composer > .chat-composer-recipient {
+  min-height: var(--control-height); font: var(--fs-md)/1.4 var(--mono); padding: var(--sp-2) var(--sp-4);
+}
+.chat-main .chat-composer > .chat-send { margin-left: 0; border-radius: var(--radius-lg); }
+.chat-main .chat-composer > .mic-btn { padding: var(--sp-2); }
+.chat-main .chat-composer > .chat-composer-status {
+  order: 1; flex: 1 1 160px; min-width: 0; align-self: center; font: var(--fs-xs)/1.4 var(--mono);
 }

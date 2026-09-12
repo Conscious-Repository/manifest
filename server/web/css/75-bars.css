@@ -93,3 +93,5 @@
 
 .palette-close { position: absolute; top: var(--sp-5); right: var(--sp-5); min-width: var(--control-height); min-height: var(--control-height); border: 0; background: none; color: var(--base-60); font-size: var(--fs-xl); cursor: pointer; }
 :root[data-theme="jarvis"] .pill.castbar-cast-btn:hover { color: var(--on-accent); border-color: var(--blue); }
+
+.mic-btn svg { width: 22px; height: 22px; display: block; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }

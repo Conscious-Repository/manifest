@@ -1958,6 +1958,7 @@ function chatMentionOptions(prefix) {
 function renderChatComposer(session) {
   const host = document.getElementById("chatComposer");
   if (!host) return;
+  host.classList.add("input-surface");
   if(session?.sharing && session.sharing.state!=="shared"){host.replaceChildren(el("p","chat-load-error","Sharing is awaiting recovery. Use Recover sharing above to finish, then continue in the team conversation."));return;}
   const draftKey = (chatAgent || "spirits") + "/" + (chatOpenId || "new");
   const nativeRecipient = () => chatRecipients.get(draftKey)?.backend === "terminal";
