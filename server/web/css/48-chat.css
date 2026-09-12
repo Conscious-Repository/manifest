@@ -730,3 +730,16 @@ button.chat-attach-chip { min-height: 44px; max-width: 100%; background: transpa
 .chat-question-status { margin-top: var(--sp-4); color: var(--base-60); font-family: var(--sans); font-size: var(--fs-md); }
 .chat-main.terminal-focus .chat-questions { display: none; }
 .chat-question-history summary { font-family: var(--sans); font-size: var(--fs-md); color: var(--base-60); cursor: pointer; }
+/* Pending follow-ups: a compact row above the composer, with explicit dispatch. */
+.chat-pending-messages { grid-column: 1 / -1; width: 100%; min-width: 0; }
+.chat-pending-message { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-4); padding: var(--sp-4) var(--sp-6); border-bottom: 1px solid var(--line); }
+.chat-pending-preview { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chat-pending-status { flex-basis: 100%; font-size: var(--fs-xs); color: var(--muted); }
+.chat-pending-more { position: relative; }
+.chat-pending-more summary { cursor: pointer; list-style: none; padding: var(--sp-4); }
+.chat-pending-menu { position: absolute; z-index: 10; right: 0; bottom: 100%; min-width: 180px; padding: var(--sp-4); background: var(--bg); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow-1); }
+.chat-pending-menu button { display: block; width: 100%; text-align: left; white-space: nowrap; }
+.chat-pending-message button { min-height: 44px; }
+
+.chat-pending-more.below .chat-pending-menu { bottom: auto; top: 100%; }
+.chat-pending-message button, .chat-pending-more summary { font-size: var(--fs-md); }

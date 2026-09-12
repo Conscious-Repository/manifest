@@ -140,3 +140,63 @@ func TestTerminalInputReceiptCrashBoundaryDoesNotReplay(t *testing.T) {
 		t.Fatal(w.Code, w.Body.String(), prompts.Load())
 	}
 }
+
+func TestTerminalSteeringWhileWorkingAndBlockedRejection(t *testing.T) {
+	s := &Server{terminal: &termCfg{regPath: filepath.Join(t.TempDir(), "terminals.json"), defaultWd: t.TempDir()}}
+	state := "working"
+	reject := false
+	prompts := 0
+	h := herdrFixture(t, func(c net.Conn, r herdrFixtureRequest) {
+		switch r.Method {
+		case "session.snapshot":
+			herdrFixtureSnapshot(c, state, 2)
+		case "workspace.create":
+			herdrFixtureReply(c, map[string]any{"root_pane": herdrFixturePane("unknown", 1)})
+		case "pane.send_input":
+			herdrFixtureReply(c, map[string]any{})
+		case "pane.read":
+			herdrFixtureReply(c, map[string]any{"read": map[string]any{"text": "›"}})
+		case "agent.prompt":
+			prompts++
+			if reject {
+				_ = json.NewEncoder(c).Encode(map[string]any{"id": "manifest", "error": map[string]any{"code": "agent_blocked", "message": "requires interactive input"}})
+			} else {
+				herdrFixtureReply(c, map[string]any{})
+			}
+		default:
+			t.Errorf("unexpected method %s", r.Method)
+		}
+	})
+	h.server, s.terminal.herdr = s, h
+	se := createCodingDraft(t, s, "codex")
+	body := `{"text":"Change direction while working","requestId":"steering-working-001"}`
+	if w := receiptInput(s, se.ID, body); w.Code != 200 {
+		t.Fatal(w.Code, w.Body.String())
+	}
+	if prompts != 1 {
+		t.Fatal("working input was not dispatched exactly once", prompts)
+	}
+	state = "blocked"
+	blocked := `{"text":"Follow up after questions","requestId":"steering-blocked-002"}`
+	if w := receiptInput(s, se.ID, blocked); w.Code == 200 || !strings.Contains(w.Body.String(), "nothing sent") {
+		t.Fatal(w.Code, w.Body.String())
+	}
+	if prompts != 1 {
+		t.Fatal("blocked agent received input")
+	}
+	if _, err := s.terminal.readInputReceipt(se.ID, "steering-blocked-002"); !os.IsNotExist(err) {
+		t.Fatal("blocked input became uncertain", err)
+	}
+	state = "working"
+	reject = true
+	if w := receiptInput(s, se.ID, blocked); w.Code != 409 {
+		t.Fatal(w.Code, w.Body.String())
+	}
+	if _, err := s.terminal.readInputReceipt(se.ID, "steering-blocked-002"); !os.IsNotExist(err) {
+		t.Fatal("pre-write rejection became uncertain", err)
+	}
+	reject = false
+	if w := receiptInput(s, se.ID, blocked); w.Code != 200 {
+		t.Fatal(w.Code, w.Body.String())
+	}
+}

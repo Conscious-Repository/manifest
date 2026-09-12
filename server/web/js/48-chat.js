@@ -2138,8 +2138,9 @@ function renderChatComposer(session) {
       try{
         if(files.length&&!session?.shared)throw new Error("File uploads are not supported by this coding continuation yet. Remove the attachment or choose a planning agent.");
         const url=chatTermBase(chosenRecipient.id)+"/input";
-        const item=chatRememberDelivery(draftKey,chosenRecipient.agent,url,{text,...(files.length?{files:files.map(f=>f.hash)}:{}),conversationAgent:sendAgent,conversationId:sendSession,task:session?.shared?"":selected?.task||session?.task||"",artifacts:selected?[{id:selected.id,revision:selected.revision}]:[]});
-        await chatDeliverRemembered(item);acceptedDraft();
+        const input={text,...(files.length?{files:files.map(f=>f.hash)}:{}),conversationAgent:sendAgent,conversationId:sendSession,task:session?.shared?"":selected?.task||session?.task||"",artifacts:selected?[{id:selected.id,revision:selected.revision}]:[]};
+        if(['working','blocked'].includes(chatTermFind(chosenRecipient.id)?.agentState))await chatStageMessage(draftKey,chosenRecipient.agent,url,input);
+        else await chatDeliverRemembered(chatRememberDelivery(draftKey,chosenRecipient.agent,url,input));acceptedDraft();
         if(sendRoute===chatRouteVersion)await refetchChatSession(sendSession);
       }catch(e){showToast(e.message||"Send not confirmed. Your draft is retained.");}
       finally{chatSending=false;renderChatComposer(chatCurSession);}
@@ -3069,6 +3070,11 @@ function chatTermPairResult(turns, b) {
 async function chatTermSend(text,context={}) {
   if (!text) return true;
   if (chatTermSending) return false;
+  const current=chatTermFind(chatOpenId);
+  if(current&&['working','blocked'].includes(current.agentState)){
+    try{await chatStageMessage(chatAgent+'/'+chatOpenId,chatAgent,chatTermBase(chatOpenId)+'/input',{text,...context});return true;}
+    catch(e){showToast(e.message);return false;}
+  }
   chatTermSending = true;
   const project=chatPendingProject;
   const agent=chatAgent,route=chatRouteVersion,sourceScope=chatAgent+"/"+(chatOpenId||"new");
@@ -3358,7 +3364,7 @@ async function chatLoadDeliveryRecovery(scope){
   }
   chatWriteDeliveryOutbox(local);
   // Only read receipts. An absent or uncertain receipt never authorizes replay.
-  for(const item of chatReadDeliveryOutbox().filter(x=>(x.draftScope||x.scope)===scope&&!x.accepted)){
+  for(const item of chatReadDeliveryOutbox().filter(x=>(x.draftScope||x.scope)===scope&&!x.accepted&&!x.staged)){
    const path=chatIsTerminalDelivery(item)?item.url.replace(/\/input$/,"/delivery"):"/api/agents/chat/"+encodeURIComponent(item.agent)+"/delivery";
    const receipt=await fetch(path+"?request="+encodeURIComponent(item.payload.requestId),{cache:"no-store"});if(!receipt.ok)continue;
    const result=await receipt.json();
@@ -3394,11 +3400,66 @@ async function chatDeliverRemembered(item){
  if(accepted)return chatAcceptDelivery(item,accepted);
  await chatSaveDeliveryRecovery(item);
  const res=await fetchJSONRetry("POST",item.url,item.payload);
- if(!res.ok){const error=new Error((await res.text()).trim()||"Send failed");error.rejected=[400,413,422].includes(res.status);throw error;}
+ if(!res.ok){const error=new Error((await res.text()).trim()||"Send failed");error.rejected=[400,413,422].includes(res.status);error.notSent=/nothing sent/.test(error.message);throw error;}
  const result=await res.json();
  if(chatIsTerminalDelivery(item)&&result.delivery?.state!=="sent")throw new Error("Submission is unconfirmed. Check its status or inspect the native conversation before sending another instruction.");
  if(result.ok!==true && !result.id)throw new Error("Delivery acknowledgement unavailable");
  return chatAcceptDelivery(item,result);
+}
+// Pending follow-ups remain editable until the owner explicitly steers them.
+// A CAS claim makes the item immutable before it crosses the runtime boundary.
+async function chatStageMessage(scope,agent,url,payload){
+ if(!chatSyncedDrafts.get(scope)?.key)throw Error('Wait for the conversation to finish loading before saving a follow-up.');
+ const prior=chatReadDeliveryOutbox().find(x=>x.scope===scope&&x.url===url&&x.signature===JSON.stringify(payload));
+ if(prior&&!prior.staged)throw Error("This message already has an unconfirmed send. Check its status before trying again.");
+ if(prior){await chatUpdateStaged(prior,prior);return;}
+ const item=chatRememberDelivery(scope,agent,url,payload);
+ item.staged=true;item.draft=null;item.stateKey=chatSyncedDrafts.get(scope).key;
+ const items=chatReadDeliveryOutbox().filter(x=>x.payload.requestId!==item.payload.requestId);items.push(item);chatWriteDeliveryOutbox(items);
+ await chatSaveDeliveryRecovery(item);
+}
+async function chatUpdateStaged(item,next){
+ if(!item.stateKey)throw Error('Pending message has no saved conversation.');
+ const url='/api/chat/state/'+encodeURIComponent(item.stateKey)+'/deliveries';
+ for(let n=0;n<4;n++){
+  const r=await fetch(url,{cache:'no-store'});if(!r.ok)throw Error('Pending messages could not be loaded.');const state=await r.json(),items={...state.value?.items},current=items[item.payload.requestId];
+  if(!current?.staged||JSON.stringify(current.payload)!==JSON.stringify(item.payload))throw Error('This message changed on another device. Reload before continuing.');
+  if(next)items[item.payload.requestId]=next;else delete items[item.payload.requestId];
+  const saved=await fetch(url,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({revision:state.revision,value:{...state.value,items}})});
+  if(saved.status===409)continue;if(!saved.ok)throw Error('Pending message was not saved.');
+  const local=chatReadDeliveryOutbox().filter(x=>x.payload.requestId!==item.payload.requestId);if(next)local.push(next);chatWriteDeliveryOutbox(local);return;
+ }
+ throw Error('Pending messages changed elsewhere. Try again.');
+}
+function chatRenderStagedMessages(host,scope){
+ host.querySelector('.chat-pending-messages')?.remove();
+ const items=chatReadDeliveryOutbox().filter(x=>x.staged&&x.scope===scope);if(!items.length)return;
+ const list=el('div','chat-pending-messages');list.setAttribute('aria-label','Pending messages');
+ for(const item of items){
+  const row=el('div','chat-pending-message'),preview=el('span','chat-pending-preview',item.payload.text||'Attachment');preview.title=item.payload.text||'Attachment';
+  const steer=el('button','sprt-quiet','↳ Steer');steer.title='Send this instruction now';
+  const remove=el('button','sprt-quiet','×');remove.setAttribute('aria-label','Remove pending message');
+  const more=el('details','chat-pending-more'),summary=el('summary','','…');summary.setAttribute('aria-label','Pending message actions');const menu=el('div','chat-pending-menu');more.append(summary,menu);more.addEventListener('toggle',()=>{if(more.open)more.classList.toggle('below',more.getBoundingClientRect().top<120);});
+  const status=el('span','chat-pending-status',item.stagedError||'Pending · choose Steer to send');status.setAttribute('role','status');
+  const refresh=()=>chatRenderDeliveryNotice(host,scope);
+  remove.onclick=async()=>{remove.disabled=true;try{await chatUpdateStaged(item,null);refresh();}catch(e){status.textContent=e.message;remove.disabled=false;}};
+  steer.onclick=async()=>{
+   steer.disabled=remove.disabled=true;more.open=false;
+   try{
+    const sending={...item,staged:false,stagedError:''};await chatUpdateStaged(item,sending);
+    try{await chatDeliverRemembered(sending);showToast('Message sent.');}
+    catch(e){if(e.notSent){sending.staged=true;sending.stagedError='Agent needs input. Answer its questions or open Terminal, then steer.';await chatSaveDeliveryRecovery(sending);const all=chatReadDeliveryOutbox().filter(x=>x.payload.requestId!==sending.payload.requestId);all.push(sending);chatWriteDeliveryOutbox(all);}else showToast(e.message||'Delivery is unconfirmed. Check status before sending again.');}
+    refresh();
+   }catch(e){status.textContent=e.message;steer.disabled=remove.disabled=false;}
+  };
+  const edit=el('button','sprt-quiet','Edit');edit.onclick=()=>{more.open=false;reviewDialog('Edit pending message',({body,actions,close})=>{
+   const input=document.createElement('textarea');input.className='pp-in';input.setAttribute('aria-label','Pending message');input.value=item.payload.text||'';input.rows=5;body.append(input);
+   const cancel=el('button','sprt-quiet','Cancel'),save=el('button','sprt-quiet','Save');cancel.onclick=close;save.onclick=async()=>{if(!input.value.trim())return;save.disabled=true;try{const next={...item,payload:{...item.payload,text:input.value.trim()},stagedError:''};next.signature=JSON.stringify({...next.payload,requestId:undefined});await chatUpdateStaged(item,next);close();refresh();}catch(e){status.textContent=e.message;close();}};actions.append(cancel,save);
+  });};menu.append(edit);
+  const side=el('button','sprt-quiet','Open in side chat');side.onclick=()=>{more.open=false;const source=chatWorkspaceSource();if(source)chatWorkspaceSideSetup({...source,initialPrompt:item.payload.text});};menu.append(side);
+  row.append(preview,steer,remove,more,status);list.append(row);
+ }
+ host.prepend(list);
 }
 function chatDeliveryBelongsToScope(item,scope){
  // A created conversation owns its recovery notice, even if its composer
@@ -3406,9 +3467,10 @@ function chatDeliveryBelongsToScope(item,scope){
  return item.scope===scope || (!scope.endsWith('/new')&&(item.draftScope||item.scope)===scope);
 }
 function chatRenderDeliveryNotice(host,scope){
+ chatRenderStagedMessages(host,scope);
  const expanded=host.querySelector(".chat-delivery-notice")?.open||false;
  host.querySelector(".chat-delivery-notice")?.remove();
- const pending=chatReadDeliveryOutbox().filter(x=>chatDeliveryBelongsToScope(x,scope));if(!pending.length)return;
+ const pending=chatReadDeliveryOutbox().filter(x=>!x.staged&&chatDeliveryBelongsToScope(x,scope));if(!pending.length)return;
  const notice=el("details","chat-delivery-notice");notice.open=expanded;
  const summary=el('summary','chat-delivery-summary',pending.length===1?'1 message needs attention':pending.length+' messages need attention');notice.append(summary);
  pending.forEach(item=>{

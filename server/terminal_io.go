@@ -454,6 +454,19 @@ func (s *Server) handleTermInput(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		if err != nil {
+			// These daemon errors are documented pre-write rejections. They must
+			// not become an uncertain receipt, which permanently blocks retry.
+			var rejected *herdrError
+			if errors.As(err, &rejected) && (rejected.Code == "agent_blocked" || rejected.Code == "agent_not_ready" || rejected.Code == "empty_agent_prompt") {
+				if receipt != nil {
+					if removeErr := os.Remove(s.terminal.inputReceiptPath(se.ID, b.RequestID)); removeErr != nil {
+						writeTerminalInputReceipt(w, se.ID, *receipt)
+						return
+					}
+				}
+				http.Error(w, "agent needs interactive input or is not ready; open Terminal; nothing sent", http.StatusConflict)
+				return
+			}
 			if receipt != nil {
 				writeTerminalInputReceipt(w, se.ID, *receipt)
 				return
