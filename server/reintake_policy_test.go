@@ -39,8 +39,11 @@ func TestReIntakePolicyProjection(t *testing.T) {
 			t.Fatal(err)
 		}
 		p = s.reIntakePrimaryProjection(dir)
+		if record == `{"status":"canary passed","dutyVerified":true}` && p["canaryStatus"] != "passed (synthetic only)" {
+			t.Fatal(p)
+		}
 		b, _ := json.Marshal(p)
-		if strings.Contains(string(b), "sentinel") || p["primary"] != "local DeepSeek" || p["status"] != "shadow" || p["productionRouted"] != false || p["cost_policy"] != "local-zero-marginal" || p["cost_telemetry"] != "unavailable" || p["configuredAuthority"] != "valid declaration; not routed" || !strings.Contains(p["fallback"].(string), "unsupported/unverified; never automatic") {
+		if strings.Contains(string(b), "sentinel") || p["primary"] != "local DeepSeek" || p["status"] != "shadow" || p["productionRouted"] != false || p["productionOwner"] != "Excalibur" || p["productionRoute"] != "disabled; source-ingest integration unavailable" || p["cost_policy"] != "local-zero-marginal" || p["cost_telemetry"] != "unavailable" || p["configuredAuthority"] != "valid declaration; not routed" || !strings.Contains(p["fallback"].(string), "unsupported/unverified; never automatic") {
 			t.Fatal(string(b))
 		}
 	}
@@ -56,8 +59,8 @@ func TestReIntakePolicyBrowserProjection(t *testing.T) {
  const source=fs.readFileSync('web/js/40-agents.js','utf8');
  const fn=source.slice(source.indexOf('function reIntakePrimarySummary('));
  const ctx={}; vm.createContext(ctx); vm.runInContext(fn,ctx);
- const result=ctx.reIntakePrimarySummary({primary:'local DeepSeek',model:'deepseek-v4.1-flash',cost_policy:'local-zero-marginal',cost_telemetry:'unavailable',provider_binding:'fixed-local-endpoint',configuredAuthority:'missing or invalid',fallback:'owner-invoked Claude Code/Codex only; unsupported/unverified; never automatic',lastAttempt:'35-deepseek-primary-canary.jsonl',lastError:'missing usage evidence'});
- for (const text of ['shadow / not routed','local-zero-marginal policy; provider cost telemetry unavailable','owner-invoked','unsupported/unverified','last attempt receipt: 35-','last error: missing usage evidence']) assert(result.includes(text),text);
+ const result=ctx.reIntakePrimarySummary({canaryStatus:'passed (synthetic only)',primary:'local DeepSeek',model:'deepseek-v4.1-flash',cost_policy:'local-zero-marginal',cost_telemetry:'unavailable',provider_binding:'fixed-local-endpoint',configuredAuthority:'missing or invalid',fallback:'owner-invoked Claude Code/Codex only; unsupported/unverified; never automatic',lastAttempt:'35-deepseek-primary-canary.jsonl',lastError:'missing usage evidence'});
+ for (const text of ['production route disabled','owner: Excalibur','canary: passed (synthetic only)','shadow / not routed','local-zero-marginal policy; provider cost telemetry unavailable','owner-invoked','unsupported/unverified','last attempt receipt: 35-','last error: missing usage evidence']) assert(result.includes(text),text);
  for (const f of ['41-agents-schedule.js','42-agents-runs.js','60-settings.js']) assert(fs.readFileSync('web/js/'+f,'utf8').includes('reIntakePrimarySummary('),f);
  assert(ctx.reIntakePrimarySummary(null).includes('unavailable'));`
 	if out, err := exec.Command(node, "-e", script).CombinedOutput(); err != nil {

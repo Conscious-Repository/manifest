@@ -1,5 +1,5 @@
-// Package reintake implements only the offline, owner-triggered Phase 3 shadow
-// comparison. It has no runner, scheduler, portal, approval store or vault handle.
+// Package reintake provides offline shadow comparison and an unwired bounded
+// successor adapter. It holds no scheduler, portal, approval store or vault handle.
 package reintake
 
 import (
@@ -30,10 +30,11 @@ const Model = "deepseek-v4.1-flash"
 const ShadowPath = "excalibur-retirement/shadow/re-intake"
 const StopAndPage = "STOP: shadow lane frozen; page owner with local evidence; wait for explicit owner action; no retry or fallback"
 
-// Config has no production mode. A true shadowEnabled permits embedded fixture
-// replay only. Missing authority never inherits interactive Hermes defaults.
+// Config gates offline replay and the unwired production adapter independently.
+// Neither flag registers a route. Missing authority never inherits defaults.
 type Config struct {
-	ShadowEnabled bool `json:"shadowEnabled"`
+	ShadowEnabled     bool `json:"shadowEnabled"`
+	ProductionEnabled bool `json:"productionEnabled"`
 }
 
 //go:embed fixtures/single.json fixtures/split.json

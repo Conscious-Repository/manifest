@@ -73,8 +73,8 @@ type Config struct {
 	// calendar credentials). The vault holds only your hand-authored notes; the
 	// app never writes derived data into it.
 	DataDir string `json:"dataDir"`
-	// ReIntake is offline shadow replay only; no HTTP, poller or live routing.
-	// The dedicated re-intake-shadow command consumes this default-off flag.
+	// ReIntake gates shadow replay and an unwired bounded production adapter.
+	// Both default off; neither registers HTTP or poller routing.
 	ReIntake reintake.Config `json:"reIntake"`
 	// SystemRoot is the vault-relative folder that holds the SYSTEM ZONE
 	// (system-root-plan §1): structured, app-managed markdown (agents, excalibur,

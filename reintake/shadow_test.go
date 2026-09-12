@@ -64,7 +64,7 @@ func TestReIntakeStructuredParityAndIsolation(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
-			r, e := Replay(dir, Config{true}, duties(), id)
+			r, e := Replay(dir, Config{ShadowEnabled: true}, duties(), id)
 			if e != nil || !r.StructuredParity || r.LiveUsageVerified || r.ProductionRouted || r.PortalVisible {
 				t.Fatalf("invalid shadow report: %v", e)
 			}
@@ -126,7 +126,7 @@ func TestReIntakeAuthorityRefusal(t *testing.T) {
 			if ds != nil {
 				ds[Duty] = a
 			}
-			_, e := Replay(t.TempDir(), Config{true}, ds, "single")
+			_, e := Replay(t.TempDir(), Config{ShadowEnabled: true}, ds, "single")
 			if e == nil || !strings.Contains(e.Error(), StopAndPage) {
 				t.Fatal("authority accepted")
 			}
@@ -229,7 +229,7 @@ func TestReIntakeStopAndPageIsLatched(t *testing.T) {
 	if e == nil || r.Entry.Kind != "run.refused" || r.Entry.Text != StopAndPage {
 		t.Fatal("no explicit stop-and-page")
 	}
-	if _, e = Replay(dir, Config{true}, duties(), "single"); e == nil {
+	if _, e = Replay(dir, Config{ShadowEnabled: true}, duties(), "single"); e == nil {
 		t.Fatal("automatic recovery accepted")
 	}
 	b, e := os.ReadFile(filepath.Join(dir, ShadowPath, "STOP.json"))
@@ -248,7 +248,7 @@ func TestReIntakePathsRefuseSymlinksAndOverwrite(t *testing.T) {
 			if e := os.Symlink(out, dest); e != nil {
 				t.Fatal(e)
 			}
-			if _, e := Replay(dir, Config{true}, duties(), "single"); e == nil {
+			if _, e := Replay(dir, Config{ShadowEnabled: true}, duties(), "single"); e == nil {
 				t.Fatal("symlink accepted")
 			}
 			entries, _ := os.ReadDir(out)
@@ -258,16 +258,16 @@ func TestReIntakePathsRefuseSymlinksAndOverwrite(t *testing.T) {
 		})
 	}
 	dir := t.TempDir()
-	if _, e := Replay(dir, Config{true}, duties(), "single"); e != nil {
+	if _, e := Replay(dir, Config{ShadowEnabled: true}, duties(), "single"); e != nil {
 		t.Fatal(e)
 	}
-	if _, e := Replay(dir, Config{true}, duties(), "single"); e == nil {
+	if _, e := Replay(dir, Config{ShadowEnabled: true}, duties(), "single"); e == nil {
 		t.Fatal("replay overwrote evidence")
 	}
-	if _, e := Replay("relative", Config{true}, duties(), "single"); e == nil {
+	if _, e := Replay("relative", Config{ShadowEnabled: true}, duties(), "single"); e == nil {
 		t.Fatal("relative dataDir accepted")
 	}
-	if _, e := Replay(t.TempDir(), Config{true}, duties(), "../single"); e == nil {
+	if _, e := Replay(t.TempDir(), Config{ShadowEnabled: true}, duties(), "../single"); e == nil {
 		t.Fatal("arbitrary fixture path accepted")
 	}
 }
@@ -321,7 +321,7 @@ func TestReIntakeEvidenceFailureStopsWithoutEscape(t *testing.T) {
 	if e = os.Symlink(filepath.Join(out, "ledger"), filepath.Join(dir, ShadowPath, "2000-01-01.jsonl")); e != nil {
 		t.Fatal(e)
 	}
-	_, e = Replay(dir, Config{true}, duties(), "single")
+	_, e = Replay(dir, Config{ShadowEnabled: true}, duties(), "single")
 	if e == nil || !strings.Contains(e.Error(), StopAndPage) {
 		t.Fatal("ledger failure accepted")
 	}
@@ -392,7 +392,7 @@ func TestReIntakePrimaryUncertaintyFreezesWithoutFallback(t *testing.T) {
 			if err == nil || r.StructuredParity || r.LiveUsageVerified || r.ProductionRouted || r.Entry.Meta["fallback"] != false {
 				t.Fatal("uncertainty accepted")
 			}
-			if _, err = Replay(dir, Config{true}, duties(), "single"); err == nil {
+			if _, err = Replay(dir, Config{ShadowEnabled: true}, duties(), "single"); err == nil {
 				t.Fatal("lane not frozen")
 			}
 		})

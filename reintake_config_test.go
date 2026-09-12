@@ -10,7 +10,7 @@ func TestReIntakeConfigDefaultOff(t *testing.T) {
 	if err := json.Unmarshal([]byte(`{}`), &cfg); err != nil {
 		t.Fatal(err)
 	}
-	if cfg.ReIntake.ShadowEnabled {
+	if cfg.ReIntake.ShadowEnabled || cfg.ReIntake.ProductionEnabled {
 		t.Fatal("shadow defaults on")
 	}
 	if err := json.Unmarshal([]byte(`{"reIntake":{"shadowEnabled":true}}`), &cfg); err != nil || !cfg.ReIntake.ShadowEnabled {
@@ -29,5 +29,12 @@ func TestReIntakePrimaryAuthorityConfig(t *testing.T) {
 	}
 	if cfg.ReIntake.ShadowEnabled || a.Provider != "deepseek-local" || a.Model != "deepseek-v4.1-flash" || a.TimeoutSeconds != 120 || a.MaxSteps != 1 || *a.CeilingUSD != 0 || len(a.Tools) != 1 || a.Tools[0] != "none" || a.MCP != "no_mcp" {
 		t.Fatal("config changed explicit primary or enabled shadow")
+	}
+}
+
+func TestReIntakeProductionFlagExplicitOnly(t *testing.T) {
+	var cfg Config
+	if err := json.Unmarshal([]byte(`{"reIntake":{"productionEnabled":true}}`), &cfg); err != nil || !cfg.ReIntake.ProductionEnabled || cfg.ReIntake.ShadowEnabled {
+		t.Fatal("production flag decode changed shadow or failed")
 	}
 }

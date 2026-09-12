@@ -398,7 +398,7 @@ async function fetchSpiritRuns() {
 function reIntakePrimarySummary(p) {
   if (!p) return "re-intake · shadow / not routed · primary policy evidence unavailable";
   return "re-intake · primary: " + p.primary + " / " + p.model +
-    " · shadow / not routed · cost: " + p.cost_policy + " policy; provider cost telemetry " + p.cost_telemetry +
+    " · shadow / not routed · production route disabled · owner: Excalibur · canary: " + (p.canaryStatus || "unknown") + " · cost: " + p.cost_policy + " policy; provider cost telemetry " + p.cost_telemetry +
     " · provider binding: " + p.provider_binding + " · declaration: " + p.configuredAuthority +
     " · fallback: " + p.fallback + " · last attempt receipt: " + p.lastAttempt +
     (p.evidenceUpdatedAt ? " (receipt updated " + p.evidenceUpdatedAt + ")" : "") + " · last error: " + p.lastError;

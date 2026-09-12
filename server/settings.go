@@ -592,6 +592,7 @@ func (s *Server) reIntakePrimaryProjection(directory string) map[string]any {
 		"provider_binding": hermes.LocalProviderBinding, "endpoint": hermes.LocalEndpoint,
 		"cost_policy": hermes.LocalCostPolicy, "cost_telemetry": "unavailable",
 		"status": "shadow", "productionRouted": false,
+		"productionRoute": "disabled; source-ingest integration unavailable", "productionOwner": "Excalibur", "canaryStatus": "unknown",
 		"fallback":            "owner-invoked Claude Code/Codex only; unsupported/unverified; never automatic",
 		"configuredAuthority": "missing or invalid", "lastAttempt": "unknown", "lastError": "unknown",
 	}
@@ -640,6 +641,7 @@ func (s *Server) reIntakePrimaryProjection(directory string) map[string]any {
 		}
 		if report.Status == "canary passed" && report.Verified && report.Reason == "" {
 			out["lastError"] = "none reported (synthetic canary only)"
+			out["canaryStatus"] = "passed (synthetic only)"
 			return out
 		}
 		if report.Status == "refused" {
