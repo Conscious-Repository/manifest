@@ -56,6 +56,24 @@ function textareaContentHeight(ta) {
   return height;
 }
 
+// Keep unchanged rows mounted: focus, selection and open disclosures belong
+// to the user. Signatures describe render inputs, never live DOM state.
+const keyedChildrenCache = new WeakMap();
+function reconcileKeyedChildren(host, items, keyOf, signatureOf, render) {
+  const previous = keyedChildrenCache.get(host) || new Map(), next = new Map();
+  let cursor = host.firstChild;
+  items.forEach((item, index) => {
+    const key = keyOf(item, index), signature = signatureOf(item, index);
+    const prior = previous.get(key);
+    const node = prior?.signature === signature ? prior.node : render(item, index);
+    if (node !== cursor) host.insertBefore(node, cursor);
+    else cursor = cursor.nextSibling;
+    next.set(key, {signature, node});
+  });
+  while (cursor) { const following = cursor.nextSibling; cursor.remove(); cursor = following; }
+  keyedChildrenCache.set(host, next);
+}
+
 // ---- pill factory ----
 function pill(text, onclick) { const b = el("button", "pill", text); b.addEventListener("click", onclick); return b; }
 // debounce — one call per pause, not per keystroke. Four hand-rolled copies of

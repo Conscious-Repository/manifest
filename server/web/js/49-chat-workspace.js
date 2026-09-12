@@ -221,7 +221,7 @@ function chatPolishComposer(host){
  }else picker?.remove();
  main?.classList.toggle('has-composer-recipient',!!source);
  const input=host.querySelector('textarea'),send=host.querySelector('.chat-send');
- if(send){send.setAttribute('aria-label','Send message');send.title=window.matchMedia('(max-width: 860px)').matches?'Send message · Enter adds a new line':'Send message · Enter (Shift+Enter for a new line)';}
+ if(send&&send.textContent!=='…'){send.setAttribute('aria-label','Send message');send.title=window.matchMedia('(max-width: 860px)').matches?'Send message · Enter adds a new line':'Send message · Enter (Shift+Enter for a new line)';}
  host.querySelector('.chat-attach')?.setAttribute('aria-label','Attach files');
  let status=host.querySelector('.chat-composer-status');
  if(chatIsTerm()&&input){

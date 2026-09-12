@@ -46,6 +46,8 @@ listeners.wheel();scrollHost.scrollTop=75;listeners.scroll();assert.equal(saves,
 // the reader's position, while Latest continues to follow appended output.
 const terminalHost={scrollTop:740};
 const terminalBody={set innerHTML(value){terminalHost.scrollTop=0;}};
+terminalBody.querySelector=()=>null;terminalBody.replaceChildren=()=>{};terminalBody.append=()=>{};
+ctx.el=()=>({dataset:{},replaceChildren(){},append(){}});
 Object.assign(ctx,{document:{getElementById:id=>id==='chatTermTurns'?terminalBody:terminalHost},chatTermOpen:{turns:[{id:'record-1',who:'user',text:'hello'}]},chatStick:false,chatTermPaintLines:()=>{},appendTaskApprovals:()=>{},chatPin:()=>{if(ctx.chatStick)terminalHost.scrollTop=2000;}});
 vm.runInContext(src.slice(src.indexOf('function chatTermPaintTurns()'),src.indexOf('\nfunction ',src.indexOf('function chatTermPaintTurns()')+1)),ctx);
 ctx.chatTermPaintTurns();assert.equal(terminalHost.scrollTop,740);

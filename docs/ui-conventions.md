@@ -447,3 +447,15 @@ shared `textareaContentHeight` helper and write height only when needed. Cap lon
 messages so they scroll inside the field. Coalesce visual viewport updates, account
 for its offset, preserve pinch zoom, and never counter caret reveal with a forced
 page scroll. Test typing at the height cap as well as empty and wrapped fields.
+
+### Responsive chat updates
+
+Preserve unchanged native message nodes during streaming using the shared
+`reconcileKeyedChildren` helper. Refreshes must retain history selection, focused
+controls and nested disclosures. Update approval controls only when their data
+changes. Keep the existing readable measure and phone touch targets.
+
+Show received reply text promptly, with short batched paints rather than simulated
+typing. An unchanged stream frame should do no Markdown work. Send acknowledges the
+press immediately with a pending indicator; delivered status and draft clearing
+still require acknowledgement. Recovery polling must not block transcript polling.

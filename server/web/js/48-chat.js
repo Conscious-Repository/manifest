@@ -1593,20 +1593,18 @@ function finishChatLive() {
   if (area) area.innerHTML = "";
 }
 
-// constant-speed reveal (cmd-ctr: ~85 chars/sec, catch up if far behind)
+// Show received text without artificial typing delay; batch stream paints.
 function scheduleChatReveal() {
   if (chatRevealTimer) return;
   chatRevealTimer = setInterval(() => {
     if (!chatLive) { clearInterval(chatRevealTimer); chatRevealTimer = null; return; }
     const target = chatLive.say.length;
-    if (chatLive.revealed < target) {
-      const behind = target - chatLive.revealed;
-      chatLive.revealed += behind > 130 ? Math.ceil(behind / 8) : 5; // ~85cps at 60ms tick
-      if (chatLive.revealed > target) chatLive.revealed = target;
-    }
+    const changed = chatLive.revealed !== target || chatLive.thinking !== chatLive._renderedThinking || chatLive._renderedOpen !== chatLive.open || chatLive._renderedTools !== JSON.stringify(chatLive.tools);
     const now = Date.now();
-    if (now - chatLastMd >= 90 || chatLive.revealed >= target) {
+    if (changed && (now - chatLastMd >= 90 || !chatLive.open)) {
       chatLastMd = now;
+      chatLive.revealed=target;chatLive._renderedThinking=chatLive.thinking;
+      chatLive._renderedOpen=chatLive.open;chatLive._renderedTools=JSON.stringify(chatLive.tools);
       renderChatLive();
     }
     if (chatLive.revealed >= target && !chatLive.open && chatLive.thinking === chatLive._renderedThinking) {
@@ -2206,7 +2204,7 @@ function renderChatComposer(session) {
     const ta = host.querySelector("textarea");
     const send = host.querySelector(".chat-send");
     if (ta) ta.placeholder = placeholder();
-    if (send) { send.disabled = busy; send.textContent = uploading ? "…" : "↑"; send.title=uploading?"Uploading attachments…":"send · Enter (Shift+Enter for a new line)"; } // a prompt line ends in enter
+    if (send) { send.disabled = busy; send.textContent = uploading || chatSending || chatTermSending ? "…" : "↑"; send.setAttribute("aria-label",uploading?"Uploading attachments":chatSending||chatTermSending?"Sending message":"Send message"); send.title=uploading?"Uploading attachments…":chatSending||chatTermSending?"Sending message…":"send · Enter (Shift+Enter for a new line)"; } // a prompt line ends in enter
     syncAttach();
     chatRenderDeliveryNotice(host,draftKey);
     chatRenderArtifactContext(session?.task,"chat:"+draftKey);
@@ -2301,8 +2299,9 @@ function renderChatComposer(session) {
     c.onclick = () => { chatRitual = key; syncAttach(); ta.focus(); };
     ritual.append(c);
   });
-  const send = el("button", "chat-send", uploading ? "…" : "↑");
-  send.title = uploading ? "Uploading attachments…" : "send · Enter (Shift+Enter for a new line)";
+  const send = el("button", "chat-send", uploading || chatSending || chatTermSending ? "…" : "↑");
+  send.setAttribute("aria-label", uploading?"Uploading attachments":chatSending||chatTermSending?"Sending message":"Send message");
+  send.title = uploading ? "Uploading attachments…" : chatSending||chatTermSending ? "Sending message…" : "send · Enter (Shift+Enter for a new line)";
   send.disabled = busy;
   const submit = async () => {
     const text = ta.value.trim();
@@ -2316,6 +2315,9 @@ function renderChatComposer(session) {
     const durable=!!chatRosterEntry(sendAgent)?.durableSend;
     chatSending = true;
     send.disabled = true;
+    send.textContent = "…";
+    send.setAttribute("aria-label", "Sending message");
+    send.title="Sending message…";
     // Keep the submitted draft visible until acceptance. Navigation or a lost
     // acknowledgement must not save an empty replacement on another device.
     const acceptedDraft=()=>{
@@ -3021,14 +3023,21 @@ function chatTermPaintTurns() {
   const o = chatTermOpen;
   if (!body || !o) return;
   const previousScroll=host?.scrollTop||0;
-  body.innerHTML = "";
   if(typeof chatWorkbenchActivityUpdate==="function")chatWorkbenchActivityUpdate(o.planningTimeline||o.turns,o.planningOperations||[],o.proposals||[]);
-  if(o.planningTimeline)chatPaintTurns(body,o.planningTimeline,null);
-  else chatTermPaintLines(body, o.turns);
-  for(const operation of o.planningOperations||[])body.append(manifestOperationCard(operation));
-  appendTaskApprovals(body,o);
+  if(o.planningTimeline) {
+    body.replaceChildren();chatPaintTurns(body,o.planningTimeline,null);
+    for(const operation of o.planningOperations||[])body.append(manifestOperationCard(operation));
+    appendTaskApprovals(body,o);
+  } else {
+    let rows=body.querySelector('.chat-native-rows'),extra=body.querySelector('.chat-native-extra');
+    if(!rows){body.replaceChildren();rows=el('div','chat-native-rows');extra=el('div','chat-native-extra');body.append(rows,extra);}
+    chatTermPaintLines(rows,o.turns);
+    const signature=JSON.stringify([o.planningOperations||[],o.proposals||[]]);
+    if(extra.dataset.signature!==signature){extra.replaceChildren();for(const operation of o.planningOperations||[])extra.append(manifestOperationCard(operation));appendTaskApprovals(extra,o);extra.dataset.signature=signature;}
+    body.querySelector('.chat-transcript-empty')?.remove();
+  }
   if (!(o.planningTimeline||o.turns).length) {
-    body.append(el("div", "chat-term-line chat-term-sys", o.se.launchPhase === "draft"
+    body.append(el("div", "chat-term-line chat-term-sys chat-transcript-empty", o.se.launchPhase === "draft"
       ? "Review your draft below. Sending starts the coding session."
       : o.se.kind === "codex"
       ? "No Codex transcript turns are available yet; check the live screen or open Terminal"
@@ -3068,11 +3077,13 @@ function chatTermSurface(on) {
 }
 
 function chatTermPaintLines(host, turns) {
-  turns.forEach((t) => {
-    if (t.who === "user") { const row=chatTermCmdLine(t);if(t.id)row.dataset.chatReadTurn=t.id;host.append(row); return; }
+  reconcileKeyedChildren(host,turns,(t,i)=>t.id||t.who+':'+i,
+    t=>JSON.stringify([chatTermOpen?.id,t,chatTermOpen?.planRevisions?.[t.id]||null]),chatTermTurnEl);
+}
+function chatTermTurnEl(t) {
+    if (t.who === "user") { const row=chatTermCmdLine(t);if(t.id)row.dataset.chatReadTurn=t.id;return row; }
     if (t.who === "system") {
-      const row=el("div", "chat-term-line chat-term-sys", t.text || "");if(t.id)row.dataset.chatReadTurn=t.id;host.append(row);
-      return;
+      const row=el("div", "chat-term-line chat-term-sys", t.text || "");if(t.id)row.dataset.chatReadTurn=t.id;return row;
     }
     const out = el("div", "chat-term-out");
     if(t.id)out.dataset.chatReadTurn=t.id;
@@ -3092,8 +3103,7 @@ function chatTermPaintLines(host, turns) {
     if(typeof chatCopyResponseControl==='function'){const copy=chatCopyResponseControl(blocks);if(copy)footer.append(copy);}
     if(meta.length)footer.append(el('span','chat-term-meta',meta.join(' · ')));
     if(footer.childElementCount)out.append(footer);
-    host.append(out);
-  });
+    return out;
 }
 
 // chatTermCmdLine — what you sent, as the command it was: `❯ text`, the time
@@ -3251,14 +3261,22 @@ async function chatTermTick() {
   chatTermTailing = true;
   try {
     await chatTermTail(o);
-    const key=chatDraftKey;
-    await chatLoadDeliveryRecovery(key);
-    const host=document.getElementById("chatComposer");
-    if(chatDraftKey===key&&host)chatRenderDeliveryNotice(host,key);
+    chatPollDeliveryRecovery();
   } finally {
     chatTermTailing = false;
     if (o.finalTailPending) { o.finalTailPending = false; chatTermRequestFinalTail(o); }
   }
+}
+
+const chatDeliveryPolls = new Map();
+function chatPollDeliveryRecovery() {
+  const key=chatDraftKey;
+  if(chatDeliveryPolls.has(key))return;
+  const job=chatLoadDeliveryRecovery(key).then(()=>{
+    const host=document.getElementById('chatComposer');
+    if(chatDraftKey===key&&host)chatRenderDeliveryNotice(host,key);
+  }).catch(()=>{}).finally(()=>chatDeliveryPolls.delete(key));
+  chatDeliveryPolls.set(key,job);
 }
 
 // Serialize the stop-triggered final read with any in-flight file tail. A stop
