@@ -54,7 +54,14 @@ func TestHerdrQueuedQuestionFollowup(t *testing.T) {
 					t.Error("unexpected method", r.Method)
 				}
 			})
-			err := h.SendText(context.Background(), herdrFixtureID(t, h), "one\nfollow-up")
+			s := &Server{terminal: &termCfg{herdr: h}}
+			id := herdrFixtureID(t, h)
+			readyErr := s.herdrPromptReady(context.Background(), termSession{Runtime: id, Backend: "herdr"})
+			wantReady := tc.kind == "codex" && tc.screen == ready
+			if (readyErr == nil) != wantReady {
+				t.Fatalf("readiness: %v", readyErr)
+			}
+			err := h.SendText(context.Background(), id, "one\nfollow-up")
 			if (err == nil) != tc.sent || (pastes.Load() == 1) != tc.sent || (enters.Load() == 1) != tc.sent {
 				t.Fatalf("error=%v pastes=%d enters=%d", err, pastes.Load(), enters.Load())
 			}

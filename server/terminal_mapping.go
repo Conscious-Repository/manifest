@@ -375,7 +375,7 @@ func (s *Server) herdrPromptReady(ctx context.Context, se termSession) error {
 		if why := termBlockingDialog(lines); why != "" {
 			return errors.New(why)
 		}
-		if ob.AgentState == "blocked" {
+		if ob.AgentState == "blocked" && !(ob.Kind == "codex" && codexQueuedQuestionComposer(lines)) {
 			return errors.New("agent needs interactive input; answer the pending questions or open Terminal for approvals; nothing sent")
 		}
 		if ob.AgentState != "unknown" {
