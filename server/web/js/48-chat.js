@@ -1780,7 +1780,10 @@ function chatAttachmentCard(f) {
 // message and a light preview per file instead (2026-09-12). Metadata is
 // fetched once per file per page-life (chatOwnedFileMetadata), so keyed
 // repaints and thread switches never re-ask.
-const chatAttachmentContextRe=/\n*<!-- manifest-chat-attachment-context -->[\s\S]*?<!-- \/manifest-chat-attachment-context -->\n*/g;
+// Claude Code re-wraps the block on its way into the transcript (the closing
+// marker arrives as "<!--\n/manifest-…"), so the markers match on any
+// whitespace, and a block that lost its closing marker is dropped to the end.
+const chatAttachmentContextRe=/\n*<!--\s*manifest-chat-attachment-context\s*-->[\s\S]*?(?:<!--\s*\/manifest-chat-attachment-context\s*-->|$)\n*/g;
 const chatOwnedFileMeta=new Map(); // id → Promise<meta | {removed:true}>
 function chatOwnedFileMetadata(id){
   if(!chatOwnedFileMeta.has(id))chatOwnedFileMeta.set(id,fetch('/api/chat/files/'+id+'?metadata=1').then(r=>{if(r.ok)return r.json();if(r.status===404)return {removed:true};throw Error(String(r.status));}).catch(()=>{chatOwnedFileMeta.delete(id);return null;}));

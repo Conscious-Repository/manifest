@@ -29,6 +29,10 @@ const sent='[Image #5]Small bug here where a message looks double sent\n[context
  assert.equal(split.text,'Small bug here where a message looks double sent');
  assert.equal(JSON.stringify(split.files.map(f=>f.id)),'["e81896adb9df2b7d33f54b26d2364b33"]');
  assert.equal(ctx.chatSplitUserMessage('[Image #1][Image #2] two pictures').text,'two pictures');
+ // Claude Code re-wraps the block: no path after the file line, the closing marker split over two lines
+ const claude='tweak the tab titles\n<!-- manifest-chat-attachment-context -->\nAttached reference files: inspect these files.\n- Screenshot 2026-09-12 at 12.49.39\u202fPM.png (35365 bytes):\n<!--\n/manifest-chat-attachment-context -->';
+ assert.equal(ctx.chatSplitUserMessage(claude).text,'tweak the tab titles','the re-wrapped block is stripped too');
+ assert.equal(ctx.chatSplitUserMessage('see this\n<!-- manifest-chat-attachment-context -->\nAttached reference files\n- a.png (1 bytes):').text,'see this','a block without its closing marker drops to the end');
  assert.equal(ctx.chatSplitUserMessage('plain text, no files').text,'plain text, no files');
  assert.equal(JSON.stringify(ctx.chatSplitUserMessage('see\n[file:: '+'a'.repeat(64)+' notes.pdf]').files),JSON.stringify([{hash:'a'.repeat(64),name:'notes.pdf'}]));
  // the native prompt line: previews lead, the text is clean, the time stays
