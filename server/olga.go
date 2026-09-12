@@ -13,6 +13,7 @@ import (
 	"manifest/daily"
 	"manifest/goals"
 	"manifest/record"
+	"manifest/sharedhome"
 	"manifest/tasks"
 	"manifest/vaultwriter"
 	"net/http"
@@ -122,8 +123,8 @@ func NewOlgaHandler(vaultRoot, passwordFile, auditDir string) (http.Handler, err
 		r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
 		mux.ServeHTTP(w, r)
 	})
-	key := make([]byte, 32)
-	if _, err := rand.Read(key); err != nil {
+	key, err := olgaSessionKey(passwordFile + ".session-key")
+	if err != nil {
 		return nil, err
 	}
 	var authMu sync.Mutex
@@ -159,7 +160,7 @@ func NewOlgaHandler(vaultRoot, passwordFile, auditDir string) (http.Handler, err
 			http.Redirect(w, r, "/", 303)
 			return
 		}
-		if r.URL.Path == "/login" && r.Method == "POST" {
+		if (r.URL.Path == "/login" || r.URL.Path == "/api/session") && r.Method == "POST" {
 			authMu.Lock()
 			defer authMu.Unlock()
 			if time.Now().Before(retryAt) {
@@ -175,12 +176,20 @@ func NewOlgaHandler(vaultRoot, passwordFile, auditDir string) (http.Handler, err
 				if failures >= 5 {
 					retryAt = time.Now().Add(30 * time.Second)
 				}
-				http.Redirect(w, r, "/?error=1", 303)
+				if r.URL.Path == "/api/session" {
+					http.Error(w, "Incorrect password. Try again.", http.StatusUnauthorized)
+				} else {
+					http.Redirect(w, r, "/?error=1", 303)
+				}
 				return
 			}
 			failures = 0
 			exp := strconv.FormatInt(time.Now().Add(30*24*time.Hour).Unix(), 10)
 			cookie(exp+"."+sign(exp), 30*24*3600)
+			if r.URL.Path == "/api/session" {
+				writeJSON(w, map[string]bool{"ok": true})
+				return
+			}
 			http.Redirect(w, r, "/", 303)
 			return
 		}
@@ -194,7 +203,7 @@ func NewOlgaHandler(vaultRoot, passwordFile, auditDir string) (http.Handler, err
 		}
 		if !valid {
 			if strings.HasPrefix(r.URL.Path, "/api/") {
-				http.Error(w, "Please sign in.", 401)
+				http.Error(w, "Your session expired. Keep a copy of your draft, then refresh and sign in again.", 401)
 				return
 			}
 			w.Header().Set("Content-Type", "text/html; charset=utf-8")
@@ -205,8 +214,53 @@ func NewOlgaHandler(vaultRoot, passwordFile, auditDir string) (http.Handler, err
 			fmt.Fprintf(w, olgaLogin, msg)
 			return
 		}
+		if r.URL.Path == "/api/session" && r.Method == "GET" {
+			writeJSON(w, map[string]bool{"ok": true})
+			return
+		}
 		gated.ServeHTTP(w, r)
 	}), nil
 }
 
-const olgaLogin = `<!doctype html><html><meta name="viewport" content="width=device-width,initial-scale=1"><title>Olga · Manifest</title><body style="margin:0;background:#ffffff;color:#2b2b2b;font:16px system-ui;min-height:100dvh;display:grid;place-items:center"><form action="/login" method="post" style="width:min(320px,85vw)"><p style="letter-spacing:.2em;color:#925b2e">◆ MANIFEST</p><h1 style="font-size:22px;font-weight:400">Welcome, Olga</h1><label for="password">Password</label><input id="password" name="password" type="password" autocomplete="current-password" required autofocus style="box-sizing:border-box;width:100%%;margin:12px 0;padding:12px;background:transparent;border:1px solid #b78856;color:inherit;border-radius:6px;font:inherit"><button style="padding:12px;width:100%%;cursor:pointer;background:#925b2e;color:white;border:1px solid #925b2e;border-radius:6px;font:inherit">Sign in</button><p role="alert">%s</p></form></body></html>`
+// The signing secret lives beside the password, outside the served vault.
+// Reuse across process restarts; changing the password still revokes cookies.
+func olgaSessionKey(path string) ([]byte, error) {
+	var key []byte
+	err := sharedhome.Locked(path, func() error {
+		existing, err := os.ReadFile(path)
+		if err == nil {
+			if len(existing) != 32 {
+				return fmt.Errorf("invalid Olga session key")
+			}
+			key = existing
+			return os.Chmod(path, 0600)
+		}
+		if !os.IsNotExist(err) {
+			return err
+		}
+		key = make([]byte, 32)
+		if _, err := rand.Read(key); err != nil {
+			return err
+		}
+		f, err := os.CreateTemp(filepath.Dir(path), ".olga-session-*")
+		if err != nil {
+			return err
+		}
+		defer os.Remove(f.Name())
+		if _, err = f.Write(key); err != nil {
+			f.Close()
+			return err
+		}
+		if err = f.Sync(); err != nil {
+			f.Close()
+			return err
+		}
+		if err = f.Close(); err != nil {
+			return err
+		}
+		return os.Rename(f.Name(), path)
+	})
+	return key, err
+}
+
+const olgaLogin = `<!doctype html><html><meta name="viewport" content="width=device-width,initial-scale=1"><title>Olga · Manifest</title><body style="margin:0;background:#ffffff;color:#2b2b2b;font:16px system-ui;min-height:100dvh;display:grid;place-items:center"><form action="/login" method="post" style="width:min(320px,85vw)"><p style="letter-spacing:.2em;color:#171717">◆ MANIFEST</p><h1 style="font-size:22px;font-weight:400">Welcome, Olga</h1><label for="password">Password</label><input id="password" name="password" type="password" autocomplete="current-password" required autofocus style="box-sizing:border-box;width:100%%;margin:12px 0;padding:12px;background:transparent;border:1px solid #d4d4d4;color:inherit;border-radius:6px;font:inherit"><button style="padding:12px;width:100%%;cursor:pointer;background:#171717;color:white;border:1px solid #171717;border-radius:6px;font:inherit">Sign in</button><p role="alert">%s</p></form></body></html>`

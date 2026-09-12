@@ -97,3 +97,10 @@
 .olga-add-actions .pill:disabled {opacity:.6;cursor:wait;}
 .olga-add-error {color:var(--danger);font-size:14px;overflow-wrap:anywhere;}
 @media(max-width:480px){.olga-add-actions .pill {flex:1;}}
+
+.olga-session-dialog {box-sizing:border-box;width:min(440px,calc(100vw - 32px));max-height:calc(100dvh - 32px);overflow:auto;padding:24px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--text);}
+.olga-session-dialog::backdrop {background:var(--scrim);}
+.olga-session-dialog h2 {font:500 20px var(--sans);margin:0 0 12px;}
+.olga-session-dialog .olga-detail-hint {margin-bottom:24px;}
+
+:root[data-olga-theme="default"] {--accent:#171717;--accent-soft:#a3a3a3;--blue:var(--accent);--blue-soft:var(--accent-soft);--border:var(--line);--panel:var(--bg);color-scheme:light;}

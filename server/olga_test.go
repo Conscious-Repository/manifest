@@ -114,3 +114,67 @@ func TestOlgaIsolationAndPlanner(t *testing.T) {
 		t.Fatal("missing password did not fail closed")
 	}
 }
+
+func TestOlgaSessionSurvivesRestart(t *testing.T) {
+	root, pw := t.TempDir(), filepath.Join(t.TempDir(), "password")
+	os.WriteFile(pw, []byte("test-password"), 0600)
+	start := func() http.Handler {
+		h, e := NewOlgaHandler(root, pw, t.TempDir())
+		if e != nil {
+			t.Fatal(e)
+		}
+		return h
+	}
+	request := func(h http.Handler, method, path, body string, c *http.Cookie) *httptest.ResponseRecorder {
+		r := httptest.NewRequest(method, path, strings.NewReader(body))
+		r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		if c != nil {
+			r.AddCookie(c)
+		}
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, r)
+		return w
+	}
+	h := start()
+	login := request(h, "POST", "/api/session", "password=test-password", nil)
+	if login.Code != 200 || len(login.Result().Cookies()) != 1 {
+		t.Fatal(login.Code, login.Body)
+	}
+	cookie := login.Result().Cookies()[0]
+	for i := 0; i < 2; i++ {
+		h = start()
+		if w := request(h, "GET", "/api/session", "", cookie); w.Code != 200 {
+			t.Fatal("restart revoked cookie", w.Code)
+		}
+	}
+	info, e := os.Stat(pw + ".session-key")
+	if e != nil || info.Mode().Perm() != 0600 {
+		t.Fatal("session key permissions", e)
+	}
+	if w := request(h, "POST", "/api/session", "password=wrong", nil); w.Code != 401 || len(w.Result().Cookies()) != 0 {
+		t.Fatal("wrong password accepted")
+	}
+	os.WriteFile(pw, []byte("rotated-password"), 0600)
+	if w := request(h, "GET", "/api/session", "", cookie); w.Code != 401 {
+		t.Fatal("rotation failed to revoke cookie")
+	}
+	// A rejected save must never reach the planner mutation handler.
+	r := httptest.NewRequest("POST", "/api/areas", strings.NewReader(`{"name":"must-not-exist"}`))
+	r.AddCookie(cookie)
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, r)
+	if w.Code != 401 {
+		t.Fatal(w.Code)
+	}
+	raw, _ := os.ReadFile(filepath.Join(root, "system/olga/goals.md"))
+	if strings.Contains(string(raw), "must-not-exist") {
+		t.Fatal("unauthenticated request mutated data")
+	}
+	login = request(h, "POST", "/api/session", "password=rotated-password", nil)
+	if login.Code != 200 {
+		t.Fatal(login.Body)
+	}
+	if w := request(start(), "GET", "/api/goals", "", login.Result().Cookies()[0]); w.Code != 200 {
+		t.Fatal("renewed session did not survive restart")
+	}
+}

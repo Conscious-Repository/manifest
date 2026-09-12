@@ -33,8 +33,8 @@ Keep `/private/olga` mode 0700 owned by benjamin, outside the synced vault.
 Run `python3 deploy/olga-password.py` on the laptop to set the password in
 `/private/olga/password` (0600) without putting it in shell history. A missing/empty password
 returns 503 and exposes no planner data. Password changes apply on the next
-request and invalidate all existing sessions. Sessions also expire on service
-restart, last at most 30 days, and use HttpOnly/SameSite cookies (Secure over
+request and invalidate all existing sessions. Sessions survive service
+restarts, last at most 30 days, and use HttpOnly/SameSite cookies (Secure over
 HTTPS). The public URL must use HTTPS. Five failed sign-ins trigger a 30-second
 cooldown. Request bodies are bounded and cross-origin writes rejected.
 
@@ -83,7 +83,7 @@ across dates, and daily completion reflected in Tasks.
 
 ## Shared Home and task details (2026-09-11)
 
-Olga keeps the white/ochre palette. TASKS offers List and Board (Open/Done),
+Olga uses a black-and-white light palette. TASKS offers List and Board (Open/Done),
 search, priority, descriptions, and timestamped human comments. The board uses
 same task records as the list; completion/reopening also works without dragging.
 
@@ -111,3 +111,13 @@ visible to both people rather than being swept into one person's private archive
 
 Validation: goals/tasks/sharedhome package tests, server integration tests,
 migration smoke test on a disposable vault, and Chrome desktop/mobile checks.
+
+
+## Session continuity
+
+The random signing key persists at `/private/olga/password.session-key` (0600),
+beside the password and outside the vault. Deployments reuse it; password changes
+still revoke sessions. `/api/session` supports in-place reauthentication. A 401
+opens a password dialog over the existing draft and retries the rejected request
+once after successful sign-in. Canceled/failed sign-in retains the original form.
+The first deployment of this fix requires one sign-in for old volatile cookies.

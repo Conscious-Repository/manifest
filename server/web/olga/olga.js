@@ -1,3 +1,34 @@
+// Reauthenticate in place: a rejected API request has not mutated anything,
+// so it can resume once after sign-in while the original form stays mounted.
+const olgaNativeFetch=window.fetch.bind(window);
+let olgaSessionPrompt=null;
+function olgaSignInAgain(){
+ if(olgaSessionPrompt)return olgaSessionPrompt;
+ olgaSessionPrompt=new Promise((resolve,reject)=>{
+  const dialog=el('dialog','olga-session-dialog');
+  const form=el('form','olga-task-details olga-task-add');
+  form.append(el('h2','','Sign in to continue'),el('p','olga-detail-hint','Your draft will stay here.'));
+  const label=el('label','olga-detail-field');const password=el('input');password.type='password';password.autocomplete='current-password';password.required=true;label.append(el('span','','Password'),password);
+  const error=el('p','olga-add-error');error.setAttribute('role','alert');
+  const actions=el('div','olga-add-actions');const cancel=el('button','pill light','Cancel');cancel.type='button';const submit=el('button','pill olga-primary','Sign in');submit.type='submit';actions.append(cancel,submit);form.append(label,error,actions);dialog.append(form);document.body.append(dialog);
+  const finish=success=>{dialog.close();dialog.remove();if(success)resolve();else reject(new Error('Sign in to save. Your draft is still here.'));};
+  cancel.onclick=()=>finish(false);dialog.addEventListener('cancel',event=>{event.preventDefault();finish(false);});
+  form.onsubmit=async event=>{event.preventDefault();submit.disabled=true;cancel.disabled=true;error.textContent='';
+   try{const response=await olgaNativeFetch('/api/session',{method:'POST',body:new URLSearchParams({password:password.value})});if(!response.ok)throw new Error(await response.text());password.value='';finish(true);}
+   catch(e){error.textContent=e.message;password.focus();}finally{submit.disabled=false;cancel.disabled=false;}
+  };
+  dialog.showModal();password.focus();
+ }).finally(()=>{olgaSessionPrompt=null;});
+ return olgaSessionPrompt;
+}
+window.fetch=async function(input,init){
+ const request=new Request(input,init),url=new URL(request.url);
+ if(url.origin!==location.origin||!url.pathname.startsWith('/api/')||url.pathname==='/api/session')return olgaNativeFetch(request);
+ const response=await olgaNativeFetch(request.clone());
+ if(response.status!==401)return response;
+ await olgaSignInAgain();
+ return olgaNativeFetch(request);
+};
 function attachWikilinkAutocomplete(){}
 function attachInlineLinks(){}
 // A small planner shell over the very same DAY, GOALS and TASKS components.
