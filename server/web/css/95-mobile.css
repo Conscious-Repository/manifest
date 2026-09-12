@@ -62,6 +62,9 @@
     border-right: 1px solid var(--base-30);
   }
   .app-shell.drawer-open .rail { transform: none; }
+  /* the drawer is fixed at top:0 and, as a home-screen app with a translucent
+     status bar, extends under the clock: keep the brand row below it */
+  .rail-head { padding-top: calc(var(--sp-6) + env(safe-area-inset-top)); }
   .app-shell.drawer-open .mf-scrim {
     display: block; position: fixed; inset: 0; z-index: 50;
     background: var(--scrim); touch-action: none;
@@ -86,7 +89,7 @@
   .app-shell.rail-collapsed .rail-foot .save-state { display: inline; }
   .app-shell.rail-collapsed .rail-group-label { display: block; }
   .app-shell.rail-collapsed .rail-raw { display: inline-block; }
-  .app-shell.rail-collapsed .rail-head { padding: var(--sp-6) var(--sp-6) var(--sp-6) var(--sp-6); flex-direction: row; gap: 0; justify-content: space-between; }
+  .app-shell.rail-collapsed .rail-head { padding: calc(var(--sp-6) + env(safe-area-inset-top)) var(--sp-6) var(--sp-6); flex-direction: row; gap: 0; justify-content: space-between; }
   .app-shell.rail-collapsed .rail-search { margin: 0 var(--sp-5) var(--sp-6); padding: var(--sp-3) var(--sp-4); justify-content: flex-start; }
   .app-shell.rail-collapsed .rail-item { justify-content: flex-start; padding: 0 var(--sp-7); }
   .app-shell.rail-collapsed .rail-group { padding-top: 0; border-top: none; }

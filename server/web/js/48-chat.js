@@ -506,10 +506,21 @@ let chatFitBound = false;
 function chatFitShell() {
   const shell = document.querySelector(".chat-shell");
   if (!shell || els.chatView.hidden) return;
-  const top = shell.getBoundingClientRect().top;
   const phone = window.mf && window.mf.phone();
-  const height = phone && window.visualViewport ? window.visualViewport.height : window.innerHeight;
+  const vv = window.visualViewport;
+  // iOS reveals a focused field by panning the visual viewport down inside the
+  // layout viewport (the document itself never scrolls here — the app shell
+  // is a fixed-height box). Fitting the shell to the visual height while that
+  // pan stands leaves the composer hanging mid-page with an empty band between
+  // it and the keyboard, so undo the pan first; then the shrunken shell ends
+  // exactly at the keyboard's top edge. Never fight a pinch-zoom pan.
+  if (phone && vv && vv.scale === 1 && (vv.offsetTop > 0 || window.scrollY > 0)) window.scrollTo(0, 0);
+  const transcript = shell.querySelector(".chat-transcript");
+  const atBottom = transcript && transcript.scrollHeight - transcript.scrollTop - transcript.clientHeight < 8;
+  const top = shell.getBoundingClientRect().top;
+  const height = phone && vv ? vv.height : window.innerHeight;
   shell.style.height = Math.max(phone ? 180 : 320, height - top - 14) + "px";
+  if (atBottom) transcript.scrollTop = transcript.scrollHeight; // keep the latest turn pinned above the keyboard
   document.querySelector("#chatComposer textarea")?._grow?.();
   if(typeof chatUpdateJump==="function")chatUpdateJump();
 }

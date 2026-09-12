@@ -44,9 +44,11 @@
     chatRail.addEventListener("click", (event) => {
       if (mqPhone.matches && event.target.closest(".chat-rail-row, .chat-rail-task, .chat-rail-new")) setOpen(false);
     });
-    window.visualViewport?.addEventListener("resize", () => {
-      if (mqPhone.matches && typeof chatFitShell === "function") chatFitShell();
-    });
+    // resize = the keyboard opening/closing; scroll = iOS panning the visual
+    // viewport to reveal the focused composer (chatFitShell undoes that pan)
+    const refit = () => { if (mqPhone.matches && typeof chatFitShell === "function") chatFitShell(); };
+    window.visualViewport?.addEventListener("resize", refit);
+    window.visualViewport?.addEventListener("scroll", refit);
   }
 
   // ---- scrim (shared by the drawer; the sheet has its own) ----
