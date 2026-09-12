@@ -95,6 +95,12 @@ function chatRouteSegments(h) {
 
 document.addEventListener("pointerdown",e=>{document.querySelectorAll(".chat-details[open],.chat-row-menu[open],.chat-filter-menu[open]").forEach(menu=>{if(!menu.contains(e.target))menu.open=false;});});
 document.addEventListener("keydown",e=>{if(e.key!=="Escape")return;document.querySelectorAll(".chat-details[open],.chat-row-menu[open],.chat-filter-menu[open]").forEach(menu=>{menu.open=false;menu.querySelector("summary")?.focus();});});
+// choosing an action inside the head ··· / rail ⋯ menu closes that menu.
+// Capture phase: the actions stop click propagation (rename, lifecycle), and
+// the menu must fall before Rename swaps the title for its input — on phones
+// the open popover covered the title, so the rename looked like a dead tap
+// (2026-09-12). Summaries (the nested "Conversation details") stay put.
+document.addEventListener("click",e=>{const action=e.target.closest?.("button,a");if(!action||action.disabled)return;const menu=action.closest(".chat-details[open],.chat-row-menu[open]");if(!menu||action.closest("summary")||action.closest("details")!==menu)return;menu.open=false;},true);
 
 // chatFocusKey / chatCaptureFocus / chatRestoreFocus — a live-state repaint
 // rebuilds a subtree (the thread head, the rail rows). Keyboard focus inside

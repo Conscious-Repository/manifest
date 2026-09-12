@@ -39,6 +39,8 @@ const slice=(src,start,end)=>{const s=src.indexOf(start);assert.ok(s>=0,'missing
    window.opened=0;window.chatEnsureWorkspace=()=>{window.opened++;};
   });
   await page.addScriptTag({content:slice(chat,'function chatFocusKey','\nconst chatDrafts')});
+  await page.addScriptTag({content:slice(chat,'document.addEventListener("click"','\n')});
+  await page.addScriptTag({content:slice(read('js/05-components.js'),'function inlineRename','\n}\n')+'\n}'});
   await page.addScriptTag({content:slice(workspace,'function chatWorkspaceIcon','\nfunction chatEnsureWorkspace')});
   await page.addScriptTag({content:slice(mic,'function micButton','\nasync function micToggle')});
   await page.addScriptTag({content:read('js/98-mobile.js')});
@@ -51,7 +53,8 @@ const slice=(src,start,end)=>{const s=src.indexOf(start);assert.ok(s>=0,'missing
    const head=el('div','sprt-head chat-head');head.append(el('span','sprt-title chat-head-title','claude'));
    head.append(el('button','sprt-quiet chat-terminal-view','Terminal'));
    const more=el('details','chat-details');more.append(el('summary','','More'),el('div','chat-head-meta','Claude Code · done'));
-   const acts=el('span','chat-head-acts');acts.append(el('button','sprt-quiet','Rename'));more.append(acts);head.append(more);
+   const ren=el('button','sprt-quiet','Rename');ren.onclick=e=>{e.stopPropagation();inlineRename(head.querySelector('.chat-head-title'),'claude',()=>{});};
+   const acts=el('span','chat-head-acts');acts.append(ren);more.append(acts);head.append(more);
    chatMountHeader(head);
   });
   const box=sel=>page.evaluate(sel=>{const e=document.querySelector(sel);if(!e)return null;const r=e.getBoundingClientRect();return getComputedStyle(e).display==='none'?null:{x:Math.round(r.x),y:Math.round(r.y),w:Math.round(r.width),h:Math.round(r.height)};},sel);
@@ -146,6 +149,22 @@ const slice=(src,start,end)=>{const s=src.indexOf(start);assert.ok(s>=0,'missing
   assert.equal(await entry.isVisible(),true,'··· lists Workspace');assert.equal(await entry.textContent(),'Workspace');
   assert.equal(await entry.getAttribute('aria-expanded'),'false');assert.ok((await entry.boundingBox()).height>=40);
   await entry.click();assert.equal(await page.evaluate(()=>window.opened),1,'the menu entry opens the workspace');
+  assert.equal(await page.evaluate(()=>document.querySelector('.chat-details').open),false,'choosing Workspace closes the ··· menu');
+
+  // 4. Rename from ··· closes the menu and leaves the rename input on top, focused
+  await page.locator('.chat-details > summary').click();assert.equal(await page.evaluate(()=>document.querySelector('.chat-details').open),true);
+  await page.locator('.chat-details .chat-head-acts button',{hasText:'Rename'}).click();
+  assert.equal(await page.evaluate(()=>document.querySelector('.chat-details').open),false,'Rename closes the ··· menu');
+  const rename=page.locator('.chat-head input.inline-rename');
+  assert.equal(await rename.isVisible(),true,'the title became a rename input');
+  assert.equal(await page.evaluate(()=>document.activeElement?.classList.contains('inline-rename')),true,'the rename input holds focus');
+  assert.equal(await page.evaluate(()=>{const r=document.querySelector('.chat-head input.inline-rename').getBoundingClientRect();return document.elementFromPoint(r.x+r.width/2,r.y+r.height/2)?.classList.contains('inline-rename');}),true,'nothing covers the rename input');
+  await page.keyboard.press('Escape');assert.equal(await page.locator('.chat-head-title').isVisible(),true,'Escape restores the title');
+  // the nested details summary inside the menu keeps the menu open
+  await page.evaluate(()=>{const more=document.querySelector('.chat-details');const info=el('details','chat-conversation-info');info.append(el('summary','','Conversation details'),el('p','','claude'));more.insertBefore(info,more.querySelector('.chat-head-acts'));});
+  await page.locator('.chat-details > summary').click();await page.locator('.chat-conversation-info > summary').click();
+  assert.equal(await page.evaluate(()=>[document.querySelector('.chat-details').open,document.querySelector('.chat-conversation-info').open]).then(v=>v.join()),'true,true','expanding Conversation details keeps ··· open');
+  await page.evaluate(()=>{document.querySelector('.chat-details').open=false;document.querySelector('.chat-conversation-info').remove();});
 
   // desktop: the head keeps its icon button, the menu entry stays out, the composer keeps its two-row anatomy
   await page.setViewportSize({width:1000,height:900});await mountHead();
@@ -167,6 +186,6 @@ const slice=(src,start,end)=>{const s=src.indexOf(start);assert.ok(s>=0,'missing
   assert.equal(await page.locator('.chat-shell > .mf-chat-toggle').isVisible(),false,'no fold toggle on desktop');
 
   assert.deepEqual(errors,[]);
-  console.log('PASS: phone composer stays one 50–58px row until the text wraps, then grows with it; quiet model label and neutral send with 44px targets; Back to chats in the head with Close chats hand-off; workspace opener behind ···; desktop head and composer unchanged at 861/1000/1280.');
+  console.log('PASS: phone composer stays one 50–58px row until the text wraps, then grows with it; quiet model label and neutral send with 44px targets; Back to chats in the head with Close chats hand-off; workspace opener behind ···, and choosing Rename/Workspace from ··· closes it with the rename input on top; desktop head and composer unchanged at 861/1000/1280.');
  }finally{await browser.close();}
 })().catch(e=>{console.error(e);process.exit(1);});
