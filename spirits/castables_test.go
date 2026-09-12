@@ -34,7 +34,7 @@ func castablesHarness(t *testing.T) string {
 }
 
 func TestCastables(t *testing.T) {
-	s := NewStore(castablesHarness(t))
+	s := NewStore(castablesHarness(t)).WithHarnessName("other")
 	got := s.Castables(time.Now())
 
 	var skills, rituals int
@@ -90,7 +90,7 @@ func TestValidSkillRef(t *testing.T) {
 
 func TestSpoolRunNowSkill(t *testing.T) {
 	harness := castablesHarness(t)
-	s := NewStore(harness)
+	s := NewStore(harness).WithHarnessName("other")
 	if err := s.SpoolRunNow("sage", "skill-cast", "I dreamt of a snake", "skills/jungian-dream-analysis"); err != nil {
 		t.Fatalf("SpoolRunNow: %v", err)
 	}

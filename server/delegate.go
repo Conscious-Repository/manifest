@@ -230,7 +230,7 @@ func (s *Server) delegationIndex() map[string]delegationView {
 func delegateTargetFor(h *Harness) (spirit, ritual string) {
 	if h.Spirits != nil {
 		for _, rit := range h.Spirits.Rituals(time.Now()) {
-			if rit.Cadence == "" && rit.Valid {
+			if rit.Cadence == "" && rit.Valid && !rit.Retired && spirits.RetirementReason(h.Name, rit.Spirit, rit.Ritual) == "" {
 				return rit.Spirit, rit.Ritual
 			}
 		}
@@ -894,7 +894,7 @@ func (s *Server) handleDelegateTargets(w http.ResponseWriter, r *http.Request) {
 		}
 		n := 0
 		for _, rit := range h.Spirits.Rituals(now) {
-			if rit.Cadence != "" || !rit.Valid {
+			if rit.Cadence != "" || !rit.Valid || rit.Retired || spirits.RetirementReason(h.Name, rit.Spirit, rit.Ritual) != "" {
 				continue // scheduled or broken — not a dispatch target
 			}
 			targets = append(targets, delegateTarget{

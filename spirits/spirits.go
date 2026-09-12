@@ -33,9 +33,10 @@ var ErrAlreadyActive = errors.New("a run for this spirit/ritual is already queue
 const heartbeatFresh = 90 * time.Second
 
 type Store struct {
-	root       string
-	skillsRoot string // <vault>/skills — explicit since the harness left the vault
-	Feed       *feed.Store
+	root        string
+	harnessName string
+	skillsRoot  string // <vault>/skills — explicit since the harness left the vault
+	Feed        *feed.Store
 }
 
 func NewStore(root string) *Store {
@@ -289,6 +290,9 @@ func (s *Store) SpoolRunNow(spirit, ritual, request, skill string) error {
 	if !validID(spirit) || !validID(ritual) {
 		return fmt.Errorf("bad spirit/ritual name")
 	}
+	if reason := s.RetirementReason(spirit, ritual); reason != "" {
+		return fmt.Errorf("%s", reason)
+	}
 	if skill != "" && !validSkillRef(skill) {
 		return fmt.Errorf("bad skill reference")
 	}
@@ -348,7 +352,10 @@ func (s *Store) Spirits() map[string][]string {
 		rits, _ := os.ReadDir(filepath.Join(s.root, "spirits", e.Name(), "rituals"))
 		for _, r := range rits {
 			if !r.IsDir() && strings.HasSuffix(r.Name(), ".md") {
-				rituals = append(rituals, strings.TrimSuffix(r.Name(), ".md"))
+				name := strings.TrimSuffix(r.Name(), ".md")
+				if s.RetirementReason(e.Name(), name) == "" {
+					rituals = append(rituals, name)
+				}
 			}
 		}
 		out[e.Name()] = rituals

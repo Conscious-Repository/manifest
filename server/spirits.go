@@ -720,6 +720,11 @@ func (s *Server) handleSpiritsRunNow(w http.ResponseWriter, r *http.Request) {
 		httpError(w, err)
 		return
 	}
+	if reason := s.spirits.RetirementReason(b.Spirit, b.Ritual); reason != "" {
+		w.WriteHeader(http.StatusConflict)
+		writeJSON(w, map[string]any{"retired": true, "error": reason})
+		return
+	}
 	if err := s.spirits.SpoolRunNow(b.Spirit, b.Ritual, b.Request, b.Skill); err != nil {
 		if errors.Is(err, spirits.ErrAlreadyActive) {
 			w.WriteHeader(http.StatusConflict) // the ritual is already queued/running

@@ -34,7 +34,11 @@ const maxCastableDesc = 240
 // omitted from the ritual list — it is meant to carry a skill, not run bare.
 func (s *Store) Castables(now time.Time) []Castable {
 	out := []Castable{}
-	for _, sk := range s.vaultSkills() {
+	var skills []vaultSkill
+	if s.RetirementReason("sage", "skill-cast") == "" {
+		skills = s.vaultSkills()
+	}
+	for _, sk := range skills {
 		out = append(out, Castable{
 			Kind: "skill", Label: sk.label, Description: sk.desc,
 			Spirit: "sage", Ritual: "skill-cast", Skill: "skills/" + sk.dir,

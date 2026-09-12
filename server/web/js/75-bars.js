@@ -236,7 +236,15 @@ async function castSubmit() {
     });
   } catch (e) { els.castbarArgHint.textContent = "spool failed"; els.castbarCast.disabled = false; return; }
   els.castbarCast.disabled = false;
-  if (res.status === 409) { els.castbarArgHint.textContent = "already running — jumping to its live row"; }
+  if (res.status === 409) {
+    const refusal = await res.json().catch(() => ({}));
+    if (refusal.retired) {
+      els.castbarArgHint.textContent = refusal.error;
+      showToast(refusal.error, () => { location.hash = "#/agents/ritual/" + encodeURIComponent(body.spirit) + "/" + encodeURIComponent(body.ritual); }, "error");
+      return;
+    }
+    els.castbarArgHint.textContent = "already running — jumping to its live row";
+  }
   else if (!res.ok) { els.castbarArgHint.textContent = "spool failed — is the engine configured?"; return; }
   closeCastbar();
   // Jump to the runs board; the file-derived live poll picks it up (no watcher).

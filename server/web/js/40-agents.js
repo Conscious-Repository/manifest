@@ -352,6 +352,11 @@ async function spiritSpool(spirit, ritual, request, opts) {
   try { r = await fetch("/api/spirits/run-now", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ spirit, ritual, request: request || "" }) }); }
   catch (e) { showToast("Run request failed: " + (e.message || e), null, "error"); return; }
   if (r.status === 409) {
+    const refusal = await r.json().catch(() => ({}));
+    if (refusal.retired) {
+      showToast(refusal.error, () => { location.hash = "#/agents/ritual/" + encodeURIComponent(spirit) + "/" + encodeURIComponent(ritual); }, "error");
+      return;
+    }
     showToast(`${spirit}/${ritual} is already running — view`, () => { location.hash = "#/agents/runs"; }, "info");
     if (!stay) location.hash = "#/agents/runs";
     return;

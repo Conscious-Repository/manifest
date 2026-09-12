@@ -31,6 +31,11 @@ type Harness struct {
 // UseHarnesses wires the federation (primary first). It also sets the legacy
 // single-store fields to the primary, so every primary-only path is untouched.
 func (s *Server) UseHarnesses(list []Harness) {
+	for _, h := range list {
+		if h.Spirits != nil {
+			h.Spirits.WithHarnessName(h.Name)
+		}
+	}
 	s.harnessList = list
 	if len(list) > 0 {
 		s.spirits = list[0].Spirits

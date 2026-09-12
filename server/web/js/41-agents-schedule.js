@@ -108,6 +108,7 @@ function ritualRuns(r) {
 // silent   the three newest runs all completed with itemsWritten 0
 // Both late and silent are --warn, never --danger.
 function ritualHealth(r, runs) {
+  if (r.retired) return { state: "paused", why: r.retirementReason };
   const observed = r.observation;
   if (observed && ["late", "failed", "paused", "stopped", "unknown", "unconfigured"].includes(observed.health)) return { state: observed.health, why: observed.why || observed.lastError || "" };
   if (!r.valid) return { state: "invalid", why: r.error || "invalid frontmatter" };
@@ -411,7 +412,7 @@ function ritualRow(r) {
   const cad = el("span", "ritual-cadence");
   if (paused) {
     cad.append(el("span", "cad-human", "paused" + (r.cadenceHuman && r.cadence ? " · " + r.cadenceHuman : "")));
-    cad.append(el("span", "cad-raw", r.cadence || internalNote(r)));
+    cad.append(el("span", "cad-raw", r.cadence || (r.retired ? "retired" : internalNote(r))));
   } else if (!r.cadence) {
     cad.append(el("span", "cad-human", "on demand"));
     cad.append(el("span", "cad-raw", internalNote(r)));
@@ -466,10 +467,12 @@ function ritualRow(r) {
   // actions — run now (the spool), pause / resume (enabled: line surgery)
   const acts = el("span", "ritual-acts");
   const run = el("button", "sprt-quiet", "run now");
-  run.title = "spool a run — the engine picks it up within ~5s";
+  run.disabled = !!r.retired;
+  run.textContent = r.retired ? "retired" : "run now";
+  run.title = r.retirementReason || "spool a run — the engine picks it up within ~5s";
   run.onclick = (e) => { e.stopPropagation(); spiritSpool(r.spirit, r.ritual, "", { stay: true }); };
   acts.append(run);
-  if (r.cadence || paused) {
+  if (!r.retired && (r.cadence || paused)) {
     const tog = el("button", "sprt-quiet", paused ? "resume" : "pause");
     tog.title = paused ? "delete the enabled: false line — the engine reschedules it"
       : "write enabled: false — the engine unschedules it; run now stays a manual override";
@@ -511,6 +514,7 @@ function outcomeStrip(runs) {
 // (canonical), so resume DELETES the line (and any paused_reason) rather than
 // writing true.
 async function setRitualEnabled(r, enabled) {
+  if (r.retired) { showToast(r.retirementReason, null, "error"); return; }
   setSaveState("saving");
   try {
     const raw = (await (await fetch("/api/spirits/file?path=" + encodeURIComponent(r.path))).json()).content || "";
@@ -894,9 +898,12 @@ async function renderRitualEditor(path) {
   let raw = "";
   try { raw = (await (await fetch("/api/spirits/file?path=" + encodeURIComponent(path))).json()).content || ""; }
   catch (e) { host.innerHTML = ""; host.append(emptyRow("Couldn't load " + path)); return; }
+  const rows = await fetchSpiritRituals();
+  const retirement = rows.find((r) => r.path === path && r.retired);
   const record = parseRitualRecord(raw);
   const cad = cadParse(record.cadence);
   ritEd = {
+    retirement,
     path,
     spirit: spSpirit,
     name: path.split("/").pop().replace(/\.md$/, ""),
@@ -942,6 +949,11 @@ function paintRitualEditor(host) {
       location.hash = "#/agents";
     } catch (e) { showToast("Couldn't delete: " + (e.message || e), null, "error"); }
   });
+  if (ritEd.retirement) {
+    pause.disabled = true; run.disabled = true; pause.textContent = "retired";
+    pause.title = run.title = ritEd.retirement.retirementReason;
+    host.append(el("div", "ritual-note", ritEd.retirement.retirementReason));
+  }
   acts.append(pause, run, rawT, del);
   head.append(acts);
   host.append(head);

@@ -44,11 +44,12 @@ type RitualRow struct {
 	LastRunID      string            `json:"lastRunId"`
 	Valid          bool              `json:"valid"`
 	Error          string            `json:"error"`
-	Enabled        bool              `json:"enabled"` // false = paused (unscheduled; run-now still allowed)
-	// PausedReason is the ritual file's optional `paused_reason:` line — the one
-	// line the SCHEDULE board's Paused group shows beside a paused row. A
-	// projection of the file, never stored anywhere else.
-	PausedReason string `json:"pausedReason,omitempty"`
+	Enabled        bool              `json:"enabled"` // false = paused (manual override allowed unless retired)
+	// Retirement is a code policy; ordinary pauses come from markdown.
+	// PausedReason projects paused_reason, or the retirement policy when retired.
+	Retired          bool   `json:"retired"`
+	RetirementReason string `json:"retirementReason,omitempty"`
+	PausedReason     string `json:"pausedReason,omitempty"`
 }
 
 // Rituals builds the board: every ritual across all spirits, joined with the
@@ -137,9 +138,15 @@ func (s *Store) ritualRow(spirit, rdir, file string, def float64, now time.Time,
 		row.Valid, row.Error = false, e
 	}
 
+	row.RetirementReason = s.RetirementReason(spirit, stem)
+	row.Retired = row.RetirementReason != ""
 	row.Enabled = ritualEnabled(fm)
 	if !row.Enabled {
 		row.PausedReason = strings.TrimSpace(fm["paused_reason"])
+	}
+	if row.Retired {
+		row.Enabled = false
+		row.PausedReason = row.RetirementReason
 	}
 	switch {
 	case row.Cadence == "":
@@ -194,6 +201,14 @@ func (s *Store) WriteFile(rel, content string) (res LintResult, allowed bool, er
 	clean, ok := allowedEditPath(rel)
 	if !ok {
 		return LintResult{}, false, nil
+	}
+	parts := strings.Split(clean, "/")
+	if len(parts) == 4 && parts[2] == "rituals" {
+		reason := s.RetirementReason(parts[1], strings.TrimSuffix(parts[3], ".md"))
+		fm, _ := mdfm.Split(content)
+		if reason != "" && ritualEnabled(fm) {
+			return LintResult{OK: false, Errors: []string{reason}}, true, nil
+		}
 	}
 	errs, warns := s.lintFile(clean, content)
 	if len(errs) > 0 {
