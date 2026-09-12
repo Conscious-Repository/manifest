@@ -262,6 +262,84 @@ function chatTermWake(){
  if(chatTermOpen&&chatIsTerm()&&els.chatView&&!els.chatView.hidden)chatTermTick();
 }
 window.addEventListener("pagehide",()=>{chatSaveDraft();for(const state of chatSyncedDrafts.values())if(state.dirty)state.flush();});
+// ---- the stage cache: the last payload painted for each thread ----
+// Moving between threads used to leave the previous transcript on stage
+// through three round trips (roster → lists → thread) and then swap it out
+// in one frame. Now the stage turns over synchronously in showChat: a thread
+// seen earlier this page-life repaints from memory, an unseen one clears to
+// an empty stage under a provisional head (title from the list row), and the
+// thread's own fetch starts alongside the list refresh instead of behind it.
+// When the fresh payload matches what is on stage, nothing repaints. (2026-09-12)
+const chatStageCache = new Map(); // "section/id" → {kind:"agent", d} | {kind:"term", o}
+const chatStageCacheMax = 40;
+function chatStageKey(section, id) { return (section || "spirits") + "/" + id; }
+function chatStageRemember(key, entry) {
+  chatStageCache.delete(key); chatStageCache.set(key, entry);
+  while (chatStageCache.size > chatStageCacheMax) chatStageCache.delete(chatStageCache.keys().next().value);
+}
+// the parts of an open terminal thread the transcript paint depends on
+function chatTermSignature(o) {
+  return JSON.stringify([o.turns, o.offset, o.title, o.cost, o.planningTimeline || null, o.planningOperations || [], o.planRevisions || {}, o.proposals || [], o.questions || [], o.related || [], o.sharedConversation || null, o.planningRecipients || [], o.codingRecipients || [], o.conversation?.key || ""]);
+}
+// the rail's open marker moves with the route, ahead of the list refresh
+function chatRailMarkOpen() {
+  const key = chatOpenId ? chatInboxKey({ terminal: chatIsTerm(), agent: chatAgent, session: { id: chatOpenId } }) : "";
+  document.querySelectorAll("#chatInboxRows .chat-rail-row").forEach((row) => row.classList.toggle("open", !!key && row.dataset.inboxKey === key));
+}
+// chatStagePrime — the synchronous turnover for the thread the route names.
+// Returns true when a cached paint is on stage.
+function chatStagePrime() {
+  const host = document.getElementById("chatTranscript");
+  if (!host || !chatOpenId) return false;
+  const main = document.querySelector(".chat-main");
+  const term = chatIsTerm();
+  const cached = chatStageCache.get(chatStageKey(chatAgent, chatOpenId));
+  if (typeof finishChatLive === "function") finishChatLive(); // a streaming reply never types into another thread's stage
+  if (cached && cached.kind === "term" && term && chatTermFind(chatOpenId)) {
+    chatTermLeave();
+    const o = cached.o;
+    o.se = chatTermApplyState(chatTermFind(chatOpenId));
+    if (o.se.backend === "herdr") o.live = !!o.se.live;
+    chatTermOpen = o;
+    if (main) main.classList.remove("landing");
+    chatTermSurface(true);
+    renderChatTermTranscript();
+    renderChatComposer(chatTermComposerSession());
+    chatRailMarkOpen();
+    return true;
+  }
+  if (cached && cached.kind === "agent" && !term) {
+    if (main) main.classList.remove("landing");
+    renderChatTranscript(cached.d);
+    renderChatComposer(cached.d.session);
+    chatRailMarkOpen();
+    return true;
+  }
+  // nothing cached: an empty stage under the thread's provisional head —
+  // never the previous thread's turns
+  chatTermLeave();
+  host.innerHTML = "";
+  host.dataset.readKey = "";
+  chatCurSession = null;
+  chatLastUpdated = "";
+  if (main) main.classList.remove("landing");
+  chatTermSurface(term);
+  let head = null;
+  try {
+    if (term) {
+      const se = chatTermFind(chatOpenId);
+      if (se) head = chatTermHead({ id: chatOpenId, se: chatTermApplyState(se), turns: [], offset: 0, title: se.name || "", cost: 0, live: !!se.live, screen: [], screenSig: "", planningRecipients: [], codingRecipients: [], related: [] });
+    } else {
+      const row = chatCurrentSessions().find((x) => x.id === chatOpenId);
+      if (row) head = chatHead(row);
+    }
+  } catch (e) { head = null; }
+  chatMountHeader(head);
+  renderChatComposer(term ? chatTermComposerSession() : undefined);
+  chatRailMarkOpen();
+  return false;
+}
+
 function showChat(h) {
   chatCloseTerminalDock();
   chatCloseWorkspace();
@@ -309,6 +387,12 @@ function showChat(h) {
   } else if (head === "spirits" || head === "new") { chatAgent = ""; chatOpenId = ""; chatLanding = true; }
   else if (head) { chatAgent = ""; chatOpenId = seg.join("/"); chatLanding = false; }
   else { restore = true; chatOpenId = ""; chatLanding = false; }
+  // the stage turns over now (cached paint or an empty stage under the
+  // thread's head), and when the section's list already names the thread
+  // its fetch starts alongside the roster/list refresh instead of behind it
+  if (chatOpenId && !restore) chatStagePrime();
+  const eager = !!chatOpenId && !restore && chatRoster.length > 0 && (!chatIsTerm() || !!chatTermFind(chatOpenId));
+  if (eager) loadChatSession(chatOpenId);
   renderChatHeadActions();
   loadChatRoster().then(async () => {
     if (routeVersion !== chatRouteVersion || els.chatView.hidden) return;
@@ -337,8 +421,8 @@ function showChat(h) {
     }
     chatRemember(chatAgent || "spirits", chatOpenId || undefined);
     renderChatRail();
-    renderChatComposer();
-    if (chatOpenId) loadChatSession(chatOpenId);
+    if (!eager) renderChatComposer(); // the eager path's composer already stands for the thread
+    if (chatOpenId) { if (!eager) loadChatSession(chatOpenId); }
     else renderChatLanding();
   });
   requestAnimationFrame(chatFitShell);
@@ -1392,6 +1476,7 @@ async function loadChatSession(id) {
     const res = await fetch(base + "/" + encodeURIComponent(id));
     if (id !== chatOpenId || base !== chatBase() || els.chatView.hidden) return;
     if (!res.ok) {
+      chatStageCache.delete(chatStageKey(agent, id));
       renderChatEmpty(res.status === 404
         ? "that conversation is no longer here — it may have been deleted or archived"
         : "that conversation didn't load (" + res.status + ")");
@@ -1411,16 +1496,23 @@ async function loadChatSession(id) {
     try{const r=await fetch("/api/artifacts/get?id="+encodeURIComponent(originRef.id));if(r.ok){const a=await r.json();originSelection.title=a.title||"Artifact";originSelection.version=a.revisions.find(v=>v.hash===originRef.revision)?.n||"?";}}catch(e){}
   }
   if (id !== chatOpenId || base !== chatBase() || els.chatView.hidden) return;
-  await chatPrepareDraft(d.conversation,(agent||"spirits")+"/"+id,d.session.origin&&d.session.turns===0?{text:d.session.origin.prompt||"",files:[],task:d.session.origin.task||"",selection:originSelection}:null);
-  await chatPrepareReadingPosition(d.conversation);
+  await Promise.all([
+    chatPrepareDraft(d.conversation,(agent||"spirits")+"/"+id,d.session.origin&&d.session.turns===0?{text:d.session.origin.prompt||"",files:[],task:d.session.origin.task||"",selection:originSelection}:null),
+    chatPrepareReadingPosition(d.conversation),
+  ]);
   if (id !== chatOpenId || base !== chatBase()) return;
   const main = document.querySelector(".chat-main");
   if (main) main.classList.remove("landing");
   chatRemember(chatAgent || "spirits", id);
   const taskContext=chatConversationTasks.get("chat:"+chatAgent+"/"+id);
   if(taskContext)d.session.task=taskContext;
-  renderChatTranscript(d);
-  renderChatComposer(d.session);
+  chatStageRemember(chatStageKey(agent, id), { kind: "agent", d });
+  // the stage already shows this thread from the cache and nothing moved:
+  // leave the paint (and the reader's scroll) alone
+  const host = document.getElementById("chatTranscript");
+  const onStage = !!chatCurSession && chatCurSession.id === id && !!host && host.dataset.readKey === (d.conversation?.key || "") && chatLastUpdated === chatTranscriptSignature(d);
+  if (!onStage) renderChatTranscript(d);
+  renderChatComposer(onStage ? chatCurSession : d.session);
   if(chatPendingWorkspace?.selectionKey === "chat:"+chatAgent+"/"+id){
     const spec=chatPendingWorkspace;chatPendingWorkspace=null;chatOpenWorkingArtifact(spec);
   }
@@ -2709,8 +2801,10 @@ async function loadChatTermSession(id) {
     try{const r=await fetch("/api/artifacts/get?id="+encodeURIComponent(ref.id));if(r.ok){const a=await r.json();selection.title=a.title||"Artifact";selection.version=a.revisions.find(v=>v.hash===ref.revision)?.n||"?";}}catch(e){}
   }
   if (id !== chatOpenId || !chatIsTerm()) return;
-  await chatPrepareDraft(d.conversation,chatAgent+"/"+id,d.draft&&d.origin?{text:d.origin.prompt||"",files:[],task:d.origin.task||"",selection}:null);
-  await chatPrepareReadingPosition(d.conversation);
+  await Promise.all([
+    chatPrepareDraft(d.conversation,chatAgent+"/"+id,d.draft&&d.origin?{text:d.origin.prompt||"",files:[],task:d.origin.task||"",selection}:null),
+    chatPrepareReadingPosition(d.conversation),
+  ]);
   if (id !== chatOpenId || !chatIsTerm()) return;
   se = chatTermApplyState(chatTermFind(id) || se);
   se.run=d.run||null;se.activityOffset=d.offset||0;
@@ -2722,7 +2816,7 @@ async function loadChatTermSession(id) {
   if (main) main.classList.remove("landing");
   chatTermSurface(true);
   chatRemember(chatAgent, id);
-  chatTermOpen = {
+  const next = {
     conversation:d.conversation,
     sharedConversation:d.sharedConversation,
     planningTimeline:d.planningTimeline,
@@ -2736,7 +2830,20 @@ async function loadChatTermSession(id) {
     id, se, turns: d.turns || [], offset: d.offset || 0, title: d.title || "", cost: d.cost || 0,
     live: se.backend === "herdr" ? !!chatTermApplyState(se).live : !!d.live, screen: [], screenSig: "",
   };
-  renderChatTermTranscript();
+  // the stage already shows this thread from the cache and nothing moved:
+  // keep the painted object (its tail keeps it current) and refresh only
+  // the row-bound state
+  const onStage = !!chatTermOpen && chatTermOpen.id === id && !!document.getElementById("chatTermTurns") && chatTermSignature(chatTermOpen) === chatTermSignature(next);
+  if (onStage) {
+    const o = chatTermOpen;
+    o.se = se; o.live = next.live;
+    chatTermRepaintHead();
+    chatTermPaintStrip();
+  } else {
+    chatTermOpen = next;
+    renderChatTermTranscript();
+  }
+  chatStageRemember(chatStageKey(chatAgent, id), { kind: "term", o: chatTermOpen });
   renderChatComposer(chatTermComposerSession());
   // the CLI's own title names a row still wearing its minted placeholder
   // (the autoName path — an owner-typed name is never overwritten)

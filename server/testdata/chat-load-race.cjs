@@ -4,6 +4,7 @@ let release,requested;
 const pending=new Promise(r=>release=r),started=new Promise(r=>requested=r),drafts=[];
 const ctx=vm.createContext({chatIsTerm:()=>false,chatAgent:'alfred',chatOpenId:'source',chatBase:()=>'/chat/'+ctx.chatAgent,
  els:{chatView:{hidden:false}},chatPrepareDraft:async(...args)=>drafts.push(args),chatPrepareReadingPosition:async()=>{},
+ chatCurSession:null,chatLastUpdated:'',chatStageRemember(){},chatStageKey:()=>'',chatStageCache:new Map(),
  fetch:async url=>{
   if(url.startsWith('/api/artifacts/')){requested();await pending;return {ok:true,json:async()=>({title:'Plan',revisions:[]})};}
   return {ok:true,json:async()=>({conversation:{key:'original'},session:{turns:0,origin:{task:'task',prompt:'private handoff',artifacts:[{id:'plan',revision:'v1'}]}}})};
@@ -17,7 +18,7 @@ vm.runInContext(source.slice(source.indexOf('async function loadChatSession(id)'
  let polled=0;
  Object.assign(ctx,{chatAgent:'alfred',chatOpenId:'source',
   fetch:async()=>({ok:true,json:async()=>({conversation:{key:'original'},session:{id:'source',status:'idle'},proposals:[]})}),
-  document:{querySelector:()=>null},chatRemember(){},chatConversationTasks:new Map(),
+  document:{querySelector:()=>null,getElementById:()=>null},chatRemember(){},chatConversationTasks:new Map(),
   renderChatTranscript(){},renderChatComposer(){},chatPendingWorkspace:null,ensureChatStream(){},
   ensureChatPoll:(session,queued)=>{assert.equal(session.status,'idle');assert.equal(queued,0);polled++;}});
  await ctx.loadChatSession('source');assert.equal(polled,1,'idle chat did not observe approvals');
