@@ -639,7 +639,17 @@
 
   /* Shared form text remains legible on narrow screens. */
   input.pp-in, select.pp-in, textarea.pp-in, .tdo-p-textarea, .contact-search, #todosSearch { font-size: var(--fs-xl); max-width: 100%; }
-  .crumb-datenav .pill.arrow { min-width: var(--touch); min-height: var(--touch); }
+  /* One balanced date control: equal touch targets, centered glyphs and label. */
+  .crumb-datenav { gap: 4px; flex-shrink: 0; }
+  .crumb-datenav .pill {
+    box-sizing: border-box; height: 44px; min-height: 44px;
+    justify-content: center; line-height: 1; padding: 0 12px;
+  }
+  .crumb-datenav .pill.arrow {
+    width: 44px; min-width: 44px; padding: 0; flex: 0 0 44px;
+    font-size: 20px;
+  }
+  .crumb-datenav #dateLabel { min-width: 76px; font-size: 12px; }
   .view-tab { min-height: var(--touch-sm); display: inline-flex; align-items: center; }
   .rec-seg { display: flex; flex-wrap: wrap; max-width: 100%; }
   .rec-seg-btn { min-height: var(--touch-sm); }
