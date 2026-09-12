@@ -1763,36 +1763,58 @@ function chatAttachmentCard(f) {
   const card=el('span','chat-attachment-card');
   const href=f.owned?'/api/chat/files/'+f.id:chatFileHref(f.hash);
   const open=el('button','chat-attachment-open');open.type='button';open.title=f.name;open.setAttribute('aria-label','Open '+f.name);
-  if(/\.(png|jpe?g|webp|gif)$/i.test(f.name)) {const img=document.createElement('img');img.src=href;img.alt=f.name;img.loading='lazy';open.append(img);}
+  if(f.removed){open.append(el('span','chat-attachment-name',f.name),el('span','chat-attachment-size','File removed'));open.disabled=true;card.append(open);return card;}
+  if((f.type||'').startsWith('image/')||/\.(png|jpe?g|webp|gif)$/i.test(f.name)) {const img=document.createElement('img');img.src=href;img.alt=f.name;img.loading='lazy';img.decoding='async';open.append(img);}
+  else if(f.owned&&!f.type)open.append(el('span','chat-attachment-kind','…')); // metadata still on its way
   else open.append(el('span','chat-attachment-kind',f.name.split('.').pop().slice(0,5).toUpperCase()));
   open.append(el('span','chat-attachment-name',f.name));
   if(f.size)open.append(el('span','chat-attachment-size',f.size<1048576?Math.ceil(f.size/1024)+' KB':(f.size/1048576).toFixed(1)+' MB'));
   open.onclick=()=>chatOpenAttachment(f,href);card.append(open);
-  if(f.owned)fetch(href+'?metadata=1').then(r=>{if(r.status===404&&card.isConnected){open.replaceChildren(el('span','chat-attachment-name',f.name),el('span','chat-attachment-size','File removed'));open.disabled=true;}}).catch(()=>{});
   return card;
+}
+
+// ---- attachments in a user turn ----
+// What the model reads stays in the message: the [context-file::] tokens, the
+// server's <!-- manifest-chat-attachment-context --> block naming each file's
+// path, and the CLI's own "[Image #3]" paste marker. The reader sees the
+// message and a light preview per file instead (2026-09-12). Metadata is
+// fetched once per file per page-life (chatOwnedFileMetadata), so keyed
+// repaints and thread switches never re-ask.
+const chatAttachmentContextRe=/\n*<!-- manifest-chat-attachment-context -->[\s\S]*?<!-- \/manifest-chat-attachment-context -->\n*/g;
+const chatOwnedFileMeta=new Map(); // id → Promise<meta | {removed:true}>
+function chatOwnedFileMetadata(id){
+  if(!chatOwnedFileMeta.has(id))chatOwnedFileMeta.set(id,fetch('/api/chat/files/'+id+'?metadata=1').then(r=>{if(r.ok)return r.json();if(r.status===404)return {removed:true};throw Error(String(r.status));}).catch(()=>{chatOwnedFileMeta.delete(id);return null;}));
+  return chatOwnedFileMeta.get(id);
+}
+function chatSplitUserMessage(text){
+  const files=[],keep=[];
+  String(text||"").replace(chatAttachmentContextRe,"").split("\n").forEach((ln)=>{
+    const owned=ln.match(/^\[context-file:: ([a-f0-9]{32})\]$/);
+    if(owned){files.push({id:owned[1],owned:true,name:"Attachment"});return;}
+    const m=ln.match(chatFileTokenRe);
+    if(m)files.push({hash:m[1],name:m[2]});else keep.push(ln);
+  });
+  return {text:keep.join("\n").replace(/^(\s*\[Image #\d+\])+\s*/,"").trim(),files};
+}
+function chatAttachmentChips(files){
+  const chips=el("div","chat-attach-chips");
+  files.forEach((f)=>{
+    const card=chatAttachmentCard(f);
+    chips.append(card);
+    if(f.owned)chatOwnedFileMetadata(f.id).then((meta)=>{
+      if(!meta||!card.isConnected)return;
+      card.replaceWith(chatAttachmentCard(meta.removed?{...f,removed:true}:{...meta,owned:true}));
+    });
+  });
+  return chips;
 }
 
 // chatUserTurn renders a user turn: the text, then any attachment chips.
 function chatUserTurn(text) {
   const b = el("div", "chat-turn chat-user");
-  const lines = (text || "").replace(/\n*<!-- manifest-chat-attachment-context -->[\s\S]*?<!-- \/manifest-chat-attachment-context -->\n*/g,"").split("\n");
-  const files = [], keep = [];
-  lines.forEach((ln) => {
-    const owned=ln.match(/^\[context-file:: ([a-f0-9]{32})\]$/);
-    if(owned){files.push({id:owned[1],owned:true,name:"Attachment"});return;}
-    const m = ln.match(chatFileTokenRe);
-    if (m) files.push({ hash: m[1], name: m[2] }); else keep.push(ln);
-  });
-  b.textContent = keep.join("\n").trim();
-  if (files.length) {
-    const chips = el("div", "chat-attach-chips");
-    files.forEach((f) => {
-      const card=chatAttachmentCard(f);
-      chips.append(card);
-      if(f.owned)fetch('/api/chat/files/'+f.id+'?metadata=1').then(r=>r.ok?r.json():null).then(meta=>{if(meta&&card.isConnected)card.replaceWith(chatAttachmentCard({...meta,owned:true}));else if(card.isConnected)card.textContent='Attachment removed';}).catch(()=>{card.textContent='Attachment unavailable';});
-    });
-    b.append(chips);
-  }
+  const {text:shown,files}=chatSplitUserMessage(text);
+  b.textContent = shown;
+  if (files.length) b.append(chatAttachmentChips(files));
   return b;
 }
 
@@ -3112,7 +3134,9 @@ function chatTermTurnEl(t) {
 function chatTermCmdLine(t) {
   const line = el("div", "chat-term-line chat-term-cmd");
   line.append(el("span", "chat-term-glyph", chatTermPromptGlyph));
-  line.append(el("span", "chat-term-cmd-text", (chatQuestionReplyDisplay(t.text) || "").trim()));
+  const {text,files}=chatSplitUserMessage(chatQuestionReplyDisplay(t.text) || "");
+  if(files.length)line.append(chatAttachmentChips(files)); // previews lead, the way the message was composed
+  line.append(el("span", "chat-term-cmd-text", text));
   if (t.pending) { line.classList.add("pending"); line.append(el("span", "chat-term-meta", "delivered · waiting for the agent")); }
   else if (t.ts) line.append(el("span", "chat-term-meta", fmtWhen(t.ts)));
   return line;

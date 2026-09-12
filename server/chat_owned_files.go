@@ -178,6 +178,9 @@ func (s *Server) handleOwnedChatFile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("X-Content-Type-Options", "nosniff")
+	// the bytes behind an id never change: let the browser keep a preview
+	// instead of re-downloading it on every repaint or thread switch
+	w.Header().Set("Cache-Control", "private, max-age=86400")
 	disposition := "attachment"
 	if inlineOK[f.Type] {
 		disposition = "inline"

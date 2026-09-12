@@ -92,6 +92,16 @@ func TestChatOwnedFilesValidationAndRemove(t *testing.T) {
 	if w.Code != 200 || w.Header().Get("X-Content-Type-Options") != "nosniff" {
 		t.Fatal(w.Code, w.Header())
 	}
+	if cc := w.Header().Get("Cache-Control"); cc != "private, max-age=86400" {
+		t.Fatal("bytes should be cacheable per id:", cc)
+	}
+	r = httptest.NewRequest("GET", "/?metadata=1", nil)
+	r.SetPathValue("id", f.ID)
+	w = httptest.NewRecorder()
+	s.handleOwnedChatFile(w, r)
+	if cc := w.Header().Get("Cache-Control"); cc != "private, no-store" {
+		t.Fatal("metadata stays uncached:", cc)
+	}
 	r = httptest.NewRequest("DELETE", "/", nil)
 	r.SetPathValue("id", f.ID)
 	w = httptest.NewRecorder()
