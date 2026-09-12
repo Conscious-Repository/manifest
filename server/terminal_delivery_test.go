@@ -169,7 +169,9 @@ func TestTerminalSteeringWhileWorkingAndBlockedRejection(t *testing.T) {
 	})
 	h.server, s.terminal.herdr = s, h
 	se := createCodingDraft(t, s, "codex")
-	body := `{"text":"Change direction while working","requestId":"steering-working-001"}`
+	// steer:true is the deliberate mid-turn send; a plain message into a
+	// working agent is held instead (TestTerminalInputHeldWhileAgentWorking)
+	body := `{"text":"Change direction while working","requestId":"steering-working-001","steer":true}`
 	if w := receiptInput(s, se.ID, body); w.Code != 200 {
 		t.Fatal(w.Code, w.Body.String())
 	}
@@ -177,7 +179,7 @@ func TestTerminalSteeringWhileWorkingAndBlockedRejection(t *testing.T) {
 		t.Fatal("working input was not dispatched exactly once", prompts)
 	}
 	state = "blocked"
-	blocked := `{"text":"Follow up after questions","requestId":"steering-blocked-002"}`
+	blocked := `{"text":"Follow up after questions","requestId":"steering-blocked-002","steer":true}`
 	if w := receiptInput(s, se.ID, blocked); w.Code == 200 || !strings.Contains(w.Body.String(), "nothing sent") {
 		t.Fatal(w.Code, w.Body.String())
 	}

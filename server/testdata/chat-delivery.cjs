@@ -63,7 +63,7 @@ global.fetchJSONRetry=async(method,url,payload)=>{
   chatTermFind:id=>nav.chatTermSessions.find(s=>s.id===id),chatTermBase:id=>'/api/terminal/session/'+id,
   postJSONOk:async(url,payload)=>{createPayload=payload;enteredCreate();await release;return{id:'abcdef123456',backend:'herdr'};},
   chatRememberDelivery:(scope,agent,url,payload,draftScope)=>({scope,agent,url,payload,draftScope}),
-  chatDeliverRemembered:async item=>{sent.push(item);return{ok:true};},loadChatTermSessions:async()=>{},showToast(){}});
+  chatDeliverRemembered:async item=>{sent.push(item);return{ok:true};},loadChatTermSessions:async()=>{},showToast(){},chatTermEcho(){},chatAgentBusy:()=>false,chatHoldAfterBusy:async()=>{}});
  vm.runInContext(src.slice(src.indexOf('async function chatTermSend('),src.indexOf('function renderChatTermLanding(')),nav);
  const sending=nav.chatTermSend('original coding instruction');await creating;
  nav.chatAgent='alfred';nav.chatOpenId='other-chat';nav.chatRouteVersion=2;nav.location.hash='#/chat/a/alfred/other-chat';

@@ -193,6 +193,7 @@ func (h *terminalEventHub) run(ctx context.Context) {
 		previous = comparable
 		h.ready = true
 		h.mu.Unlock()
+		h.server.chatQueuedFollowupSweep()
 		if sweep {
 			h.server.codingResultSweep()
 		}

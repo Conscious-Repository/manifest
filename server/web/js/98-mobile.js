@@ -44,9 +44,13 @@
     chatRail.addEventListener("click", (event) => {
       if (mqPhone.matches && event.target.closest(".chat-rail-row, .chat-rail-task, .chat-rail-new")) setOpen(false);
     });
-    // resize = the keyboard opening/closing; scroll = iOS panning the visual
-    // viewport to reveal the focused composer (chatFitShell undoes that pan)
-    const refit = () => { if (mqPhone.matches && typeof chatFitShell === "function") chatFitShell(); };
+    // Keyboard resize and pan are coalesced into one idempotent layout pass.
+    // Fitting follows viewport offsets without forcing the page to scroll.
+    let fitFrame = 0;
+    const refit = () => {
+      if (!mqPhone.matches || fitFrame) return;
+      fitFrame = requestAnimationFrame(() => { fitFrame = 0; if (typeof chatFitShell === "function") chatFitShell(); });
+    };
     window.visualViewport?.addEventListener("resize", refit);
     window.visualViewport?.addEventListener("scroll", refit);
   }

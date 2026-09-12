@@ -439,10 +439,31 @@ func (s *Server) handleTermInput(w http.ResponseWriter, r *http.Request) {
 			}
 			return s.terminal.writeInputReceipt(se.ID, *receipt)
 		}
+		// Automatic follow-ups never relaunch, answer a dialog, or enter a
+		// working run. Recheck under the input mutex immediately before send.
+		if b.AfterRun {
+			ob, inspectErr := s.observeTerm(r.Context(), se)
+			if inspectErr != nil || !terminalReadyForFollowup(ob) || b.Steer || b.Key != "" || len(b.QuestionAnswers) != 0 || b.Supervise {
+				http.Error(w, "run is not ready for a follow-up; nothing sent", http.StatusConflict)
+				return
+			}
+		}
 		se, relaunched, err = s.ensureHerdrInputLocked(r.Context(), se)
 		if err != nil {
 			http.Error(w, err.Error(), terminalLaunchStatus(err))
 			return
+		}
+		// A message into a working agent is held, not delivered: the CLI would
+		// silently queue it (the transcript shows nothing until it is consumed)
+		// and the owner never gets to choose between steering now and waiting.
+		// Keys, question answers, supervised runs, explicit steers and the first
+		// prompt after a launch pass. Sits after launch resolution so an
+		// unresolved launch still makes no daemon request.
+		if shared == nil && !relaunched && !b.Steer && !b.Supervise && b.Key == "" && len(b.QuestionAnswers) == 0 {
+			if ob, obErr := s.observeTerm(r.Context(), se); obErr == nil && ob.AgentState == "working" {
+				http.Error(w, "agent is working; nothing sent - hold the message as pending or steer to send it now", http.StatusConflict)
+				return
+			}
 		}
 		if b.Key != "" {
 			if b.RequestID != "" {

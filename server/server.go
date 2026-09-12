@@ -63,6 +63,7 @@ type Server struct {
 	plannerNotes        *plannerNotesConfig
 	chatShareWriters    sync.Map // source identity -> writer/publication RWMutex
 	chatState           *chatstate.Store
+	chatQueueMu         sync.Mutex // serialize automatic follow-up claims
 	chatFilesRoot       string
 	chatProjectsPath    string
 	artifactReviewsRoot string

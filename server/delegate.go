@@ -455,6 +455,7 @@ func (s *Server) AgentLoopTicker() {
 		s.agentLoopSweep(s.delegationIndex())
 		s.ledgerSweep()
 		s.chatSweep()
+		s.chatQueuedFollowupSweep()
 		s.pollEmailReplies()
 	}
 }

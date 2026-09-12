@@ -215,7 +215,7 @@ function chatApplySyncedDraft(key,value){
   if(v.recipient)chatRecipients.set(key,v.recipient);else chatRecipients.delete(key);
   if(chatDraftKey!==key)return;
   const input=document.querySelector("#chatComposer textarea");
-  if(input){if(typeof chatRepaintHead==="function")chatRepaintHead();input.value=chatDrafts.get(key).text;chatPendingFiles=chatDrafts.get(key).files.slice();renderChatComposer(chatCurSession);input.style.height="auto";input.style.height=Math.min(input.scrollHeight,Math.max(120,innerHeight*.4))+"px";}
+  if(input){if(typeof chatRepaintHead==="function")chatRepaintHead();input.value=chatDrafts.get(key).text;chatPendingFiles=chatDrafts.get(key).files.slice();renderChatComposer(chatCurSession);input._grow?.();}
 }
 function chatCaptureSyncedDraft(key){
   const state=chatSyncedDrafts.get(key),input=document.querySelector("#chatComposer textarea");
@@ -249,7 +249,18 @@ function chatRefreshCurrentDraft(){
  chatRecoveryRefreshes.set(key,job);return job;
 }
 window.addEventListener("focus",()=>{chatRefreshCurrentDraft();Promise.all([chatLoadPins(),chatLoadLifecycle(),chatLoadWorkstreams()]).then(()=>{chatRenderWorkstreamFilter();renderChatInboxRows();});});
-document.addEventListener("visibilitychange",()=>{if(!document.hidden)chatRefreshCurrentDraft();});
+document.addEventListener("visibilitychange",()=>{if(document.hidden)return;chatRefreshCurrentDraft();chatTermWake();});
+window.addEventListener("pageshow",(e)=>{if(e.persisted)chatTermWake();});
+// chatTermWake — the app is back in the foreground. iOS suspends the event
+// stream and every timer while it is hidden, so re-arm a dropped stream and
+// read the registry + transcript now instead of on the next tick.
+function chatTermWake(){
+ if(typeof chatTermSessions==="undefined"||!chatTermSessions.length)return;
+ if(terminalEvents&&terminalEvents.readyState!==1){try{terminalEvents.close();}catch(e){}terminalEvents=null;}
+ ensureTerminalEvents();
+ loadChatTermSessions(true);
+ if(chatTermOpen&&chatIsTerm()&&els.chatView&&!els.chatView.hidden)chatTermTick();
+}
 window.addEventListener("pagehide",()=>{chatSaveDraft();for(const state of chatSyncedDrafts.values())if(state.dirty)state.flush();});
 function showChat(h) {
   chatCloseTerminalDock();
@@ -514,18 +525,15 @@ function chatFitShell() {
   if (!shell || els.chatView.hidden) return;
   const phone = window.mf && window.mf.phone();
   const vv = window.visualViewport;
-  // iOS reveals a focused field by panning the visual viewport down inside the
-  // layout viewport (the document itself never scrolls here — the app shell
-  // is a fixed-height box). Fitting the shell to the visual height while that
-  // pan stands leaves the composer hanging mid-page with an empty band between
-  // it and the keyboard, so undo the pan first; then the shrunken shell ends
-  // exactly at the keyboard's top edge. Never fight a pinch-zoom pan.
-  if (phone && vv && vv.scale === 1 && (vv.offsetTop > 0 || window.scrollY > 0)) window.scrollTo(0, 0);
+  // Follow the visible viewport; never fight the browser's caret reveal with
+  // scrollTo. Pinch zoom owns its own pan and must not relayout the chat.
+  if (phone && vv && vv.scale !== 1) return;
   const transcript = shell.querySelector(".chat-transcript");
   const atBottom = transcript && transcript.scrollHeight - transcript.scrollTop - transcript.clientHeight < 8;
   const top = shell.getBoundingClientRect().top;
-  const height = phone && vv ? vv.height : window.innerHeight;
-  shell.style.height = Math.max(phone ? 180 : 320, height - top - 14) + "px";
+  const height = phone && vv ? vv.height + vv.offsetTop : window.innerHeight;
+  const fitted = Math.max(phone ? 180 : 320, height - top - 14) + "px";
+  if (shell.style.height !== fitted) shell.style.height = fitted;
   if (atBottom) transcript.scrollTop = transcript.scrollHeight; // keep the latest turn pinned above the keyboard
   document.querySelector("#chatComposer textarea")?._grow?.();
   if(typeof chatUpdateJump==="function")chatUpdateJump();
@@ -2124,9 +2132,9 @@ function renderChatComposer(session) {
   chatPendingFiles = draft ? draft.files.slice() : [];
   ta.placeholder = placeholder();
   ta.setAttribute("aria-label", "Message");
-  // auto-grow with content (target feel): reset then snap to scrollHeight,
+  // Measure offscreen; change the live height only when content needs it,
   // clamped so a long paste scrolls inside instead of shoving the transcript.
-  const grow = () => { const size = () => { ta.style.height = "auto"; ta.style.height = Math.min(ta.scrollHeight, Math.max(56,Math.min(220,(window.visualViewport?.height||window.innerHeight)*0.3))) + "px"; }; size(); if (chatComposerShape(host, ta)) size(); };
+  const grow = () => { const size = () => { const measured = textareaContentHeight(ta); if (!measured) return; const height = Math.min(measured, Math.max(56,Math.min(220,(window.visualViewport?.height||window.innerHeight)*0.3))) + "px"; if (ta.style.height !== height) ta.style.height = height; }; size(); if (chatComposerShape(host, ta)) size(); };
   ta._grow=grow;
   ta.addEventListener("input", grow);
   ta.addEventListener("input", chatSaveDraft);
@@ -2250,7 +2258,12 @@ function renderChatComposer(session) {
         const url=chatTermBase(chosenRecipient.id)+"/input";
         const input={text:messageText,...(sendFiles.length?{files:sendFiles.map(f=>f.hash)}:{}),conversationAgent:sendAgent,conversationId:sendSession,task:session?.shared?"":selected?.task||session?.task||"",artifacts:selected?[{id:selected.id,revision:selected.revision}]:[]};
         if(chatTermFind(chosenRecipient.id)?.agentState==='working')await chatStageMessage(draftKey,chosenRecipient.agent,url,input);
-        else await chatDeliverRemembered(chatRememberDelivery(draftKey,chosenRecipient.agent,url,input));acceptedDraft();
+        else{
+          const remembered=chatRememberDelivery(draftKey,chosenRecipient.agent,url,input);
+          try{await chatDeliverRemembered(remembered);}
+          catch(e){if(!chatAgentBusy(e))throw e;await chatHoldAfterBusy(remembered,draftKey,chosenRecipient.agent,url,input);}
+        }
+        acceptedDraft();
         if(sendRoute===chatRouteVersion)await refetchChatSession(sendSession);
       }catch(e){showToast(e.message||"Send not confirmed. Your draft is retained.");}
       finally{chatSending=false;renderChatComposer(chatCurSession);}
@@ -2490,6 +2503,12 @@ function chatTermApplyState(se) {
   if (se.backend !== "herdr") return se;
   const ob = terminalStates.get(se.id);
   if (!ob && se.process === "not-started") return se;
+  // no stream snapshot yet (fresh page, or the stream is re-arming after the
+  // phone backgrounded it): the registry list just inspected the pane itself,
+  // so its advisory state is at least as fresh — keep it rather than
+  // downgrading to unknown. The server holds a send into a working agent
+  // regardless, so a stale value here only ever costs a pending row.
+  if (!ob) return se;
   return Object.assign({}, se, {
     live: !!(ob && ob.connectivity === "connected" && ob.process === "running"),
     agentState: ob ? ob.agentState : "unknown", connectivity: ob ? ob.connectivity : "unavailable",
@@ -2977,7 +2996,8 @@ function chatTermCmdLine(t) {
   const line = el("div", "chat-term-line chat-term-cmd");
   line.append(el("span", "chat-term-glyph", chatTermPromptGlyph));
   line.append(el("span", "chat-term-cmd-text", (chatQuestionReplyDisplay(t.text) || "").trim()));
-  if (t.ts) line.append(el("span", "chat-term-meta", fmtWhen(t.ts)));
+  if (t.pending) { line.classList.add("pending"); line.append(el("span", "chat-term-meta", "delivered · waiting for the agent")); }
+  else if (t.ts) line.append(el("span", "chat-term-meta", fmtWhen(t.ts)));
   return line;
 }
 
@@ -3122,7 +3142,13 @@ async function chatTermTick() {
   if (!o || !chatIsTerm() || chatOpenId !== o.id) { chatTermLeave(); return; }
   if (!els.chatView || els.chatView.hidden || document.hidden || chatTermTailing) return; // file reconciliation also reads the final records after stop
   chatTermTailing = true;
-  try { await chatTermTail(o); } finally {
+  try {
+    await chatTermTail(o);
+    const key=chatDraftKey;
+    await chatLoadDeliveryRecovery(key);
+    const host=document.getElementById("chatComposer");
+    if(chatDraftKey===key&&host)chatRenderDeliveryNotice(host,key);
+  } finally {
     chatTermTailing = false;
     if (o.finalTailPending) { o.finalTailPending = false; chatTermRequestFinalTail(o); }
   }
@@ -3153,11 +3179,16 @@ async function chatTermTail(o) {
   o.planRevisions=d.planRevisions||{};
   o.proposals=d.proposals||[];
   const turns = d.turns || [];
+  if (o.turns.some((t) => t.pending && Date.now() - Date.parse(t.ts) > 15 * 60e3)) { o.turns = o.turns.filter((t) => !t.pending || Date.now() - Date.parse(t.ts) <= 15 * 60e3); chatTermPaintTurns(); }
   if (d.offset < o.offset) { // the file was replaced/truncated: the reply is the whole projection
     o.turns = turns;
     o.offset = d.offset || 0;
     chatTermPaintTurns();
   } else if (turns.length) {
+    if (o.turns.some((t) => t.pending)) {
+      const landed = turns.filter((n) => n.who === "user").map((n) => String(n.text || ""));
+      o.turns = o.turns.filter((t) => !t.pending || !landed.some((n) => n.includes(t.text.trim())));
+    }
     chatTermMerge(o.turns, turns);
     o.offset = d.offset;
     chatTermPaintTurns();
@@ -3236,9 +3267,19 @@ async function chatTermSend(text,context={}) {
       if(route===chatRouteVersion){chatOpenId=id;chatLanding=false;location.hash="#/chat/a/"+encodeURIComponent(agent)+"/"+encodeURIComponent(id);}
     }
     const url=chatTermBase(id)+"/input",payload={text,...context};
-    const r = chatTermFind(id)?.backend==="herdr"
-      ? await chatDeliverRemembered(chatRememberDelivery(agent+"/"+id,agent,url,payload,sourceScope))
-      : await postJSONOk(url,payload);
+    let r;
+    if (chatTermFind(id)?.backend==="herdr") {
+      const remembered=chatRememberDelivery(agent+"/"+id,agent,url,payload,sourceScope);
+      try { r = await chatDeliverRemembered(remembered); }
+      catch (e) {
+        if (!chatAgentBusy(e)) throw e;
+        // the agent is mid-turn and the server sent nothing: hold the message
+        // as a pending row (Steer sends it now) instead of failing the send
+        await chatHoldAfterBusy(remembered,agent+"/"+id,agent,url,payload);
+        return true;
+      }
+    } else r = await postJSONOk(url,payload);
+    chatTermEcho(id,text,r);
     // a draft row's first send starts its process — that is a start, not a relaunch
     if (r.relaunched && !created && !wasDraft) showToast("Session relaunched — " + ((chatTermFind(id) || {}).name || id), null, "info");
     await loadChatTermSessions(true);
@@ -3498,7 +3539,9 @@ async function chatLoadDeliveryRecovery(scope){
  try{
   const r=await fetch("/api/chat/state/"+encodeURIComponent(state.key)+"/deliveries",{cache:"no-store"});if(!r.ok)return;
   const remote=await r.json();if(remote.key!==state.key||remote.slot!=="deliveries")return;
-  const local=chatReadDeliveryOutbox(),ids=new Set(local.map(x=>x.payload.requestId));
+  const remoteItems=remote.value?.items||{};
+  const local=chatReadDeliveryOutbox().filter(x=>x.stateKey!==state.key || (!x.staged&&!remoteItems[x.payload.requestId]));
+  const ids=new Set(local.map(x=>x.payload.requestId));
   for(const item of Object.values(remote.value?.items||{})){
    if(!item?.payload?.requestId||(item.draftScope||item.scope)!==scope||item.stateKey!==state.key||ids.has(item.payload.requestId))continue;
    local.push(item);ids.add(item.payload.requestId);
@@ -3547,7 +3590,25 @@ async function chatDeliverRemembered(item){
  if(result.ok!==true && !result.id)throw new Error("Delivery acknowledgement unavailable");
  return chatAcceptDelivery(item,result);
 }
-// Pending follow-ups remain editable until the owner explicitly steers them.
+// The server refuses a plain message into a working agent (nothing sent) so
+// the owner chooses between holding it and steering now; both send paths
+// turn that refusal into a pending row.
+function chatAgentBusy(e){return !!(e&&e.notSent&&/agent is working/i.test(e.message||''));}
+async function chatHoldAfterBusy(remembered,scope,agent,url,payload){
+ await chatForgetDelivery(remembered); // the refusal guarantees nothing crossed
+ await chatStageMessage(scope,agent,url,payload);
+ showToast('Message queued for after this run. Steer to send it now.',null,'info');
+}
+// chatTermEcho — paint a delivered message at once as a pending prompt line.
+// The CLI holds a mid-turn message in its own queue and the transcript file
+// shows nothing until it is consumed; the tail swaps the real turn in.
+function chatTermEcho(id,text,r){
+ const o=chatTermOpen;
+ if(!o||o.id!==id||!text||o.planningTimeline||!Array.isArray(o.turns))return;
+ o.turns.push({who:'user',text,ts:new Date().toISOString(),id:'pending:'+(r?.delivery?.id||Date.now()),pending:true});
+ chatTermPaintTurns();
+}
+// Follow-ups remain editable until the run finishes or the owner presses Steer.
 // A CAS claim makes the item immutable before it crosses the runtime boundary.
 async function chatStageMessage(scope,agent,url,payload){
  if(!chatSyncedDrafts.get(scope)?.key)throw Error('Wait for the conversation to finish loading before saving a follow-up.');
@@ -3579,18 +3640,18 @@ function chatRenderStagedMessages(host,scope){
  const list=el('div','chat-pending-messages');list.setAttribute('aria-label','Pending messages');
  for(const item of items){
   const row=el('div','chat-pending-message'),preview=el('span','chat-pending-preview',chatAttachmentMessageLabel(item.payload.text));preview.title=preview.textContent;
-  const steer=el('button','sprt-quiet','↳ Steer');steer.title='Send this instruction now';
+  const steer=el('button','sprt-quiet','↳ Steer');steer.title='Steer the current run with this message';
   const remove=el('button','sprt-quiet','×');remove.setAttribute('aria-label','Remove pending message');
   const more=el('details','chat-pending-more'),summary=el('summary','','…');summary.setAttribute('aria-label','Pending message actions');const menu=el('div','chat-pending-menu');more.append(summary,menu);more.addEventListener('toggle',()=>{if(more.open)more.classList.toggle('below',more.getBoundingClientRect().top<120);});
-  const status=el('span','chat-pending-status',item.stagedError||'Pending · choose Steer to send');status.setAttribute('role','status');
+  const status=el('span','chat-pending-status',item.stagedError||'Queued · sends after this run');status.setAttribute('role','status');
   const refresh=()=>chatRenderDeliveryNotice(host,scope);
   remove.onclick=async()=>{remove.disabled=true;try{await chatUpdateStaged(item,null);refresh();}catch(e){status.textContent=e.message;remove.disabled=false;}};
   steer.onclick=async()=>{
    steer.disabled=remove.disabled=true;more.open=false;
    try{
-    const sending={...item,staged:false,stagedError:''};await chatUpdateStaged(item,sending);
+    const sending={...item,staged:false,stagedError:'',payload:{...item.payload,afterRun:false,steer:true}};await chatUpdateStaged(item,sending);
     try{await chatDeliverRemembered(sending);showToast('Message sent.');}
-    catch(e){if(e.notSent){sending.staged=true;sending.stagedError='Agent needs input. Answer its questions or open Terminal, then steer.';await chatSaveDeliveryRecovery(sending);const all=chatReadDeliveryOutbox().filter(x=>x.payload.requestId!==sending.payload.requestId);all.push(sending);chatWriteDeliveryOutbox(all);}else showToast(e.message||'Delivery is unconfirmed. Check status before sending again.');}
+    catch(e){if(e.notSent){sending.payload={...sending.payload,steer:false,afterRun:false};sending.staged=true;sending.waitingForAgent=true;sending.stagedError='Agent needs input. Answer its questions or open Terminal, then steer.';await chatSaveDeliveryRecovery(sending);const all=chatReadDeliveryOutbox().filter(x=>x.payload.requestId!==sending.payload.requestId);all.push(sending);chatWriteDeliveryOutbox(all);}else showToast(e.message||'Delivery is unconfirmed. Check status before sending again.');}
     refresh();
    }catch(e){status.textContent=e.message;steer.disabled=remove.disabled=false;}
   };
@@ -3609,6 +3670,9 @@ function chatDeliveryBelongsToScope(item,scope){
  return item.scope===scope || (!scope.endsWith('/new')&&(item.draftScope||item.scope)===scope);
 }
 function chatRenderDeliveryNotice(host,scope){
+ const signature=JSON.stringify(chatReadDeliveryOutbox().filter(x=>chatDeliveryBelongsToScope(x,scope)));
+ if(host.dataset.deliverySignature===signature && (signature==="[]" || host.querySelector(".chat-pending-messages,.chat-delivery-notice")))return;
+ host.dataset.deliverySignature=signature;
  chatRenderStagedMessages(host,scope);
  const expanded=host.querySelector(".chat-delivery-notice")?.open||false;
  host.querySelector(".chat-delivery-notice")?.remove();

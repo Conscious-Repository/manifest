@@ -47,6 +47,7 @@ const slice=(src,start,end)=>{const s=src.indexOf(start);assert.ok(s>=0,'missing
   // the real mic control (79-mic.js mounts it after the send) and the
   // composer's auto-grow + shape sync, exactly as renderChatComposer wires them
   await page.evaluate(()=>{const host=document.getElementById('chatComposer');host.insertBefore(micButton(()=>{}),host.querySelector('.chat-composer-recipient'));});
+  await page.addScriptTag({content:slice(read('js/05-components.js'),'const textareaMeasureCache','// ---- pill factory')});
   const growLine=slice(chat,'  const grow = () =>','\n');
   await page.addScriptTag({content:`(()=>{const host=document.getElementById('chatComposer'),ta=host.querySelector('textarea');${growLine.trim()};ta._grow=grow;ta.addEventListener('input',grow);grow();})();`});
   const mountHead=()=>page.evaluate(()=>{
@@ -120,6 +121,35 @@ const slice=(src,start,end)=>{const s=src.indexOf(start);assert.ok(s>=0,'missing
    await oneRow(width+' after ritual');
   }
   await page.setViewportSize({width:390,height:844});await mountHead();
+
+  // Filled composer: typing at the height cap must not collapse the focused
+  // field, move its box, or issue a page scroll on every character.
+  await page.addScriptTag({content:slice(chat,'let chatFitBound =','\nasync function loadChatRoster')});
+  await page.evaluate(()=>{
+   const vv=window.visualViewport;
+   Object.defineProperty(vv,'height',{configurable:true,get:()=>400});
+   Object.defineProperty(vv,'offsetTop',{configurable:true,get:()=>30});
+   window.scrollCalls=0;window.scrollTo=()=>window.scrollCalls++;
+   chatFitShell();
+  });
+  const filled=page.getByRole('textbox',{name:'Message',exact:true});
+  await filled.fill('A long message with multiple paragraphs.\n'.repeat(24));
+  const capped=await box('#chatComposer textarea');
+  await page.evaluate(()=>{
+   window.heightWrites=[];
+   window.heightObserver=new MutationObserver(records=>records.forEach(r=>heightWrites.push(r.oldValue)));
+   heightObserver.observe(document.querySelector('#chatComposer textarea'),{attributes:true,attributeFilter:['style'],attributeOldValue:true});
+  });
+  await page.keyboard.type(' Every additional character stays steady.',{delay:5});
+  assert.deepEqual(await box('#chatComposer textarea'),capped,'typing at the cap leaves the field geometry unchanged');
+  assert.deepEqual(await page.evaluate(()=>heightWrites),[],'same-height typing does not write live textarea styles');
+  await page.evaluate(()=>{for(let i=0;i<20;i++)visualViewport.dispatchEvent(new Event('scroll'));});
+  assert.equal(await page.evaluate(()=>scrollCalls),0,'viewport scroll does not trigger a competing scrollTo');
+  const composerBottom=await page.locator('#chatComposer').evaluate(e=>e.getBoundingClientRect().bottom);
+  assert.ok(composerBottom<=430,`composer stays above the simulated keyboard (${composerBottom})`);
+  await page.screenshot({path:'/tmp/manifest-chat-filled-phone.png'});
+  await page.evaluate(()=>{heightObserver.disconnect();delete visualViewport.height;delete visualViewport.offsetTop;chatFitShell();});
+  await filled.fill('');
 
   // 2. back to chats: first control in the head, 44px, keyboard usable, hands off to Close chats
   const back=page.getByRole('button',{name:'Back to chats'});

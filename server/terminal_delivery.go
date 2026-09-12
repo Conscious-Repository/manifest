@@ -14,21 +14,28 @@ import (
 )
 
 type terminalInput struct {
-	QuestionAnswers   []terminalQuestionAnswer `json:"questionAnswers,omitempty"`
-	Files             []string                 `json:"files,omitempty"`
-	Text              string                   `json:"text"`
-	Key               string                   `json:"key"`
-	Supervise         bool                     `json:"supervise"`
-	TimeoutMS         int                      `json:"timeoutMs"`
-	Task              string                   `json:"task"`
-	Artifacts         []artifactContextRef     `json:"artifacts"`
-	RequestID         string                   `json:"requestId"`
-	ConversationAgent string                   `json:"conversationAgent,omitempty"`
-	ConversationID    string                   `json:"conversationId,omitempty"`
+	QuestionAnswers []terminalQuestionAnswer `json:"questionAnswers,omitempty"`
+	Files           []string                 `json:"files,omitempty"`
+	Text            string                   `json:"text"`
+	Key             string                   `json:"key"`
+	Supervise       bool                     `json:"supervise"`
+	// Steer sends a message into an agent that is mid-turn. Without it a
+	// text send to a working agent is refused (nothing sent) so the client
+	// queues it for the next run or lets the owner steer deliberately.
+	AfterRun          bool                 `json:"afterRun,omitempty"` // dispatch only at a live idle prompt
+	Steer             bool                 `json:"steer,omitempty"`
+	TimeoutMS         int                  `json:"timeoutMs"`
+	Task              string               `json:"task"`
+	Artifacts         []artifactContextRef `json:"artifacts"`
+	RequestID         string               `json:"requestId"`
+	ConversationAgent string               `json:"conversationAgent,omitempty"`
+	ConversationID    string               `json:"conversationId,omitempty"`
 }
 
 func (b terminalInput) fingerprint() string {
 	b.RequestID = ""
+	b.Steer = false // dispatch mode does not change message identity
+	b.AfterRun = false
 	raw, _ := json.Marshal(b)
 	hash := sha256.Sum256(raw)
 	return hex.EncodeToString(hash[:])

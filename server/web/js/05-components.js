@@ -27,6 +27,35 @@ function linkEl(text, href) { const a = el("a", null, text); a.href = href; a.ta
 function emptyRow(text) { return el("div", "ro-row empty", text); }
 function splitList(s) { return (s || "").split(",").map((x) => x.trim()).filter(Boolean); }
 
+// Measure a writing field without collapsing the focused textarea. Collapsing
+// it makes mobile browsers repeatedly reveal the caret and pan the viewport.
+const textareaMeasureCache = new WeakMap();
+function textareaContentHeight(ta) {
+  const cs = getComputedStyle(ta), width = ta.getBoundingClientRect().width;
+  if (!width) return 0;
+  const properties = ['fontFamily','fontSize','fontWeight','fontStyle','lineHeight',
+    'letterSpacing','wordSpacing','textIndent','textTransform','tabSize',
+    'paddingTop','paddingBottom','paddingLeft','paddingRight',
+    'borderTopWidth','borderBottomWidth','borderLeftWidth','borderRightWidth',
+    'boxSizing','whiteSpace','overflowWrap','wordBreak'];
+  const signature = [width, ta.value, ...properties.map(p => cs[p])].join('\u0000');
+  const prior = textareaMeasureCache.get(ta);
+  if (prior?.signature === signature) return prior.height;
+  const mirror = document.createElement('textarea');
+  mirror.tabIndex = -1; mirror.setAttribute('aria-hidden', 'true');
+  for (const p of properties) mirror.style[p] = cs[p];
+  Object.assign(mirror.style, {position:'fixed', top:'0', left:'-10000px',
+    visibility:'hidden', pointerEvents:'none', width:width+'px', height:'0',
+    minHeight:'0', maxHeight:'none', overflow:'hidden', resize:'none'});
+  mirror.value = ta.value || ' '; mirror.rows = 1;
+  document.body.append(mirror);
+  const height = mirror.scrollHeight + (cs.boxSizing === 'border-box'
+    ? (parseFloat(cs.borderTopWidth)||0)+(parseFloat(cs.borderBottomWidth)||0)
+    : -(parseFloat(cs.paddingTop)||0)-(parseFloat(cs.paddingBottom)||0));
+  mirror.remove(); textareaMeasureCache.set(ta, {signature, height});
+  return height;
+}
+
 // ---- pill factory ----
 function pill(text, onclick) { const b = el("button", "pill", text); b.addEventListener("click", onclick); return b; }
 // debounce — one call per pause, not per keystroke. Four hand-rolled copies of

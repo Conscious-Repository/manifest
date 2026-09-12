@@ -1001,11 +1001,10 @@ func main() {
 					log.Printf("portal chat: enabled (writes → %s/chat)", cfg.AionPortal.TeamDir)
 				}
 			}
-			// the agent dialog must not wait for a feed read — ingestion
-			// (plan attach/update, questions, relay retries) ticks on its own
-			go srv.AgentLoopTicker()
 		}
 	}
+	// Native follow-ups must progress even without configured team threads.
+	go srv.AgentLoopTicker()
 	// LEDGER — the daily shared thread (persona plan Phase 0): a tier-3 JSONL
 	// projection under dataDir, one file per owner-timezone day. Foreground
 	// hooks append at write time; the AgentLoopTicker mirrors runs + chat.

@@ -432,3 +432,18 @@ touch targets. Occasional creation/execution tools use the shared action menu.
 Approval payloads and confirmation controls retain their explicit interaction;
 visual simplification must not change approval, curation, dismissal or undo
 semantics. The existing kind filters remain visible while the feed loads.
+
+### Queued follow-ups and mobile typing (owner, 2026-09-12)
+
+Send during a native run queues the message for after that run. **Steer** is the
+explicit action to send into the current run. Queued messages remain editable
+and removable until claimed; automatic sends use the existing durable outbox and
+receipt boundary, in order. A blocked, disconnected, stopped or unknown runtime
+holds the queue. Uncertain delivery never triggers automatic replay. Background
+phones do not own dispatch: the event hub and existing agent loop do.
+
+A growing composer must not collapse the focused textarea to measure it. Use the
+shared `textareaContentHeight` helper and write height only when needed. Cap long
+messages so they scroll inside the field. Coalesce visual viewport updates, account
+for its offset, preserve pinch zoom, and never counter caret reveal with a forced
+page scroll. Test typing at the height cap as well as empty and wrapped fields.

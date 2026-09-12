@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strings"
 	"sync"
 	"time"
 )
@@ -143,4 +144,34 @@ func (s *Store) Write(key, slot string, expected uint64, value json.RawMessage) 
 		return next, err
 	}
 	return next, nil
+}
+
+// List returns saved snapshots for one slot, skipping unrelated files.
+func (s *Store) List(slot string) ([]Snapshot, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	entries, err := os.ReadDir(s.root)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	var out []Snapshot
+	suffix := "-" + slot + ".json"
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), suffix) {
+			continue
+		}
+		key := strings.TrimSuffix(entry.Name(), suffix)
+		if !valid(key, slot) {
+			continue
+		}
+		snapshot, err := s.read(key, slot)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, snapshot)
+	}
+	return out, nil
 }
