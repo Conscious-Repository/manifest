@@ -35,6 +35,7 @@ func TestCanarySourceCallGraphIsolation(t *testing.T) {
 			}
 		}
 		calls := map[string]bool{}
+		receiptOpens, directoryOpens := 0, 0
 		for _, name := range strings.Fields(allowed) {
 			calls[name] = true
 		}
@@ -56,8 +57,34 @@ func TestCanarySourceCallGraphIsolation(t *testing.T) {
 			if !calls[name] {
 				t.Errorf("unreviewed call in %s: %s", path, name)
 			}
+			// Together with the call/import allowlist, pin every command file
+			// open: the old attempt cannot even be opened for reading.
+			if path == "main.go" {
+				switch name {
+				case "root.OpenFile":
+					receiptOpens++
+					arg, ok := call.Args[0].(*ast.Ident)
+					if !ok || arg.Name != "receiptName" {
+						t.Error("file open must target only the new fixed receipt")
+					}
+				case "root.Open":
+					directoryOpens++
+					arg, ok := call.Args[0].(*ast.BasicLit)
+					if !ok || arg.Value != `"."` {
+						t.Error("directory sync must not open a receipt")
+					}
+				case "os.OpenRoot":
+					arg, ok := call.Args[0].(*ast.Ident)
+					if !ok || arg.Name != "receiptDirectory" {
+						t.Error("root must use fixed staging directory")
+					}
+				}
+			}
 			return true
 		})
+		if path == "main.go" && (receiptOpens != 1 || directoryOpens != 1) {
+			t.Fatal("expected exactly one receipt open and one directory sync open")
+		}
 	}
 	for path, want := range reviewedSuccessorSources {
 		b, err := os.ReadFile(path)

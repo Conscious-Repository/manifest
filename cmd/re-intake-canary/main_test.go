@@ -21,6 +21,9 @@ func TestCanaryRequiresExactConfirmation(t *testing.T) {
 }
 
 func TestCanaryDurableOneShot(t *testing.T) {
+	if receiptDirectory != "/home/benjamin/workbench-staging/excalibur-retirement" || receiptName != "35-deepseek-primary-canary.jsonl" {
+		t.Fatal("owner-authorized attempt must use its reviewed fixed receipt")
+	}
 	for _, status := range []string{"canary passed", "refused"} {
 		t.Run(status, func(t *testing.T) {
 			root, err := os.OpenRoot(t.TempDir())
@@ -28,6 +31,15 @@ func TestCanaryDurableOneShot(t *testing.T) {
 				t.Fatal(err)
 			}
 			defer root.Close()
+			const priorName = "33-deepseek-primary-canary.jsonl"
+			prior := []byte("prior failed attempt: permanently latched\n")
+			if err := root.WriteFile(priorName, prior, 0600); err != nil {
+				t.Fatal(err)
+			}
+			priorInfo, err := root.Stat(priorName)
+			if err != nil {
+				t.Fatal(err)
+			}
 			calls := 0
 			invoke := func(context.Context) hermes.PrimaryCanaryReport {
 				calls++
@@ -45,6 +57,10 @@ func TestCanaryDurableOneShot(t *testing.T) {
 				t.Fatal(code, calls)
 			}
 			b, _ := root.ReadFile(receiptName)
+			info, err := root.Stat(receiptName)
+			if err != nil || info.Mode().Perm() != 0600 {
+				t.Fatal("new receipt must be mode 0600", err)
+			}
 			lines := strings.Split(strings.TrimSpace(string(b)), "\n")
 			if len(lines) != 2 {
 				t.Fatal(string(b))
@@ -55,6 +71,18 @@ func TestCanaryDurableOneShot(t *testing.T) {
 			}
 			if once(t.Context(), root, &out, invoke) != 1 || calls != 1 {
 				t.Fatal("retried")
+			}
+			after, err := root.ReadFile(receiptName)
+			if err != nil || !bytes.Equal(b, after) {
+				t.Fatal("latched new receipt changed", err)
+			}
+			priorAfter, err := root.ReadFile(priorName)
+			if err != nil || !bytes.Equal(prior, priorAfter) {
+				t.Fatal("prior failed attempt changed", err)
+			}
+			priorAfterInfo, err := root.Stat(priorName)
+			if err != nil || !os.SameFile(priorInfo, priorAfterInfo) || priorInfo.Mode() != priorAfterInfo.Mode() || !priorInfo.ModTime().Equal(priorAfterInfo.ModTime()) {
+				t.Fatal("prior failed attempt metadata changed", err)
 			}
 		})
 	}
