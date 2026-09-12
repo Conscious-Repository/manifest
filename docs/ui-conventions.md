@@ -396,7 +396,7 @@ Native Codex asynchronous questions appear in a keyed **Questions for you** pane
 above the chat composer, outside collapsed Activity. Present supplied choices and
 an editable free-text answer with explicit Send answer; never submit a recommended
 option automatically. Polling preserves focused inputs and drafts. Settled answers
-remain inspectable in collapsed history. Answer sends use the existing session
+remain inspectable in conversation history. Answer sends use the existing session
 input receipt boundary and original question identity; an uncertain delivery stays
 locked against a second send. Synchronous/runtime-only prompts retain a clearly
 labeled Terminal path. Shared-conversation control rights are not expanded by
