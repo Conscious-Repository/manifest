@@ -85,7 +85,7 @@ function chatQuestionCard(o,q,key) {
       }else draft.notice=error.message;
     }
     status.textContent=draft.notice;fields.disabled=draft.locked;submit.disabled=draft.locked||!draft.answer.trim();
-    if(chatTermOpen===o)chatTermTail(o);
+    if(chatTermOpen===o)chatTermRequestFinalTail(o);
   };
   return card;
 }

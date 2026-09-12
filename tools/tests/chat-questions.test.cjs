@@ -14,7 +14,7 @@ function fixture(fetch){
  const q={id:'["request_user_input_async","call_one",0]',title:'Which approach?',options:['First','Second'],state:'pending',async:true};
  const o={id:'abcdef12',se:{backend:'herdr'},questions:[q]};
  let requests=[],seq=0;
- const ctx={el:(...args)=>new Node(...args),document:{getElementById:id=>all(body).find(n=>n.id===id)},crypto:{randomUUID:()=>`request-${++seq}`},chatTermOpen:o,chatTermTail:()=>{},chatOpenTerminalPane:()=>{},fetch:async(url,options)=>{requests.push([url,options]);return fetch(url,options);},console};
+ const ctx={el:(...args)=>new Node(...args),document:{getElementById:id=>all(body).find(n=>n.id===id)},crypto:{randomUUID:()=>`request-${++seq}`},chatTermOpen:o,chatTermRequestFinalTail:()=>{},chatOpenTerminalPane:()=>{},fetch:async(url,options)=>{requests.push([url,options]);return fetch(url,options);},console};
  vm.createContext(ctx);vm.runInContext(readFileSync(join(__dirname,'../../server/web/js/48-chat-questions.js'),'utf8'),ctx);
  ctx.chatQuestionPanel(o);return {ctx,body,o,q,requests,find:tag=>all(body).find(n=>n.tag===tag)};
 }
