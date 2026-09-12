@@ -3310,11 +3310,9 @@ async function chatTermTail(o) {
     o.offset = d.offset || 0;
     chatTermPaintTurns();
   } else if (turns.length) {
-    if (o.turns.some((t) => t.pending)) {
-      const landed = turns.filter((n) => n.who === "user").map((n) => String(n.text || ""));
-      o.turns = o.turns.filter((t) => !t.pending || !landed.some((n) => n.includes(t.text.trim())));
-    }
     chatTermMerge(o.turns, turns);
+    // a pending echo falls once its real turn stands anywhere since the send began
+    if (o.turns.some((t) => t.pending)) o.turns = o.turns.filter((t) => !t.pending || !chatTermLanded(o, t.text, t.since));
     o.offset = d.offset;
     chatTermPaintTurns();
   } else if (d.offset > o.offset) {
@@ -3392,6 +3390,9 @@ async function chatTermSend(text,context={}) {
       if(route===chatRouteVersion){chatOpenId=id;chatLanding=false;location.hash="#/chat/a/"+encodeURIComponent(agent)+"/"+encodeURIComponent(id);}
     }
     const url=chatTermBase(id)+"/input",payload={text,...context};
+    // where the transcript stood when this send began: the echo and the tail
+    // reconcile against the user turns that land from here on
+    const since=chatTermOpen&&chatTermOpen.id===id&&Array.isArray(chatTermOpen.turns)?chatTermOpen.turns.length:0;
     let r;
     if (chatTermFind(id)?.backend==="herdr") {
       const remembered=chatRememberDelivery(agent+"/"+id,agent,url,payload,sourceScope);
@@ -3404,7 +3405,7 @@ async function chatTermSend(text,context={}) {
         return true;
       }
     } else r = await postJSONOk(url,payload);
-    chatTermEcho(id,text,r);
+    chatTermEcho(id,text,r,since);
     // a draft row's first send starts its process — that is a start, not a relaunch
     if (r.relaunched && !created && !wasDraft) showToast("Session relaunched — " + ((chatTermFind(id) || {}).name || id), null, "info");
     await loadChatTermSessions(true);
@@ -3727,10 +3728,20 @@ async function chatHoldAfterBusy(remembered,scope,agent,url,payload){
 // chatTermEcho — paint a delivered message at once as a pending prompt line.
 // The CLI holds a mid-turn message in its own queue and the transcript file
 // shows nothing until it is consumed; the tail swaps the real turn in.
-function chatTermEcho(id,text,r){
+// `since` is the turn count when the send began: a herdr delivery can wait
+// seconds for the prompt, long enough for the 1.5 s tail to have landed the
+// real turn already — then there is nothing to echo (2026-09-12: the row
+// otherwise stood as a "waiting for the agent" duplicate under the real one
+// until its 15-minute expiry).
+function chatTermLanded(o,text,since){
+ const wanted=String(text||"").trim();
+ return o.turns.some((n,i)=>i>=(since||0)&&!n.pending&&n.who==="user"&&String(n.text||"").includes(wanted));
+}
+function chatTermEcho(id,text,r,since){
  const o=chatTermOpen;
  if(!o||o.id!==id||!text||o.planningTimeline||!Array.isArray(o.turns))return;
- o.turns.push({who:'user',text,ts:new Date().toISOString(),id:'pending:'+(r?.delivery?.id||Date.now()),pending:true});
+ if(chatTermLanded(o,text,since))return;
+ o.turns.push({who:'user',text,ts:new Date().toISOString(),id:'pending:'+(r?.delivery?.id||Date.now()),pending:true,since:since||0});
  chatTermPaintTurns();
 }
 // Follow-ups remain editable until the run finishes or the owner presses Steer.
