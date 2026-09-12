@@ -185,6 +185,7 @@ function orientArea(area) {
     name.append(el("span", "o-rock-lint", " ● " + activeRocks.length + " rocks"));
     name.title = activeRocks.length + " active Rocks in " + area.name + " — EOS says one; consider moving one to TASKS or closing it";
   }
+  if (area.shared) name.append(el("span", "o-rock-lint", " · Shared"));
   card.appendChild(name);
 
   // North Star — one bold line; ghost when unset

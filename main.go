@@ -206,6 +206,7 @@ func main() {
 		WithAudit(cfg.DataDir).
 		WithHistory(cfg.DataDir).
 		Grant(
+			vaultwriter.Capability{Name: "shared-home", Zone: record.ZoneSystem, Pattern: filepath.ToSlash(filepath.Join(cfg.SystemRoot, "home")) + "/**", Actor: vaultwriter.ActorUserAction},
 			// goals.md + "goals <quarter>.md" archives/reviews + .pre-* backups
 			vaultwriter.Capability{Name: "goals", Zone: record.ZoneKnowledge,
 				Pattern: strings.TrimSuffix(orDefault(cfg.GoalsFileName, "goals.md"), ".md") + "*",
@@ -383,6 +384,11 @@ func main() {
 
 	// TODOS — the third surface over the vault-root `tasks.md` (peer of goals.md).
 	tasksStore := tasks.NewStore(cfg.VaultPath, cfg.TasksFileName, vw.BindAbs("todos"))
+	sharedHomeRoot := filepath.Join(cfg.VaultPath, cfg.SystemRoot, "home")
+	if _, err := os.Stat(filepath.Join(sharedHomeRoot, "goals.md")); err == nil {
+		goalsStore.UseSharedHome(filepath.Join(sharedHomeRoot, "goals.md"), vw.BindAbs("shared-home"))
+		tasksStore.UseSharedHome(filepath.Join(sharedHomeRoot, "tasks.md"), vw.BindAbs("shared-home"))
+	}
 	{
 		var areaNames []string
 		if doc := goalsStore.Load(); doc != nil {
@@ -462,6 +468,7 @@ func main() {
 	svc.UseGoals(server.NewGoalsAdapter(goalsStore, tasksStore, aionStore, reStore, orDefault(cfg.OwnerInitials, "BA")))
 	svc.UseEvents(calSource)
 	srv := server.New(svc, goalsStore, calClient)
+	srv.UsePlannerNotes("", sharedHomeRoot, "Benjamin", vw.BindAbs("shared-home"))
 	srv.UseChatState(filepath.Join(cfg.DataDir, "chat-state"))
 	srv.UseHosts(hostsInfo(cfg)) // Settings › Hosts & paths: the read-only config projection
 	// One geocoder instance serves every feature so the provider's global rate

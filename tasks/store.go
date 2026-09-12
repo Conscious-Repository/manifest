@@ -2,6 +2,7 @@ package tasks
 
 import (
 	"errors"
+	"manifest/sharedhome"
 	"os"
 	"path/filepath"
 	"strings"
@@ -16,9 +17,10 @@ import (
 // vaultwriter knowledge-zone capability; this package never opens a file to
 // write).
 type Store struct {
-	vaultRoot string
-	name      string
-	write     func(path string, data []byte) error
+	sharedHome *sharedhome.Store
+	vaultRoot  string
+	name       string
+	write      func(path string, data []byte) error
 }
 
 func NewStore(vaultRoot, name string, write func(path string, data []byte) error) *Store {
@@ -48,15 +50,29 @@ func (s *Store) Load() (*Doc, error) {
 		if os.IsNotExist(err) {
 			d := &Doc{preamble: []string{"# Tasks"}}
 			d.EnsureDomain(InboxName)
+			if s.sharedHome != nil {
+				raw, snap := s.sharedHome.Load(Serialize(d))
+				d = Parse(raw)
+				d.sharedHome = snap
+			}
 			return d, nil
 		}
 		return nil, err
+	}
+	if s.sharedHome != nil {
+		body, snap := s.sharedHome.Load(string(raw))
+		d := Parse(body)
+		d.sharedHome = snap
+		return d, nil
 	}
 	return Parse(string(raw)), nil
 }
 
 func (s *Store) Save(d *Doc) error {
 	d.assignIDs()
+	if s.sharedHome != nil {
+		return s.sharedHome.Save(Serialize(d), d.sharedHome, func(raw string) error { return s.write(s.Path(), []byte(raw)) })
+	}
 	return s.write(s.Path(), []byte(Serialize(d)))
 }
 
@@ -133,6 +149,9 @@ func (s *Store) Sweep(now time.Time) (int, error) {
 		return keep
 	}
 	for _, dom := range d.Domains {
+		if s.sharedHome != nil && strings.EqualFold(dom.Name, "Home") {
+			continue
+		} // shared Done stays visible to both people
 		dom.Tasks = sweepList(dom.Tasks, dom.Name)
 		for _, b := range dom.Buckets {
 			b.Tasks = sweepList(b.Tasks, dom.Name+" / "+b.Name)
@@ -199,7 +218,20 @@ func (s *Store) Drop(id string, now time.Time) error {
 		return os.ErrNotExist // never archive a line the live file keeps
 	}
 	line := emitTask(t) + " [dropped:: " + now.Format("2006-01-02") + "] [domain:: " + where + "]"
-	if err := s.appendArchive(now.Format("2006-01"), []string{line}); err != nil {
+	archive := s.appendArchive
+	if s.sharedHome != nil && strings.EqualFold(dom.Name, "Home") {
+		archive = func(section string, lines []string) error {
+			p := filepath.Join(filepath.Dir(s.sharedHome.Path), "tasks archive.md")
+			return sharedhome.Locked(p, func() error {
+				b, e := os.ReadFile(p)
+				if e != nil && !os.IsNotExist(e) {
+					return e
+				}
+				return s.sharedHome.Write(p, []byte(record.AppendSection(string(b), "# Tasks — archive", section, lines)))
+			})
+		}
+	}
+	if err := archive(now.Format("2006-01"), []string{line}); err != nil {
 		return err
 	}
 	return s.Save(d)
@@ -221,4 +253,9 @@ func (s *Store) appendArchive(section string, lines []string) error {
 	}
 	content := record.AppendSection(string(raw), "# Tasks — archive", section, lines)
 	return s.write(path, []byte(content))
+}
+
+// UseSharedHome shares only Home; all other areas retain their private source.
+func (s *Store) UseSharedHome(path string, write func(string, []byte) error) {
+	s.sharedHome = &sharedhome.Store{Path: path, Write: write}
 }

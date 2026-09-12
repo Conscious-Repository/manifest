@@ -1,0 +1,23 @@
+[Unit]
+Description=Olga Manifest — day, goals and tasks
+After=network-online.target private-ready.path
+Wants=network-online.target
+ConditionPathExists=/private/consciousrepo/system/olga
+
+[Service]
+Type=simple
+User=benjamin
+Group=benjamin
+ExecStart=/home/benjamin/.local/bin/olga -vault /private/consciousrepo -addr 127.0.0.1:7781 -password-file /private/olga/password -audit-dir /private/olga
+Restart=on-failure
+RestartSec=5
+Environment=TZ=America/Chicago
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/private/consciousrepo/system/home /private/consciousrepo/system/olga /private/olga
+
+[Install]
+WantedBy=engine-room.target

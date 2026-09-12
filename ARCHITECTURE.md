@@ -550,3 +550,23 @@ not rewritten. An invocation records how many earlier turns its bounded context
 omitted, and the UI shows that limitation. The composer recipient is private draft
 state; choosing it alone starts nothing and changes no task assignment. This is
 not yet a cross-runtime handoff to portal agents or terminal CLIs.
+
+### 2026-09-11 — Olga’s personal Manifest
+
+Owner-authorized exception to the one-owner surface: Olga may directly edit her
+own DAY, GOALS and TASKS Markdown under `system/olga/**`. This is a separate
+password-gated listener and a separate Server instance with only her planner
+stores. It reuses the existing planner services and UI, with no AI integrations
+or chat services wired. All writes cross the named `olga` vaultwriter capability
+as `portal-member`, with an audit outside the vault. Her listener has an explicit
+API/asset allowlist and never serves the owner's cockpit or generic vault APIs.
+The owner’s existing Aion/OODA membership and materialization rules are unchanged.
+
+### 2026-09-11 — Shared Home
+
+The owner explicitly shares Home goals, tasks, descriptions and human comments
+with Olga. `system/home/**` is the canonical shared source, projected into both
+planners through a separate `home`/`shared-home` capability. Other life areas and
+daily schedules remain private. Shared sections use optimistic conflict checks
+under an interprocess lock; notes are Markdown and human comments never dispatch
+an agent from Olga. Existing task identity survives enrichment and title edits.

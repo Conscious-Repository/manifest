@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="en" data-olga-theme="ochre">
+<head>
+  <script>window.manifestPlannerOnly = true;</script>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <title>Olga · Manifest</title>
+  <link rel="manifest" href="manifest.webmanifest" />
+  <meta name="theme-color" content="#ffffff" />
+  <link rel="apple-touch-icon" href="icons/icon-192.png" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <link rel="stylesheet" href="css/99-local-fonts.css" />
+  <!-- Olga owns its palette independently of the main Manifest theme. -->
+  <!-- Styles (§11): core tokens first, then the shared primitives, then one
+       file per tab — cascade order matters, keep it aligned with js/. -->
+  <link rel="stylesheet" href="css/00-core.css?v=5" />
+  <link rel="stylesheet" href="css/05-primitives.css?v=20260911-tab-drafts" />
+  <link rel="stylesheet" href="css/07-nav.css" />
+  <link rel="stylesheet" href="css/10-day.css" />
+  <link rel="stylesheet" href="css/20-goals.css?v=4" />
+
+  <link rel="stylesheet" href="css/90-todos.css?v=1" />
+  <link rel="stylesheet" href="css/93-todo-panel.css" />
+
+  <!-- phone band (<860px) only — every rule is width- or hover-gated; desktop untouched -->
+  <link rel="stylesheet" href="css/95-mobile.css?v=12" />
+<link rel="stylesheet" href="/olga.css?v=ochre-1"></head>
+<body class="booting">
+  <!-- the boot veil (00-core.css) hides the static Day skeleton until the Olga shell
+       builds the rail and applies the route; this timer is the safety valve if
+       a script fails to arrive — a broken page beats a permanent veil -->
+  <script>setTimeout(function () { document.body.classList.remove("booting"); }, 8000);</script>
+  <div id="appShell" class="app-shell">
+
+  <!-- LEFT RAIL — persistent nav (redesign §2). Only the three planner views are mounted. -->
+  <nav id="rail" class="rail">
+    <div class="rail-head">
+      <a class="rail-brand" id="railBrand" href="#/day" aria-label="Day" title="Day"><span class="rail-glyph-box" aria-hidden="true">◆</span><span class="rail-brand-name">MANIFEST</span></a>
+      <button id="railCollapse" class="rail-collapse" title="Collapse the rail" aria-label="Collapse">‹‹</button>
+    </div>
+
+    <div class="rail-groups" id="railGroups"></div>
+    <div class="rail-foot">
+      <span id="saveState" class="save-state">saved</span>
+      <button class="rail-raw" id="logout">Sign out</button>
+    </div>
+  </nav>
+
+  <div class="content-col">
+    <!-- BREADCRUMB BAR — where am I + real in-app back/forward -->
+    <div class="crumb-bar" id="crumbBar">
+      <button id="crumbBack" class="crumb-nav" aria-label="Back" disabled>‹</button>
+      <button id="crumbFwd" class="crumb-nav" aria-label="Forward" disabled>›</button>
+      <span id="crumbPath" class="crumb-path"></span>
+      <span class="crumb-right">
+        <span id="crumbMeta" class="crumb-meta"></span>
+        <span id="dateNav" class="crumb-datenav" hidden>
+          <button id="prevBtn" class="pill arrow" aria-label="Previous day">‹</button>
+          <button id="todayBtn" class="pill" title="Jump to today"><span id="dateLabel">TODAY</span></button>
+          <button id="nextBtn" class="pill arrow" aria-label="Next day">›</button>
+        </span>
+      </span>
+    </div>
+
+    <div id="contentScroll" class="content-scroll">
+
+  <main id="dayView">
+    <div id="prepBanner" class="prep-banner" hidden></div>
+
+    <div class="grid">
+    <section class="panel schedule-panel">
+      <div class="panel-head">
+        <span class="panel-title">SCHEDULE</span>
+        <span id="scheduleRange" class="panel-meta">8A–6P</span>
+      </div>
+      <div id="scheduleRows" class="schedule-rows"></div>
+    </section>
+
+    <div class="right-col">
+      <section class="panel">
+        <div class="panel-head">
+          <span class="panel-title">GOALS</span>
+          <span id="goalsRange" class="panel-meta">QUARTER</span>
+        </div>
+        <div id="goalsRows" class="focus-rows"></div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-head">
+          <span class="panel-title">MILESTONES</span>
+          <span id="milestonesRange" class="panel-meta">MONTH</span>
+        </div>
+        <div id="milestonesRows" class="focus-rows"></div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-head">
+          <span class="panel-title">TASKS</span>
+          <span class="panel-meta">TODAY</span>
+        </div>
+        <div id="taskRows" class="task-table"></div>
+      </section>
+    </div>
+    <div id="focusExtra" class="focus-extra"></div>
+    </div>
+  </main>
+
+  <section class="goals-page" id="goalsView" hidden>
+    <div class="areas-col">
+      <div class="agent-head">
+        <span class="agent-title">GOALS</span>
+        <div class="agent-actions">
+          <span class="feed-filters">
+            <button id="tabOrient" class="filter-chip">ORIENT</button>
+            <button id="tabHistory" class="filter-chip">HISTORY</button>
+          </span>
+          <span id="goalsMeta" class="panel-meta"></span>
+        </div>
+      </div>
+      <div id="areasRows"></div>
+      <button id="addArea" class="add-btn">+ Add area</button>
+      <div id="historyRows" hidden></div>
+    </div>
+  </section>
+
+  <!-- TODOS — the third surface: everything that must happen but drives no vision -->
+  <section class="goals-page" id="todosView" hidden>
+    <div class="areas-col">
+      <div class="agent-head">
+        <span class="agent-title">TASKS</span>
+        <div class="agent-actions">
+          <span id="todosTabs" class="feed-filters"></span>
+          <span id="todosMeta" class="panel-meta"></span>
+        </div>
+      </div>
+      <div id="todosToolbar" class="tdo-toolbar"></div>
+      <!-- todo-panel plan Phase 2: list + sticky inspector (aion idiom) -->
+      <div class="tdo-shell">
+        <div id="todosRows"></div>
+        <aside class="tdo-panel" id="todoPanel" hidden></aside>
+      </div>
+    </div>
+  </section>
+
+</div></div></div>  <div id="pickerModal" class="modal" hidden>
+    <div class="modal-backdrop" id="pickerBackdrop"></div>
+    <div class="modal-card">
+      <div class="modal-head">
+        <span id="pickerTitle" class="modal-title"></span>
+        <button id="pickerClose" class="modal-close" aria-label="Close">✕</button>
+      </div>
+      <div id="pickerBody" class="modal-body"></div>
+    </div>
+  </div>
+
+  <!-- in-app toasts (run finished, digest landed) -->
+  <div id="toastHost" class="toast-host"></div>
+
+<script src="/js/00-core.js"></script>
+<script src="/js/05-components.js"></script>
+<script src="/js/10-day.js"></script>
+<script src="/js/20-goals.js"></script>
+<script src="/js/90-todos.js"></script>
+<script src="/olga.js"></script></body></html>

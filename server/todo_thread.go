@@ -111,7 +111,19 @@ func visibleThread(in []threads.Comment) []threads.Comment {
 // the private structural trail (assign/plan/fire/result) — the panel shows
 // the whole conversation (owner report 2026-08-15: the trail was invisible
 // on team todos).
-func (s *Server) listThread(taskID string) []threads.Comment {
+func (s *Server) listThread(taskID string) (result []threads.Comment) {
+	defer func() {
+		seen := map[string]bool{}
+		for _, c := range result {
+			seen[c.ID] = true
+		}
+		for _, c := range s.plannerComments(taskID) {
+			if !seen[c.ID] {
+				result = append(result, c)
+			}
+		}
+		sort.SliceStable(result, func(i, j int) bool { return result[i].At.Before(result[j].At) })
+	}()
 	if s.threads == nil {
 		return nil
 	}
@@ -144,6 +156,9 @@ func (s *Server) listThread(taskID string) []threads.Comment {
 // structural entries stay in the private machine trail.
 func (s *Server) addThreadEntry(author threads.Identity, taskID, action, text string, mentions []string, files []threads.FileRef, meta map[string]any) (threads.Comment, error) {
 	now := time.Now()
+	if s.plannerNotesPath(taskID) != "" && action == threads.ActComment && len(files) == 0 && len(mentions) == 0 && len(meta) == 0 {
+		return s.addPlannerComment(taskID, text, author)
+	}
 	if s.threads == nil {
 		return threads.Comment{}, errBadRequest("threads not configured")
 	}

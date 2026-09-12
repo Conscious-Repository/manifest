@@ -2,6 +2,7 @@ package goals
 
 import (
 	"fmt"
+	"manifest/sharedhome"
 	"os"
 	"path/filepath"
 	"sort"
@@ -23,10 +24,11 @@ type GoalsLocator interface {
 }
 
 type Store struct {
-	idx       GoalsLocator
-	fallback  string
-	vaultRoot string
-	write     func(path string, data []byte) error
+	sharedHome *sharedhome.Store
+	idx        GoalsLocator
+	fallback   string
+	vaultRoot  string
+	write      func(path string, data []byte) error
 }
 
 func NewStore(idx GoalsLocator, vaultRoot, goalsName string, write func(path string, data []byte) error) *Store {
@@ -137,6 +139,17 @@ func (s *Store) AddArchiveEntry(quarter string, entry ArchiveEntry) (bool, error
 }
 
 func (s *Store) appendArchive(quarter string, entry ArchiveEntry) error {
+	if s.sharedHome != nil && strings.EqualFold(entry.Area, "Home") {
+		p := filepath.Join(filepath.Dir(s.sharedHome.Path), "goals "+quarter+".md")
+		return sharedhome.Locked(p, func() error {
+			b, e := os.ReadFile(p)
+			if e != nil && !os.IsNotExist(e) {
+				return e
+			}
+			entries := append(parseArchive(string(b)), entry)
+			return s.sharedHome.Write(p, []byte(serializeArchive(quarter, entries)))
+		})
+	}
 	path := s.archivePath(quarter)
 	var entries []ArchiveEntry
 	if b, err := os.ReadFile(path); err == nil {
@@ -167,6 +180,10 @@ func (s *Store) BackupOnce(suffix string) error {
 // first. Read-only history for the roll-up and the History view.
 func (s *Store) LoadAllArchives() []ArchiveQuarter {
 	matches, _ := filepath.Glob(filepath.Join(s.vaultRoot, "goals *.md"))
+	if s.sharedHome != nil {
+		shared, _ := filepath.Glob(filepath.Join(filepath.Dir(s.sharedHome.Path), "goals *.md"))
+		matches = append(matches, shared...)
+	}
 	var out []ArchiveQuarter
 	for _, path := range matches {
 		q := strings.TrimSpace(strings.TrimPrefix(strings.TrimSuffix(filepath.Base(path), ".md"), "goals "))
@@ -192,10 +209,19 @@ func (s *Store) Path() string {
 // Load parses the current goals.md (an empty doc if the file is absent).
 func (s *Store) Load() *Doc {
 	b, _ := os.ReadFile(s.Path())
+	if s.sharedHome != nil {
+		raw, snap := s.sharedHome.Load(string(b))
+		d := Parse(raw)
+		d.sharedHome = snap
+		return d
+	}
 	return Parse(string(b))
 }
 
 func (s *Store) Save(d *Doc) error {
+	if s.sharedHome != nil {
+		return s.sharedHome.Save(Serialize(d), d.sharedHome, func(raw string) error { return s.write(s.Path(), []byte(raw)) })
+	}
 	return s.write(s.Path(), []byte(Serialize(d)))
 }
 
@@ -341,4 +367,9 @@ func seedDoc() *Doc {
 			area("Sidequests"),
 		},
 	}
+}
+
+// UseSharedHome shares only Home; all other areas retain their private source.
+func (s *Store) UseSharedHome(path string, write func(string, []byte) error) {
+	s.sharedHome = &sharedhome.Store{Path: path, Write: write}
 }

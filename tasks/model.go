@@ -12,6 +12,7 @@
 package tasks
 
 import (
+	"manifest/sharedhome"
 	"regexp"
 	"strings"
 	"time"
@@ -133,8 +134,9 @@ func (dom *Domain) AllTasks(fn func(b *Bucket, t *Task)) {
 
 // Doc is the whole file.
 type Doc struct {
-	preamble []string // verbatim through the first ## heading
-	Domains  []*Domain
+	sharedHome *sharedhome.Snapshot
+	preamble   []string // verbatim through the first ## heading
+	Domains    []*Domain
 }
 
 // InboxName is the capture heading (case-insensitive match on parse).

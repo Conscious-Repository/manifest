@@ -60,6 +60,7 @@ import (
 var webFiles embed.FS
 
 type Server struct {
+	plannerNotes        *plannerNotesConfig
 	chatShareWriters    sync.Map // source identity -> writer/publication RWMutex
 	chatState           *chatstate.Store
 	chatProjectsPath    string
@@ -367,6 +368,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/goals/retro", s.handleGoalRetro)        // quarterly review: save the retro
 
 	// TODOS — the third surface over `tasks.md` (todos-surface-scope).
+	mux.HandleFunc("GET /api/tasks/notes", s.handlePlannerNotes)
+	mux.HandleFunc("POST /api/tasks/notes", s.handlePlannerNotes)
 	mux.HandleFunc("GET /api/tasks", s.handleTasksGet)
 	mux.HandleFunc("POST /api/tasks/item", s.handleTaskAdd)
 	mux.HandleFunc("POST /api/tasks/check", s.handleTaskCheck)

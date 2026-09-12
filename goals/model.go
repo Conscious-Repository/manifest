@@ -1,6 +1,7 @@
 package goals
 
 import (
+	"manifest/sharedhome"
 	"sort"
 	"strings"
 
@@ -94,8 +95,9 @@ func (a *Area) roots() []*[]*Goal { return []*[]*Goal{&a.Annuals, &a.Rocks} }
 
 // Doc is the parsed goals.md: a verbatim preamble (through "# Goals") + areas.
 type Doc struct {
-	preamble string
-	Areas    []*Area
+	sharedHome *sharedhome.Snapshot
+	preamble   string
+	Areas      []*Area
 }
 
 func (d *Doc) FindArea(name string) *Area {
@@ -514,6 +516,7 @@ type DocView struct {
 }
 
 type AreaView struct {
+	Shared    bool       `json:"shared,omitempty"`
 	Name      string     `json:"name"`
 	NorthStar string     `json:"northStar"`
 	Year      string     `json:"year"`
@@ -549,6 +552,7 @@ func (d *Doc) View() DocView {
 	areas := make([]AreaView, 0, len(d.Areas))
 	for _, a := range d.Areas {
 		areas = append(areas, AreaView{
+			Shared:    d.sharedHome != nil && strings.EqualFold(a.Name, "Home"),
 			Name:      a.Name,
 			NorthStar: a.NorthStar,
 			Year:      a.yearLabel,

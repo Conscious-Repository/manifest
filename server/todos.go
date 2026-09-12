@@ -645,6 +645,17 @@ func (s *Server) handleTaskUpdate(w http.ResponseWriter, r *http.Request) {
 		httpError(w, errBadRequest("id is required"))
 		return
 	}
+	if b.Domain != nil && s.plannerNotes != nil {
+		doc, err := s.tasksStore.Load()
+		if err != nil {
+			httpError(w, err)
+			return
+		}
+		if dom, t := doc.Find(b.ID); t != nil && strings.EqualFold(dom.Name, "Home") != strings.EqualFold(strings.TrimSpace(*b.Domain), "Home") {
+			http.Error(w, "Home tasks are shared. Create a new task in the destination area to change sharing.", 400)
+			return
+		}
+	}
 	if strings.HasPrefix(b.ID, "prop:") {
 		slug, lineID := splitPropID(b.ID)
 		if slug == "" {

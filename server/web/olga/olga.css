@@ -1,0 +1,85 @@
+/* Existing Manifest tokens/layouts; only the smaller navigation needs phone rules. */
+#railGroups .rail-item { text-decoration:none; }
+#railGroups .rail-item.on { color:var(--text); background:var(--surface-hover,rgba(255,255,255,.06)); }
+#pickerBody > input,#pickerBody > select { margin-bottom:12px; width:100%; }
+.toast-host { position:fixed; bottom:24px; right:24px; z-index:1000; }
+.toast { padding:12px 18px; background:var(--panel,#222); border:1px solid var(--border,#555); border-radius:6px; }
+@media(max-width:860px){
+ .app-shell { display:flex!important; flex-direction:column!important; height:100dvh; }
+ #rail { display:flex!important; flex-direction:row; position:relative!important; width:100%!important; height:auto!important; padding:8px 12px; border-right:0; border-bottom:1px solid var(--border); box-sizing:border-box; align-items:center; }
+ #rail .rail-head,#railCollapse,#rail .rail-foot { display:none; }
+ #railGroups { display:flex; width:100%; padding:0; justify-content:space-around; }
+ #railGroups .rail-item { padding:12px; }
+ #railGroups .rail-label { display:inline!important; }
+ .content-col { min-height:0; flex:1; width:100%; }
+ .content-scroll { padding-bottom:24px!important; }
+ .crumb-bar { padding:8px 12px; }
+ #crumbBack,#crumbFwd { display:none; }
+ #pickerBody input,#pickerBody select,.schedule-row input { font-size:16px; }
+}
+@media(max-width:860px){
+ #rail { transform:none; flex:none; }
+ #railGroups { flex-direction:row; overflow:visible; }
+ #railGroups .rail-item { min-height:44px; padding:6px 10px; }
+ .crumb-bar { display:flex; justify-content:space-between; }
+ #crumbPath { margin-right:auto; }
+ .crumb-bar .crumb-right { display:flex; align-items:center; gap:8px; }
+ .olga-mobile-signout { display:inline-block; }
+}
+@media(min-width:861px){.olga-mobile-signout{display:none;}}
+
+/* Olga-only palette trial. Remove data-olga-theme="ochre" to restore
+   the shared white/blue palette. Ochre sampled from interaction-home.jpg. */
+:root[data-olga-theme="ochre"] {
+ --olga-ochre: #b78856;
+ --accent: #925b2e;
+ --accent-soft: #b78856;
+ --blue: var(--accent);
+ --blue-soft: var(--accent-soft);
+ --bg: #ffffff;
+ --base-05: #fdfaf6;
+ --base-08: #fbf7f1;
+ --base-10: #faf5ee;
+ --base-15: #f7efe5;
+ --base-20: #f2e7d9;
+ --base-25: #e5d8c9;
+ --base-30: #cebaa3;
+ --line: #e5d8c9;
+ --line-soft: #f5eee6;
+ --hover: #fdf8f2;
+ --surface-hover: #f7efe5;
+ --border: var(--line);
+ --panel: #ffffff;
+ --pill-bg: #faf5ee;
+ --pill-bd: #e5d8c9;
+ --pill-ink: #925b2e;
+ --streak-bg: #faf5ee;
+ --streak-bd: #e5d8c9;
+ --streak-ink: #925b2e;
+ accent-color: var(--accent);
+ color-scheme: light;
+}
+:root[data-olga-theme="ochre"] #railGroups .rail-item.on,
+:root[data-olga-theme="ochre"] #railGroups .rail-item.active {
+ color: var(--accent);
+ background: var(--base-20);
+}
+:root[data-olga-theme="ochre"] .rail-glyph-box {
+ background: var(--olga-ochre);
+}
+
+.olga-task-views {display:flex;gap:4px;}
+.olga-task-views .on {background:var(--base-20);color:var(--accent);border-color:var(--accent-soft);}
+.olga-detail-field {display:flex;flex-direction:column;gap:6px;margin-bottom:16px;}
+.olga-detail-field>span,.olga-detail-hint {font:12px var(--mono);color:var(--base-60);}
+.olga-task-details input,.olga-task-details select,.olga-task-details textarea,.olga-comments textarea {box-sizing:border-box;width:100%;padding:10px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--text);font:16px var(--sans);}
+.olga-task-details textarea,.olga-comments textarea {resize:vertical;}
+.olga-comments {border-top:1px solid var(--line);margin-top:24px;padding-top:12px;}
+.olga-comment {border-bottom:1px solid var(--line-soft);padding:12px 0;}
+.olga-comment p {white-space:pre-wrap;overflow-wrap:anywhere;}
+.olga-comments .pill {margin-top:8px;}
+.olga-board .tdo-card-text {overflow-wrap:anywhere;}
+@media(max-width:860px){.olga-board {grid-template-columns:1fr;} .olga-task-details .pill,.olga-comments .pill {min-height:44px;} #todosToolbar {flex-wrap:wrap;} #todosSearch {flex:1 1 100%;}}
+
+.olga-board .tdo-card-text {border:0;padding:0;text-align:left;background:transparent;color:var(--text);cursor:pointer;}
+@media(max-width:860px){.olga-board .tdo-col {min-height:120px;}.olga-board .pill {min-height:44px;}}

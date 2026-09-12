@@ -217,7 +217,7 @@ func (s *Server) unifiedView(doc *tasks.Doc) map[string]any {
 	groups := map[string]*outstandingGroup{}
 	var groupOrder []string
 	for _, r := range all {
-		if s.isMine(r.Owner) {
+		if s.isMine(r.Owner) || (s.plannerNotes != nil && strings.EqualFold(r.Container.Name, "Home")) {
 			mine = append(mine, r)
 			continue
 		}

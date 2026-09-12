@@ -100,8 +100,13 @@ func sectionBodyWithin(body, name string, peers []string) string {
 }
 
 // readPlanRecord loads a todo's record (zero value when none exists yet).
-func (s *Server) readPlanRecord(id string) planRecord {
-	out := planRecord{}
+func (s *Server) readPlanRecord(id string) (out planRecord) {
+	defer func() {
+		if text, ok := s.plannerDescription(id); ok {
+			out.Description = text
+			out.Exists = true
+		}
+	}()
 	if s.todoPlans == nil || s.vault == nil {
 		return out
 	}
@@ -175,6 +180,9 @@ func (s *Server) setPlanAssignee(id, assignee string) error {
 
 // writePlanSection swaps one section under the given capability.
 func (s *Server) writePlanSection(capName, id, section, body string) error {
+	if p := s.plannerNotesPath(id); p != "" && section == "description" {
+		return s.plannerNotes.write(filepath.Join(p, "description.md"), []byte(body))
+	}
 	if err := s.ensurePlanRecord(id, ""); err != nil {
 		return err
 	}
