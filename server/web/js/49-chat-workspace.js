@@ -68,6 +68,14 @@ function chatWorkspaceHeader(head){
  // ··· menu (95-mobile.css shows one or the other; show() updates both).
  if(more){const entry=el('button','sprt-quiet chat-workspace-toggle mf-chat-ws-more','Workspace');entry.title='Plans, files and side chats';entry.setAttribute('aria-expanded',button.getAttribute('aria-expanded'));entry.onclick=button.onclick;more.insertBefore(entry,more.querySelector(':scope > .chat-head-acts'));}
 }
+// A tab label keeps the tail of a long name — a screenshot's time and
+// extension, a plan's suffix — by shortening the middle; the full name stays
+// on the accessible name and the tooltip (2026-09-12).
+function chatWorkspaceTabLabel(name){
+ const s=String(name||'').trim();
+ if(s.length<=26)return s;
+ return s.slice(0,13).trimEnd()+'…'+s.slice(-9).trimStart();
+}
 function chatEnsureWorkspace(restoring=false){
  if(chatWorkspaceTabs)return chatWorkspaceTabs;
  const shell=document.querySelector('.chat-shell'),pane=el('aside','artifact-workspace chat-tab-workspace');
@@ -87,8 +95,8 @@ function chatEnsureWorkspace(restoring=false){
   select(key){w.save();clearChooser();active=key;for(const [id,t] of entries){t.host.hidden=id!==key;t.button.setAttribute('aria-selected',String(id===key));t.button.tabIndex=id===key?0:-1;}w.show();},
   drop(key){const t=entries.get(key);if(!t)return;t.host.remove();t.row.remove();entries.delete(key);if(!disposed&&active===key){const next=Array.from(entries.keys()).at(-1);if(next)w.select(next);else w.chooser();}w.save();},
   tab(key,title,build,spec=null){if(entries.has(key)){w.select(key);return entries.get(key);}
-   const row=el('div','chat-workspace-tab'),button=el('button','sprt-quiet',title),close=el('button','sprt-quiet','×'),host=el('div','chat-workspace-tabbody');
-   button.setAttribute('role','tab');button.title=title;host.setAttribute('role','tabpanel');
+   const row=el('div','chat-workspace-tab'),button=el('button','sprt-quiet',chatWorkspaceTabLabel(title)),close=el('button','sprt-quiet','×'),host=el('div','chat-workspace-tabbody');
+   button.setAttribute('role','tab');button.title=title;button.setAttribute('aria-label',title);host.setAttribute('role','tabpanel');
    const uid='workspace-'+crypto.randomUUID();host.id=uid;button.id=uid+'-tab';button.setAttribute('aria-controls',uid);host.setAttribute('aria-labelledby',button.id);
    close.setAttribute('aria-label','Close '+title+' tab');row.append(button,close);tabs.append(row);body.append(host);
    const t={row,button,host,api:null,spec};entries.set(key,t);button.onclick=()=>w.select(key);
@@ -103,7 +111,7 @@ function chatEnsureWorkspace(restoring=false){
     const update=()=>{
      const name=heading.textContent&&heading.textContent!=='Loading…'?heading.textContent:title;
      const draft=t.api.element.dataset.draft==='true';
-     button.textContent=name;button.setAttribute('aria-label',name);button.title=name+(draft?' · Unfinished edit':'');
+     button.textContent=chatWorkspaceTabLabel(name);button.setAttribute('aria-label',name);button.title=name+(draft?' · Unfinished edit':'');
      button.setAttribute('aria-description',draft?'Unfinished edit':'');row.classList.toggle('has-draft',draft);
      close.setAttribute('aria-label','Close '+name+' tab');close.title=draft?'Close tab; your draft remains saved':'Close tab';
     };
