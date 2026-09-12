@@ -417,3 +417,18 @@ Use `.input-surface` for a composer containing a textarea and toolbar. The texta
 Use the quiet `+` at the left of the composer toolbar. File cards precede the writing field, with image thumbnails, mono filenames and sizes, and a labeled remove action. Picker, paste and drop share one upload path. Uploading holds Send; failed uploads leave successfully uploaded files and text intact. Use the existing attachment workspace for preview and the Files tab for durable context.
 
 Private chat uploads live separately from shared/task artifacts. Removing an unsent file deletes it; moving its owning chat to Trash permanently deletes uploaded bytes even if the conversation is later restored. Shared artifacts and provider histories retain their existing lifecycle. Abandoned landing uploads expire after seven days.
+
+### Feed reading stream (owner, 2026-09-12)
+
+Feed should read like a clean RSS/social stream on desktop and phone: one readable
+column (`--measure` within the shared page), whitespace and divider rows instead
+of individual boxes, compact source/date metadata, and sans-serif post/excerpt
+text. Monospace is for metadata and actual code. Article titles and post text
+are keyboard-accessible links to the existing reader. Default “unfiled” metadata
+adds no decision value and stays off the card face.
+
+Keep reading and clearing actions visible as quiet inline controls with mobile
+touch targets. Occasional creation/execution tools use the shared action menu.
+Approval payloads and confirmation controls retain their explicit interaction;
+visual simplification must not change approval, curation, dismissal or undo
+semantics. The existing kind filters remain visible while the feed loads.

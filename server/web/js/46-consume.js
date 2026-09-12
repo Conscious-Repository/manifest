@@ -42,7 +42,7 @@ function consumeCardEl(c) {
   const chips = [
     el("span", "type-chip micro-label type-consume", c.source || "feed"),
     xPost ? el("span", "type-chip micro-label type-x", "X") : null,
-    c.list ? el("span", "consume-list-chip micro-label", c.list) : null,
+    c.list && c.list.toLowerCase() !== "unfiled" ? el("span", "consume-list-chip micro-label", c.list) : null,
     c.curated ? el("span", "consume-curated-chip micro-label", "curated") : null,
     // "archived" is not "read" — it arrived before you followed this feed.
     c.seeded ? el("span", "consume-list-chip micro-label", "archived") : null,
@@ -58,11 +58,11 @@ function consumeCardEl(c) {
   if (xPost) {
     body = [
       c.author ? el("div", "consume-x-author", c.author) : null,
-      Object.assign(el("div", "consume-x-text", c.excerpt || c.title || "(empty post)"), { onclick: () => openRead(c.id) }),
+      Object.assign(el("a", "consume-x-text", c.excerpt || c.title || "(empty post)"), { href: "#/read/" + encodeURIComponent(c.id) }),
     ];
   } else {
-    title = el("span", "consume-title", c.title || "(untitled)");
-    title.onclick = () => openRead(c.id);
+    title = el("a", "consume-title", c.title || "(untitled)");
+    title.href = "#/read/" + encodeURIComponent(c.id);
     const metaEl = el("div", "feed-meta");
     if (c.author) metaEl.append(el("span", "", c.author));
     if (c.minutes) metaEl.append(el("span", "", c.minutes + " min read"));
@@ -105,7 +105,7 @@ function consumeCurateBtn(c, card) {
     b.classList.add("consume-curated-on");
     return b;
   }
-  return pillLight("→ CURATE", () => consumeCurate(c, card));
+  return pillLight("curate", () => consumeCurate(c, card));
 }
 
 // consumeCurate asks for the optional one-line note inline — the note is the

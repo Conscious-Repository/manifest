@@ -140,3 +140,27 @@ a.portal-line-text:hover { color: var(--blue); text-decoration: underline; }
 .bank-pending-rows { margin-top: var(--sp-4); }
 .bank-pending-row { display: grid; grid-template-columns: 44px minmax(140px, 1fr) 96px minmax(90px, 140px) minmax(90px, 130px) auto; gap: var(--sp-4); align-items: center; padding: var(--sp-2) 0; border-top: 1px solid var(--line-soft); }
 .bank-file-btn { white-space: nowrap; }
+
+/* Reading stream: shared card anatomy, a readable measure and quiet actions.
+   Approval editors retain their explicit decision controls and full payloads. */
+.feed-view > .agent-head { align-items: center; }
+.feed-view > .agent-head .agent-actions { flex: 1; justify-content: flex-end; }
+.feed-view .feed-col { max-width: var(--measure); margin-inline: auto; }
+.feed-view .feed-split.has-inspector .feed-col { max-width: none; }
+.feed-view .feed-list { gap: 0; }
+.feed-view .feed-card { border: 0; border-bottom: 1px solid var(--line); border-radius: 0; padding: var(--sp-9) 0; gap: var(--sp-6); background: transparent; box-shadow: none; }
+.feed-view .feed-card.pinned { border-left: 2px solid var(--accent); padding-left: var(--sp-6); }
+.feed-view .feed-top { flex-wrap: wrap; align-items: baseline; gap: var(--sp-3) var(--sp-5); }
+.feed-view .feed-top > .feed-title { flex: 1 0 100%; order: 1; font-size: var(--fs-xl); line-height: 1.4; overflow-wrap: anywhere; }
+.feed-view .feed-date { font-size: var(--fs-xs); white-space: nowrap; }
+.feed-view .type-chip, .feed-view .harness-chip, .feed-view .consume-list-chip { border: 0; padding: 0; border-radius: 0; overflow-wrap: anywhere; }
+.feed-view .feed-why, .feed-view .feed-body { font-family: var(--sans); font-size: var(--fs-xl); line-height: 1.6; overflow-wrap: anywhere; }
+.feed-view .feed-body { padding: 0; background: transparent; white-space: pre-wrap; }
+.feed-view .feed-meta { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-4); }
+.feed-view .feed-card:not(.approval-card) > .feed-actions { gap: var(--sp-3) var(--sp-7); align-items: center; }
+.feed-view .feed-card:not(.approval-card) > .feed-actions > .pill { flex: none; min-height: var(--control-height); padding: var(--sp-2) 0; border: 0; border-radius: 0; background: transparent; color: var(--base-70); font-family: var(--sans); font-size: var(--fs-sm); box-shadow: none; }
+.feed-view .feed-card:not(.approval-card) > .feed-actions > .pill:hover { color: var(--text); text-decoration: underline; }
+.feed-view .feed-card:not(.approval-card) > .feed-actions > .verdict-primary { color: var(--text); font-weight: 600; }
+.feed-view .signal-row { flex-wrap: wrap; }
+.feed-view .signal-label { flex: 1; min-width: 0; font-family: var(--sans); font-size: var(--fs-md); overflow-wrap: anywhere; }
+.feed-view .signal-actions { flex-wrap: wrap; }

@@ -159,3 +159,11 @@
    descriptor (46-consume.js) and never from provider markup */
 .consume-embed { width: 100%; height: 152px; border: 0; border-radius: var(--radius); margin-top: var(--sp-4); }
 .consume-embed-video { height: auto; aspect-ratio: 16 / 9; }
+
+/* Posts are prose, not terminal output. Titles/text open the existing reader. */
+.feed-view .consume-x-author { font-family: var(--sans); font-size: var(--fs-lg); }
+.feed-view .consume-x-text { display: block; font-family: var(--sans); font-size: var(--fs-xl); line-height: 1.6; text-decoration: none; color: var(--text); }
+.feed-view .consume-x-text:hover { color: var(--text); }
+.feed-view .consume-title { text-decoration: none; }
+.feed-view .consume-title:hover { text-decoration: underline; }
+.feed-view .consume-excerpt { color: var(--text); }

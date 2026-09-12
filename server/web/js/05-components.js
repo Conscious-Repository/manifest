@@ -574,10 +574,10 @@ function choosePath({title, placeholder, items, createLabel}) {
   });
 }
 
-function chooseActionMenu(trigger, items) {
+function chooseActionMenu(trigger, items, label = "Document actions") {
   return new Promise(resolve=>{
     const root=el('div','action-menu-layer'),back=el('div','action-menu-backdrop'),menu=el('div','action-menu');
-    menu.setAttribute('role','menu');menu.setAttribute('aria-label','Document actions');
+    menu.setAttribute('role','menu');menu.setAttribute('aria-label',label);
     const rect=trigger.getBoundingClientRect();menu.style.right=Math.max(8,window.innerWidth-rect.right)+'px';menu.style.top=Math.min(rect.bottom+6,window.innerHeight-260)+'px';
     let release,closed=false;
     const close=value=>{if(closed)return;closed=true;release?.();root.remove();resolve(value)};

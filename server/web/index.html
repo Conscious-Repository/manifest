@@ -24,8 +24,8 @@
   <link rel="stylesheet" href="css/30-calendar.css" />
   <link rel="stylesheet" href="css/40-spirits.css?v=20260912-agents-settings-mobile" />
   <link rel="stylesheet" href="css/60-settings.css?v=20260912-agents-settings-mobile" />
-  <link rel="stylesheet" href="css/45-feed.css?v=4" />
-  <link rel="stylesheet" href="css/46-consume.css?v=5" />
+  <link rel="stylesheet" href="css/45-feed.css?v=20260912-feed-stream" />
+  <link rel="stylesheet" href="css/46-consume.css?v=20260912-feed-stream" />
   <link rel="stylesheet" href="css/48-chat.css?v=20260912-chat-attachments" />
   <link rel="stylesheet" href="css/74-files.css?v=2" />
   <link rel="stylesheet" href="vendor/xterm.css" />
@@ -47,7 +47,7 @@
   <link rel="stylesheet" href="css/96-aion-recruiting.css?v=28" />
   <link rel="stylesheet" href="css/97-rec-graph.css?v=6" />
   <!-- phone band (<860px) only — every rule is width- or hover-gated; desktop untouched -->
-  <link rel="stylesheet" href="css/95-mobile.css?v=20260912-agents-settings-mobile" />
+  <link rel="stylesheet" href="css/95-mobile.css?v=20260912-feed-stream" />
 </head>
 <body class="booting">
   <!-- the boot veil (00-core.css) hides the static Day skeleton until 99-boot
@@ -196,10 +196,13 @@
       <span class="agent-title">FEED</span>
       <div class="agent-actions">
         <span id="feedFilters" class="feed-filters"></span>
+        <button id="feedToolsBtn" class="pill light" aria-haspopup="menu">actions</button>
+        <div hidden>
         <button id="feedErrandBtn" class="pill light" title="Run a web errand through the Aside browser (guard mode; the receipt lands here)">＋ errand</button>
         <button id="feedCurateBtn" class="pill light" title="Publish a link to the public curation feed — paste a URL, add a note; it publishes immediately">＋ curate</button>
         <button id="feedAskBtn" class="pill light" title="Ask a scout to research a request (e.g. options-scout: buy X, find 5 options)">Ask a scout</button>
         <button id="feedRunNowBtn" class="pill" title="Ask the engine to run a ritual now (spooled request — the engine picks it up)">▶ Run now</button>
+        </div>
       </div>
     </div>
     <!-- list + docked inspector, the AION backlog geometry. The rail is a
@@ -548,7 +551,7 @@
   <!-- Userland modules (§11): one file per tab over a shared core, loaded in
        order into one scope — no framework, no build step. -->
   <script src="js/00-core.js?v=3"></script>
-  <script src="js/05-components.js?v=20260911-workbench-release"></script>
+  <script src="js/05-components.js?v=20260912-feed-stream"></script>
   <script src="js/10-day.js"></script>
   <script src="js/20-goals.js?v=4"></script>
   <script src="js/30-calendar.js"></script>
@@ -557,8 +560,8 @@
   <script src="js/42-agents-runs.js"></script>
   <script src="js/43-agents-page.js?v=20260912-agents-settings-mobile"></script>
   <script src="js/44-agents-new.js"></script>
-  <script src="js/45-feed.js?v=5"></script>
-  <script src="js/46-consume.js?v=7"></script>
+  <script src="js/45-feed.js?v=20260912-feed-stream"></script>
+  <script src="js/46-consume.js?v=20260912-feed-stream"></script>
   <script src="js/47-read.js"></script>
   <script src="js/47-chat-state.js"></script>
   <script src="js/47-chat-share.js?v=1"></script>

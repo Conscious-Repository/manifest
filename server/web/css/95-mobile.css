@@ -831,3 +831,17 @@
   .chat-main .chat-composer.has-text > .chat-send { background-color: var(--base-100); color: var(--base-00); }
   .chat-main .chat-composer > .chat-send:focus-visible { outline: 2px solid var(--accent); outline-offset: -1px; }
 }
+
+/* Feed: reading controls stay compact; approvals keep their touch-sized decisions. */
+@media (max-width: 860px) {
+  #feedView > .agent-head > .agent-title { display: none; }
+  #feedView > .agent-head { padding-top: 0; }
+  #feedView > .agent-head .agent-actions { justify-content: space-between; gap: var(--sp-4); width: 100%; }
+  #feedView .feed-filters { flex: 1 1 auto; margin: 0; gap: var(--sp-4); }
+  #feedView .feed-filters .filter-chip { min-height: var(--touch-sm); padding: var(--sp-3) var(--sp-4); border-radius: var(--radius); }
+  #feedToolsBtn { min-height: var(--touch-sm); }
+  #feedView .feed-card { padding-block: var(--sp-8); }
+  #feedView .feed-card:not(.approval-card) > .feed-actions { column-gap: var(--sp-7); }
+  #feedView .feed-card:not(.approval-card) > .feed-actions > .pill { flex: none; min-height: var(--touch); font-size: var(--fs-md); padding-inline: var(--sp-2); }
+  #feedView .feed-top > .feed-title { min-width: 0; }
+}

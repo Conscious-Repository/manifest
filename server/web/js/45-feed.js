@@ -80,6 +80,7 @@ const FEED_TAIL_LANES = [ // after the empty-state check, like today
 ];
 
 function showFeed() {
+  renderFeedFilters();
   loadFeed();
   ensureLivePoll(); // a dig/ask spooled from here is watched without leaving the tab
 }
@@ -136,6 +137,7 @@ function renderFeedFilters() {
   const cur = feedFilter();
   FEED_FILTERS.forEach(([val, label]) => {
     const b = el("button", "filter-chip" + (cur === val ? " on" : ""), label);
+    b.setAttribute("aria-pressed", String(cur === val));
     // A lit chip is a filter you can take off by clicking it again — no
     // separate "ALL" button to reach for.
     b.onclick = () => { state.feedFilter = cur === val ? "" : val; loadFeed(); };
@@ -502,7 +504,7 @@ function feedCard(it) {
     //
     // Discard is now the ONLY way to clear something you don't want, and
     // findings never age out — so it is the primary verb and never hidden.
-    const discard = pillLight("Discard", () => feedVerdict(card, it, "discarded", "discarded"));
+    const discard = pillLight("discard", () => feedVerdict(card, it, "discarded", "discarded"));
     discard.classList.add("verdict-primary");
     acts.push(discard);
     acts.push(pillLight("→ task", () => feedToTodo(it.id))); // catch it on the TASKS board (Inbox)
@@ -513,7 +515,7 @@ function feedCard(it) {
     // fetch, and nothing to link subscribers to, without one.
     if (external) acts.push(curatePill(it, card));
   } else {
-    acts.push(pillLight("Restore", () => feedAction(it.id, { status: "new" })));
+    acts.push(pillLight("restore", () => feedAction(it.id, { status: "new" })));
   }
   card.append(cardActions(acts));
   return card;
@@ -938,3 +940,15 @@ function bankPendingRowEl(r) {
   row.append(fileBtn);
   return row;
 }
+
+// The reading stream leads; infrequent creation/execution tools share the menu.
+const feedToolsButton = document.getElementById("feedToolsBtn");
+if (feedToolsButton) feedToolsButton.onclick = async () => {
+  const choice = await chooseActionMenu(feedToolsButton, [
+    {label: "new errand", id: "feedErrandBtn"},
+    {label: "curate a link", id: "feedCurateBtn"},
+    {label: "ask a scout", id: "feedAskBtn"},
+    {label: "run a ritual", id: "feedRunNowBtn"},
+  ], "Feed actions");
+  if (choice) document.getElementById(choice.id)?.click();
+};
