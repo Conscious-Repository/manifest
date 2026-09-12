@@ -97,6 +97,14 @@ def main():
         if len(raw) > 100000:
             raise RuntimeError('response')
         data = json.loads(raw, object_pairs_hook=unique_object, parse_float=decimal.Decimal)
+        # Scope is enforced locally, but contradictory/uncertain provider claims
+        # must never be ignored. Absence is not used as a usage attestation.
+        if (('fallback' in data and data['fallback'] is not False) or
+                ('tools' in data and data['tools'] != []) or
+                ('mcp' in data and data['mcp'] != 'no_mcp') or
+                ('tool_calls' in data and data['tool_calls'] != []) or
+                len(data['choices']) != 1):
+            raise RuntimeError('completion')
         choice = data['choices'][0]
         message = choice['message']
         if choice['finish_reason'] != 'stop' or message.get('tool_calls') or message.get('function_call'):
