@@ -277,3 +277,16 @@
 
 /* milestone owner ghost */
 .go-owner-ghost { font-size: var(--fs-2xs); padding: 0 var(--sp-2); min-height: 0; }
+
+/* Task creation uses one action; team visibility is chosen inside the form. */
+.go-task-composer { margin: 8px 0 12px 34px; max-width: 520px; }
+.go-task-composer.in-stage { margin-left: 50px; }
+.go-task-composer > input { width: 100%; box-sizing: border-box; font-size: 16px; }
+.go-task-composer-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+.go-task-visibility { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; font-family: var(--mono); font-size: var(--fs-xs); }
+.go-task-visibility select { max-width: 100%; }
+.go-task-error { color: var(--danger, #b33); font-size: var(--fs-sm); margin-top: 4px; }
+@media (max-width: 860px) {
+  .go-task-composer, .go-task-composer.in-stage { margin-left: 12px; }
+  .go-task-composer-actions button, .go-task-visibility select { min-height: 44px; }
+}

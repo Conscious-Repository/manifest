@@ -622,6 +622,54 @@ function goGoalTaskRow(c, areaName, stage) {
   return row;
 }
 
+// One task entry point. Visibility is an explicit choice only where a team
+// portal exists; personal planning never asks about sharing.
+function goalTaskComposer(rock, areaName, milestone) {
+  const cls = "go-task-ghost" + (milestone ? " in-stage" : "");
+  const team = !window.manifestPlannerOnly && milestone &&
+    (isAionArea(areaName) ? "Aion team" : areaName.toLowerCase() === "real estate" ? "OODA team" : "");
+  const trigger = el("button", "o-ghost " + cls, "＋ Add task");
+  trigger.title = "Add a task linked to this " + (milestone ? "milestone" : "goal");
+  trigger.onclick = () => {
+    const form = el("form", "go-task-composer" + (milestone ? " in-stage" : ""));
+    const name = inputEl("What needs to be done?");
+    name.setAttribute("aria-label", "Task name"); name.required = true;
+    const actions = el("div", "go-task-composer-actions");
+    let visibility;
+    if (team) {
+      const label = el("label", "go-task-visibility", "Visible to");
+      visibility = selectEl(["Only me", team]);
+      visibility.setAttribute("aria-label", "Task visibility");
+      label.append(visibility); actions.append(label);
+    }
+    const add = el("button", "pill", "Add task"); add.type = "submit";
+    const cancel = el("button", "pill light", "Cancel"); cancel.type = "button";
+    cancel.onclick = () => form.replaceWith(trigger);
+    const error = el("div", "go-task-error"); error.setAttribute("role", "alert");
+    actions.append(add, cancel); form.append(name, actions, error);
+    form.onsubmit = async (event) => {
+      event.preventDefault(); const text = name.value.trim(); if (!text || add.disabled) return;
+      add.disabled = true; cancel.disabled = true; if (visibility) visibility.disabled = true;
+      error.textContent = "";
+      const shared = visibility && visibility.value === team;
+      const path = shared ? "/api/goals/item" : "/api/tasks/item";
+      const body = shared ? { area: areaName, parentId: milestone.id, text, owner: "me" }
+        : { text, domain: areaName, rock: rock.id, ...(milestone ? { stage: milestone.text } : {}) };
+      try {
+        const res = await fetch(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+        if (!res.ok) throw new Error((await res.text()) || "Could not add task");
+        await loadGoals();
+      } catch (err) {
+        error.textContent = err.message; add.disabled = false; cancel.disabled = false;
+        if (visibility) visibility.disabled = false;
+      }
+    };
+    name.onkeydown = event => { if (event.key === "Escape" && !add.disabled) { event.preventDefault(); form.replaceWith(trigger); trigger.focus(); } };
+    trigger.replaceWith(form); name.focus();
+  };
+  return trigger;
+}
+
 // rockOutline (Rev 2): the whole rock inline — name (15px/500) with
 // the ● lint meta on the rock's own line, the stage trail
 // (→ marks current), and the current stage's tasks from the substrate. Left
@@ -689,24 +737,7 @@ function rockOutline(g, areaName) {
     // lines with ids, so they render as goal rows with checkbox + owner.
     (st.children || []).forEach((c) => wrap.append(goGoalTaskRow(c, areaName, st)));
     if (!g.checked && !st.checked) {
-      // ⚠ THE CASCADE NAMES ITS OWN LEVELS: goals → milestones → tasks, so
-      // "＋ task" is the ladder's third level — a goals.md line with a
-      // checkbox and an owner, the thing the AION board and the portal
-      // project. The personal capture comes second and says where it lands;
-      // "task vs goal task" answered nothing (owner call 2026-09-05), and
-      // both composers indent under the milestone they feed.
-      const ladder = ghostInput("＋ task", "go-task-ghost in-stage", async (v) => {
-        try { await goalsApi("POST", "/api/goals/item", { area: areaName, parentId: st.id, text: v, owner: "me" }); } catch (err) {}
-        loadGoals();
-      }, "task under “" + st.text + "” — the shared ladder, checkbox + owner…");
-      ladder.title = "a goals.md task under this milestone — the team sees it";
-      wrap.append(ladder);
-      const mine = ghostInput("＋ my task", "go-task-ghost in-stage", async (v) => {
-        try { await postJSONOk("/api/tasks/item", { text: v, domain: areaName, rock: g.id, stage: st.text }); } catch (err) {}
-        loadGoals();
-      }, "on your TASKS page, tethered to “" + st.text + "”…");
-      mine.title = "a personal task on the TASKS page, linked back to this milestone";
-      wrap.append(mine);
+      wrap.append(goalTaskComposer(g, areaName, st));
     }
     // frozen pre-split history — collapsed, muted, read-only
     if ((st.frozen || []).length) {
@@ -728,12 +759,7 @@ function rockOutline(g, areaName) {
   // last milestone read as a confusing duplicate (owner call 2026-08-14).
   looseTasks.forEach((t) => wrap.append(goTaskRow(t, areaName)));
   if (!g.checked && stages.length === 0) {
-    const mine = ghostInput("＋ my task", "go-task-ghost", async (v) => {
-      try { await postJSONOk("/api/tasks/item", { text: v, domain: areaName, rock: g.id }); } catch (err) {}
-      loadGoals();
-    }, "on your TASKS page, tethered to this goal…");
-    mine.title = "a personal task on the TASKS page, linked back to this goal";
-    wrap.append(mine);
+    wrap.append(goalTaskComposer(g, areaName));
   }
   wrap.append(ghostInput("＋ milestone", "go-stage-ghost", (v) =>
     goalsApi("POST", "/api/goals/item", { parentId: g.id, text: v, owner: "me" }),
