@@ -63,6 +63,7 @@ type Server struct {
 	plannerNotes        *plannerNotesConfig
 	chatShareWriters    sync.Map // source identity -> writer/publication RWMutex
 	chatState           *chatstate.Store
+	chatFilesRoot       string
 	chatProjectsPath    string
 	artifactReviewsRoot string
 	svc                 *daily.Service
@@ -600,6 +601,10 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/chat/spirits", s.handleChatSpirits)
 	mux.HandleFunc("GET /api/chat/sessions", s.handleChatSessions)
 	mux.HandleFunc("GET /api/chat/state/{key}/{slot}", s.handleChatState)
+	mux.HandleFunc("GET /api/chat/files", s.handleOwnedChatFiles)
+	mux.HandleFunc("POST /api/chat/files", s.handleOwnedChatFiles)
+	mux.HandleFunc("GET /api/chat/files/{id}", s.handleOwnedChatFile)
+	mux.HandleFunc("DELETE /api/chat/files/{id}", s.handleOwnedChatFile)
 	mux.HandleFunc("PUT /api/chat/state/{key}/{slot}", s.handleChatState)
 	mux.HandleFunc("POST /api/chat/sessions", s.handleChatSessionCreate)
 	mux.HandleFunc("GET /api/chat/sessions/{id}", s.handleChatSession)

@@ -60,6 +60,12 @@ func (s *Server) handleChatSessionCreate(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	if strings.TrimSpace(b.Text) != "" {
+		context, e := s.ownedChatContext("spirit:/"+id, b.Text)
+		if e != nil {
+			httpError(w, errBadRequest(e.Error()))
+			return
+		}
+		b.Text += context
 		if err := s.spirits.SpoolChatMessage(b.Spirit, id, b.Text, "dashboard"); err != nil {
 			httpError(w, err)
 			return
@@ -105,6 +111,12 @@ func (s *Server) handleChatMessage(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "no such session", http.StatusNotFound)
 		return
 	}
+	context, e := s.ownedChatContext("spirit:/"+sum.ID, b.Text)
+	if e != nil {
+		httpError(w, errBadRequest(e.Error()))
+		return
+	}
+	b.Text += context
 	if err := s.spirits.SpoolChatMessage(sum.Spirit, sum.ID, b.Text, b.Source); err != nil {
 		httpError(w, errBadRequest(err.Error()))
 		return

@@ -138,8 +138,10 @@ function chatBackToChats() {
 // the tall state first). Returns true when a class changed, so the caller
 // re-measures the textarea at its new width. Desktop CSS ignores the classes.
 function chatComposerShape(host, ta) {
-  const text = ta.value.length > 0;
+  const hasFiles = !!host.querySelector(".chat-attachment-card");
+  const text = ta.value.length > 0 || hasFiles;
   const was = host.className;
+  if(hasFiles)host.classList.add("is-wrapped");
   host.classList.toggle("has-text", text);
   if (!text) host.classList.remove("is-wrapped");
   else if (!host.classList.contains("is-wrapped")) {
@@ -639,7 +641,7 @@ function chatLifecycleActions(entry){
   if(status!=="deleted"){
     const b=el("button","sprt-quiet","Delete chat…");
     b.onclick=e=>{e.stopPropagation();reviewDialog("Delete chat?",({body,actions,close})=>{
-      body.append(el("p","","Move this conversation to Trash. You can restore it later. Running agents continue; task and provider history are retained."));
+      body.append(el("p","","Move this conversation to Trash. Private chat uploads are permanently removed; restoring the chat will not restore those files. Running agents continue. Shared artifacts, task and provider history are retained."));
       const cancel=el("button","sprt-quiet","Cancel"),confirm=el("button","sprt-quiet","Move to Trash");cancel.onclick=close;
       confirm.onclick=async()=>{confirm.disabled=true;try{await chatSetLifecycle(entry,"deleted");close();}catch(err){body.append(el("p","",err.message));confirm.disabled=false;}};actions.append(cancel,confirm);
     });};fragment.append(b);
@@ -1642,12 +1644,27 @@ function parseChatSteps(text) {
 // into a preview chip. Spirit turns never carry one.
 const chatFileTokenRe = /^\[file:: ([0-9a-f]{64}) (.+?)\]$/;
 
+function chatAttachmentCard(f) {
+  const card=el('span','chat-attachment-card');
+  const href=f.owned?'/api/chat/files/'+f.id:chatFileHref(f.hash);
+  const open=el('button','chat-attachment-open');open.type='button';open.title=f.name;open.setAttribute('aria-label','Open '+f.name);
+  if(/\.(png|jpe?g|webp|gif)$/i.test(f.name)) {const img=document.createElement('img');img.src=href;img.alt=f.name;img.loading='lazy';open.append(img);}
+  else open.append(el('span','chat-attachment-kind',f.name.split('.').pop().slice(0,5).toUpperCase()));
+  open.append(el('span','chat-attachment-name',f.name));
+  if(f.size)open.append(el('span','chat-attachment-size',f.size<1048576?Math.ceil(f.size/1024)+' KB':(f.size/1048576).toFixed(1)+' MB'));
+  open.onclick=()=>chatOpenAttachment(f,href);card.append(open);
+  if(f.owned)fetch(href+'?metadata=1').then(r=>{if(r.status===404&&card.isConnected){open.replaceChildren(el('span','chat-attachment-name',f.name),el('span','chat-attachment-size','File removed'));open.disabled=true;}}).catch(()=>{});
+  return card;
+}
+
 // chatUserTurn renders a user turn: the text, then any attachment chips.
 function chatUserTurn(text) {
   const b = el("div", "chat-turn chat-user");
-  const lines = (text || "").split("\n");
+  const lines = (text || "").replace(/\n*<!-- manifest-chat-attachment-context -->[\s\S]*?<!-- \/manifest-chat-attachment-context -->\n*/g,"").split("\n");
   const files = [], keep = [];
   lines.forEach((ln) => {
+    const owned=ln.match(/^\[context-file:: ([a-f0-9]{32})\]$/);
+    if(owned){files.push({id:owned[1],owned:true,name:"Attachment"});return;}
     const m = ln.match(chatFileTokenRe);
     if (m) files.push({ hash: m[1], name: m[2] }); else keep.push(ln);
   });
@@ -1655,12 +1672,9 @@ function chatUserTurn(text) {
   if (files.length) {
     const chips = el("div", "chat-attach-chips");
     files.forEach((f) => {
-      const a = document.createElement("button");
-      a.className = "chat-attach-chip";
-      a.textContent = f.name;
-      const href=chatFileHref(f.hash);
-      a.onclick=()=>chatOpenAttachment(f,href);
-      chips.append(a);
+      const card=chatAttachmentCard(f);
+      chips.append(card);
+      if(f.owned)fetch('/api/chat/files/'+f.id+'?metadata=1').then(r=>r.ok?r.json():null).then(meta=>{if(meta&&card.isConnected)card.replaceWith(chatAttachmentCard({...meta,owned:true}));else if(card.isConnected)card.textContent='Attachment removed';}).catch(()=>{card.textContent='Attachment unavailable';});
     });
     b.append(chips);
   }
@@ -1997,7 +2011,7 @@ async function chatUploadFiles(key,url,files) {
         const res=await fetch(url+"&name="+encodeURIComponent(f.name),{method:"POST",body:f});
         if(!res.ok)throw new Error((await res.text()).slice(0,120));
         const d=await res.json();
-        chatStoreUploadedFile(key,{hash:d.file.hash,name:d.file.name,size:d.file.size});
+        chatStoreUploadedFile(key,d.file.id?{...d.file,owned:true}:{hash:d.file.hash,name:d.file.name,size:d.file.size});
       } catch(e) {showToast("Upload failed — "+(e.message||"error"));}
     }
   } finally {
@@ -2027,7 +2041,7 @@ function renderChatComposer(session) {
   const nativeRecipient = () => chatRecipients.get(draftKey)?.backend === "terminal";
   const syncAttach = () => {
     const btn = host.querySelector(".chat-attach");
-    if (btn) btn.hidden = (nativeRecipient()&&!session?.shared) || !chatAgent || (chatIsTerm()&&chatRecipients.get(draftKey)?.backend!=="hermes");
+    if (btn) btn.hidden = false;
     const rit = host.querySelector(".chat-ritual");
     if (rit) {
       rit.hidden = !chatIsPortal() || nativeRecipient();
@@ -2040,10 +2054,14 @@ function renderChatComposer(session) {
       chips.hidden = !chatPendingFiles.length;
       // each pending chip drops with its ✕ — a wrongly picked file never has to send
       chatPendingFiles.forEach((f, i) => {
-        const chip = el("span", "chat-attach-chip", "⤓ " + f.name);
-        const x = el("button", "chat-attach-x", "✕");
-        x.title = "drop this attachment";
-        x.onclick = () => { chatPendingFiles.splice(i, 1); syncAttach(); chatSaveDraft(); };
+        const chip = chatAttachmentCard(f);
+        const x = el("button", "chat-attach-x", "×");
+        x.title = "Remove " + f.name;
+        x.setAttribute("aria-label",x.title);
+        x.onclick = async () => {
+          if(f.owned){const r=await fetch('/api/chat/files/'+f.id,{method:'DELETE'});if(!r.ok&&r.status!==409&&r.status!==404){showToast('Could not remove attachment. Try again.');return;}}
+          chatPendingFiles = chatPendingFiles.filter(file=>file!==f); syncAttach(); chatSaveDraft(); host.querySelector("textarea")?._grow?.(); host.querySelector("textarea")?.focus();
+        };
         chip.append(x);
         chips.append(chip);
       });
@@ -2135,17 +2153,25 @@ function renderChatComposer(session) {
   fi.type = "file";
   fi.multiple = true;
   fi.hidden = true;
-  fi.onchange = async () => {
-    const files=[...fi.files];
+  fi.accept = ".pdf,.docx,.xlsx,.csv,.tsv,.txt,.md,.json,.log,.png,.jpg,.jpeg,.heic,.webp,.gif";
+  const upload = async (picked) => {
+    const files=Array.from(picked);
+    if(files.length+chatPendingFiles.length>8){showToast("Attach up to eight files per message.");return;}
+    if(files.some(f=>f.size>20*1024*1024)){showToast("Files must be 20 MB or smaller.");return;}
     const url=chatIsPortal()
       ? chatAttachBase()+"?"+(chatOpenId?"thread="+encodeURIComponent(chatOpenId):"")
-      : "/api/tasks/thread/file?id=agentchat";
-    fi.value = "";
+      : "/api/chat/files?owner="+encodeURIComponent(chatOpenId?(chatIsTerm()?"terminal:":chatAgent?"agent:":"spirit:")+(chatAgent||"")+"/"+chatOpenId:"draft:"+draftKey);
     await chatUploadFiles(draftKey,url,files);
   };
-  const attach = el("button", "chat-attach", "＋");
-  attach.title = "attach a file";
+  fi.onchange = () => {const files=[...fi.files];fi.value="";upload(files);};
+  const attach = el("button", "chat-attach", "+");
+  attach.title = "Attach files";
+  attach.setAttribute("aria-label","Attach files");
   attach.onclick = () => fi.click();
+  ta.addEventListener("paste",e=>{const files=[...(e.clipboardData?.files||[])];if(files.length){e.preventDefault();upload(files);}});
+  host.ondragover=e=>{if([...e.dataTransfer.types].includes('Files')){e.preventDefault();host.classList.add('chat-drop-active');}};
+  host.ondragleave=e=>{if(!host.contains(e.relatedTarget))host.classList.remove('chat-drop-active');};
+  host.ondrop=e=>{host.classList.remove('chat-drop-active');if(e.dataTransfer.files.length){e.preventDefault();upload(e.dataTransfer.files);}};
   // ask | propose — the portals' two outcomes as a filter-chip pair, one on;
   // propose = the delegate ritual (proposals a person approves in the
   // portal), ask = read-only
@@ -2183,8 +2209,10 @@ function renderChatComposer(session) {
         ta.value="";chatPendingFiles=[];grow();mention.hidden=true;syncAttach();
       }
     };
-    const initialText = !sendSession&&!chatIsPortal() ? chatProjectInitialText(sendProject,text) : text;
-    const payload = chatIsPortal() ? { text, files, ritual: chatRitual } : { text:initialText, files };
+    const messageText = text + files.filter(f=>f.owned).map(f=>"\n[context-file:: "+f.id+"]").join("");
+    const sendFiles = files.filter(f=>!f.owned);
+    const initialText = !sendSession&&!chatIsPortal() ? chatProjectInitialText(sendProject,messageText) : messageText;
+    const payload = chatIsPortal() ? { text:messageText, files:sendFiles, ritual: chatRitual } : { text:initialText, files:sendFiles };
     const selected=chatArtifactSelections.get("chat:"+draftKey);
     const chosenRecipient=chatRecipients.get(draftKey);
     if(session?.shared && (session.continuations||[]).length && !chosenRecipient){showToast("Choose the agent for this message above the conversation.");chatSending=false;renderChatComposer(chatCurSession);return;}
@@ -2192,7 +2220,7 @@ function renderChatComposer(session) {
       try{
         const target=chosenRecipient;
         const url=chatBaseFor(target.agent)+"/"+encodeURIComponent(target.id)+"/messages";
-        await chatDeliverRemembered(chatRememberDelivery(draftKey,target.agent,url,{text,files,recipient:{agent:target.agent,model:target.model},task:session?.shared?"":selected?.task||session?.task||"",artifacts:selected?[{id:selected.id,revision:selected.revision}]:[]}));
+        await chatDeliverRemembered(chatRememberDelivery(draftKey,target.agent,url,{text:messageText,files:sendFiles,recipient:{agent:target.agent,model:target.model},task:session?.shared?"":selected?.task||session?.task||"",artifacts:selected?[{id:selected.id,revision:selected.revision}]:[]}));
         acceptedDraft();
         if(sendRoute===chatRouteVersion&&chatTermOpen)await chatTermRequestFinalTail(chatTermOpen);
       }catch(e){showToast(e.message||"Send not confirmed. Your draft is retained.");}
@@ -2201,9 +2229,9 @@ function renderChatComposer(session) {
     }
     if(chosenRecipient?.backend==="terminal"){
       try{
-        if(files.length&&!session?.shared)throw new Error("File uploads are not supported by this coding continuation yet. Remove the attachment or choose a planning agent.");
+        if(sendFiles.length&&!session?.shared)throw new Error("File uploads are not supported by this coding continuation yet. Remove the attachment or choose a planning agent.");
         const url=chatTermBase(chosenRecipient.id)+"/input";
-        const input={text,...(files.length?{files:files.map(f=>f.hash)}:{}),conversationAgent:sendAgent,conversationId:sendSession,task:session?.shared?"":selected?.task||session?.task||"",artifacts:selected?[{id:selected.id,revision:selected.revision}]:[]};
+        const input={text:messageText,...(sendFiles.length?{files:sendFiles.map(f=>f.hash)}:{}),conversationAgent:sendAgent,conversationId:sendSession,task:session?.shared?"":selected?.task||session?.task||"",artifacts:selected?[{id:selected.id,revision:selected.revision}]:[]};
         if(chatTermFind(chosenRecipient.id)?.agentState==='working')await chatStageMessage(draftKey,chosenRecipient.agent,url,input);
         else await chatDeliverRemembered(chatRememberDelivery(draftKey,chosenRecipient.agent,url,input));acceptedDraft();
         if(sendRoute===chatRouteVersion)await refetchChatSession(sendSession);
@@ -2231,7 +2259,7 @@ function renderChatComposer(session) {
       if(durable)remembered=chatRememberDelivery(draftKey,sendAgent,endpoint,payload);
       if (sendSession) {
         if(remembered)await chatDeliverRemembered(remembered);
-        else await postJSONOk(endpoint, sendAgent ? payload : { text });
+        else await postJSONOk(endpoint, sendAgent ? payload : { text:messageText });
         acceptedDraft();
       } else if (sendAgent) {
         // Lazy creation uses the same request ID when its response is lost.
@@ -3527,12 +3555,13 @@ async function chatUpdateStaged(item,next){
  }
  throw Error('Pending messages changed elsewhere. Try again.');
 }
+function chatAttachmentMessageLabel(text){return String(text||'').replace(/^\[context-file:: [a-f0-9]{32}\]$/gm,'[Attached file]').trim()||'Attachment';}
 function chatRenderStagedMessages(host,scope){
  host.querySelector('.chat-pending-messages')?.remove();
  const items=chatReadDeliveryOutbox().filter(x=>x.staged&&x.scope===scope);if(!items.length)return;
  const list=el('div','chat-pending-messages');list.setAttribute('aria-label','Pending messages');
  for(const item of items){
-  const row=el('div','chat-pending-message'),preview=el('span','chat-pending-preview',item.payload.text||'Attachment');preview.title=item.payload.text||'Attachment';
+  const row=el('div','chat-pending-message'),preview=el('span','chat-pending-preview',chatAttachmentMessageLabel(item.payload.text));preview.title=preview.textContent;
   const steer=el('button','sprt-quiet','↳ Steer');steer.title='Send this instruction now';
   const remove=el('button','sprt-quiet','×');remove.setAttribute('aria-label','Remove pending message');
   const more=el('details','chat-pending-more'),summary=el('summary','','…');summary.setAttribute('aria-label','Pending message actions');const menu=el('div','chat-pending-menu');more.append(summary,menu);more.addEventListener('toggle',()=>{if(more.open)more.classList.toggle('below',more.getBoundingClientRect().top<120);});
@@ -3549,8 +3578,8 @@ function chatRenderStagedMessages(host,scope){
    }catch(e){status.textContent=e.message;steer.disabled=remove.disabled=false;}
   };
   const edit=el('button','sprt-quiet','Edit');edit.onclick=()=>{more.open=false;reviewDialog('Edit pending message',({body,actions,close})=>{
-   const input=document.createElement('textarea');input.className='pp-in';input.setAttribute('aria-label','Pending message');input.value=item.payload.text||'';input.rows=5;body.append(input);
-   const cancel=el('button','sprt-quiet','Cancel'),save=el('button','sprt-quiet','Save');cancel.onclick=close;save.onclick=async()=>{if(!input.value.trim())return;save.disabled=true;try{const next={...item,payload:{...item.payload,text:input.value.trim()},stagedError:''};next.signature=JSON.stringify({...next.payload,requestId:undefined});await chatUpdateStaged(item,next);close();refresh();}catch(e){status.textContent=e.message;close();}};actions.append(cancel,save);
+   const input=document.createElement('textarea');input.className='pp-in';input.setAttribute('aria-label','Pending message');const refs=(item.payload.text||'').match(/^\[context-file:: [a-f0-9]{32}\]$/gm)||[];input.value=(item.payload.text||'').replace(/^\[context-file:: [a-f0-9]{32}\]$/gm,'').trim();input.rows=5;body.append(input);if(refs.length)body.append(el('p','chat-head-meta',refs.length+' attached file'+(refs.length===1?'':'s')+' will be kept.'));
+   const cancel=el('button','sprt-quiet','Cancel'),save=el('button','sprt-quiet','Save');cancel.onclick=close;save.onclick=async()=>{if(!input.value.trim()&&!refs.length)return;save.disabled=true;try{const next={...item,payload:{...item.payload,text:[input.value.trim(),...refs].filter(Boolean).join('\n')},stagedError:''};next.signature=JSON.stringify({...next.payload,requestId:undefined});await chatUpdateStaged(item,next);close();refresh();}catch(e){status.textContent=e.message;close();}};actions.append(cancel,save);
   });};menu.append(edit);
   const side=el('button','sprt-quiet','Open in side chat');side.onclick=()=>{more.open=false;const source=chatWorkspaceSource();if(source)chatWorkspaceSideSetup({...source,initialPrompt:item.payload.text});};menu.append(side);
   row.append(preview,steer,remove,more,status);list.append(row);

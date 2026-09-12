@@ -419,10 +419,10 @@ function chatOpenFiles(){
   let rows=[],closed=false,pending=null,ready=Promise.resolve();
   const render=()=>{
    const scroll=list.scrollTop;list.replaceChildren();const q=search.value.trim().toLowerCase();
-   for(const {artifact:a,roles} of rows){
+   for(const {artifact:a,roles,attachment} of rows){
     if(q&&![a.title,a.ref,a.kind].join(' ').toLowerCase().includes(q))continue;
     const item=el('div','chat-file-row'),open=el('button','chat-file-open',a.title||a.ref||'Untitled file');open.disabled=!!a.unknown||!a.id;
-    open.onclick=()=>chatOpenWorkingArtifact({id:a.id,revision:a.head,task:source.task});
+    open.onclick=()=>attachment?chatOpenAttachment(attachment,"/api/chat/files/"+attachment.id):chatOpenWorkingArtifact({id:a.id,revision:a.head,task:source.task});
     const metadata=[...roles,a.kind,a.revisions?.length?'v'+a.revisions.length:'',a.provenance?.run?'Run '+a.provenance.run:''].filter(Boolean);
     item.append(open,el('div','chat-file-meta',metadata.join(' · ')));if(a.ref)item.append(el('div','chat-file-path',a.ref));list.append(item);
    }
@@ -434,11 +434,12 @@ function chatOpenFiles(){
    try{
     const query=new URLSearchParams({conversation_backend:source.backend==='terminal'?'terminal':'agent',conversation_agent:source.agent,conversation_id:source.id});
     const get=async url=>{const r=await fetch(url,{signal:controller.signal,cache:'no-store'});if(!r.ok)throw Error('Files could not be loaded. Refresh to retry.');return r.json();};
-    const [scope,task]=await Promise.all([get('/api/artifacts?'+query),source.task?get('/api/tasks/panel?id='+encodeURIComponent(source.task)):Promise.resolve(null)]);
+    const owner=(source.backend==='terminal'?'terminal:':'agent:')+source.agent+'/'+source.id;
+    const [scope,task,uploads]=await Promise.all([get('/api/artifacts?'+query),source.task?get('/api/tasks/panel?id='+encodeURIComponent(source.task)):Promise.resolve(null),get('/api/chat/files?owner='+encodeURIComponent(owner))]);
     if(closed||pending!==controller)return;
     const found=new Map();const add=(a,role)=>{const key=a.id||a.ref;if(!key)return;const row=found.get(key)||{artifact:a,roles:[]};if(!row.roles.includes(role))row.roles.push(role);found.set(key,row);};
     for(const a of scope.artifacts||[])add(a,'Conversation output');for(const a of task?.artifacts?.outputs||[])add(a,'Task output');for(const a of task?.artifacts?.inputs||[])add(a,'Task input');
-    rows=[...found.values()];status.textContent=rows.length+' file'+(rows.length===1?'':'s');render();
+    rows=[...(uploads.files||[]).map(f=>({artifact:{id:f.id,title:f.name,kind:f.type},attachment:{...f,owned:true},roles:[f.sent?"Attached context":"Draft attachment"]})),...found.values()];status.textContent=rows.length+' file'+(rows.length===1?'':'s');render();
    }catch(e){if(!closed&&pending===controller&&e.name!=='AbortError')status.textContent=e.message;}
    finally{if(!closed&&pending===controller)refresh.disabled=false;}
   };

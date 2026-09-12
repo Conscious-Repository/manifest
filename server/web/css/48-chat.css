@@ -134,7 +134,7 @@
 .chat-rail-section .chat-rail-row { margin-left: var(--sp-2); }
 
 /* attachments on an agent-chat turn / pending in the composer */
-.chat-attach-chips { display: flex; flex-wrap: wrap; gap: var(--sp-3); margin-top: var(--sp-3); }
+.chat-attach-chips { order: -2; display: flex; flex-wrap: wrap; gap: var(--sp-4); margin-top: var(--sp-3); max-width: 100%; }
 .chat-attach-chip { display: inline-flex; align-items: center; gap: var(--sp-2); font-size: var(--fs-2xs); color: var(--base-40); border: 1px solid var(--line); border-radius: var(--radius); padding: var(--sp-1) var(--sp-3); text-decoration: none; }
 button.chat-attach-chip { min-height: 44px; max-width: 100%; background: transparent; text-align: left; white-space: normal; overflow-wrap: anywhere; }
 .chat-attach-x { border: 0; background: none; color: var(--base-30); cursor: pointer; font-size: var(--fs-2xs); padding: 0; line-height: 1; }
@@ -763,3 +763,13 @@ button.chat-attach-chip { min-height: 44px; max-width: 100%; background: transpa
 .chat-main .chat-composer > .chat-composer-status {
   order: 1; flex: 1 1 160px; min-width: 0; align-self: center; font: var(--fs-xs)/1.4 var(--mono);
 }
+
+/* Attached context uses the shared field, message, and metadata conventions. */
+.chat-attachment-card { position: relative; display: inline-flex; width: 120px; max-width: 100%; border: 1px solid var(--line); border-radius: var(--radius-lg); background: var(--surface-field); }
+.chat-attachment-open { display: flex; flex-direction: column; align-items: stretch; gap: var(--sp-2); padding: var(--sp-4); width: 100%; min-width: 0; border: 0; background: none; color: var(--text); text-align: left; cursor: pointer; font: var(--fs-xs)/1.4 var(--mono); }
+.chat-attachment-open img { width: 100%; height: 72px; object-fit: cover; border-radius: var(--radius); }
+.chat-attachment-kind { height: 48px; display: grid; place-items: center; color: var(--muted); }
+.chat-attachment-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chat-attachment-size { color: var(--muted); }
+.chat-attachment-card .chat-attach-x { position: absolute; top: var(--sp-1); right: var(--sp-1); min-width: var(--control-min); min-height: var(--control-min); border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface-overlay); color: var(--text); cursor: pointer; }
+.chat-composer.chat-drop-active { outline: var(--focus-width) dashed var(--accent); outline-offset: calc(-1 * var(--focus-width)); }

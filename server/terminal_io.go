@@ -206,7 +206,7 @@ func (s *Server) handleTermInput(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "supervision unavailable for this backend; nothing sent", http.StatusBadRequest)
 		return
 	}
-	if (len(b.Artifacts) > 0 || len(b.Files) > 0) && se.backend() != "herdr" {
+	if (len(b.Artifacts) > 0 || len(b.Files) > 0 || ownedFileToken.MatchString(b.Text)) && se.backend() != "herdr" {
 		httpError(w, errBadRequest("artifact context is unavailable for this terminal backend; nothing sent"))
 		return
 	}
@@ -391,6 +391,28 @@ func (s *Server) handleTermInput(w http.ResponseWriter, r *http.Request) {
 			b.Text += context
 			if b.RequestID != "" {
 				b.Text += s.planRevisionInstructions(b.Artifacts)
+			}
+		}
+		if shared == nil && ownedFileToken.MatchString(ownerText) {
+			if b.Key != "" || se.Device != "" {
+				http.Error(w, "attachments require a local coding message", 400)
+				return
+			}
+			owner := "terminal:" + se.Kind + "/" + se.ID
+			if b.ConversationAgent != "" && b.ConversationID != "" {
+				owner = "agent:" + b.ConversationAgent + "/" + b.ConversationID
+				if source, ok := s.terminal.find(b.ConversationID); ok && source.Kind == b.ConversationAgent {
+					owner = "terminal:" + source.Kind + "/" + source.ID
+				}
+			}
+			context, err := s.ownedChatContext(owner, ownerText)
+			if err != nil {
+				http.Error(w, err.Error(), 400)
+				return
+			}
+			b.Text += context
+			if continuationContext == nil {
+				continuationContext = &terminalInputReceipt{Text: ownerText, ContextSource: s.terminalConversation(se).Key}
 			}
 		}
 		if se.isDraft() && (b.Key != "" || strings.TrimSpace(b.Text) == "") {

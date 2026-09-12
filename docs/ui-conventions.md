@@ -411,3 +411,9 @@ delivery merely because the agent continued working.
 ### Composite writing fields
 
 Use `.input-surface` for a composer containing a textarea and toolbar. The textarea stays borderless; keyboard focus on it draws one shared inset accent ring around the surface. Toolbar buttons keep their own focus rings. Use `--radius-message`, mono metadata, existing control tokens, and the central mobile touch sizing rules.
+
+### Chat attachments
+
+Use the quiet `+` at the left of the composer toolbar. File cards precede the writing field, with image thumbnails, mono filenames and sizes, and a labeled remove action. Picker, paste and drop share one upload path. Uploading holds Send; failed uploads leave successfully uploaded files and text intact. Use the existing attachment workspace for preview and the Files tab for durable context.
+
+Private chat uploads live separately from shared/task artifacts. Removing an unsent file deletes it; moving its owning chat to Trash permanently deletes uploaded bytes even if the conversation is later restored. Shared artifacts and provider histories retain their existing lifecycle. Abandoned landing uploads expire after seven days.

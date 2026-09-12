@@ -4,11 +4,16 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"path/filepath"
 
 	"manifest/chatstate"
 )
 
-func (s *Server) UseChatState(root string) { s.chatState = chatstate.New(root) }
+func (s *Server) UseChatState(root string) {
+	s.chatState = chatstate.New(root)
+	s.chatFilesRoot = filepath.Join(root, "attachments")
+	_ = s.purgeDeletedChatFiles()
+}
 
 // These routes exist only on the private cockpit handler, even when a draft is
 // intended for a team conversation. Unsent drafts do not become team content.
@@ -51,6 +56,12 @@ func (s *Server) handleChatState(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		httpError(w, err)
 		return
+	}
+	if r.Method != http.MethodGet && key == "inbox" && slot == "lifecycle" {
+		if err := s.purgeDeletedChatFiles(); err != nil {
+			httpError(w, err)
+			return
+		}
 	}
 	w.Header().Set("Cache-Control", "private, no-store")
 	writeJSON(w, result)

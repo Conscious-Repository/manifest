@@ -612,6 +612,9 @@ func (s *Server) agentChatSendTo(agent, id, requestID, text string, files []thre
 		if _, err := s.scopedArtifactContext(ctx.Task, privateArtifactScope(sess), refs, handed); err != nil {
 			return agentchat.Delivery{}, err
 		}
+		if _, err := s.ownedChatContext("agent:"+agent+"/"+id, text); err != nil {
+			return agentchat.Delivery{}, errBadRequest(err.Error())
+		}
 	}
 	accepted, err := s.agentChat.store.Accept(agent, id, requestID, text, ctx)
 	if err != nil {
@@ -809,11 +812,20 @@ func (s *Server) composeAgentChatPromptWindow(agent string, sess agentchat.Sessi
 // prompt block the do-bot can consume — the hermes_delegate.go idiom: text
 // inlined, images handed their on-disk path for the vision toolset.
 func (s *Server) agentChatAttachments(t agentchat.Turn) string {
-	if t.Who != "user" || s.threads == nil || s.threads.private == nil {
+	if t.Who != "user" {
 		return ""
 	}
-	st := s.threads.private
 	var b strings.Builder
+	for _, m := range ownedFileToken.FindAllStringSubmatch(t.Text, -1) {
+		f, e := s.ownedFile(m[1])
+		if e == nil && !s.chatOwnerDeleted(f.Owner) {
+			fmt.Fprintf(&b, "\nAttached reference file (inspect with file/PDF/vision tools): %s\n", s.ownedFilePath(f))
+		}
+	}
+	if s.threads == nil || s.threads.private == nil {
+		return b.String()
+	}
+	st := s.threads.private
 	for _, m := range fileTokenRe.FindAllStringSubmatch(t.Text, -1) {
 		hash, name := m[1], m[2]
 		path := st.BlobPath(hash)
