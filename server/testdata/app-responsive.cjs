@@ -14,6 +14,7 @@ await p.evaluate(()=>{
  window.requests=[];window.fetch=url=>new Promise(resolve=>requests.push({url,resolve}));
 });
 for(const [f,a,b] of [['90-todos','function renderTodosToolbar()','function renderTodos()'],['45-feed','function renderFeedFilters()','function renderFeed()'],['71-write','function writeInput(','function writeRenderComments('],['46-consume','function renderConsume()','// ---- the manage panel'],['65-reading','function addBook()','if (els.bookSearch)'],['60-contacts','function openCreatePanel()','if (els.contactSearch)'],['73-terminal','function renderTermSessions(enabled)','function termRuntimeKey']])await p.addScriptTag({content:part(read('js/'+f+'.js'),a,b)});
+await p.addScriptTag({content:part(read('js/46-consume.js'),'const consumePanelState=','function consumeManagePanel()')});
 await p.evaluate(()=>{renderTodosToolbar();renderFeedFilters();renderConsume();const input=writeInput({posting:false},'new','',()=>{});document.getElementById('writing').append(input);});
 for(const width of [320,390,768,1280])for(const theme of ['default','jarvis']){
  await p.setViewportSize({width,height:900});await p.evaluate(theme=>document.documentElement.dataset.theme=theme,theme);

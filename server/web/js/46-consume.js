@@ -230,8 +230,8 @@ function renderConsume() {
   renderApprovalInspector(); // release the proposal column/sheet after replacing its cards
   if(consumeLoadError){const notice=emptyRow(consumeLoadError);notice.setAttribute('role','status');host.append(notice,pillLight('Retry',()=>loadConsume()));return;}
 
-  if (consumeManageOpen) host.append(consumeManagePanel());
-  if (consumeCuratedOpen) host.append(consumeCuratedPanel());
+  host.append(el("div","consume-panels"));
+  consumeRenderPanels();
   if (consumeSub) host.append(consumeSubBanner());
 
   const items = consumeCache.items || [];
@@ -276,8 +276,8 @@ function consumeHeader(head) {
       finally{refresh.disabled=false;refresh.textContent='refresh';}
     });
     const mark=pillLight('mark all read',async()=>{const q=consumeList?'?list='+encodeURIComponent(consumeList):'';if(await consumePost('/api/consume/read-all'+q))await loadConsume();});mark.classList.add('consume-mark-all');
-    const curated=pillLight('CURATED',async()=>{consumeCuratedOpen=!consumeCuratedOpen;if(consumeCuratedOpen)await loadConsumeCurated();renderConsume();});curated.classList.add('consume-curated-toggle');
-    const manage=pillLight('MANAGE',async()=>{consumeManageOpen=!consumeManageOpen;if(consumeManageOpen)await loadConsumeSubs();renderConsume();});manage.classList.add('consume-manage-toggle');
+    const curated=pillLight('CURATED',()=>consumeTogglePanel('curated'));curated.classList.add('consume-curated-toggle');
+    const manage=pillLight('MANAGE',()=>consumeTogglePanel('subscriptions'));manage.classList.add('consume-manage-toggle');
     right.append(count,refresh,mark,curated,manage);head.append(left,right);
   }
   renderFilterButtons(head.querySelector('.consume-view-filters'),[['unread','UNREAD'],['all','ALL']],consumeView,value=>{consumeView=value;consumeFilterChanged();});
@@ -287,16 +287,49 @@ function consumeHeader(head) {
   head.querySelector('.consume-mark-all').hidden=unread===0;
   head.querySelector('.consume-curated-toggle').textContent=consumeCuratedOpen?'close curated':'CURATED';
   head.querySelector('.consume-manage-toggle').textContent=consumeManageOpen?'close':'MANAGE';
+  head.querySelector('.consume-manage-toggle').setAttribute('aria-expanded',String(consumeManageOpen));
+  head.querySelector('.consume-curated-toggle').setAttribute('aria-expanded',String(consumeCuratedOpen));
   return head;
 }
 
 // ---- the manage panel ----
 
-async function loadConsumeSubs() {
-  try {
-    consumeSubs = await (await fetch("/api/consume/subscriptions")).json();
-  } catch (e) { consumeSubs = { subscriptions: [], xReady: false }; }
+// Panel visibility is local UI state: never wait for the network to open or close.
+const consumePanelState={subscriptions:{request:0,loading:false,error:''},curated:{request:0,loading:false,error:''}};
+function consumeRenderPanels(){
+ const host=els.feedList.querySelector('.consume-panels');if(!host)return;
+ for(const kind of ['subscriptions','curated']){
+  let slot=host.querySelector('[data-panel="'+kind+'"]');
+  if(!(kind==='curated'?consumeCuratedOpen:consumeManageOpen)){slot?.remove();continue;}
+  if(!slot){slot=el('div');slot.dataset.panel=kind;host.append(slot);}
+  const status=consumePanelState[kind],signature=JSON.stringify(status);
+  if(slot.dataset.signature===signature)continue;
+  slot.dataset.signature=signature;slot.replaceChildren();
+  if(status.loading||status.error){
+   const panel=el('div','consume-manage');panel.setAttribute('role','status');
+   panel.append(el('span','micro-label',status.loading?'Loading '+(kind==='curated'?'curated items':'subscriptions')+'…':status.error));
+   if(status.error)panel.append(pillLight('Retry',()=>consumeLoadPanel(kind)));
+   slot.append(panel);
+  }else slot.append(kind==='curated'?consumeCuratedPanel():consumeManagePanel());
+ }
 }
+function consumeTogglePanel(kind){
+ if(kind==='curated')consumeCuratedOpen=!consumeCuratedOpen;else consumeManageOpen=!consumeManageOpen;
+ const head=els.feedList.querySelector('.consume-head');if(head)consumeHeader(head);
+ if(kind==='curated'?consumeCuratedOpen:consumeManageOpen)consumeLoadPanel(kind);
+ else consumeRenderPanels();
+}
+async function consumeLoadPanel(kind){
+ const status=consumePanelState[kind],request=++status.request;
+ status.loading=true;status.error='';consumeRenderPanels();
+ try{
+  const response=await fetch('/api/consume/'+kind);if(!response.ok)throw Error('HTTP '+response.status);
+  const data=await response.json();if(request!==status.request)return;
+  if(kind==='curated')consumeCurated=data;else consumeSubs=data;
+ }catch(e){if(request!==status.request)return;status.error='Could not load '+(kind==='curated'?'curated items':'subscriptions')+'. Try again.';}
+ if(request!==status.request)return;status.loading=false;consumeRenderPanels();
+}
+async function loadConsumeSubs(){await consumeLoadPanel('subscriptions');}
 
 function consumeManagePanel() {
   const panel = el("div", "consume-manage");
@@ -469,11 +502,7 @@ function consumeEditSub(s, row) {
 // note is frontmatter in the vault note, and re-curating with a new note is
 // the edit path; the body is never touched.
 
-async function loadConsumeCurated() {
-  try {
-    consumeCurated = await (await fetch("/api/consume/curated")).json();
-  } catch (e) { consumeCurated = { entries: [], public: "" }; }
-}
+async function loadConsumeCurated(){await consumeLoadPanel('curated');}
 
 function consumeCuratedPanel() {
   const panel = el("div", "consume-manage consume-curated");

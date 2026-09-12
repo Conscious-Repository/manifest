@@ -653,12 +653,14 @@ function attachmentWorkspace(mount,file,href,onClose){
   const head=el("div","artifact-workspace-head"),title=el("strong","artifact-workspace-title",file.name);
   const back=el("button","sprt-quiet","Back to chat"),controls=el("div","artifact-workspace-controls");
   const download=el("a","sprt-quiet",file.openLabel||"Open / download original ↗");download.href=href;download.target="_blank";download.rel="noopener";
+  if(file.resolveHref){download.removeAttribute("href");}
   const notice=el("div","artifact-workspace-notice",file.notice||"Original attachment · read-only"),body=el("div","artifact-workspace-body","Loading…");body.tabIndex=0;notice.setAttribute("role","status");
   let blobURL=null,closed=false;const abort=new AbortController();
   back.onclick=()=>{closed=true;abort.abort();if(blobURL)URL.revokeObjectURL(blobURL);pane.remove();onClose?.();};
   head.append(title,back);controls.append(download);pane.append(head,controls,notice,body);mount.append(pane);
   const ready=(async()=>{
     try{
+      if(file.resolveHref){href=await file.resolveHref(abort.signal);if(closed)return;download.href=href;}
       const response=await fetch(href,{signal:abort.signal});if(!response.ok){
         if(file.errorLabel){const reader=response.body?.getReader();const chunk=reader?await reader.read():null;await reader?.cancel();const reason=chunk?.value?new TextDecoder().decode(chunk.value.slice(0,500)).trim():"";throw new Error(reason||file.errorLabel);}
         throw new Error("Attachment unavailable ("+response.status+")");
@@ -673,7 +675,7 @@ function attachmentWorkspace(mount,file,href,onClose){
       while(true){const {done,value}=await reader.read();if(done)break;size+=value.length;if(size>limit){await reader.cancel();throw new Error("This file is too large to preview. Open or download the original above.");}chunks.push(value);}
       if(closed)return;
       const blob=new Blob(chunks,{type:mime});
-      if(text){const content=await blob.text();if(closed)return;const pre=el("pre","",content);body.replaceChildren(pre);}
+      if(text){const content=await blob.text();if(closed)return;if(file.markdown&&/\.md$/i.test(file.name))body.replaceChildren(renderMarkdown(content,"",{readOnly:true}));else body.replaceChildren(el("pre","",content));}
       else {blobURL=URL.createObjectURL(blob);const view=document.createElement(mime==="application/pdf"?"iframe":"img");view.src=blobURL;view.title=file.name;view.alt=file.name;body.replaceChildren(view);}
     }catch(e){abort.abort();if(!closed)body.textContent=e.message;}
   })();

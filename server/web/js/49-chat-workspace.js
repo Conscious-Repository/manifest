@@ -22,6 +22,7 @@ async function chatRestoreWorkspace(){
  for(const tab of saved.tabs){
   if(tab.spec?.kind==='artifact'&&(tab.spec.id||tab.spec.plan&&tab.spec.task))chatOpenWorkingArtifact({...tab.spec,revision:tab.view?.revision||tab.spec.revision});
   else if(tab.spec?.kind==='side-setup'&&tab.spec.source?.id)chatWorkspaceSideSetup(tab.spec.source,{key:tab.key,view:tab.view});
+  else if(tab.spec?.kind==='local-file'&&typeof tab.spec.path==='string')chatOpenLocalFile(tab.spec.path);
   else if(tab.spec?.kind==='attachment'&&typeof tab.spec.file?.name==='string'&&typeof tab.spec.href==='string'&&tab.spec.href.startsWith('/api/'))chatOpenAttachment(tab.spec.file,tab.spec.href);
   else if(tab.spec?.kind==='side'&&/^#\/chat\//.test(tab.spec.route||''))w.tab(tab.key,'Side chat',host=>chatMountSideFrame(host,tab.spec),tab.spec);
   else if(tab.spec?.kind==='activity')chatOpenActivity();
@@ -455,3 +456,39 @@ function chatOpenFiles(){
   return {element:pane,close:()=>{closed=true;pending?.abort();pane.remove();drop();},getView:()=>({query:search.value,scrollTop:list.scrollTop}),restoreView:async view=>{await ready;if(!host.isConnected||!host.clientHeight)return false;search.value=typeof view.query==='string'?view.query:'';render();list.scrollTop=Math.max(0,Number(view.scrollTop)||0);return true;}};
  },{kind:'files'});
 }
+
+// Local markdown references are files on the cockpit host, not web routes.
+// Reading stays behind the Files API's existing authentication and root policy.
+function chatLocalFilePath(href,base=''){
+ let path=String(href||'').trim().replace(/^<(.+)>$/,'$1');
+ if(!path||path.startsWith('//')||/^(?:https?:|mailto:|#|\/api\/)/i.test(path))return null;
+ if(path.startsWith('file://')){try{const url=new URL(path);if(url.hostname&&url.hostname!=='localhost')return null;path=url.pathname;}catch(e){return null;}}
+ else if(/^[a-z][a-z0-9+.-]*:/i.test(path))return null;
+ try{path=decodeURIComponent(path);}catch(e){return null;}
+ path=path.replace(/(?::\d+(?::\d+)?|#L?\d+(?:-L?\d+)?)$/,'');
+ if(/[?#\x00-\x1f]/.test(path)||! /\/[^/]+\.[a-z0-9]+$/i.test('/'+path))return null;
+ if(!path.startsWith('/')){if(!base.startsWith('/'))return null;path=base.replace(/\/$/,'')+'/'+path;}
+ const parts=[];for(const part of path.split('/')){if(part==='..')parts.pop();else if(part&&part!=='.')parts.push(part);}
+ return '/'+parts.join('/');
+}
+function chatOpenLocalFile(path){
+ if(chatIsPortal()||chatLocalFilePath(path)!==path)return;
+ const w=chatEnsureWorkspace(),name=path.split('/').at(-1);
+ w.tab('local-file:'+path,name,(host,drop)=>{
+  host.dataset.localFilePath=path;
+  return attachmentWorkspace(host,{name,markdown:true,notice:path+' · Read-only',errorLabel:'File unavailable',
+   resolveHref:async signal=>{
+    const response=await fetch('/api/files/hosts',{signal});if(!response.ok)throw Error('Could not load file access.');
+    const local=(await response.json()).hosts?.find(h=>h.local);if(!local)throw Error('Local file access is unavailable.');
+    return '/api/files/read?host='+encodeURIComponent(local.name)+'&path='+encodeURIComponent(path);
+   }},'',drop);
+ },{kind:'local-file',path});
+}
+document.addEventListener('click',event=>{
+ const link=event.target.closest?.('a.md-link');
+ if(!link||!link.closest('.chat-shell')||chatIsPortal())return;
+ const parent=link.closest('[data-local-file-path]')?.dataset.localFilePath;
+ const base=parent?parent.slice(0,parent.lastIndexOf('/')):chatWorkspaceSource()?.cwd||'';
+ const path=chatLocalFilePath(link.getAttribute('href'),base);if(!path)return;
+ event.preventDefault();chatOpenLocalFile(path);
+});

@@ -50,8 +50,8 @@
 .read-actions { display: flex; flex-wrap: wrap; gap: var(--sp-4); }
 .consume-loading { color: var(--muted); }
 .consume-body {
-  font-family: var(--serif);
-  font-size: 1.05rem;
+  font-family: var(--sans);
+  font-size: var(--fs-xl);
   line-height: 1.68;
   color: var(--text);
   /* A measure, not a column width — the reason to read here rather than there. */
@@ -144,7 +144,7 @@
 
 /* ---- phone (<860, the mobile-pass band) ---- */
 @media (max-width: 859px) {
-  .consume-body { font-size: 1.02rem; max-width: 100%; }
+  .consume-body { font-size: var(--fs-xl); max-width: 100%; }
   .consume-head-right { margin-left: 0; width: 100%; justify-content: space-between; }
   .consume-sub-acts { margin-left: 0; width: 100%; }
   .consume-add-input, .consume-add-list { flex-basis: 100%; }
