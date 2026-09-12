@@ -144,10 +144,14 @@ type Request struct {
 
 // Result is a completed turn.
 type Result struct {
-	dutyVerified bool    // set only by the bounded launcher after usage acceptance
-	Reply        string  // stdout — the agent's final reply
-	SpentUSD     float64 // parsed from the usage report (0 if unavailable)
-	Model        string  // model reported by the usage file, if any
+	CostPolicy      string
+	CostTelemetry   string
+	ProviderBinding string
+	Usage           *TokenUsage
+	dutyVerified    bool    // set only by the bounded launcher after usage acceptance
+	Reply           string  // stdout — the agent's final reply
+	SpentUSD        float64 // reported cost, or local policy projection; see CostTelemetry
+	Model           string  // model reported by the usage file, if any
 	// SessionID is the Hermes session the turn ran as (usage report
 	// `session_id`, e.g. "20260904_135845_2214c8"), "" if unavailable. It is
 	// a pointer into Hermes' own store (`hermes sessions search`, `hermes chat

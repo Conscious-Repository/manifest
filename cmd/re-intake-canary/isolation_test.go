@@ -126,10 +126,13 @@ func TestCanarySourceCallGraphIsolation(t *testing.T) {
 	}
 }
 
+// Re-audited for policy-aware receipt 36: the early successor branch only
+// creates a temporary usage file and runs isolated Python; authority and usage
+// checks are pure, fallback still refuses, and no production writer is reachable.
 var reviewedSuccessorSources = map[string]string{
-	"../../hermes/runner.go":    "c6c9f3eadf85cf8244b3cb20d6c8b2c8a498a8739d8527c8a1f44372d9357839",
-	"../../hermes/successor.go": "9fe3e973fc52accd9eae33bd17cf34deb5311bbb91779412807c88672c343293",
-	"../../hermes/successor.py": "a3f4902cfee4fbcb90201300bed034e79dfe12ef164c6b2adfb8bb470b7beca2",
-	"../../hermes/authority.go": "807fef078582c1aeb344c45d2d4f5295e073f6e4c2dfa698115dd7d8cf4baaa9",
+	"../../hermes/runner.go":    "f97d593a97fdc53e17c80b676a0fdf34b3171dcdc1f1649ccbb601e1e7e0a841",
+	"../../hermes/successor.go": "27d4d63b5ce75faa2e1be6e837cf117f1d45a3e1fdc0e0ff1026231f695aa65a",
+	"../../hermes/successor.py": "a7737229609b18c627c720f466858045b7aa06b4e03ed29ce1c0774d8385ae5c",
+	"../../hermes/authority.go": "e70c31d863b4858d6d4733bc05e9bde7ed0cbac0942c095494c5dcb72ba02092",
 	"../../hermes/fallback.go":  "361d54087bd0eb76a98ee1014717e86632c7f037ab5dab4643528f91142f98e6",
 }

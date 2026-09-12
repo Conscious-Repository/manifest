@@ -18,6 +18,7 @@ import (
 
 func successorAuthority() DutyAuthority {
 	a := dutyFixture()
+	a.CostPolicy, a.Endpoint, a.ProviderBinding, a.MaxSteps = LocalCostPolicy, LocalEndpoint, LocalProviderBinding, 1
 	a.Provider, a.Model, a.Tools = "deepseek-local", "deepseek-v4.1-flash", []string{"none"}
 	return a
 }
@@ -62,7 +63,7 @@ main()
 	return calls
 }
 
-const matchingResponse = `b'{"model":"deepseek-v4.1-flash","provider":"deepseek-local","usage":{"cost_usd":0},"choices":[{"finish_reason":"stop","message":{"content":"verified proposal text"}}]}'`
+const matchingResponse = `b'{"model":"deepseek-v4.1-flash","provider":"deepseek-local","usage":{"prompt_tokens":4,"completion_tokens":3,"total_tokens":7,"cost_usd":0},"choices":[{"finish_reason":"stop","message":{"content":"verified proposal text"}}]}'`
 
 func TestSuccessorMatchingUsageAndNoFallback(t *testing.T) {
 	for _, tc := range []struct {
@@ -75,7 +76,7 @@ func TestSuccessorMatchingUsageAndNoFallback(t *testing.T) {
 		{"cost", strings.Replace(matchingResponse, `"cost_usd":0`, `"cost_usd":0.01`, 1), false},
 		{"underflow cost", strings.Replace(matchingResponse, `"cost_usd":0`, `"cost_usd":1e-999`, 1), false},
 		{"null cost", strings.Replace(matchingResponse, `"cost_usd":0`, `"cost_usd":null`, 1), false},
-		{"missing cost", strings.Replace(matchingResponse, `"cost_usd":0`, `"other":0`, 1), false},
+		{"missing cost", strings.Replace(matchingResponse, `"cost_usd":0`, `"other":0`, 1), true},
 		{"string cost", strings.Replace(matchingResponse, `"cost_usd":0`, `"cost_usd":"0"`, 1), false},
 		{"incomplete", strings.Replace(matchingResponse, `"stop"`, `"length"`, 1), false},
 		{"tool call", strings.Replace(matchingResponse, `"content":`, `"tool_calls":[{"name":"shell"}],"content":`, 1), false},
@@ -300,7 +301,7 @@ func TestSuccessorProposalAcceptanceFollowsVerifiedUsage(t *testing.T) {
 	for _, model := range []string{"deepseek-v4.1-flash", "drift"} {
 		t.Run(model, func(t *testing.T) {
 			proposal := "```manifest-proposal\n" + `{"type":"create-vault-note","title":"Fixture","body":"proposal only"}` + "\n```"
-			raw, _ := json.Marshal(map[string]any{"model": model, "provider": "deepseek-local", "usage": map[string]any{"cost_usd": 0}, "choices": []any{map[string]any{"finish_reason": "stop", "message": map[string]any{"content": proposal}}}})
+			raw, _ := json.Marshal(map[string]any{"model": model, "provider": "deepseek-local", "usage": map[string]any{"cost_usd": 0, "prompt_tokens": 4, "completion_tokens": 3, "total_tokens": 7}, "choices": []any{map[string]any{"finish_reason": "stop", "message": map[string]any{"content": proposal}}}})
 			stubSuccessor(t, "bytes.fromhex('"+hex.EncodeToString(raw)+"')", "")
 			r := NewRunner(Config{Enabled: true, Duties: map[string]DutyAuthority{"fixture": successorAuthority()}})
 			res, err := r.Run(t.Context(), Request{MigratedDuty: "fixture", Prompt: "propose a fixture"})
@@ -311,6 +312,49 @@ func TestSuccessorProposalAcceptanceFollowsVerifiedUsage(t *testing.T) {
 				}
 			} else if err != nil || !res.DutyVerified() || len(proposals) != 1 {
 				t.Fatalf("verified proposal refused: %v", err)
+			}
+		})
+	}
+}
+
+func TestSuccessorStandardLocalUsage(t *testing.T) {
+	// Exact observed schema: provider and usage.cost_usd are both absent.
+	standard := strings.Replace(strings.Replace(matchingResponse, `"provider":"deepseek-local",`, "", 1), `,"cost_usd":0`, "", 1)
+	cases := map[string]string{"standard": standard}
+	cases["token bound"] = strings.Replace(strings.Replace(standard, `"completion_tokens":3`, `"completion_tokens":4097`, 1), `"total_tokens":7`, `"total_tokens":4101`, 1)
+	for _, key := range []string{"prompt_tokens", "completion_tokens", "total_tokens"} {
+		value := map[string]string{"prompt_tokens": "4", "completion_tokens": "3", "total_tokens": "7"}[key]
+		for _, bad := range []string{"null", "true", `"3"`, "-1", "1.5", "1e999", "9007199254740992"} {
+			cases[key+bad] = strings.Replace(standard, `"`+key+`":`+value, `"`+key+`":`+bad, 1)
+		}
+		cases[key+"missing"] = strings.Replace(standard, `"`+key+`":`, `"absent":`, 1)
+	}
+	for name, field := range map[string]string{
+		"estimated cost": `"estimated_cost_usd":1,`,
+	} {
+		cases[name] = strings.Replace(standard, `"usage":{`, `"usage":{`+field, 1)
+	}
+	for name, claim := range map[string]string{
+		"reported cost": `"cost_usd":1,`, "function": `"function_call":{},`, "tools": `"tools":null,`, "fallback": `"fallback":false,"fallback":true,`,
+		"tool choice": `"tool_choice":"auto",`, "steps": `"steps":2,`, "uncertain": `"outcome":"uncertain",`,
+		"failed": `"failed":true,`, "error": `"error":"private sentinel",`, "incomplete": `"completed":false,`,
+		"policy drift": `"cost_policy":"cloud",`, "provider null": `"provider":null,`,
+	} {
+		cases[name] = strings.Replace(standard, `"usage":`, claim+`"usage":`, 1)
+	}
+	for name, response := range cases {
+		t.Run(name, func(t *testing.T) {
+			calls := stubSuccessor(t, response, "")
+			r := NewRunner(Config{Enabled: true, Duties: map[string]DutyAuthority{"fixture": successorAuthority()}})
+			res, err := r.Run(t.Context(), Request{MigratedDuty: "fixture", Prompt: "synthetic"})
+			if *calls != 1 || (err == nil) != (name == "standard") {
+				t.Fatal(name, res, err, *calls)
+			}
+			if err != nil && (res.Reply != "" || res.DutyVerified()) {
+				t.Fatal("refusal leaked")
+			}
+			if err == nil && (res.CostTelemetry != "unavailable" || res.CostPolicy != LocalCostPolicy || res.Usage == nil || res.Usage.TotalTokens != 7) {
+				t.Fatal(res)
 			}
 		})
 	}

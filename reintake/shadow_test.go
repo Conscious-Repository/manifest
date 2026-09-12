@@ -14,7 +14,7 @@ import (
 
 func authority() hermes.DutyAuthority {
 	ceiling := 0.0
-	return hermes.DutyAuthority{Provider: "deepseek-local", Model: Model, Tools: []string{"none"}, MCP: "no_mcp", TimeoutSeconds: 120, MaxSteps: 1, CeilingUSD: &ceiling}
+	return hermes.DutyAuthority{CostPolicy: hermes.LocalCostPolicy, Endpoint: hermes.LocalEndpoint, ProviderBinding: hermes.LocalProviderBinding, Provider: "deepseek-local", Model: Model, Tools: []string{"none"}, MCP: "no_mcp", TimeoutSeconds: 120, MaxSteps: 1, CeilingUSD: &ceiling}
 }
 func duties() map[string]hermes.DutyAuthority {
 	return map[string]hermes.DutyAuthority{Duty: authority()}

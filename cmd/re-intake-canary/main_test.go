@@ -21,7 +21,7 @@ func TestCanaryRequiresExactConfirmation(t *testing.T) {
 }
 
 func TestCanaryDurableOneShot(t *testing.T) {
-	if receiptDirectory != "/home/benjamin/workbench-staging/excalibur-retirement" || receiptName != "35-deepseek-primary-canary.jsonl" {
+	if receiptDirectory != "/home/benjamin/workbench-staging/excalibur-retirement" || receiptName != "36-deepseek-primary-canary.jsonl" {
 		t.Fatal("owner-authorized attempt must use its reviewed fixed receipt")
 	}
 	for _, status := range []string{"canary passed", "refused"} {
@@ -32,6 +32,11 @@ func TestCanaryDurableOneShot(t *testing.T) {
 			}
 			defer root.Close()
 			const priorName = "33-deepseek-primary-canary.jsonl"
+			const prior35 = "35-deepseek-primary-canary.jsonl"
+			if err := root.WriteFile(prior35, []byte("historical 35"), 0600); err != nil {
+				t.Fatal(err)
+			}
+			info35, _ := root.Stat(prior35)
 			prior := []byte("prior failed attempt: permanently latched\n")
 			if err := root.WriteFile(priorName, prior, 0600); err != nil {
 				t.Fatal(err)
@@ -75,6 +80,11 @@ func TestCanaryDurableOneShot(t *testing.T) {
 			after, err := root.ReadFile(receiptName)
 			if err != nil || !bytes.Equal(b, after) {
 				t.Fatal("latched new receipt changed", err)
+			}
+			after35, err35 := root.ReadFile(prior35)
+			afterInfo35, statErr35 := root.Stat(prior35)
+			if err35 != nil || statErr35 != nil || string(after35) != "historical 35" || !os.SameFile(info35, afterInfo35) || !info35.ModTime().Equal(afterInfo35.ModTime()) || info35.Mode() != afterInfo35.Mode() {
+				t.Fatal("historical 35 changed")
 			}
 			priorAfter, err := root.ReadFile(priorName)
 			if err != nil || !bytes.Equal(prior, priorAfter) {

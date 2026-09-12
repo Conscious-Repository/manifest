@@ -74,8 +74,11 @@ def main():
     a = packet['authority']
     if (a['provider'] != PROVIDER or a['model'] != MODEL or
             a['tools'] != ['none'] or a['mcp'] != 'no_mcp' or
-            a['ceilingUsd'] != 0 or not 1 <= a['maxSteps'] <= 1000 or
-            not 1 <= a['timeoutSeconds'] <= 3600):
+            a.get('costPolicy') != 'local-zero-marginal' or
+            a.get('providerBinding') != 'fixed-local-endpoint' or
+            a.get('endpoint') != 'http://192.168.87.11:8000/v1' or
+            a['ceilingUsd'] != 0 or a['maxSteps'] != 1 or
+            not 1 <= a['timeoutSeconds'] <= 120):
         raise RuntimeError('authority')
     # Resolve the numeric address before lockdown (no DNS/provider discovery).
     address = socket.inet_aton(HOST)
@@ -101,28 +104,60 @@ def main():
         data = json.loads(raw, object_pairs_hook=unique_object, parse_float=decimal.Decimal)
         # Scope is enforced locally, but contradictory/uncertain provider claims
         # must never be ignored. Absence is not used as a usage attestation.
-        if (('fallback' in data and data['fallback'] is not False) or
+        if (('error' in data and data['error'] is not None) or
+                ('failed' in data and data['failed'] is not False) or
+                ('completed' in data and data['completed'] is not True) or
+                ('outcome' in data and data['outcome'] != 'completed') or
+                ('steps' in data and (type(data['steps']) is not int or data['steps'] != 1)) or
+                ('cost_policy' in data and data['cost_policy'] != 'local-zero-marginal') or
+                ('provider_binding' in data and data['provider_binding'] != 'fixed-local-endpoint') or
+                ('cost_telemetry' in data and data['cost_telemetry'] != 'unavailable') or
+                ('fallback' in data and data['fallback'] is not False) or
                 ('tools' in data and data['tools'] != []) or
                 ('mcp' in data and data['mcp'] != 'no_mcp') or
                 ('tool_calls' in data and data['tool_calls'] != []) or
+                ('function_call' in data and data['function_call'] is not None) or
+                ('tool_choice' in data and data['tool_choice'] != 'none') or
                 len(data['choices']) != 1):
             raise RuntimeError('completion')
         choice = data['choices'][0]
         message = choice['message']
-        if choice['finish_reason'] != 'stop' or message.get('tool_calls') or message.get('function_call'):
+        if (choice['finish_reason'] != 'stop' or
+                ('tool_calls' in message and message['tool_calls'] not in (None, [])) or
+                ('function_call' in message and message['function_call'] is not None) or
+                ('tool_calls' in choice and choice['tool_calls'] != []) or
+                ('function_call' in choice and choice['function_call'] is not None)):
             raise RuntimeError('completion')
-        # Cost MUST be reported, never manufactured from an absent field.
-        cost = data['usage']['cost_usd']
-        if type(cost) not in (int, decimal.Decimal) or cost != 0:
-            raise RuntimeError('cost')
+        usage = data['usage']
+        if not isinstance(usage, dict):
+            raise RuntimeError('usage')
+        tokens = {}
+        for key in ('prompt_tokens', 'completion_tokens', 'total_tokens'):
+            value = usage.get(key)
+            if type(value) is not int or not 0 <= value <= 9007199254740991:
+                raise RuntimeError('usage')
+            tokens[key] = value
+        if (tokens['total_tokens'] != tokens['prompt_tokens'] + tokens['completion_tokens'] or
+                tokens['completion_tokens'] > 4096):
+            raise RuntimeError('usage')
+        # Zero marginal compute is owner policy, never provider billing telemetry.
+        for reported in (data, usage):
+            for key in ('cost_usd', 'estimated_cost_usd'):
+                if key in reported:
+                    cost = reported[key]
+                    if type(cost) not in (int, decimal.Decimal) or cost != 0:
+                        raise RuntimeError('cost')
         if data['model'] != MODEL:
             raise RuntimeError('model')
-        if data['provider'] != PROVIDER:
+        if 'provider' in data and data['provider'] != PROVIDER:
             raise RuntimeError('provider_drift')
         reply = message['content']
         if not isinstance(reply, str) or not reply.strip() or len(reply.encode()) > 64000:
             raise RuntimeError('response')
-        json.dump({'model': data['model'], 'provider': data['provider'], 'cost_usd': float(cost),
+        json.dump({'model': data['model'], 'provider': PROVIDER,
+                   'provider_binding': 'fixed-local-endpoint',
+                   'cost_policy': 'local-zero-marginal', 'cost_telemetry': 'unavailable',
+                   'usage': tokens,
                    'completed': True, 'failed': False, 'steps': 1}, usage_file)
         usage_file.flush()
         sys.stdout.write(reply)

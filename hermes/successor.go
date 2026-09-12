@@ -74,6 +74,9 @@ func (r *Runner) runSuccessor(ctx context.Context, req Request, a DutyAuthority)
 	if ctx.Err() != nil {
 		return Result{}, refuse("successor timeout or cancellation")
 	}
+	if strings.TrimSpace(output.String()) == "" {
+		return Result{}, refuse("incomplete successor completion")
+	}
 	res, err := VerifyDutyUsageFile(a, Result{Reply: output.String()}, path)
 	if err != nil {
 		return Result{}, err
@@ -108,5 +111,5 @@ func (r *Runner) DutyEvidence(duty string) map[string]any {
 	if err != nil {
 		return nil
 	}
-	return map[string]any{"provider": a.Provider, "model": a.Model, "tools": []string{"none"}, "mcp": a.MCP, "timeoutSeconds": a.TimeoutSeconds, "maxSteps": a.MaxSteps, "enforcedMaxSteps": 1, "ceilingUsd": 0, "fallback": false, "isolation": "landlock+seccomp"}
+	return map[string]any{"cost_policy": a.CostPolicy, "cost_telemetry": "unavailable", "provider_binding": a.ProviderBinding, "endpoint": a.Endpoint, "provider": a.Provider, "model": a.Model, "tools": []string{"none"}, "mcp": a.MCP, "timeoutSeconds": a.TimeoutSeconds, "maxSteps": a.MaxSteps, "enforcedMaxSteps": 1, "ceilingUsd": 0, "fallback": false, "isolation": "landlock+seccomp"}
 }

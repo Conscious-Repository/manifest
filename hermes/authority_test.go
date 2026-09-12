@@ -93,3 +93,74 @@ func TestDutyUsageFileModelDrift(t *testing.T) {
 		t.Fatal("usage-file model drift accepted")
 	}
 }
+
+func TestLocalPolicyExactAuthority(t *testing.T) {
+	if err := successorAuthority().Validate(); err != nil {
+		t.Fatal(err)
+	}
+	for name, mutate := range map[string]func(*DutyAuthority){
+		"missing policy":     func(a *DutyAuthority) { a.CostPolicy = "" },
+		"ambiguous policy":   func(a *DutyAuthority) { a.CostPolicy = "free" },
+		"missing binding":    func(a *DutyAuthority) { a.ProviderBinding = "" },
+		"wrong binding":      func(a *DutyAuthority) { a.ProviderBinding = "provider-response" },
+		"missing endpoint":   func(a *DutyAuthority) { a.Endpoint = "" },
+		"redirect endpoint":  func(a *DutyAuthority) { a.Endpoint += "/" },
+		"different endpoint": func(a *DutyAuthority) { a.Endpoint = "http://127.0.0.1:8000/v1" },
+		"model drift":        func(a *DutyAuthority) { a.Model = "alias" },
+		"cloud":              func(a *DutyAuthority) { a.Provider = "openai" },
+		"subscription":       func(a *DutyAuthority) { a.Provider = "claude-sub" },
+		"steps":              func(a *DutyAuthority) { a.MaxSteps = 2 },
+		"timeout":            func(a *DutyAuthority) { a.TimeoutSeconds = 121 },
+		"ceiling":            func(a *DutyAuthority) { n := 1.0; a.CeilingUSD = &n },
+	} {
+		t.Run(name, func(t *testing.T) {
+			a := successorAuthority()
+			mutate(&a)
+			if a.Validate() == nil {
+				t.Fatal("accepted")
+			}
+		})
+	}
+}
+
+func TestSubscriptionCloudStillRequireCost(t *testing.T) {
+	for _, provider := range []string{"claude-sub", "codex-sub", "openai"} {
+		a := dutyFixture()
+		a.Provider = provider
+		for _, cost := range []string{"", `,"cost_usd":0`} {
+			raw := `{"provider":"` + provider + `","model":"fixture-pin","completed":true,"usage":{"prompt_tokens":4,"completion_tokens":3,"total_tokens":7}` + cost + `}`
+			res, err := VerifyDutyUsage(a, Result{Reply: "synthetic"}, []byte(raw))
+			if (err == nil) != (cost != "") || (err != nil && res.Reply != "") {
+				t.Fatal(provider, cost, err)
+			}
+		}
+	}
+}
+
+const localUsageReport = `{"provider":"deepseek-local","model":"deepseek-v4.1-flash","completed":true,"steps":1,"cost_policy":"local-zero-marginal","cost_telemetry":"unavailable","provider_binding":"fixed-local-endpoint","usage":{"prompt_tokens":4,"completion_tokens":3,"total_tokens":7}}`
+
+func TestLocalUsageMetadataBoundary(t *testing.T) {
+	for _, tc := range []struct{ old, replacement string }{
+		{`"cost_policy":"local-zero-marginal"`, `"cost_policy":"free"`},
+		{`"cost_telemetry":"unavailable"`, `"cost_telemetry":"verified"`},
+		{`"provider_binding":"fixed-local-endpoint"`, `"absent":true`},
+		{`"prompt_tokens":4`, `"prompt_tokens":null`},
+		{`"completion_tokens":3`, `"completion_tokens":true`},
+		{`"total_tokens":7`, `"total_tokens":8`},
+		{`"total_tokens":7`, `"total_tokens":7,"total_tokens":7`},
+		{`"steps":1`, `"fallback":true,"steps":1`},
+		{`"steps":1`, `"error":"timeout","steps":1`},
+		{`"steps":1`, `"mcp":"all","steps":1`},
+		{`"steps":1`, `"cost_usd":1e-999,"steps":1`},
+		{`"steps":1`, `"estimated_cost_usd":1,"steps":1`},
+	} {
+		res, err := VerifyDutyUsage(successorAuthority(), Result{Reply: "synthetic"}, []byte(strings.Replace(localUsageReport, tc.old, tc.replacement, 1)))
+		if err == nil || res.Reply != "" {
+			t.Fatal(tc, res)
+		}
+	}
+	res, err := VerifyDutyUsage(successorAuthority(), Result{Reply: "synthetic"}, []byte(localUsageReport))
+	if err != nil || res.CostPolicy != LocalCostPolicy || res.CostTelemetry != "unavailable" || res.ProviderBinding != LocalProviderBinding || res.Usage == nil || res.Usage.TotalTokens != 7 || res.DutyVerified() {
+		t.Fatal(res, err)
+	}
+}

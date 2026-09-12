@@ -18,6 +18,10 @@
     }
   ],
   "usage": {
+    "cost_policy": "local-zero-marginal",
+    "cost_telemetry": "unavailable",
+    "provider_binding": "fixed-local-endpoint",
+    "usage": {"prompt_tokens": 4, "completion_tokens": 3, "total_tokens": 7},
     "model": "deepseek-v4.1-flash",
     "provider": "deepseek-local",
     "completed": true,

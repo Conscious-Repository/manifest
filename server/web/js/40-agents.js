@@ -393,3 +393,13 @@ async function fetchSpiritRuns() {
 // armedDelete (the destructive-action button) lives in 05-components.js since
 // 2026-09-04 — it is consumed by ten tab files.
 
+
+// Shared read-only lane summary for Agents and Settings. A canary cannot route it.
+function reIntakePrimarySummary(p) {
+  if (!p) return "re-intake · shadow / not routed · primary policy evidence unavailable";
+  return "re-intake · primary: " + p.primary + " / " + p.model +
+    " · shadow / not routed · cost: " + p.cost_policy + " policy; provider cost telemetry " + p.cost_telemetry +
+    " · provider binding: " + p.provider_binding + " · declaration: " + p.configuredAuthority +
+    " · fallback: " + p.fallback + " · last attempt receipt: " + p.lastAttempt +
+    (p.evidenceUpdatedAt ? " (receipt updated " + p.evidenceUpdatedAt + ")" : "") + " · last error: " + p.lastError;
+}

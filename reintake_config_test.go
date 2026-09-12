@@ -20,7 +20,7 @@ func TestReIntakeConfigDefaultOff(t *testing.T) {
 
 func TestReIntakePrimaryAuthorityConfig(t *testing.T) {
 	var cfg Config
-	if err := json.Unmarshal([]byte(`{"hermes":{"duties":{"extractor/re-intake":{"provider":"deepseek-local","model":"deepseek-v4.1-flash","tools":["none"],"mcp":"no_mcp","timeoutSeconds":120,"maxSteps":1,"ceilingUsd":0}}}}`), &cfg); err != nil {
+	if err := json.Unmarshal([]byte(`{"hermes":{"duties":{"extractor/re-intake":{"costPolicy":"local-zero-marginal","endpoint":"http://192.168.87.11:8000/v1","providerBinding":"fixed-local-endpoint","provider":"deepseek-local","model":"deepseek-v4.1-flash","tools":["none"],"mcp":"no_mcp","timeoutSeconds":120,"maxSteps":1,"ceilingUsd":0}}}}`), &cfg); err != nil {
 		t.Fatal(err)
 	}
 	a := cfg.Hermes.Duties["extractor/re-intake"]

@@ -177,11 +177,15 @@ func compare(a hermes.DutyAuthority, f fixture) error {
 		return refusal("usage not accepted")
 	}
 	var usage struct {
-		Model     string   `json:"model"`
-		Provider  string   `json:"provider"`
-		Completed bool     `json:"completed"`
-		Cost      *float64 `json:"cost_usd"`
-		Steps     *int     `json:"steps"`
+		Policy    string             `json:"cost_policy"`
+		Telemetry string             `json:"cost_telemetry"`
+		Binding   string             `json:"provider_binding"`
+		Tokens    *hermes.TokenUsage `json:"usage"`
+		Model     string             `json:"model"`
+		Provider  string             `json:"provider"`
+		Completed bool               `json:"completed"`
+		Cost      *float64           `json:"cost_usd"`
+		Steps     *int               `json:"steps"`
 	}
 	if decodeStrict(f.Usage, &usage) != nil || usage.Steps == nil || *usage.Steps != 1 || *usage.Steps > a.MaxSteps {
 		return refusal("invalid fixture step evidence")

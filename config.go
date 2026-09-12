@@ -177,6 +177,8 @@ type Config struct {
 // one agent turn (0 → hermes.DefaultTimeout, 8m): it governs ask/comment,
 // chat, dig and scaffold turns. Work-order turns (plan/go) carry their own
 // longer per-turn budget (server.hermesTurnBudget) and ignore this value.
+// Local successor declarations require costPolicy, providerBinding and the exact
+// endpoint in DutyAuthority. Declarations do not enable a production route.
 type HermesConfig struct {
 	Duties           map[string]hermes.DutyAuthority `json:"duties,omitempty"`
 	AnnotationPython string                          `json:"annotationPython"`

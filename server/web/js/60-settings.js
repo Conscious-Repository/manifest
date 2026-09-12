@@ -447,6 +447,7 @@ function alfredCard(hz) {
   cardLine(card, "model pin", r.model || "unconfigured");
   cardLine(card, "toolset authority", r.toolsets || "default-resolved · no migrated authority");
   card.append(el("div", "portal-note", hz.authorityBoundary || "read-only / edit on metis and restart"));
+  card.append(el("div", "portal-note", reIntakePrimarySummary(hz.reIntakePrimary)));
   Object.entries(r.duties || {}).forEach(([name, a]) => cardLine(card, name, (a.provider || "unconfigured") + "/" + (a.model || "unconfigured") + " · " + (a.tools || []).join(", ") + " · " + (a.mcp || "MCP unconfigured") + " · " + a.timeoutSeconds + "s / " + a.maxSteps + " steps / $" + a.ceilingUsd + " · tool-free helper only; no duty routed; live usage contract unverified"));
   (hz.dutyRefusals || []).forEach((r) => cardLine(card, "successor refusal", r.label));
   const cron = hz.cron || {};

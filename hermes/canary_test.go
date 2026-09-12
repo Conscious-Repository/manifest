@@ -13,6 +13,7 @@ func TestPrimaryCanaryTransport(t *testing.T) {
 	valid := strings.Replace(matchingResponse, "verified proposal text", "CANARY-OK", 1)
 	cases := map[string]string{
 		"success":            valid,
+		"standard":           strings.Replace(strings.Replace(valid, `"provider":"deepseek-local",`, "", 1), `,"cost_usd":0`, "", 1),
 		"reply":              strings.Replace(valid, "CANARY-OK", "private response sentinel", 1),
 		"whitespace":         strings.Replace(valid, "CANARY-OK", "CANARY-OK ", 1),
 		"model":              strings.Replace(valid, "deepseek-v4.1-flash", "drift", 1),
@@ -39,18 +40,21 @@ func TestPrimaryCanaryTransport(t *testing.T) {
 def checked_loads(raw, **kwargs):
     data = original_loads(raw, **kwargs)
     if 'authority' in data:
-        assert data == {'authority': {'provider': PROVIDER, 'model': MODEL, 'tools': ['none'], 'mcp': 'no_mcp', 'timeoutSeconds': 120, 'maxSteps': 1, 'ceilingUsd': 0}, 'prompt': 'Return exactly the word CANARY-OK and no tool calls.'}
+        assert data == {'authority': {'costPolicy': 'local-zero-marginal', 'endpoint': 'http://192.168.87.11:8000/v1', 'providerBinding': 'fixed-local-endpoint', 'provider': PROVIDER, 'model': MODEL, 'tools': ['none'], 'mcp': 'no_mcp', 'timeoutSeconds': 120, 'maxSteps': 1, 'ceilingUsd': 0}, 'prompt': 'Return exactly the word CANARY-OK and no tool calls.'}
     return data
 json.loads = checked_loads`)
 			report := RunPrimaryCanary(t.Context())
-			if *calls != 1 || (report.Status == "canary passed") != (name == "success") {
+			if *calls != 1 || (report.Status == "canary passed") != (name == "success" || name == "standard") {
 				t.Fatalf("calls=%d report=%+v", *calls, report)
 			}
 			raw, _ := json.Marshal(report)
 			if strings.Contains(string(raw), "sentinel") || strings.Contains(string(raw), "CANARY-OK") {
 				t.Fatal("response leaked")
 			}
-			if name == "success" {
+			if name == "success" || name == "standard" {
+				if report.CostPolicy != LocalCostPolicy || report.ProviderBinding != LocalProviderBinding || report.CostTelemetry != "unavailable" || report.Usage == nil || report.Usage.TotalTokens != 7 {
+					t.Fatal(report)
+				}
 				if !report.DutyVerified || report.CostUSD == nil || *report.CostUSD != 0 || report.Completed == nil || !*report.Completed || report.Steps == nil || *report.Steps != 1 {
 					t.Fatal(report)
 				}
@@ -99,7 +103,7 @@ func TestPrimaryCanaryUncertainSteps(t *testing.T) {
 			calls := 0
 			successorCommand = func(ctx context.Context, path string) *exec.Cmd {
 				calls++
-				return exec.CommandContext(ctx, "/usr/bin/python3", "-I", "-S", "-c", `import sys;open(sys.argv[1],'w').write(sys.argv[2]);sys.stdout.write('CANARY-OK')`, path, `{"model":"deepseek-v4.1-flash","provider":"deepseek-local","completed":true,"cost_usd":0`+steps+`}`)
+				return exec.CommandContext(ctx, "/usr/bin/python3", "-I", "-S", "-c", `import sys;open(sys.argv[1],'w').write(sys.argv[2]);sys.stdout.write('CANARY-OK')`, path, `{"model":"deepseek-v4.1-flash","provider":"deepseek-local","completed":true,"cost_policy":"local-zero-marginal","cost_telemetry":"unavailable","provider_binding":"fixed-local-endpoint","usage":{"prompt_tokens":4,"completion_tokens":3,"total_tokens":7},"cost_usd":0`+steps+`}`)
 			}
 			r := RunPrimaryCanary(t.Context())
 			if r.Status != "refused" || r.Reason != "invalid successor step evidence" || calls != 1 {

@@ -9,16 +9,24 @@ import (
 	"strings"
 )
 
+// These are exact local authority declarations, not endpoint discovery.
+const LocalEndpoint = "http://192.168.87.11:8000/v1"
+const LocalCostPolicy = "local-zero-marginal"
+const LocalProviderBinding = "fixed-local-endpoint"
+
 // DutyAuthority is mandatory for successor duties only. Legacy callers do not
 // acquire authority by inheriting the owner's interactive defaults.
 type DutyAuthority struct {
-	Provider       string   `json:"provider"`
-	Model          string   `json:"model"`
-	Tools          []string `json:"tools"`
-	MCP            string   `json:"mcp"` // no_mcp or one explicit server name
-	TimeoutSeconds int      `json:"timeoutSeconds"`
-	MaxSteps       int      `json:"maxSteps"`
-	CeilingUSD     *float64 `json:"ceilingUsd"` // nil is absent; zero is an explicit bound
+	CostPolicy      string   `json:"costPolicy,omitempty"`
+	Endpoint        string   `json:"endpoint,omitempty"`
+	ProviderBinding string   `json:"providerBinding,omitempty"`
+	Provider        string   `json:"provider"`
+	Model           string   `json:"model"`
+	Tools           []string `json:"tools"`
+	MCP             string   `json:"mcp"` // no_mcp or one explicit server name
+	TimeoutSeconds  int      `json:"timeoutSeconds"`
+	MaxSteps        int      `json:"maxSteps"`
+	CeilingUSD      *float64 `json:"ceilingUsd"` // nil is absent; zero is an explicit bound
 }
 
 type Refusal struct{ Reason string }
@@ -52,6 +60,14 @@ func (a DutyAuthority) Validate() error {
 	}
 	if a.TimeoutSeconds <= 0 || a.MaxSteps <= 0 || a.CeilingUSD == nil || math.IsNaN(*a.CeilingUSD) || math.IsInf(*a.CeilingUSD, 0) || *a.CeilingUSD < 0 {
 		return refuse("missing finite execution bounds")
+	}
+	if a.Provider == "deepseek-local" || a.CostPolicy != "" || a.ProviderBinding != "" || a.Endpoint != "" {
+		if a.Provider != "deepseek-local" || a.Model != "deepseek-v4.1-flash" || a.CostPolicy != LocalCostPolicy || a.ProviderBinding != LocalProviderBinding || a.Endpoint != LocalEndpoint {
+			return refuse("invalid local cost policy or endpoint binding")
+		}
+		if *a.CeilingUSD != 0 || a.MaxSteps != 1 || a.TimeoutSeconds > 120 || len(a.Tools) != 1 || a.Tools[0] != "none" || a.MCP != "no_mcp" {
+			return refuse("invalid bounded local authority")
+		}
 	}
 	return nil
 }
@@ -123,7 +139,7 @@ func VerifyDutyUsageFile(a DutyAuthority, res Result, path string) (Result, erro
 func VerifyDutyUsage(a DutyAuthority, res Result, b []byte) (Result, error) {
 	var u usageReport
 	fields, fieldsOK := strictUsageFields(b)
-	valid := json.Unmarshal(b, &u) == nil && fieldsOK
+	valid := json.Unmarshal(b, &u) == nil && fieldsOK && usageScopeValid(fields)
 	if valid {
 		valid = u.Completed != nil && *u.Completed && !u.Failed
 		found := false
@@ -145,6 +161,19 @@ func VerifyDutyUsage(a DutyAuthority, res Result, b []byte) (Result, error) {
 			}
 		}
 		valid = valid && found
+		if a.CostPolicy == LocalCostPolicy {
+			var local struct {
+				Policy    string      `json:"cost_policy"`
+				Binding   string      `json:"provider_binding"`
+				Telemetry string      `json:"cost_telemetry"`
+				Usage     *TokenUsage `json:"usage"`
+			}
+			localOK := json.Unmarshal(b, &local) == nil && local.Policy == LocalCostPolicy && local.Binding == LocalProviderBinding && local.Telemetry == "unavailable" && validTokenUsage(fields["usage"], local.Usage)
+			// Missing cost is permitted only by the exact validated local policy.
+			// If supplied, every cost field must still satisfy the zero ceiling.
+			valid = localOK && u.Completed != nil && *u.Completed && !u.Failed && (!found || valid)
+			res.CostPolicy, res.ProviderBinding, res.CostTelemetry, res.Usage = local.Policy, local.Binding, local.Telemetry, local.Usage
+		}
 	}
 	res.Model, res.SpentUSD, res.SessionID = u.Model, u.usd(), u.SessionID
 	return VerifyDutyResult(a, res, u.Provider, valid)
@@ -184,4 +213,48 @@ func strictUsageFields(b []byte) (map[string]json.RawMessage, bool) {
 		return nil, false
 	}
 	return fields, true
+}
+
+// TokenUsage is reported usage, never an estimate derived from reply length.
+type TokenUsage struct {
+	PromptTokens     int64 `json:"prompt_tokens"`
+	CompletionTokens int64 `json:"completion_tokens"`
+	TotalTokens      int64 `json:"total_tokens"`
+}
+
+func validTokenUsage(raw []byte, u *TokenUsage) bool {
+	fields, ok := strictUsageFields(raw)
+	if !ok || u == nil {
+		return false
+	}
+	for key, value := range map[string]int64{"prompt_tokens": u.PromptTokens, "completion_tokens": u.CompletionTokens, "total_tokens": u.TotalTokens} {
+		var n *int64
+		if json.Unmarshal(fields[key], &n) != nil || n == nil || *n < 0 || *n > 9007199254740991 || *n != value {
+			return false
+		}
+	}
+	return u.CompletionTokens <= 4096 && u.TotalTokens == u.PromptTokens+u.CompletionTokens
+}
+
+func usageScopeValid(fields map[string]json.RawMessage) bool {
+	for key, allowed := range map[string][]string{
+		"error": {"null"}, "outcome": {`"completed"`}, "failed": {"false"},
+		"fallback": {"false"}, "mcp": {`"no_mcp"`}, "tools": {"[]"},
+		"tool_calls": {"[]", "null"}, "function_call": {"null"}, "tool_choice": {`"none"`},
+	} {
+		if raw, exists := fields[key]; exists {
+			compact := &bytes.Buffer{}
+			if json.Compact(compact, raw) != nil {
+				return false
+			}
+			match := false
+			for _, value := range allowed {
+				match = match || compact.String() == value
+			}
+			if !match {
+				return false
+			}
+		}
+	}
+	return true
 }

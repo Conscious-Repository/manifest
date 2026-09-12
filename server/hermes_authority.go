@@ -58,6 +58,7 @@ func (s *Server) recordMigratedDutyResult(duty string, res hermes.Result, err er
 	}
 	if res.DutyVerified() {
 		meta["model"], meta["spentUsd"] = res.Model, res.SpentUSD
+		meta["cost_policy"], meta["cost_telemetry"], meta["provider_binding"], meta["usage"] = res.CostPolicy, res.CostTelemetry, res.ProviderBinding, res.Usage
 	}
 	entry := ledger.Entry{TS: time.Now(), Source: "run", Kind: kind, Actor: "agent:hermes", Harness: "hermes", Text: reason, Meta: meta}
 	if writeErr := s.ledgerStore.Append(entry); writeErr != nil {

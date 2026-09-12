@@ -12,9 +12,9 @@ import (
 
 const receiptDirectory = "/home/benjamin/workbench-staging/excalibur-retirement"
 
-// New attempt explicitly authorized by Benjamin after the Sparks request-shape fix.
-// Prior failed attempt 33-deepseek-primary-canary.jsonl remains permanently latched.
-const receiptName = "35-deepseek-primary-canary.jsonl"
+// Fresh policy-aware attempt; parent confirms only after review and deployment.
+// Historical receipts 33 and 35 remain permanently latched and unopened.
+const receiptName = "36-deepseek-primary-canary.jsonl"
 
 func main() { os.Exit(run(os.Args[1:], os.Stdout)) }
 

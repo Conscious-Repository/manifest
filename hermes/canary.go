@@ -5,17 +5,21 @@ import "context"
 // PrimaryCanaryReport contains only fixed authority and verified metadata. Null
 // usage means unknown, never an inferred zero-cost/completed outcome.
 type PrimaryCanaryReport struct {
-	Status       string   `json:"status"`
-	Reason       string   `json:"reason,omitempty"`
-	Provider     string   `json:"provider"`
-	Model        string   `json:"model"`
-	CostUSD      *float64 `json:"cost_usd"`
-	Completed    *bool    `json:"completed"`
-	Steps        *int     `json:"steps"`
-	Tools        []string `json:"tools"`
-	MCP          string   `json:"mcp"`
-	Fallback     bool     `json:"fallback"`
-	DutyVerified bool     `json:"dutyVerified"`
+	ProviderBinding string      `json:"provider_binding"`
+	CostPolicy      string      `json:"cost_policy"`
+	CostTelemetry   string      `json:"cost_telemetry"`
+	Usage           *TokenUsage `json:"usage"`
+	Status          string      `json:"status"`
+	Reason          string      `json:"reason,omitempty"`
+	Provider        string      `json:"provider"`
+	Model           string      `json:"model"`
+	CostUSD         *float64    `json:"cost_usd"` // policy projection only; never provider telemetry
+	Completed       *bool       `json:"completed"`
+	Steps           *int        `json:"steps"`
+	Tools           []string    `json:"tools"`
+	MCP             string      `json:"mcp"`
+	Fallback        bool        `json:"fallback"`
+	DutyVerified    bool        `json:"dutyVerified"`
 }
 
 func PrimaryCanaryRefusal(reason string) PrimaryCanaryReport {
@@ -25,7 +29,7 @@ func PrimaryCanaryRefusal(reason string) PrimaryCanaryReport {
 	default:
 		reason = "outcome uncertain"
 	}
-	return PrimaryCanaryReport{Status: "refused", Reason: reason, Provider: "deepseek-local", Model: "deepseek-v4.1-flash", Tools: []string{"none"}, MCP: "no_mcp"}
+	return PrimaryCanaryReport{Status: "refused", Reason: reason, CostTelemetry: "unavailable", CostPolicy: LocalCostPolicy, ProviderBinding: LocalProviderBinding, Provider: "deepseek-local", Model: "deepseek-v4.1-flash", Tools: []string{"none"}, MCP: "no_mcp"}
 }
 
 // RunPrimaryCanary is owner-command-only. No document, config, prompt, provider,
@@ -33,7 +37,7 @@ func PrimaryCanaryRefusal(reason string) PrimaryCanaryReport {
 // its one-time receipt before calling this function.
 func RunPrimaryCanary(ctx context.Context) PrimaryCanaryReport {
 	zero := 0.0
-	a := DutyAuthority{Provider: "deepseek-local", Model: "deepseek-v4.1-flash", Tools: []string{"none"}, MCP: "no_mcp", TimeoutSeconds: 120, MaxSteps: 1, CeilingUSD: &zero}
+	a := DutyAuthority{Endpoint: LocalEndpoint, CostPolicy: LocalCostPolicy, ProviderBinding: LocalProviderBinding, Provider: "deepseek-local", Model: "deepseek-v4.1-flash", Tools: []string{"none"}, MCP: "no_mcp", TimeoutSeconds: 120, MaxSteps: 1, CeilingUSD: &zero}
 	runner := NewRunner(Config{Enabled: true, Duties: map[string]DutyAuthority{"extractor/re-intake": a}})
 	res, err := runner.Run(ctx, Request{MigratedDuty: "extractor/re-intake", Prompt: "Return exactly the word CANARY-OK and no tool calls.", TimeoutSeconds: 120})
 	if err != nil {
@@ -49,6 +53,7 @@ func RunPrimaryCanary(ctx context.Context) PrimaryCanaryReport {
 		return PrimaryCanaryRefusal("reply mismatch")
 	}
 	report := PrimaryCanaryRefusal("")
+	report.Usage = res.Usage
 	report.Status, report.Reason = "canary passed", ""
 	completed, steps := true, 1
 	report.CostUSD, report.Completed, report.Steps, report.DutyVerified = &zero, &completed, &steps, true

@@ -175,6 +175,7 @@ function renderSpiritRituals(rows) {
   all.slice().sort(byName).forEach((r) => groups[schedGroupOf(r)].push(r));
   groups.yours.sort((a, b) => (fireAt(a) - fireAt(b)) || byName(a, b)); // soonest first; invalid (no fire) last
   // what the Hermes projection could not read (D4 graceful degrade) — said once, quietly
+  host.append(el("div", "sched-degraded", reIntakePrimarySummary(hermesInfo && hermesInfo.reIntakePrimary)));
   (hermesInfo && hermesInfo.dutyRefusals || []).forEach((r) => host.append(el("div", "sched-degraded", r.label)));
   const cron = (hermesInfo && hermesInfo.cron) || null;
   if (hermesInfo === null) host.append(el("div", "sched-degraded", "alfred: /api/agents/hermes did not answer — Hermes jobs not shown"));

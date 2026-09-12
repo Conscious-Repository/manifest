@@ -13,6 +13,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"manifest/hermes"
 	"net/http"
 	"os"
@@ -419,6 +420,7 @@ func (s *Server) handleAgentsHermes(w http.ResponseWriter, r *http.Request) {
 	out := map[string]any{
 		"home":              home,
 		"dutyRefusals":      s.dutyRefusals(time.Now()),
+		"reIntakePrimary":   s.reIntakePrimaryProjection("/home/benjamin/workbench-staging/excalibur-retirement"),
 		"authorityBoundary": "read-only / edit on metis and restart; tool-free successor helper implemented (Linux Landlock + seccomp, one step, local DeepSeek only); no duty routed; live usage contract unverified",
 		"runner":            map[string]any{"enabled": s.hermes != nil, "bin": s.hermesBin()},
 	}
@@ -580,4 +582,73 @@ func splitColumns(s string) []string {
 		}
 	}
 	return cols
+}
+
+// Read-only owner-policy projection. Receipt presence never changes routing or
+// grants execution. Only fixed canary metadata is read; provider text is omitted.
+func (s *Server) reIntakePrimaryProjection(directory string) map[string]any {
+	out := map[string]any{
+		"primary": "local DeepSeek", "provider": "deepseek-local", "model": "deepseek-v4.1-flash",
+		"provider_binding": hermes.LocalProviderBinding, "endpoint": hermes.LocalEndpoint,
+		"cost_policy": hermes.LocalCostPolicy, "cost_telemetry": "unavailable",
+		"status": "shadow", "productionRouted": false,
+		"fallback":            "owner-invoked Claude Code/Codex only; unsupported/unverified; never automatic",
+		"configuredAuthority": "missing or invalid", "lastAttempt": "unknown", "lastError": "unknown",
+	}
+	if s.hosts != nil {
+		if a, ok := s.hosts.Hermes.Duties["extractor/re-intake"]; ok && a.Validate() == nil && a.CostPolicy == hermes.LocalCostPolicy {
+			out["configuredAuthority"] = "valid declaration; not routed"
+		}
+	}
+	root, err := os.OpenRoot(directory)
+	if err != nil {
+		return out
+	}
+	defer root.Close()
+	for _, name := range []string{"36-deepseek-primary-canary.jsonl", "35-deepseek-primary-canary.jsonl", "33-deepseek-primary-canary.jsonl"} {
+		info, err := root.Lstat(name)
+		if os.IsNotExist(err) {
+			continue
+		}
+		out["lastAttempt"] = name
+		out["lastError"] = "outcome uncertain; owner review required"
+		if err != nil || !info.Mode().IsRegular() {
+			return out
+		}
+		f, err := root.Open(name)
+		if err != nil {
+			return out
+		}
+		raw, err := io.ReadAll(io.LimitReader(f, 16001))
+		f.Close()
+		if err != nil || len(raw) > 16000 {
+			return out
+		}
+		out["evidenceUpdatedAt"] = info.ModTime().UTC().Format(time.RFC3339)
+		lines := bytes.Split(bytes.TrimSpace(raw), []byte("\n"))
+		// One initial latch and one terminal record. A partial/extra record is unknown.
+		if len(lines) != 2 {
+			return out
+		}
+		var report struct {
+			Status   string `json:"status"`
+			Reason   string `json:"reason"`
+			Verified bool   `json:"dutyVerified"`
+		}
+		if json.Unmarshal(lines[1], &report) != nil {
+			return out
+		}
+		if report.Status == "canary passed" && report.Verified && report.Reason == "" {
+			out["lastError"] = "none reported (synthetic canary only)"
+			return out
+		}
+		if report.Status == "refused" {
+			switch report.Reason {
+			case "missing usage evidence", "model drift", "provider drift", "cost bound exceeded", "incomplete successor completion", "bounded successor execution failed", "successor timeout or cancellation", "successor OS isolation unavailable", "invalid successor step evidence", "reply mismatch", "outcome uncertain", "outcome persistence failed", "usage evidence unavailable":
+				out["lastError"] = report.Reason
+			}
+		}
+		return out
+	}
+	return out
 }
