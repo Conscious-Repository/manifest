@@ -11,9 +11,19 @@ let _micActive = null; // only one recording at a time
 
 function micButton(onText) {
   const btn = el("button", "mic-btn", "🎙");
-  btn.title = "Dictate (press to talk, press again to stop)";
+  micSetState(btn, "idle");
   btn.onclick = () => micToggle(btn, onText);
   return btn;
+}
+
+function micSetState(btn, state) {
+  const label = state === "recording" ? "Stop dictation" : state === "processing" ? "Transcribing audio" : "Dictate a message";
+  btn.title = label; btn.setAttribute("aria-label", label);
+  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  svg.setAttribute("viewBox", "0 0 24 24"); svg.setAttribute("aria-hidden", "true");
+  const path = document.createElementNS(svg.namespaceURI, "path");
+  path.setAttribute("d", state === "recording" ? "M7 7h10v10H7z" : state === "processing" ? "M5 12h2m4 0h2m4 0h2" : "M9 5a3 3 0 0 1 6 0v7a3 3 0 0 1-6 0z M5 10v2a7 7 0 0 0 14 0v-2 M12 19v3 M9 22h6");
+  svg.append(path); btn.replaceChildren(svg);
 }
 
 async function micToggle(btn, onText) {
@@ -26,7 +36,7 @@ async function micToggle(btn, onText) {
   const chunks = [];
   rec.ondataavailable = (e) => { if (e.data.size) chunks.push(e.data); };
   btn.classList.add("recording");
-  btn.textContent = "●";
+  micSetState(btn, "recording");
 
   // silence auto-stop: watch the input level; ~2s under threshold ends the take
   const ac = new (window.AudioContext || window.webkitAudioContext)();
@@ -53,10 +63,10 @@ async function micToggle(btn, onText) {
     stream.getTracks().forEach((t) => t.stop());
     _micActive = null;
     btn.classList.remove("recording");
-    btn.textContent = "…";
+    micSetState(btn, "processing");
     try {
       const blob = new Blob(chunks, { type: rec.mimeType || "audio/webm" });
-      if (!spoke || blob.size < 2000) { btn.textContent = "🎙"; return; }
+      if (!spoke || blob.size < 2000) { micSetState(btn, "idle"); return; }
       const wav = await blobToWav16k(blob, ac);
       const res = await fetch("/api/stt", { method: "POST", body: wav });
       if (!res.ok) throw new Error((await res.text()).slice(0, 140));
@@ -65,7 +75,7 @@ async function micToggle(btn, onText) {
     } catch (e) {
       showToast("Dictation failed — " + (e.message || "error"));
     } finally {
-      btn.textContent = "🎙";
+      micSetState(btn, "idle");
       ac.close();
     }
   };

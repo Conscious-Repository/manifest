@@ -743,3 +743,30 @@ button.chat-attach-chip { min-height: 44px; max-width: 100%; background: transpa
 
 .chat-pending-more.below .chat-pending-menu { bottom: auto; top: 100%; }
 .chat-pending-message button, .chat-pending-more summary { font-size: var(--fs-md); }
+
+/* One quiet input surface; keyboard controls retain their own focus rings. */
+:root .chat-main .chat-composer {
+  padding: var(--sp-7); gap: var(--sp-4) var(--sp-6);
+  border-radius: calc(var(--radius-message) + var(--sp-4));
+  border-color: var(--line); outline: none; box-shadow: none;
+}
+:root .chat-main .chat-composer:focus-within {
+  border-color: var(--base-40); outline: none; box-shadow: none;
+}
+:root .chat-main .chat-composer textarea.chat-input,
+:root .chat-main .chat-composer textarea.chat-input:focus-visible {
+  border: 0; outline: none; box-shadow: none; background: transparent;
+  min-height: calc(var(--sp-9) * 3); padding: var(--sp-2) var(--sp-1);
+  font: var(--fs-xl)/1.5 var(--sans); border-radius: 0;
+}
+.chat-main .chat-composer > .chat-attach { order: 1; width: 44px; height: 44px; font-size: var(--fs-2xl); }
+.chat-main .chat-composer > .chat-composer-recipient { min-height: 44px; font-size: var(--fs-lg); padding: var(--sp-4); }
+.chat-main .chat-composer > .chat-send { margin-left: 0; width: 44px; height: 44px; background: var(--text); color: var(--bg); }
+.chat-main .chat-composer > .mic-btn { width: 44px; height: 44px; min-width: 44px; padding: var(--sp-5); color: var(--text); }
+.mic-btn svg { width: 22px; height: 22px; display: block; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+.chat-main .chat-composer > .chat-composer-status { order: 1; flex: 1 1 160px; min-width: 0; align-self: center; font-size: var(--fs-xs); }
+@media(max-width:860px) {
+  :root .chat-main .chat-composer { padding: var(--sp-6); gap: var(--sp-4); }
+  .chat-main .chat-composer > .chat-composer-status { order: 5; flex-basis: 100%; }
+  .chat-main .chat-composer > .chat-composer-recipient { font-size: var(--fs-md); max-width: calc(100% - 156px); }
+}
