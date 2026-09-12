@@ -3395,15 +3395,30 @@ async function chatDeliverRemembered(item){
  if(result.ok!==true && !result.id)throw new Error("Delivery acknowledgement unavailable");
  return chatAcceptDelivery(item,result);
 }
+function chatDeliveryBelongsToScope(item,scope){
+ // A created conversation owns its recovery notice, even if its composer
+ // originally came from the reusable New chat draft slot.
+ return item.scope===scope || (!scope.endsWith('/new')&&(item.draftScope||item.scope)===scope);
+}
 function chatRenderDeliveryNotice(host,scope){
  const expanded=host.querySelector(".chat-delivery-notice")?.open||false;
  host.querySelector(".chat-delivery-notice")?.remove();
- const pending=chatReadDeliveryOutbox().filter(x=>x.scope===scope||(x.draftScope||x.scope)===scope);if(!pending.length)return;
+ const pending=chatReadDeliveryOutbox().filter(x=>chatDeliveryBelongsToScope(x,scope));if(!pending.length)return;
  const notice=el("details","chat-delivery-notice");notice.open=expanded;
  const summary=el('summary','chat-delivery-summary',pending.length===1?'1 message needs attention':pending.length+' messages need attention');notice.append(summary);
  pending.forEach(item=>{
   const row=el("div","chat-delivery-row");
-  const label=el("span","",(item.accepted?"Sent · draft sync pending: ":"Send not confirmed: ")+String(item.payload.text||"Attachment").slice(0,90));
+  const preview=el("span","",(item.accepted?"Sent · draft sync pending: ":"Send not confirmed: ")+String(item.payload.text||"Attachment").slice(0,90));
+  const label=el('span','chat-delivery-status');label.setAttribute('role','status');
+  const metadata=el('span','chat-delivery-status',item.agent+(item.at?' · '+new Date(item.at).toLocaleString():''));
+  const dismiss=el('button','sprt-quiet','Dismiss notice');
+  dismiss.onclick=()=>reviewDialog('Dismiss saved send?',({body,actions,close})=>{
+   body.append(el('p','','This removes the saved retry for this message. It does not send anything, stop the agent, or delete conversation history. Delivery may still have occurred.'));
+   body.append(el('p','',String(item.payload.text||'Attachment').slice(0,300)));
+   const cancel=el('button','sprt-quiet','Cancel'),confirm=el('button','sprt-quiet','Dismiss notice');cancel.onclick=close;
+   confirm.onclick=async()=>{confirm.disabled=true;try{await chatForgetDelivery(item);close();chatRenderDeliveryNotice(host,scope);}catch(e){label.textContent='Could not dismiss the notice. Try again when connected.';close();}};
+   actions.append(cancel,confirm);
+  });
   const check=el("button","sprt-quiet",item.accepted?"Sync draft":"Check status");
   const retry=el("button","sprt-quiet","Retry same send");
   const navigate=result=>{
@@ -3430,11 +3445,11 @@ function chatRenderDeliveryNotice(host,scope){
    try{const d=await chatDeliverRemembered(item);chatRenderDeliveryNotice(host,scope);navigate(d);}
    catch(e){
     if(e.rejected){label.textContent="Send rejected: "+e.message+". Your original message remains saved here.";}
-    else label.textContent="Delivery remains unconfirmed. Retrying this send is safe.";
+    else label.textContent="Delivery is still unconfirmed. Check the conversation before retrying, or dismiss this notice if it is no longer needed.";
    }
    finally{retry.disabled=false;}
   };
-  row.append(label,check);if(!item.accepted)row.append(retry);notice.append(row);
+  row.append(preview,metadata,label,check);if(!item.accepted)row.append(retry);row.append(dismiss);notice.append(row);
  });
  host.prepend(notice);
 }
