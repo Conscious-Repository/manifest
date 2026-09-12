@@ -290,3 +290,6 @@
   .go-task-composer, .go-task-composer.in-stage { margin-left: 12px; }
   .go-task-composer-actions button, .go-task-visibility select { min-height: 44px; }
 }
+
+/* Preserve the North Star block when its text becomes an editor. */
+.o-edit.o-ns-edit {display:block;box-sizing:border-box;width:100%;min-width:0;max-width:100%;margin-top:var(--sp-3);font-size:max(16px,var(--fs-lg));font-weight:500;}

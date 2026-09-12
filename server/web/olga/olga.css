@@ -83,3 +83,17 @@
 
 .olga-board .tdo-card-text {border:0;padding:0;text-align:left;background:transparent;color:var(--text);cursor:pointer;}
 @media(max-width:860px){.olga-board .tdo-col {min-height:120px;}.olga-board .pill {min-height:44px;}}
+
+.olga-area-filter {box-sizing:border-box;max-width:100%;min-width:140px;padding:6px 10px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--text);font:13px var(--sans);}
+@media(max-width:860px){.olga-area-filter {flex:1 1 100%;min-height:44px;font-size:16px;}}
+
+.olga-task-add .olga-detail-field {margin-bottom:20px;}
+.olga-task-add input,.olga-task-add select {min-height:46px;padding:10px 12px;}
+.olga-task-add input:focus,.olga-task-add select:focus {outline:2px solid var(--accent-soft);outline-offset:2px;border-color:var(--accent);}
+.olga-add-actions {display:flex;justify-content:flex-end;gap:10px;margin-top:24px;}
+.olga-add-actions .pill {min-height:44px;padding:10px 18px;justify-content:center;}
+.olga-add-actions .olga-primary {background:var(--accent);border-color:var(--accent);color:var(--on-accent);}
+.olga-add-actions .olga-primary:hover {filter:brightness(.95);}
+.olga-add-actions .pill:disabled {opacity:.6;cursor:wait;}
+.olga-add-error {color:var(--danger);font-size:14px;overflow-wrap:anywhere;}
+@media(max-width:480px){.olga-add-actions .pill {flex:1;}}

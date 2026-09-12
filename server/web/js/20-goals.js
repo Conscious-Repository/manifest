@@ -827,6 +827,7 @@ function clickToEdit(span, getValue, save) {
     const orig = getValue();
     const input = document.createElement("input");
     input.className = "o-edit";
+    if (span.classList.contains("o-ns")) { input.classList.add("o-ns-edit"); input.setAttribute("aria-label", "North Star"); }
     input.value = orig;
     span.replaceWith(input);
     input.focus();

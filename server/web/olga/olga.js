@@ -44,26 +44,46 @@ async function openTodoPanel(row){
   comments.append(entries,composer);els.pickerBody.replaceChildren(form,comments);title.focus();
  }catch(e){els.pickerBody.replaceChildren(el('p','',e.message));}
 }
-function openTodoQuickAdd(prefill='',options={}){
- els.pickerTitle.textContent='Add task';els.pickerBody.replaceChildren();
- const input=inputEl('What must happen…');input.value=prefill;
- const domain=selectEl([...new Set(['Inbox',...(todosCache?.areas||[]),...(options.domain?[options.domain]:[])])]);domain.value=options.domain||'Inbox';
- const save=pill('Add task',async()=>{
-  if(!input.value.trim())return;
+async function openTodoQuickAdd(prefill='',options={}){
+ if(!todosCache){try{const response=await fetch('/api/tasks');if(!response.ok)throw new Error('Could not load task areas');todosCache=await response.json();}catch(e){showToast(e.message);return;}}
+ els.pickerTitle.textContent='Add task';
+ const form=el('form','olga-task-details olga-task-add');
+ const field=(label,node)=>{const wrap=el('label','olga-detail-field');wrap.append(el('span','',label),node);form.append(wrap);return node;};
+ const input=field('Task',inputEl('What needs to be done?'));input.value=prefill;input.required=true;input.autocomplete='off';
+ const domain=field('Area',selectEl([...new Set(['Inbox',...olgaTaskAreas(todosCache),...(options.domain?[options.domain]:[])])]));domain.value=options.domain||olgaTaskArea||'Inbox';
+ const hint=el('p','olga-detail-hint');const updateHint=()=>{hint.textContent=domain.value==='Home'?'Shared with Benjamin.':domain.value==='Inbox'?'Keep it in Inbox until you choose an area.':'';hint.hidden=!hint.textContent;};domain.onchange=updateHint;updateHint();
+ const actions=el('div','olga-add-actions');const cancel=el('button','pill light','Cancel');cancel.type='button';cancel.onclick=closePicker;
+ const save=el('button','pill olga-primary','Add task');save.type='submit';actions.append(cancel,save);
+ const error=el('p','olga-add-error');error.setAttribute('role','alert');error.hidden=true;
+ form.append(hint,error,actions);
+ form.onsubmit=async event=>{event.preventDefault();if(!input.value.trim()||save.disabled)return;save.disabled=true;cancel.disabled=true;error.hidden=true;
   try{await postJSONOk('/api/tasks/item',{text:input.value.trim(),domain:domain.value==='Inbox'?'':domain.value,...(options.rock?{rock:options.rock}:{})});closePicker();await loadTodos();if(!els.goalsView.hidden)await loadGoals();}
-  catch(e){showToast(e.message);}
- });
- input.onkeydown=e=>{if(e.key==='Enter')save.click();};
- els.pickerBody.append(input,domain,save);els.pickerModal.hidden=false;input.focus();
+  catch(e){error.textContent=e.message;error.hidden=false;}finally{save.disabled=false;cancel.disabled=false;}
+ };
+ els.pickerBody.replaceChildren(form);els.pickerModal.hidden=false;input.focus();
 }
 // Keep the existing task rows, ranking, completion, tethering and drop controls.
 const olgaRankedRow=rankedRow;
 rankedRow=function(r,i){const row=olgaRankedRow(r,i);row.querySelectorAll('.tdo-work-action,.tdo-agent-chip').forEach(n=>n.remove());row.querySelectorAll('.tdo-task-title,.tdo-open-chevron').forEach(n=>n.title='Edit task');return row;};
 todosTab='focus';todosLens='all';todosMode=localStorage.getItem('olga.tasks.view')||'list';
+let olgaTaskArea=localStorage.getItem('olga.tasks.area')||'';
+function olgaTaskAreas(cache){return [...new Set([...(cache?.areas||[]),...(cache?.domains||[]).map(d=>d.name)])].filter(Boolean);}
+const olgaTodoMatches=todoMatches;
+todoMatches=function(row,lens=todosLens){return (!olgaTaskArea||row.container?.name===olgaTaskArea)&&olgaTodoMatches(row,lens);};
+const olgaRenderTodos=renderTodos;
+renderTodos=function(){
+ const all=todosCache;if(!all)return;
+ if(olgaTaskArea&&!olgaTaskAreas(all).includes(olgaTaskArea)){olgaTaskArea='';localStorage.removeItem('olga.tasks.area');}
+ // Filter every task surface together, including completed tasks and decisions.
+ if(olgaTaskArea){const rows=(all.rows||[]).filter(r=>r.container?.name===olgaTaskArea);todosCache={...all,areas:olgaTaskAreas(all),rows,domains:(all.domains||[]).filter(d=>d.name===olgaTaskArea),counts:{...all.counts,tasks:rows.length,outstanding:0}};}
+ try{olgaRenderTodos();}finally{todosCache=all;}
+};
+
 renderTodosToolbar=function(){
  const bar=document.getElementById('todosToolbar');const focused=document.activeElement?.id==='todosSearch',caret=focused?document.activeElement.selectionStart:0;
  bar.replaceChildren();const search=inputEl('Find a task…');search.id='todosSearch';search.value=todosQuery;search.type='search';search.setAttribute('aria-label','Search tasks');search.oninput=()=>{todosQuery=search.value;renderTodos();};
- const views=el('div','olga-task-views');for(const mode of ['list','board']){const button=pillLight(mode==='list'?'List':'Board',()=>{todosMode=mode;localStorage.setItem('olga.tasks.view',mode);renderTodos();});button.setAttribute('aria-pressed',String(todosMode===mode));button.classList.toggle('on',todosMode===mode);views.append(button);}bar.append(search,views,pillLight('＋ Add task',()=>openTodoQuickAdd()));if(focused){search.focus();search.setSelectionRange(caret,caret);}
+ const area=el('select','olga-area-filter');area.setAttribute('aria-label','Filter tasks by area');const allOption=el('option','','All areas');allOption.value='';area.append(allOption);for(const name of olgaTaskAreas(todosCache)){const option=el('option','',name);option.value=name;area.append(option);}area.value=olgaTaskArea;area.onchange=()=>{olgaTaskArea=area.value;localStorage.setItem('olga.tasks.area',olgaTaskArea);renderTodos();};
+ const views=el('div','olga-task-views');for(const mode of ['list','board']){const button=pillLight(mode==='list'?'List':'Board',()=>{todosMode=mode;localStorage.setItem('olga.tasks.view',mode);renderTodos();});button.setAttribute('aria-pressed',String(todosMode===mode));button.classList.toggle('on',todosMode===mode);views.append(button);}bar.append(search,area,views,pillLight('＋ Add task',()=>openTodoQuickAdd()));if(focused){search.focus();search.setSelectionRange(caret,caret);}
 };
 // Surface errors instead of reporting a rejected save as successful.
 goalsApi=async function(method,path,body){
