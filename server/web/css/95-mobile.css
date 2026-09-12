@@ -345,20 +345,42 @@
   .nearby-form .contact-search { flex: 1 1 100%; min-width: 0; width: auto; }
   .nearby-form .nearby-radius-wrap { flex: 1 1 100%; }
 
-  /* ---- SPIRITS: rituals = name over next fire · outcome; runs/charge = desktop ---- */
+  /* Agents: job identity first, schedule and last result below, actions intact. */
+  .spirits-page { gap: var(--sp-6); }
+  #spiritsView > .agent-head > .agent-title,
+  #settingsView > .agent-head { display: none; }
+  #spiritsView > .agent-head { padding: 0; margin: 0; }
+  #spiritsView > .agent-head .agent-actions { width: 100%; justify-content: space-between; flex-wrap: nowrap; }
+  #spToggle { margin: 0; border: 0; }
+  #spNewAgent { flex: none; white-space: nowrap; min-height: var(--touch-sm); }
+  #spiritNextUp { display: none; } /* same next-fire information is on each job */
+  #spiritIndex > .toggle { margin-bottom: var(--sp-4); }
   .ritual-row {
     grid-template-columns: minmax(0, 1fr) auto;
-    align-items: center; row-gap: 0; min-height: 56px;
+    align-items: start; gap: var(--sp-4) var(--sp-6); padding: var(--sp-7) 0;
   }
-  .ritual-cadence { display: none; }
-  .ritual-ceiling { display: none; }
-  .ritual-runtime, .outcome-strip, .ritual-health, .ritual-acts { display: none; }
-  .sprt-cols { display: none; }
-  .sched-group-note { display: none; }
-  .ritual-name { grid-column: 1; grid-row: 1; font-size: var(--fs-lg); }
-  .ritual-next { grid-column: 1; grid-row: 2; font-size: var(--fs-sm); color: var(--base-50); }
-  .ritual-outcome { grid-column: 2; grid-row: 1 / 3; }
-  .runs-list { display: none; }
+  .ritual-cadence, .ritual-ceiling, .ritual-runtime, .outcome-strip { display: none; }
+  .sprt-cols, .sched-group-note { display: none; }
+  .ritual-name { grid-column: 1 / -1; grid-row: 1; display: flex; flex-direction: column; gap: var(--sp-2); white-space: normal; overflow: visible; }
+  .ritual-name-sep { display: none; }
+  .ritual-name .sprt-spirit { font-size: var(--fs-xs); color: var(--muted); align-self: start; min-height: var(--touch-sm); display: inline-flex; align-items: center; }
+  .ritual-job-name { font-family: var(--sans); font-size: var(--fs-xl); line-height: 1.4; overflow-wrap: anywhere; }
+  .ritual-next { grid-column: 1; grid-row: 2; font-size: var(--fs-sm); color: var(--muted); overflow-wrap: anywhere; }
+  .ritual-outcome { grid-column: 2; grid-row: 2; }
+  .ritual-health { grid-column: 2; grid-row: 3; align-self: center; justify-self: end; white-space: normal; }
+  .ritual-health:empty { display: none; }
+  .ritual-acts { display: flex; grid-column: 1; grid-row: 3; justify-self: start; flex-wrap: wrap; gap: var(--sp-4); }
+  .ritual-acts button { min-height: var(--touch-sm); padding: var(--sp-3) var(--sp-6); border: 1px solid var(--line); border-radius: var(--radius); }
+  .ritual-error, .ritual-note { overflow-wrap: anywhere; line-height: 1.5; }
+  .sprt-run-top, .sprt-live, .run-detail-head { flex-wrap: wrap; }
+  .sprt-run-title, .sprt-live-text { flex: 1 1 100%; white-space: normal; overflow-wrap: anywhere; }
+  .sprt-run-figs { margin-left: 0; flex-wrap: wrap; gap: var(--sp-4); }
+  .sprt-run-why { white-space: normal; overflow-wrap: anywhere; }
+  .run-trace-step { flex-wrap: wrap; }
+  .run-trace-detail { flex-basis: 100%; overflow-wrap: anywhere; }
+  .wiz-options { grid-template-columns: minmax(0, 1fr); }
+  .wiz-nav, .wiz-sum-row, .cadb-receipt { flex-wrap: wrap; }
+  .wiz-hint { text-align: left; margin-left: 0; }
 
   /* ---- READING: title over author · rating right; year/date/sorts drop ---- */
   .book-select { display: none; }
@@ -558,13 +580,36 @@
   .aion-vto-key { width: 76px; min-width: 0; flex: 0 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .aion-mini { min-width: 32px; min-height: 32px; }
 
-  /* ---- SETTINGS connections: the five-column portal grid (name · state ·
-     crossing · key · actions) overflowed at 390 (actions clipped at 514px).
-     Name + state on one line, crossing/key beneath, actions on their own row. ---- */
+  /* Settings: visible destinations, labeled values and full-width repair actions. */
+  .settings-view .aion-org-rail { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--sp-2); overflow: visible; }
+  .settings-view .aion-org-item { min-width: 0; border-radius: var(--radius); padding: var(--sp-4) var(--sp-6); text-decoration: none; }
+  .settings-view .aion-org-item.active { border-color: var(--accent); }
+  .settings-view .aion-org-pane { width: 100%; }
+  .settings-view .pp-section-head { overflow-wrap: anywhere; }
   .portal-row.portal-head { display: none; }
-  .portal-row { grid-template-columns: minmax(0, 1fr) auto; row-gap: var(--sp-2); }
-  .portal-cross, .portal-key { grid-column: 1 / -1; overflow-wrap: anywhere; }
-  .portal-acts { grid-column: 1 / -1; justify-self: start; }
+  .portal-board { gap: var(--sp-6); }
+  .portal-row { grid-template-columns: minmax(0, 1fr) auto; gap: var(--sp-4); border: 0; border-top: 1px solid var(--line); border-radius: 0; padding: var(--sp-6) 0; }
+  .portal-name { font-size: var(--fs-xl); overflow-wrap: anywhere; }
+  .portal-state { font-size: var(--fs-xs); }
+  .portal-cross, .portal-key { grid-column: 1 / -1; min-width: 0; overflow-wrap: anywhere; font-size: var(--fs-xs); }
+  .portal-cross::before { content: "last activity · "; color: var(--muted); }
+  .portal-key::before { content: "identity · "; color: var(--muted); }
+  .portal-acts { grid-column: 1 / -1; justify-self: stretch; gap: var(--sp-4); min-width: 0; }
+  .portal-acts > * { max-width: 100%; white-space: normal; overflow-wrap: anywhere; }
+  .portal-acts button, .portal-acts a { min-height: var(--touch-sm); padding: var(--sp-3) var(--sp-6); }
+  .portal-err, .portal-note { padding: 0 0 var(--sp-4); overflow-wrap: anywhere; line-height: 1.5; }
+  .portal-form { gap: var(--sp-4); padding: var(--sp-6); }
+  .portal-form > *, .portal-input { min-width: 0; max-width: 100%; }
+  .portal-input { width: 100%; box-sizing: border-box; }
+  .set-kv-row { grid-template-columns: minmax(0, 1fr); gap: var(--sp-3); padding: var(--sp-6) 0; }
+  .set-kv-val { min-width: 0; line-height: 1.5; }
+  .harness-head, .harness-spirit, .gmail-acct-head { flex-wrap: wrap; }
+  .harness-spirit-name, .harness-spirit-model, .gmail-acct-email { overflow-wrap: anywhere; min-width: 0; }
+  .harness-spirit-model { flex: 1 1 100%; }
+  .harness-portal-sel { max-width: 100%; }
+  .harness-hint, .harness-line, .portal-dim { overflow-wrap: anywhere; }
+  .cb-row { gap: var(--sp-4); }
+  .cb-key { overflow-wrap: anywhere; }
 
   /* ---- AGENTS runs head: the nowrap spend line (550px measured) wraps under the title ---- */
   .sprt-head { flex-wrap: wrap; }

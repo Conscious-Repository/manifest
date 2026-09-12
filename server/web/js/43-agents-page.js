@@ -10,6 +10,7 @@
 // page. `＋ agent` (the wizard) lives in the Agents header and on the
 // Settings › Agents card (agents plan §4.3: the board stays a schedule);
 // `＋ ritual` on the spirit page.
+let spiritDirectoryOpen = false;
 function renderSpiritIndex() {
   const host = document.getElementById("spiritIndex");
   if (!host) return;
@@ -20,12 +21,17 @@ function renderSpiritIndex() {
     ...Object.keys(counts),
     ...Object.keys((spiritStatusCache && spiritStatusCache.spirits) || {}),
   ])].sort();
+  host.classList.remove("spirit-index");
+  const directory = collapsibleSection(host, "agent directory", String(names.length + profileIndex.length), spiritDirectoryOpen);
+  directory.classList.add("spirit-index");
+  const toggle = host.querySelector(".toggle");
+  toggle.addEventListener("click", () => { spiritDirectoryOpen = !directory.hidden; });
   names.forEach((name) => {
     const b = el("button", "spirit-index-item");
     b.append(el("span", "spirit-index-name", name));
     b.append(el("span", "spirit-index-count", String(counts[name] || 0)));
     b.onclick = () => { location.hash = "#/agents/" + encodeURIComponent(name); };
-    host.append(b);
+    directory.append(b);
   });
   // then alfred + every Hermes profile (Phase 5) — the roster spans runtimes;
   // the count is the profile's cron jobs when known (default = the board's)
@@ -36,7 +42,7 @@ function renderSpiritIndex() {
     b.append(el("span", "spirit-index-count", p.active ? String(hermesJobs) : "-p"));
     b.title = "Hermes profile — hermes -p " + p.name;
     b.onclick = () => { location.hash = "#/agents/" + encodeURIComponent(p.name); };
-    host.append(b);
+    directory.append(b);
   });
   loadProfileIndex();
 }

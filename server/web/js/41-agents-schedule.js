@@ -279,10 +279,11 @@ function hermesJobRow(j) {
   row.append(chip);
   // name — alfred (its Settings card) · job name; the prompt rides the tooltip
   const name = el("span", "ritual-name");
-  const sp = el("span", "sprt-spirit", "alfred");
+  const sp = el("a", "sprt-spirit", "alfred");
+  sp.href = "#/settings/agents";
   sp.title = "Alfred (Hermes) — Settings › Agents";
   sp.onclick = (e) => { e.stopPropagation(); location.hash = "#/settings/agents"; };
-  name.append(sp, document.createTextNode(" · " + (j.name || j.id)));
+  name.append(sp, el("span", "ritual-name-sep", " · "), el("span", "ritual-job-name", j.name || j.id));
   name.title = [j.prompt ? "prompt: " + j.prompt : "", (j.skills || []).length ? "skills: " + j.skills.join(", ") : "", j.deliver ? "deliver: " + j.deliver : ""].filter(Boolean).join("\n");
   row.append(name);
   // cadence — the builder's phrase when the cron is one it can say, else Hermes' display
@@ -388,10 +389,14 @@ function ritualRow(r) {
   row.append(el("span", "harness-chip ritual-runtime", "excalibur"));
   // name — spirit (its own page) · ritual
   const name = el("span", "ritual-name");
-  const sp = el("span", "sprt-spirit", r.spirit);
+  const sp = el("a", "sprt-spirit", r.spirit);
+  sp.href = "#/agents/" + encodeURIComponent(r.spirit);
   sp.title = "Open " + r.spirit + "'s page";
   sp.onclick = (e) => { e.stopPropagation(); location.hash = "#/agents/" + encodeURIComponent(r.spirit); };
-  name.append(sp, document.createTextNode(" · " + r.ritual));
+  const job = el("a", "ritual-job-name", r.ritual);
+  job.href = "#/agents/ritual/" + encodeURIComponent(r.spirit) + "/" + encodeURIComponent(r.ritual);
+  job.onclick = (e) => e.stopPropagation();
+  name.append(sp, el("span", "ritual-name-sep", " · "), job);
   row.append(name);
   // cadence — human phrase over the raw cron (both visible)
   const cad = el("span", "ritual-cadence");

@@ -27,6 +27,7 @@ function showSettings(h) {
   const seg = tail.split("/");
   settingsGroup = SETTINGS_GROUPS.some(([k]) => k === seg[0]) ? seg[0] : "connections";
   settingsArg = seg.slice(1).join("/");
+  if (typeof setCrumbMeta === "function") setCrumbMeta("");
   renderSettings();
 }
 
@@ -56,10 +57,12 @@ function renderSettingsRail() {
   const degraded = settingsConnRows.filter((p) => p.state === "degraded").length;
   const counts = { connections: degraded, agents: settingsEnginesDown };
   SETTINGS_GROUPS.forEach(([key, label]) => {
-    const b = el("button", "aion-org-item" + (settingsGroup === key ? " active" : ""));
+    const b = el("a", "aion-org-item" + (settingsGroup === key ? " active" : ""));
+    b.href = "#/settings/" + key;
+    if (settingsGroup === key) b.setAttribute("aria-current", "page");
     b.append(el("span", "", label));
     const n = counts[key] || 0;
-    if (n) b.append(el("span", "aion-org-count attn", n + " ●"));
+    if (n) b.append(el("span", "aion-org-count attn", "● " + n));
     b.onclick = () => { location.hash = "#/settings/" + key; };
     rail.append(b);
   });
@@ -76,7 +79,7 @@ function renderSettingsRail() {
 
 // ---- CONNECTIONS — one .portal-row per service, problems first ----
 async function renderSettingsConnections(pane) {
-  pane.append(el("div", "pp-section-head", "CONNECTIONS — every external service, seen and repaired here"));
+  pane.append(el("div", "pp-section-head", "connections"));
   const list = el("div", "portal-board");
   list.id = "settingsConnList";
   pane.append(list);
@@ -94,7 +97,7 @@ async function loadSettingsConnections() {
   spPortalRows = rows;      // the Agents chip badge + the rail's Settings count share this
   updateSettingsBadge();
   renderSettingsRail();
-  if (typeof setCrumbMeta === "function") {
+  if (settingsGroup === "connections" && list.isConnected && typeof setCrumbMeta === "function") {
     const degraded = rows.filter((p) => p.state === "degraded").length;
     setCrumbMeta(degraded ? degraded + " degraded" : rows.length + " services · all reachable");
   }
@@ -301,7 +304,7 @@ async function renderSettingsAgents(pane) {
   board.append(excaliburCard(primary, (portals && portals.rows) || []));
   board.append(alfredCard(hermes));
   board.append(teamAgentsCard(harnesses.filter((h) => h !== primary)));
-  if (typeof setCrumbMeta === "function") {
+  if (settingsGroup === "agents" && pane.isConnected && typeof setCrumbMeta === "function") {
     setCrumbMeta(settingsEnginesDown ? settingsEnginesDown + " engine" + (settingsEnginesDown === 1 ? "" : "s") + " down" : "all engines live");
   }
   await renderReplyStyles(pane);

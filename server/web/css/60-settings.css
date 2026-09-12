@@ -86,3 +86,7 @@
 .portal-form.connect-flow, .portal-form.bank-accounts { display: block; }
 .portal-row.state-sealed .portal-state { color: var(--base-40); }
 .consume-signin-link { font-size: var(--fs-sm); color: var(--accent); }
+
+/* Settings uses the same page column and gutters as the other top-level views. */
+.settings-view { max-width: var(--page-max); margin: var(--sp-4) auto 64px; padding: 0 var(--page-gutter); }
+.settings-view .aion-org-item { text-decoration: none; }
