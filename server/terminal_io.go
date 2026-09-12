@@ -46,7 +46,8 @@ func (s *Server) handleTermTranscript(w http.ResponseWriter, r *http.Request) {
 	}
 	planningTimeline, _ := s.terminalPlanningTimeline(r.Context(), se)
 	writeJSON(w, map[string]any{
-		"turns": tr.Turns, "title": tr.Title, "cost": tr.Cost, "run": full.Run,
+		"questions": s.terminalQuestions(se, full),
+		"turns":     tr.Turns, "title": tr.Title, "cost": tr.Cost, "run": full.Run,
 		"conversation":       s.terminalConversation(se),
 		"sharedConversation": s.terminalSharedConversation(se),
 		"origin":             se.Origin, "draft": se.isDraft(),
@@ -189,7 +190,11 @@ func (s *Server) handleTermInput(w http.ResponseWriter, r *http.Request) {
 		httpError(w, err)
 		return
 	}
-	if b.Text == "" && b.Key == "" {
+	if len(b.QuestionAnswers) > 0 && (se.backend() != "herdr" || se.Kind != "codex" || b.RequestID == "" || b.Text != "" || b.Key != "" || b.Task != "" || len(b.Artifacts) > 0 || len(b.Files) > 0 || b.ConversationAgent != "" || b.ConversationID != "" || shared != nil) {
+		http.Error(w, "question answers require a native Codex session and request ID", http.StatusBadRequest)
+		return
+	}
+	if b.Text == "" && b.Key == "" && len(b.QuestionAnswers) == 0 {
 		http.Error(w, "nothing to send", http.StatusBadRequest)
 		return
 	}
@@ -265,6 +270,19 @@ func (s *Server) handleTermInput(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 		}
+		if len(b.QuestionAnswers) > 0 {
+			if shared != nil {
+				http.Error(w, "answer questions in the private native conversation", http.StatusForbidden)
+				return
+			}
+			text, err := s.prepareQuestionAnswers(se, b.QuestionAnswers)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusConflict)
+				return
+			}
+			b.Text = text
+			ownerText = text
+		}
 		if shared == nil && len(b.Files) > 0 {
 			httpError(w, errBadRequest("file selection requires a shared conversation"))
 			return
@@ -292,7 +310,7 @@ func (s *Server) handleTermInput(w http.ResponseWriter, r *http.Request) {
 			}
 			b.Text = context + "\n\nCurrent team member instruction from " + shared.Email + " (submission " + b.RequestID + "):\n" + ownerText
 		}
-		if shared == nil && se.Origin != nil && se.Origin.Mode == "continue" && se.Origin.Backend == "terminal" && b.Key == "" {
+		if shared == nil && len(b.QuestionAnswers) == 0 && se.Origin != nil && se.Origin.Mode == "continue" && se.Origin.Backend == "terminal" && b.Key == "" {
 			root, found := s.terminal.find(se.Origin.ID)
 			if !found || root.Kind != se.Origin.Agent || root.Device != "" || (root.Origin != nil && root.Origin.Mode == "continue") {
 				httpError(w, errBadRequest("source conversation unavailable"))
@@ -309,7 +327,7 @@ func (s *Server) handleTermInput(w http.ResponseWriter, r *http.Request) {
 			continuationContext = &terminalInputReceipt{Text: ownerText, ContextSource: key, ContextHash: hashTerminalText(context), HistoryOmitted: omitted}
 			b.Text = context + "\n\nCurrent owner instruction (submission " + b.RequestID + "):\n" + ownerText
 		}
-		if shared == nil && se.Origin != nil && se.Origin.Mode == "continue" && se.Origin.Backend == "" && b.Key == "" {
+		if shared == nil && len(b.QuestionAnswers) == 0 && se.Origin != nil && se.Origin.Mode == "continue" && se.Origin.Backend == "" && b.Key == "" {
 			if b.RequestID == "" {
 				httpError(w, errBadRequest("continuation messages require a request ID"))
 				return
@@ -327,7 +345,7 @@ func (s *Server) handleTermInput(w http.ResponseWriter, r *http.Request) {
 			continuationContext = &terminalInputReceipt{Text: ownerText, ContextSource: sessionConversation(source).Key, ContextHash: hashTerminalText(context), HistoryOmitted: omitted}
 			b.Text = context + "\n\nCurrent owner instruction (submission " + b.RequestID + "):\n" + ownerText
 		}
-		if shared == nil && se.Origin != nil && se.Origin.Mode == "side" && b.Key == "" {
+		if shared == nil && len(b.QuestionAnswers) == 0 && se.Origin != nil && se.Origin.Mode == "side" && b.Key == "" {
 			o := se.Origin
 			key := o.Backend + ":" + o.Agent + "/" + o.ID
 			context, omitted := o.Context, o.HistoryOmitted
@@ -383,7 +401,7 @@ func (s *Server) handleTermInput(w http.ResponseWriter, r *http.Request) {
 		var receipt *terminalInputReceipt
 		var err error
 		prepareReceipt := func() error {
-			receipt = &terminalInputReceipt{ID: b.RequestID, Fingerprint: fingerprint, State: "unconfirmed", Updated: time.Now().UTC().Format(time.RFC3339Nano), Runtime: se.Runtime, Task: b.Task, Artifacts: b.Artifacts, SubmittedHash: hashTerminalText(b.Text)}
+			receipt = &terminalInputReceipt{QuestionAnswers: b.QuestionAnswers, ID: b.RequestID, Fingerprint: fingerprint, State: "unconfirmed", Updated: time.Now().UTC().Format(time.RFC3339Nano), Runtime: se.Runtime, Task: b.Task, Artifacts: b.Artifacts, SubmittedHash: hashTerminalText(b.Text)}
 			if shared != nil {
 				receipt.SharedAgent, receipt.SharedThread = shared.Agent.Name, shared.Thread
 				receipt.ActorEmail, receipt.ActorName = shared.Email, shared.Name

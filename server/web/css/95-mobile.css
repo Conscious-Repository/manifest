@@ -687,3 +687,9 @@
 @media (max-width: 860px) {
   .pf4-grid > .pf4-num::after { content: " tasks"; font-size: var(--fs-2xs); color: var(--base-50); }
 }
+
+@media (max-width: 860px) {
+  .chat-questions { max-height: 42dvh; padding: var(--sp-4); }
+  .chat-question-option { min-height: var(--touch); align-items: center; }
+  .chat-question-input { font-size: var(--fs-xl); }
+}

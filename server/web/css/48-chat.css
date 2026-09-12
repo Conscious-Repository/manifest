@@ -716,3 +716,17 @@ button.chat-attach-chip { min-height: 44px; max-width: 100%; background: transpa
 .chat-file-open{display:block;text-align:left;font:var(--fs-lg) var(--sans);color:var(--text);background:transparent;border:0;padding:var(--sp-4) 0;cursor:pointer;}
 .chat-file-meta,.chat-file-path{font-size:var(--fs-xs);color:var(--muted);margin-top:var(--sp-2);}
 .chat-file-path{font-family:var(--mono);}
+
+/* Question tools are actionable conversation content, never hidden in Activity. */
+.chat-questions { flex: none; max-height: 42vh; overflow-y: auto; border-top: 1px solid var(--line); padding: var(--sp-6) var(--sp-7); }
+.chat-question { margin-top: var(--sp-5); padding: var(--sp-6); border: 1px solid var(--line); border-radius: var(--radius); background: var(--bg); }
+.chat-question-fields { border: 0; padding: 0; margin: 0; min-width: 0; }
+.chat-question-title { font-family: var(--sans); font-size: var(--fs-lg); color: var(--text); line-height: 1.5; margin-bottom: var(--sp-4); }
+.chat-question-option { display: flex; gap: var(--sp-4); align-items: baseline; min-height: var(--control-height); padding: var(--sp-3) 0; font-family: var(--sans); font-size: var(--fs-md); color: var(--text); cursor: pointer; }
+.chat-question-option input { accent-color: var(--accent); flex: none; }
+.chat-question-custom { display: block; margin: var(--sp-4) 0; font-family: var(--sans); font-size: var(--fs-md); color: var(--base-60); }
+.chat-question-input { display: block; width: 100%; box-sizing: border-box; margin-top: var(--sp-3); padding: var(--sp-4); background: var(--bg); color: var(--text); border: 1px solid var(--line); border-radius: var(--radius); resize: vertical; font: inherit; }
+.chat-question-answer { white-space: pre-wrap; overflow-wrap: anywhere; color: var(--text); font-family: var(--sans); font-size: var(--fs-md); }
+.chat-question-status { margin-top: var(--sp-4); color: var(--base-60); font-family: var(--sans); font-size: var(--fs-md); }
+.chat-main.terminal-focus .chat-questions { display: none; }
+.chat-question-history summary { font-family: var(--sans); font-size: var(--fs-md); color: var(--base-60); cursor: pointer; }

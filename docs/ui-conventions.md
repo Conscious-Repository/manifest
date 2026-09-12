@@ -391,3 +391,13 @@ External-action approvals remain owner-only, including in shared conversations. 
 The chat shell keeps conversation titles to one line, with full titles in More. Agent choice, Terminal and Changes are primary coding controls; metadata, rename, related chats and destructive actions belong in More. Inbox rows use one action menu for pinning, renaming and workstream assignment. Search and compact filters stay above the list. Terminal opens inside the current chat as a dedicated screen/control view and returns through Conversation; the raw Terminal page remains available in More. A blocked runtime labels the Terminal action as needing input. Do not let live header refresh close an open action menu.
 
 Chat pane dividers are draggable and keyboard-accessible separators. Left/right arrows adjust, Home or double-click resets; widths are remembered locally. Side-pane proportions keep usable columns as the window changes. Phones use full-width panes and hide dividers. Resizing must not navigate, send, edit content, or affect sharing.
+
+Native Codex asynchronous questions appear in a keyed **Questions for you** panel
+above the chat composer, outside collapsed Activity. Present supplied choices and
+an editable free-text answer with explicit Send answer; never submit a recommended
+option automatically. Polling preserves focused inputs and drafts. Settled answers
+remain inspectable in collapsed history. Answer sends use the existing session
+input receipt boundary and original question identity; an uncertain delivery stays
+locked against a second send. Synchronous/runtime-only prompts retain a clearly
+labeled Terminal path. Shared-conversation control rights are not expanded by
+question rendering.

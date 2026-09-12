@@ -1,6 +1,6 @@
 const assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm'),path=require('node:path');
 const src=fs.readFileSync(path.join(__dirname,'../web/js/48-chat.js'),'utf8');
-const ctx=vm.createContext({chatMarkViewed:()=>{},chatLastY:0,chatStick:true});
+const ctx=vm.createContext({chatQuestionPanel:()=>{},chatMarkViewed:()=>{},chatLastY:0,chatStick:true});
 vm.runInContext(src.slice(src.indexOf('function chatReadingAnchor(host)'),src.indexOf('window.addEventListener("pagehide",()=>{for(const saved of chatReadingStates')),ctx);
 function viewport(scrollTop,start,height){
  const host={scrollTop,scrollHeight:3000,clientHeight:500,getBoundingClientRect:()=>({top:100})};
@@ -76,7 +76,7 @@ assert.equal(ctx.chatHasCanonicalParent({origin:{mode:'continue',agent:'alfred',
 (async()=>{
  let paints=0,response={offset:0,turns:[],planningTimeline:[{n:'chat:alfred:1',text:'Planning reply'}]};
  const root={id:'native',offset:0,turns:[],se:{backend:'herdr'},live:false};
- const tail=vm.createContext({chatTermFind:()=>root.se,renderChatInboxRows:()=>{},document:{querySelector:()=>null},chatTermOpen:root,chatTermTailing:false,chatTermBase:id=>'/native/'+id,fetch:async()=>({json:async()=>response}),chatTermPaintTurns:()=>paints++,chatTermRepaintHead:()=>{}});
+ const tail=vm.createContext({chatQuestionPanel:()=>{},chatTermFind:()=>root.se,renderChatInboxRows:()=>{},document:{querySelector:()=>null},chatTermOpen:root,chatTermTailing:false,chatTermBase:id=>'/native/'+id,fetch:async()=>({json:async()=>response}),chatTermPaintTurns:()=>paints++,chatTermRepaintHead:()=>{}});
  vm.runInContext(src.slice(src.indexOf('async function chatTermRequestFinalTail('),src.indexOf('// chatTermMerge —')),tail);
  await tail.chatTermRequestFinalTail(root);assert.equal(paints,1);assert.equal(root.turns.length,0);
  await tail.chatTermRequestFinalTail(root);assert.equal(paints,1);

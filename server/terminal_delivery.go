@@ -14,16 +14,17 @@ import (
 )
 
 type terminalInput struct {
-	Files             []string             `json:"files,omitempty"`
-	Text              string               `json:"text"`
-	Key               string               `json:"key"`
-	Supervise         bool                 `json:"supervise"`
-	TimeoutMS         int                  `json:"timeoutMs"`
-	Task              string               `json:"task"`
-	Artifacts         []artifactContextRef `json:"artifacts"`
-	RequestID         string               `json:"requestId"`
-	ConversationAgent string               `json:"conversationAgent,omitempty"`
-	ConversationID    string               `json:"conversationId,omitempty"`
+	QuestionAnswers   []terminalQuestionAnswer `json:"questionAnswers,omitempty"`
+	Files             []string                 `json:"files,omitempty"`
+	Text              string                   `json:"text"`
+	Key               string                   `json:"key"`
+	Supervise         bool                     `json:"supervise"`
+	TimeoutMS         int                      `json:"timeoutMs"`
+	Task              string                   `json:"task"`
+	Artifacts         []artifactContextRef     `json:"artifacts"`
+	RequestID         string                   `json:"requestId"`
+	ConversationAgent string                   `json:"conversationAgent,omitempty"`
+	ConversationID    string                   `json:"conversationId,omitempty"`
 }
 
 func (b terminalInput) fingerprint() string {
@@ -37,23 +38,24 @@ func (b terminalInput) fingerprint() string {
 // agent completed work. Persist unconfirmed BEFORE crossing the runtime boundary.
 // A lost reply/crash leaves uncertainty that must never authorize replay.
 type terminalInputReceipt struct {
-	Files          []chatthreads.FileRef `json:"files,omitempty"`
-	SharedAgent    string                `json:"sharedAgent,omitempty"`
-	SharedThread   string                `json:"sharedThread,omitempty"`
-	ActorEmail     string                `json:"actorEmail,omitempty"`
-	ActorName      string                `json:"actorName,omitempty"`
-	ID             string                `json:"id"`
-	Fingerprint    string                `json:"fingerprint"`
-	State          string                `json:"state"` // unconfirmed | sent
-	Updated        string                `json:"updated"`
-	Runtime        terminalIdentity      `json:"runtime"`
-	Task           string                `json:"task,omitempty"`
-	Artifacts      []artifactContextRef  `json:"artifacts,omitempty"`
-	Text           string                `json:"text,omitempty"`
-	SubmittedHash  string                `json:"submittedHash,omitempty"`
-	ContextSource  string                `json:"contextSource,omitempty"`
-	ContextHash    string                `json:"contextHash,omitempty"`
-	HistoryOmitted int                   `json:"historyOmitted,omitempty"`
+	QuestionAnswers []terminalQuestionAnswer `json:"questionAnswers,omitempty"`
+	Files           []chatthreads.FileRef    `json:"files,omitempty"`
+	SharedAgent     string                   `json:"sharedAgent,omitempty"`
+	SharedThread    string                   `json:"sharedThread,omitempty"`
+	ActorEmail      string                   `json:"actorEmail,omitempty"`
+	ActorName       string                   `json:"actorName,omitempty"`
+	ID              string                   `json:"id"`
+	Fingerprint     string                   `json:"fingerprint"`
+	State           string                   `json:"state"` // unconfirmed | sent
+	Updated         string                   `json:"updated"`
+	Runtime         terminalIdentity         `json:"runtime"`
+	Task            string                   `json:"task,omitempty"`
+	Artifacts       []artifactContextRef     `json:"artifacts,omitempty"`
+	Text            string                   `json:"text,omitempty"`
+	SubmittedHash   string                   `json:"submittedHash,omitempty"`
+	ContextSource   string                   `json:"contextSource,omitempty"`
+	ContextHash     string                   `json:"contextHash,omitempty"`
+	HistoryOmitted  int                      `json:"historyOmitted,omitempty"`
 }
 
 func hashTerminalText(text string) string {

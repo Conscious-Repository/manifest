@@ -57,6 +57,7 @@ global.fetch = async (url) => { if (url.includes('/transcript')) reads++; return
 renderChatRail = () => {};
 chatTermRepaintHead = () => {};
 renderChatComposer = () => {};
+chatQuestionPanel = () => {}; // question DOM is covered by chat-questions.test.cjs
 chatTermPaintStrip = () => {};
 chatTermPaintTurns = () => {};
 (async () => {

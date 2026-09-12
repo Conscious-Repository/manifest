@@ -118,3 +118,13 @@ func TestChatAttentionAndPriorityUI(t *testing.T) {
 		})
 	}
 }
+
+func TestChatQuestionsUI(t *testing.T) {
+	node, err := exec.LookPath("node")
+	if err != nil {
+		t.Skip("node unavailable")
+	}
+	if out, err := exec.Command(node, "--test", "../tools/tests/chat-questions.test.cjs").CombinedOutput(); err != nil {
+		t.Fatalf("question UI: %v\n%s", err, out)
+	}
+}

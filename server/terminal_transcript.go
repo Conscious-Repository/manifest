@@ -65,6 +65,7 @@ type terminalRunEvidence struct {
 
 // termTranscript is the projection of one session file (or its tail).
 type termTranscript struct {
+	Questions []terminalQuestion `json:"questions,omitempty"`
 	// Set by the live projection, not the parser cache. An unreadable history
 	// must not be mistaken for an empty conversation during sharing review.
 	Run       *terminalRunEvidence `json:"run,omitempty"`
@@ -409,7 +410,17 @@ func parseCodexTranscript(r io.Reader, base ...int64) termTranscript {
 			}
 			switch p.Role {
 			case "user":
-				if !strings.HasPrefix(strings.TrimSpace(text), "<") { // <recommended_plugins>, <environment_context>, …
+				if replies := parseQuestionReply(text); len(replies) > 0 {
+					for _, reply := range replies {
+						for i := range b.out.Questions {
+							if b.out.Questions[i].ID == reply.ID {
+								b.out.Questions[i].State = "answered"
+								b.out.Questions[i].Answer = reply.Answer
+							}
+						}
+					}
+					b.user(rec.Timestamp, text)
+				} else if !strings.HasPrefix(strings.TrimSpace(text), "<") { // <recommended_plugins>, <environment_context>, …
 					b.user(rec.Timestamp, text)
 					if b.out.Run != nil && b.out.Run.State == "completed" {
 						b.out.Run = &terminalRunEvidence{ID: b.recordID, State: "unknown", At: rec.Timestamp, Evidence: b.recordID}
@@ -433,6 +444,7 @@ func parseCodexTranscript(r io.Reader, base ...int64) termTranscript {
 			if in == "" {
 				in = p.Args
 			}
+			b.out.Questions = append(b.out.Questions, projectQuestionCall(p.Name, p.CallID, in)...)
 			b.step(rec.Timestamp, p.CallID, p.Name, clip(strings.Join(strings.Fields(in), " "), termStepInputMax))
 		case "custom_tool_call_output", "function_call_output":
 			b.result(rec.Timestamp, p.CallID, codexOutputText(p.Output), false)

@@ -1766,7 +1766,7 @@ function chatPlanReviewButton(proposal){
 function chatPaintTurns(host, turns, ctx) {
   turns.forEach((t) => {
     if (t.who === "user") {
-      const row=chatUserTurn(t.text);
+      const row=chatUserTurn(chatQuestionReplyDisplay(t.text));
       row.dataset.chatReadTurn=String(t.n);
       const receipt=t.delivery||(t.submission?{context:{recipient:{agent:t.native.agent,model:t.native.model},task:t.submission.task,artifacts:t.submission.artifacts},historyOmitted:t.submission.historyOmitted}:ctx?.deliveries?.find(d=>d.userTurn===t.n));
       if(receipt?.context?.recipient){
@@ -2573,6 +2573,7 @@ async function loadChatTermSession(id) {
     planningTimeline:d.planningTimeline,
     planningRecipients:d.planningRecipients||[],
     planRevisions:d.planRevisions||{},
+    questions:d.questions||[],
     proposals:d.proposals||[],
     codingRecipients:d.codingRecipients||[],
     planningOperations:d.planningOperations||[],
@@ -2596,6 +2597,7 @@ async function loadChatTermSession(id) {
 // chatTermLeave — the stage moved to another section/thread (or the landing):
 // stop the tail, hide the strip.
 function chatTermLeave() {
+  chatQuestionPanel(null);
   document.querySelector(".chat-main")?.classList.remove("terminal-focus");
   chatTermOpen = null;
   if (chatTermFast) { clearInterval(chatTermFast); chatTermFast = null; }
@@ -2738,6 +2740,7 @@ function renderChatTermTranscript() {
   body.id = "chatTermTurns";
   host.append(body);
   chatTermPaintTurns();
+  chatQuestionPanel(o);
   chatTermPaintStrip();
   chatStick = true;
   chatPin();
@@ -2831,7 +2834,7 @@ function chatTermPaintLines(host, turns) {
 function chatTermCmdLine(t) {
   const line = el("div", "chat-term-line chat-term-cmd");
   line.append(el("span", "chat-term-glyph", chatTermPromptGlyph));
-  line.append(el("span", "chat-term-cmd-text", (t.text || "").trim()));
+  line.append(el("span", "chat-term-cmd-text", (chatQuestionReplyDisplay(t.text) || "").trim()));
   if (t.ts) line.append(el("span", "chat-term-meta", fmtWhen(t.ts)));
   return line;
 }
@@ -3001,6 +3004,8 @@ async function chatTermTail(o) {
   if (chatTermOpen !== o) return;
   const runChanged=JSON.stringify(o.se.run||null)!==JSON.stringify(d.run||null);o.se.run=d.run||null;const listed=chatTermFind(o.id);if(listed){listed.run=o.se.run;listed.activityOffset=d.offset||0;}if(runChanged&&!document.querySelector('.chat-row-menu[open]'))renderChatInboxRows();
   const planningChanged=JSON.stringify([o.planningTimeline,o.planningOperations,o.planRevisions||{},o.proposals||[]])!==JSON.stringify([d.planningTimeline,d.planningOperations,d.planRevisions||{},d.proposals||[]]);
+  o.questions=d.questions||[];
+  chatQuestionPanel(o);
   o.planningTimeline=d.planningTimeline;
   o.planningOperations=d.planningOperations;
   o.planRevisions=d.planRevisions||{};
