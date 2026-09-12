@@ -7,9 +7,12 @@
    Rev 5 (2026-09-05, hardening pass): the touch tokens below + the last
    block — page-header wrap, touch floors, per-surface fixes measured at
    360/390/412 (findings: /tmp/mobile_audit_findings.md of that pass).
-   Rev 6 (2026-09-12, chat reference pass): the final CHAT block — composer
-   pill, back-to-chats in the head, workspace opener behind ···; fixture
-   server/testdata/chat-mobile-chrome.cjs. */
+   Rev 6 (2026-09-12, chat reference pass): the CHAT block — back-to-chats in
+   the head, workspace opener behind ···; fixture
+   server/testdata/chat-mobile-chrome.cjs.
+   Rev 7 (2026-09-12, composer refinement): the final block — one 54px
+   composer row, model label and send as quiet controls, wrapped text only
+   grows the field (state classes from 48-chat.js chatComposerShape). */
 
 /* mono-label group (ui-conventions.md §labels): the invariant recipe once;
    each selector below keeps only its own size/color/structure. */
@@ -714,29 +717,13 @@
 
 /* ================= CHAT — phone conversation chrome (Rev 6, 2026-09-12) =================
    Reference pass against ChatGPT mobile. Three changes, all under 860px:
-   1. the composer is one rounded row while empty and unfocused (≈58px);
-      focused or holding text, the textarea takes its own full-width row and
-      model · voice · send stay in the lower row. Height then grows only as
-      the text wraps (48-chat.js grow()).
+   1. the composer (now Rev 7 below) is one low rounded row; the textarea takes
+      its own row only once the text wraps.
    2. an open conversation's head starts with "‹ Chats" (back to the list);
       the shell-level fold toggle is left for the landing and the open list.
    3. the workspace opener leaves the primary head for the ··· menu; the open
       workspace keeps its own × (Hide workspace) as the way back. */
 @media (max-width: 860px) {
-  .chat-main .chat-composer {
-    padding: var(--sp-3) var(--sp-3) var(--sp-3) var(--sp-5); gap: var(--sp-2) var(--sp-3);
-    border-radius: calc(var(--control-touch) / 2 + var(--sp-3));
-  }
-  .chat-main .chat-composer textarea.chat-input {
-    min-height: 40px; padding: 7px var(--sp-2); font: var(--fs-xl)/1.6 var(--sans);
-  }
-  /* empty + unfocused: the textarea shares the control row instead of owning one */
-  .chat-main .chat-composer:not(:focus-within):has(> textarea.chat-input:placeholder-shown) > textarea.chat-input {
-    flex: 1 1 0; width: auto; min-width: 0; order: 1;
-    min-height: var(--control-touch); max-height: var(--control-touch); padding: 9px var(--sp-2); overflow: hidden;
-  }
-  .chat-main .chat-composer:not(:focus-within):has(> textarea.chat-input:placeholder-shown) > .chat-attach { order: 0; }
-
   .mf-chat-back {
     display: inline-flex; align-items: center; gap: var(--sp-1); flex: none;
     min-height: var(--touch); min-width: var(--touch); padding: 0 var(--sp-4) 0 var(--sp-2); margin: 0;
@@ -753,4 +740,46 @@
   .chat-details[open] > .mf-chat-ws-more { display: block; }
   /* the open workspace's own way back (× Hide workspace) is a full touch target */
   .chat-workspace-bar > button { min-width: var(--touch); }
+}
+
+/* ================= CHAT — phone composer (Rev 7, 2026-09-12) =================
+   Second pass against ChatGPT mobile: lower profile, quieter controls. The
+   shape is owned by 48-chat.js chatComposerShape(): `has-text` while the
+   field holds text, `is-wrapped` once that text needs a second line (kept
+   until the field is cleared, so the wider row cannot flip the shape back),
+   `has-ritual` while a portal's ask/propose pair is showing. Focus never
+   changes the shape. All under 860px; ≥861px renders as before.
+   - compact (default): [＋] field · model · mic · send in one 44px row inside
+     4px padding → 54px outer;
+   - wrapped (or ritual showing): the field takes its own full-width row above
+     the controls and grows with the text (grow(), capped at 30% of the view);
+   - model: 12px sans, secondary ink, no pill, ellipsis past a third of the row,
+     44px-tall hit box;
+   - send: 36px neutral circle drawn inside a 44px hit box (transparent border,
+     padding-box clip); ink on surface once there is text; :disabled fades. */
+@media (max-width: 860px) {
+  .chat-main .chat-composer {
+    padding: var(--sp-2) var(--sp-2) var(--sp-2) var(--sp-5); gap: var(--sp-2);
+    border-radius: calc(var(--control-touch) / 2 + var(--sp-2));
+  }
+  .chat-main .chat-composer textarea.chat-input {
+    min-height: 32px; padding: var(--sp-3) var(--sp-2); font: var(--fs-xl)/1.6 var(--sans);
+  }
+  .chat-main .chat-composer > .chat-attach { order: 0; }
+  .chat-main .chat-composer:not(.is-wrapped):not(.has-ritual) > textarea.chat-input {
+    flex: 1 1 0; width: auto; min-width: 0; order: 1;
+    min-height: var(--control-touch); max-height: var(--control-touch); padding: 9px var(--sp-2); overflow: hidden;
+  }
+  .chat-main .chat-composer > .chat-composer-recipient {
+    flex: 0 1 auto; min-width: 0; max-width: 34%; min-height: var(--control-touch);
+    padding: 0 var(--sp-3); font: var(--fs-sm)/1 var(--sans); color: var(--base-50);
+    background: none; border: 0;
+  }
+  .chat-main .chat-composer > .chat-send {
+    width: var(--control-touch); height: var(--control-touch); min-width: var(--control-touch);
+    border: 4px solid transparent; border-radius: 50%; background-color: var(--base-20); background-clip: padding-box;
+    color: var(--base-60); font-size: 18px; font-weight: 600;
+  }
+  .chat-main .chat-composer.has-text > .chat-send { background-color: var(--base-100); color: var(--base-00); }
+  .chat-main .chat-composer > .chat-send:focus-visible { outline: 2px solid var(--accent); outline-offset: -1px; }
 }

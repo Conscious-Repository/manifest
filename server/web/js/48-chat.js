@@ -131,6 +131,25 @@ function chatBackToChats() {
   return back;
 }
 
+// chatComposerShape — the phone composer's two shapes (95-mobile.css Rev 7):
+// one row while the text fits on one line, the textarea on its own row once
+// it wraps, until the text is cleared. Focus alone never changes the shape
+// (iOS honours the programmatic focus on open, so a focus-driven shape showed
+// the tall state first). Returns true when a class changed, so the caller
+// re-measures the textarea at its new width. Desktop CSS ignores the classes.
+function chatComposerShape(host, ta) {
+  const text = ta.value.length > 0;
+  const was = host.className;
+  host.classList.toggle("has-text", text);
+  if (!text) host.classList.remove("is-wrapped");
+  else if (!host.classList.contains("is-wrapped")) {
+    const cs = getComputedStyle(ta);
+    const line = parseFloat(cs.lineHeight) || parseFloat(cs.fontSize) * 1.5;
+    if (ta.scrollHeight > line * 1.5 + (parseFloat(cs.paddingTop) || 0) + (parseFloat(cs.paddingBottom) || 0)) host.classList.add("is-wrapped");
+  }
+  return host.className !== was;
+}
+
 // Headers occupy their own flex row; output never scrolls behind them.
 function chatMountHeader(head) {
   const transcript = document.getElementById("chatTranscript");
@@ -2012,6 +2031,7 @@ function renderChatComposer(session) {
     const rit = host.querySelector(".chat-ritual");
     if (rit) {
       rit.hidden = !chatIsPortal() || nativeRecipient();
+      host.classList.toggle("has-ritual", !rit.hidden); // the phone composer keeps the field on its own row beside a visible pair
       rit.querySelectorAll(".filter-chip").forEach((c) => c.classList.toggle("on", c.dataset.ritual === chatRitual));
     }
     const chips = host.querySelector(".chat-attach-chips");
@@ -2071,7 +2091,7 @@ function renderChatComposer(session) {
   ta.setAttribute("aria-label", "Message");
   // auto-grow with content (target feel): reset then snap to scrollHeight,
   // clamped so a long paste scrolls inside instead of shoving the transcript.
-  const grow = () => { ta.style.height = "auto"; ta.style.height = Math.min(ta.scrollHeight, Math.max(56,Math.min(220,(window.visualViewport?.height||window.innerHeight)*0.3))) + "px"; };
+  const grow = () => { const size = () => { ta.style.height = "auto"; ta.style.height = Math.min(ta.scrollHeight, Math.max(56,Math.min(220,(window.visualViewport?.height||window.innerHeight)*0.3))) + "px"; }; size(); if (chatComposerShape(host, ta)) size(); };
   ta._grow=grow;
   ta.addEventListener("input", grow);
   ta.addEventListener("input", chatSaveDraft);
@@ -3253,7 +3273,7 @@ async function chatCompose(spirit, prefill) {
     if (prefill) {
       setTimeout(() => {
         const ta = document.querySelector("#chatComposer textarea");
-        if (ta) { ta.value = prefill; ta.focus(); }
+        if (ta) { ta.value = prefill; ta._grow?.(); ta.focus(); }
       }, 300);
     }
   } catch (e) { showToast("Couldn't open a chat — " + (e.message || "error")); }

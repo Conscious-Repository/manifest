@@ -1,14 +1,18 @@
 // chat-mobile-chrome.cjs — the phone conversation chrome from the 2026-09-12
-// reference pass against ChatGPT mobile (95-mobile.css Rev 6):
-//   1. the composer is one rounded row (56–64px) while empty and unfocused;
-//      focused or holding text it becomes textarea-over-controls and grows
-//      only as the text wraps, without horizontal overflow;
+// reference passes against ChatGPT mobile (95-mobile.css Rev 6 + Rev 7):
+//   1. the composer is one low rounded row (50–58px) whether empty, focused
+//      or holding a one-line message; once the text wraps (or Enter adds a
+//      line) the textarea takes its own full-width row and the composer grows
+//      only with the text, without horizontal overflow, until it is cleared.
+//      The model label is quiet text (12px, no pill) and send is a 36px
+//      neutral circle inside a 44px hit box that turns to ink once there is
+//      text; the mic keeps its 44px box;
 //   2. an open conversation's head starts with an accessible "Back to chats"
 //      control that opens the Chats fold and hands focus to "Close chats";
 //   3. the workspace opener is out of the primary phone head and lives in the
 //      ··· menu instead, while the desktop head keeps its icon button.
-// Static DOM + the real CSS and the real head/fold code, so the checks are
-// deterministic and need no server. Run:
+// Static DOM + the real CSS and the real head/fold/mic/grow code, so the
+// checks are deterministic and need no server. Run:
 //   NODE_PATH=<node_modules with playwright> PLAYWRIGHT_CHANNEL=chromium node server/testdata/chat-mobile-chrome.cjs
 const {chromium}=require('playwright'),fs=require('node:fs'),path=require('node:path'),assert=require('node:assert/strict');
 const root=path.join(__dirname,'../web');
@@ -23,11 +27,11 @@ const slice=(src,start,end)=>{const s=src.indexOf(start);assert.ok(s>=0,'missing
   await page.setContent(`<!DOCTYPE html><html><head><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"></head><body><div class="app-shell" id="appShell"><div class="crumb-bar" id="crumbBar"><span class="crumb-path"><span class="crumb-seg">Chat</span></span></div><nav id="railGroups"></nav>
    <section class="chat-page" id="chatView"><div class="chat-shell"><aside class="chat-rail" id="chatRail"><div class="chat-inbox-rows" id="chatInboxRows"><a class="chat-rail-row" href="#/chat/a/claude/x">claude</a></div></aside>
     <div class="chat-main term has-composer-recipient"><div class="chat-transcript" id="chatTranscript"><p>Transcript</p></div>
-     <div class="chat-composer input-surface" id="chatComposer" data-built="1"><textarea class="chat-input" rows="1" aria-label="Message" placeholder="Message…"></textarea><button class="chat-attach" aria-label="Attach files" hidden>＋</button><button class="chat-send" aria-label="Send message">↑</button><button class="mic-btn" aria-label="Voice">🎙</button><button class="sprt-quiet chat-composer-recipient" aria-label="Choose agent or model">fable ⌄</button></div>
+     <div class="chat-composer input-surface" id="chatComposer" data-built="1"><textarea class="chat-input" rows="1" aria-label="Message" placeholder="Message…"></textarea><button class="chat-attach" aria-label="Attach files" hidden>＋</button><span class="chat-ritual" hidden><button class="filter-chip">ask</button><button class="filter-chip">propose</button></span><button class="chat-send" aria-label="Send message">↑</button><button class="sprt-quiet chat-composer-recipient" aria-label="Choose agent or model">gpt-6-astra ⌄</button></div>
     </div></div></section></div></body></html>`);
-  for(const name of ['00-core','05-primitives','48-chat','95-mobile'])await page.addStyleTag({content:read('css/'+name+'.css')});
+  for(const name of ['00-core','05-primitives','48-chat','75-bars','95-mobile'])await page.addStyleTag({content:read('css/'+name+'.css')});
   await page.addStyleTag({content:'body{margin:0}.chat-shell{height:700px}'});
-  const chat=read('js/48-chat.js'),workspace=read('js/49-chat-workspace.js');
+  const chat=read('js/48-chat.js'),workspace=read('js/49-chat-workspace.js'),mic=read('js/79-mic.js');
   await page.evaluate(()=>{
    window.el=(tag,cls,text)=>{const e=document.createElement(tag);e.className=cls||'';if(text!==undefined)e.textContent=text;return e;};
    window.els={chatView:document.getElementById('chatView'),aionView:{hidden:true}};
@@ -36,10 +40,13 @@ const slice=(src,start,end)=>{const s=src.indexOf(start);assert.ok(s>=0,'missing
   });
   await page.addScriptTag({content:slice(chat,'function chatFocusKey','\nconst chatDrafts')});
   await page.addScriptTag({content:slice(workspace,'function chatWorkspaceIcon','\nfunction chatEnsureWorkspace')});
+  await page.addScriptTag({content:slice(mic,'function micButton','\nasync function micToggle')});
   await page.addScriptTag({content:read('js/98-mobile.js')});
-  // the composer's auto-grow, exactly as renderChatComposer wires it
+  // the real mic control (79-mic.js mounts it after the send) and the
+  // composer's auto-grow + shape sync, exactly as renderChatComposer wires them
+  await page.evaluate(()=>{const host=document.getElementById('chatComposer');host.insertBefore(micButton(()=>{}),host.querySelector('.chat-composer-recipient'));});
   const growLine=slice(chat,'  const grow = () =>','\n');
-  await page.addScriptTag({content:`(()=>{const ta=document.querySelector('#chatComposer textarea');${growLine.trim()};ta._grow=grow;ta.addEventListener('input',grow);})();`});
+  await page.addScriptTag({content:`(()=>{const host=document.getElementById('chatComposer'),ta=host.querySelector('textarea');${growLine.trim()};ta._grow=grow;ta.addEventListener('input',grow);grow();})();`});
   const mountHead=()=>page.evaluate(()=>{
    const head=el('div','sprt-head chat-head');head.append(el('span','sprt-title chat-head-title','claude'));
    head.append(el('button','sprt-quiet chat-terminal-view','Terminal'));
@@ -51,27 +58,63 @@ const slice=(src,start,end)=>{const s=src.indexOf(start);assert.ok(s>=0,'missing
   const overflow=()=>page.evaluate(()=>document.documentElement.scrollWidth>innerWidth);
   const ta=page.getByLabel('Message',{exact:true});
 
+  // visible geometry and paint, separate from the hit box: the padding box
+  // (the transparent border is hit area only), background, colour, type
+  const paint=sel=>page.evaluate(sel=>{const e=document.querySelector(sel),cs=getComputedStyle(e),r=e.getBoundingClientRect();const b=s=>parseFloat(cs['border'+s+'Width'])||0;
+   return {visualW:Math.round(r.width-b('Left')-b('Right')),visualH:Math.round(r.height-b('Top')-b('Bottom')),bg:cs.backgroundColor,color:cs.color,fontSize:parseFloat(cs.fontSize),fontFamily:cs.fontFamily,radius:cs.borderRadius,borderStyle:cs.borderTopStyle,opacity:parseFloat(cs.opacity),outline:cs.outlineStyle,
+    accent:getComputedStyle(document.documentElement).getPropertyValue('--accent').trim()};},sel);
+  const hexToRgb=h=>'rgb('+[1,3,5].map(i=>parseInt(h.slice(i,i+2),16)).join(', ')+')';
+  const clear=async()=>{await ta.fill('');await page.evaluate(()=>{document.querySelector('#chatComposer textarea').dispatchEvent(new Event('input',{bubbles:true}));document.activeElement?.blur();});};
+  const oneRow=async(label)=>{const composer=await box('#chatComposer'),input=await box('#chatComposer textarea'),send=await box('.chat-send'),mic=await box('.mic-btn'),recipient=await box('.chat-composer-recipient');
+   assert.ok(composer.h>=50&&composer.h<=58,`${label}: composer is ${composer.h}px, expected 50–58`);
+   assert.equal(input.y,send.y,`${label}: the textarea shares the control row`);assert.equal(mic.y,send.y,`${label}: mic on the row`);assert.equal(recipient.y,send.y,`${label}: model on the row`);
+   assert.ok(input.w>=90,`${label}: the field keeps ${input.w}px of the row`);
+   assert.equal(await overflow(),false,`${label}: overflow`);return composer.h;};
+
   for(const width of [360,390,412]){
-   await page.setViewportSize({width,height:844});await mountHead();await page.evaluate(()=>document.activeElement?.blur());
-   // 1a. compact: one row, 56–64px
-   let composer=await box('#chatComposer'),input=await box('#chatComposer textarea'),send=await box('.chat-send'),mic=await box('.mic-btn'),recipient=await box('.chat-composer-recipient');
-   assert.ok(composer.h>=56&&composer.h<=64,`${width}: empty composer is ${composer.h}px, expected 56–64`);
-   assert.equal(input.y,send.y,`${width}: empty textarea shares the control row`);assert.equal(mic.y,send.y);assert.equal(recipient.y,send.y);
-   assert.ok(send.h>=44&&send.w>=44&&mic.h>=44,`${width}: send/mic keep 44px targets`);
-   assert.equal(await overflow(),false,`${width}: compact overflow`);
-   // 1b. focus: textarea takes its own full-width row above the controls
-   await ta.focus();composer=await box('#chatComposer');input=await box('#chatComposer textarea');send=await box('.chat-send');
-   assert.ok(input.y<send.y,`${width}: focused textarea sits above the controls`);
-   assert.ok(input.w>=composer.w-40,`${width}: focused textarea is full width (${input.w} of ${composer.w})`);
-   const focusedH=composer.h;
-   // 1c. wrapped text grows the composer; nothing pans sideways
-   await page.keyboard.type('A message long enough to wrap onto a second and a third line at phone width so the composer has to grow.');
-   composer=await box('#chatComposer');assert.ok(composer.h>focusedH,`${width}: wrapped text grows the composer (${composer.h} vs ${focusedH})`);
+   await page.setViewportSize({width,height:844});await mountHead();await clear();
+   // 1a. compact: one low row; 44px hit boxes; quiet paint
+   const emptyH=await oneRow(width+' empty');
+   const send=await box('.chat-send'),mic=await box('.mic-btn'),recipient=await box('.chat-composer-recipient');let input=await box('#chatComposer textarea');
+   assert.ok(send.h>=44&&send.w>=44&&mic.h>=44&&mic.w>=44&&recipient.h>=44,`${width}: send/mic/model keep 44px targets`);
+   const sendPaint=await paint('.chat-send'),modelPaint=await paint('.chat-composer-recipient');
+   assert.ok(sendPaint.visualW>=32&&sendPaint.visualW<=38&&sendPaint.visualH===sendPaint.visualW,`${width}: send paints a ${sendPaint.visualW}×${sendPaint.visualH} circle inside its hit box`);
+   assert.equal(sendPaint.radius,'50%');assert.notEqual(sendPaint.bg,hexToRgb(sendPaint.accent),`${width}: empty send is not the accent fill`);assert.equal(sendPaint.opacity,1,`${width}: empty send is full opacity (distinct from :disabled)`);
+   assert.ok(modelPaint.fontSize<=12&&!/mono|Carbon/i.test(modelPaint.fontFamily),`${width}: model label is small sans text (${modelPaint.fontSize}px ${modelPaint.fontFamily})`);
+   assert.equal(modelPaint.bg,'rgba(0, 0, 0, 0)',`${width}: model label has no fill`);assert.equal(modelPaint.borderStyle,'none',`${width}: model label has no border`);
+   assert.ok(recipient.w<=Math.floor((await box('#chatComposer')).w*0.34)+1,`${width}: model label stays within a third of the row (${recipient.w}px)`);
+   assert.ok((await paint('#chatComposer textarea')).fontSize>=16,`${width}: 16px input text (no iOS zoom)`);
+   // 1b. focus alone changes nothing (iOS honours the programmatic focus on open)
+   await ta.focus();assert.equal(await oneRow(width+' focused'),emptyH,`${width}: focus keeps the row height`);
+   // 1c. a one-line message stays on the row; send turns to ink; keyboard focus ring on send is visible
+   await page.keyboard.type('ok');assert.equal(await oneRow(width+' short text'),emptyH);
+   const inkPaint=await paint('.chat-send');assert.notEqual(inkPaint.bg,sendPaint.bg,`${width}: send fill changes once there is text`);assert.notEqual(inkPaint.bg,hexToRgb(inkPaint.accent));
+   await page.keyboard.press('Tab');
+   assert.equal(await page.evaluate(()=>document.activeElement.className),'chat-send',`${width}: Tab reaches send`);
+   assert.equal(await page.evaluate(()=>getComputedStyle(document.activeElement).outlineStyle!=='none'&&parseFloat(getComputedStyle(document.activeElement).outlineWidth)>=2),true,`${width}: send shows a focus ring`);
+   // 1d. wrapped text: the textarea takes its own full-width row above the controls; the composer grows only with the text
+   await ta.focus();await page.keyboard.type(' — and a message long enough to wrap onto a second line at phone width.');
+   let composer=await box('#chatComposer');input=await box('#chatComposer textarea');const send2=await box('.chat-send');
+   assert.ok(input.y<send2.y,`${width}: wrapped textarea sits above the controls`);
+   assert.ok(input.w>=composer.w-40,`${width}: wrapped textarea is full width (${input.w} of ${composer.w})`);
+   assert.ok(composer.h>emptyH&&composer.h<=emptyH+72,`${width}: two lines grow the composer to ${composer.h}px (from ${emptyH})`);
    assert.equal(await overflow(),false,`${width}: typed overflow`);
-   // 1d. blur keeps the text readable at full width; clearing returns to the pill
-   await page.evaluate(()=>document.activeElement.blur());input=await box('#chatComposer textarea');send=await box('.chat-send');assert.ok(input.y<send.y,`${width}: text keeps the expanded layout when unfocused`);
-   await ta.fill('');await page.evaluate(()=>{document.querySelector('#chatComposer textarea').dispatchEvent(new Event('input',{bubbles:true}));document.activeElement.blur();});
-   composer=await box('#chatComposer');assert.ok(composer.h>=56&&composer.h<=64,`${width}: cleared composer returns to ${composer.h}px`);
+   const twoLineH=composer.h;
+   await page.keyboard.type(' A third line keeps growing it.');composer=await box('#chatComposer');assert.ok(composer.h>twoLineH,`${width}: a third line grows it further (${composer.h})`);
+   // 1e. blur keeps the wrapped layout; deleting back to one line keeps it too (no flip-flop); clearing returns to the row
+   await page.evaluate(()=>document.activeElement.blur());input=await box('#chatComposer textarea');assert.ok(input.y<(await box('.chat-send')).y,`${width}: text keeps the wrapped layout when unfocused`);
+   await ta.fill('ok');await page.evaluate(()=>document.querySelector('#chatComposer textarea').dispatchEvent(new Event('input',{bubbles:true})));
+   input=await box('#chatComposer textarea');assert.ok(input.y<(await box('.chat-send')).y,`${width}: shortened text stays on its own row until cleared`);
+   await clear();assert.equal(await oneRow(width+' cleared'),emptyH);
+   // 1f. Enter (a new line on phones) wraps too
+   await ta.focus();await page.keyboard.type('one');await page.keyboard.press('Enter');await page.keyboard.type('two');
+   input=await box('#chatComposer textarea');assert.ok(input.y<(await box('.chat-send')).y,`${width}: Enter moves the field to its own row`);
+   await clear();
+   // 1g. a visible ask/propose pair (portal threads) keeps the field on its own row
+   await page.evaluate(()=>{document.querySelector('.chat-ritual').hidden=false;document.getElementById('chatComposer').classList.add('has-ritual');});
+   input=await box('#chatComposer textarea');assert.ok(input.y<(await box('.chat-send')).y,`${width}: the ritual pair never crushes the field`);assert.equal(await overflow(),false);
+   await page.evaluate(()=>{document.querySelector('.chat-ritual').hidden=true;document.getElementById('chatComposer').classList.remove('has-ritual');});
+   await oneRow(width+' after ritual');
   }
   await page.setViewportSize({width:390,height:844});await mountHead();
 
@@ -110,11 +153,20 @@ const slice=(src,start,end)=>{const s=src.indexOf(start);assert.ok(s>=0,'missing
   assert.equal(await page.locator('.chat-head > .chat-workspace-toggle').isVisible(),true,'desktop keeps the workspace icon button');
   await page.locator('.chat-details > summary').click();assert.equal(await entry.isVisible(),false,'desktop ··· has no Workspace entry');
   await page.evaluate(()=>{document.querySelector('.chat-details').open=false;document.activeElement?.blur();});
-  const dInput=await box('#chatComposer textarea'),dSend=await box('.chat-send');
-  assert.ok(dInput.y<dSend.y&&dInput.h>=72,'desktop composer is unchanged: full-width textarea (min 72px) over the controls');
+  for(const width of [861,1000,1280]){
+   await page.setViewportSize({width,height:900});await clear();
+   const dInput=await box('#chatComposer textarea'),dSend=await box('.chat-send'),dPaint=await paint('.chat-send'),dModel=await paint('.chat-composer-recipient');
+   assert.ok(dInput.y<dSend.y&&dInput.h>=72,`${width}: desktop composer is unchanged: full-width textarea (min 72px) over the controls`);
+   assert.equal(dPaint.bg,hexToRgb(dPaint.accent),`${width}: desktop send keeps the accent fill`);assert.equal(dPaint.visualW,dSend.w,`${width}: desktop send has no hit-box border`);
+   assert.ok(dModel.fontSize===13&&/mono|Carbon/i.test(dModel.fontFamily),`${width}: desktop model label keeps its mono type`);
+   await ta.fill('ok');await page.evaluate(()=>document.querySelector('#chatComposer textarea').dispatchEvent(new Event('input',{bubbles:true})));
+   assert.ok((await box('#chatComposer textarea')).y<(await box('.chat-send')).y,`${width}: desktop text keeps the two-row anatomy`);
+   assert.equal((await paint('.chat-send')).bg,hexToRgb(dPaint.accent),`${width}: desktop send fill ignores the has-text state`);
+   await clear();
+  }
   assert.equal(await page.locator('.chat-shell > .mf-chat-toggle').isVisible(),false,'no fold toggle on desktop');
 
   assert.deepEqual(errors,[]);
-  console.log('PASS: phone composer pill → expanded → grows with wrapped text; Back to chats in the head with Close chats hand-off; workspace opener behind ···; desktop head and composer unchanged.');
+  console.log('PASS: phone composer stays one 50–58px row until the text wraps, then grows with it; quiet model label and neutral send with 44px targets; Back to chats in the head with Close chats hand-off; workspace opener behind ···; desktop head and composer unchanged at 861/1000/1280.');
  }finally{await browser.close();}
 })().catch(e=>{console.error(e);process.exit(1);});

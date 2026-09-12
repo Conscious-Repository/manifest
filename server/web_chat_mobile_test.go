@@ -5,10 +5,12 @@ import (
 	"testing"
 )
 
-// The phone conversation chrome (95-mobile.css Rev 6): a 56–64px composer
-// pill that expands only when focused or holding text, a "Back to chats"
-// control leading the head, and the workspace opener behind ··· — with the
-// desktop head and composer unchanged. Browser-driven, so it runs only where
+// The phone conversation chrome (95-mobile.css Rev 6 + Rev 7): a 50–58px
+// composer row that keeps its height through focus and one-line messages and
+// moves the field to its own row only once the text wraps, a quiet model label
+// and neutral send with 44px targets, a "Back to chats" control leading the
+// head, and the workspace opener behind ··· — with the desktop head and
+// composer unchanged at 861/1000/1280. Browser-driven, so it runs only where
 // Playwright resolves (NODE_PATH); elsewhere it skips like the other fixtures
 // that need a browser.
 func TestChatMobileChromeUI(t *testing.T) {
