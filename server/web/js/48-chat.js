@@ -3402,7 +3402,7 @@ async function chatDeliverRemembered(item){
  const res=await fetchJSONRetry("POST",item.url,item.payload);
  if(!res.ok){const error=new Error((await res.text()).trim()||"Send failed");error.rejected=[400,413,422].includes(res.status);error.notSent=/nothing sent/.test(error.message);throw error;}
  const result=await res.json();
- if(chatIsTerminalDelivery(item)&&result.delivery?.state!=="sent")throw new Error("Submission is unconfirmed. Check its status or inspect the native conversation before sending another instruction.");
+ if(chatIsTerminalDelivery(item)&&result.delivery?.state!=="sent")throw new Error(result.delivery?.error || "Submission is unconfirmed. Check its status or inspect the native conversation before sending another instruction.");
  if(result.ok!==true && !result.id)throw new Error("Delivery acknowledgement unavailable");
  return chatAcceptDelivery(item,result);
 }

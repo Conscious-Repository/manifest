@@ -20,7 +20,7 @@ function chatQuestionPanel(o) {
     panel.append(el('div','micro-label','Questions for you'));
     composer.before(panel);
   }
-  panel.children[0].textContent='Questions for you · '+questions.filter(q=>q.state==='pending').length+' awaiting answer';
+  panel.children[0].textContent='Questions for you · '+questions.filter(q=>q.state==='pending').length+' awaiting answer'+(questions.some(q=>q.state==='unconfirmed')?' · delivery needs attention':'');
   const ids=new Set(questions.map(q=>q.id));
   for(const node of [...panel.children])if(node.dataset.question&&!ids.has(node.dataset.question))node.remove();
   for(const q of questions){
@@ -40,8 +40,8 @@ function chatQuestionCard(o,q,key) {
   if(q.state!=='pending'){
     fields.append(el('div','chat-question-answer',q.answer||''));
     status.textContent=q.state==='answered'?'Answered':q.state==='sent'?'Answer sent':'Delivery uncertain — check the conversation before sending again.';
-    const history=el('details','chat-question-history'),summary=el('summary','',q.state==='answered'?'Answered question':'Submitted answer');
-    history.append(summary,fields,status);card.append(history);return card;
+    const history=el('details','chat-question-history'),summary=el('summary','',q.state==='answered'?'Answered question':q.state==='sent'?'Submitted answer':'Answer delivery unconfirmed');
+    history.open=q.state==='unconfirmed';history.append(summary,fields,status);card.append(history);return card;
   }
   if(!q.async || o.se.backend!=='herdr' || o.sharedConversation){
     status.textContent='This runtime prompt needs a response in Terminal.';

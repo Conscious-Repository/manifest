@@ -42,3 +42,9 @@ test('definitive refusal with no receipt permits correction; synchronous prompts
  const input=f.find('textarea');input.value='Answer';input.oninput();await f.find('form').onsubmit({preventDefault(){}});assert.equal(f.find('button').disabled,false);
  f.q.async=false;f.ctx.chatQuestionPanel(f.o);assert.equal(f.find('button').textContent,'Open Terminal');assert(!f.find('textarea'));
 });
+test('uncertain answers remain expanded and visibly need attention',()=>{
+ const f=fixture(async()=>{});f.q.state='unconfirmed';f.q.answer='Saved answer';f.ctx.chatQuestionPanel(f.o);
+ assert.equal(f.find('details').open,true);
+ assert.equal(f.find('summary').textContent,'Answer delivery unconfirmed');
+ assert(all(f.body).some(n=>n.textContent.includes('delivery needs attention')));
+});

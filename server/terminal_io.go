@@ -468,6 +468,8 @@ func (s *Server) handleTermInput(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			if receipt != nil {
+				receipt.Error = err.Error()
+				_ = s.terminal.writeInputReceipt(se.ID, *receipt)
 				writeTerminalInputReceipt(w, se.ID, *receipt)
 				return
 			}

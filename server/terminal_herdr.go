@@ -319,7 +319,53 @@ func (h *herdrTerminalRuntime) SendText(ctx context.Context, id terminalIdentity
 		return err
 	}
 	_, err := h.callGeneration(ctx, "agent.prompt", map[string]any{"target": id.Pane, "text": text}, id.Generation)
-	return err
+	var rejection *herdrError
+	if !errors.As(err, &rejection) || rejection.Code != "agent_blocked" {
+		return err
+	}
+	// agent_blocked guarantees no input was sent. Codex async questions can
+	// leave this state latched while its ordinary composer is available. Only
+	// this exact screen permits direct input; approval dialogs never do.
+	ob, inspectErr := h.Inspect(ctx, id)
+	if inspectErr != nil || ob.Kind != "codex" || ob.Process != "running" {
+		return err
+	}
+	lines, screenErr := h.Screen(ctx, id)
+	if screenErr != nil || !codexQueuedQuestionComposer(lines) {
+		return err
+	}
+	_, err = h.callGeneration(ctx, "pane.send_input", map[string]any{"pane_id": id.Pane, "text": text}, id.Generation)
+	if err != nil {
+		return err
+	}
+	// Match herdr 0.9's paste-settle interval before Enter. Cancellation or
+	// any failure after paste remains uncertain and must never replay text.
+	timer := time.NewTimer(300 * time.Millisecond)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-timer.C:
+	}
+	return h.SendKey(ctx, id, "\r")
+}
+
+func codexQueuedQuestionComposer(lines []string) bool {
+	if termBlockingDialog(lines) != "" {
+		return false
+	}
+	queued, answer, empty := false, false, false
+	for _, line := range lines {
+		switch strings.TrimSpace(line) {
+		case "• Queued follow-up inputs":
+			queued = true
+		case "alt + ↑ to answer":
+			answer = true
+		case "› Ask Codex to do anything":
+			empty = true
+		}
+	}
+	return queued && answer && empty
 }
 func (h *herdrTerminalRuntime) SendKey(ctx context.Context, id terminalIdentity, key string) error {
 	if err := h.checked(ctx, id); err != nil {
