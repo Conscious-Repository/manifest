@@ -2139,7 +2139,7 @@ function renderChatComposer(session) {
         if(files.length&&!session?.shared)throw new Error("File uploads are not supported by this coding continuation yet. Remove the attachment or choose a planning agent.");
         const url=chatTermBase(chosenRecipient.id)+"/input";
         const input={text,...(files.length?{files:files.map(f=>f.hash)}:{}),conversationAgent:sendAgent,conversationId:sendSession,task:session?.shared?"":selected?.task||session?.task||"",artifacts:selected?[{id:selected.id,revision:selected.revision}]:[]};
-        if(['working','blocked'].includes(chatTermFind(chosenRecipient.id)?.agentState))await chatStageMessage(draftKey,chosenRecipient.agent,url,input);
+        if(chatTermFind(chosenRecipient.id)?.agentState==='working')await chatStageMessage(draftKey,chosenRecipient.agent,url,input);
         else await chatDeliverRemembered(chatRememberDelivery(draftKey,chosenRecipient.agent,url,input));acceptedDraft();
         if(sendRoute===chatRouteVersion)await refetchChatSession(sendSession);
       }catch(e){showToast(e.message||"Send not confirmed. Your draft is retained.");}
@@ -3071,7 +3071,7 @@ async function chatTermSend(text,context={}) {
   if (!text) return true;
   if (chatTermSending) return false;
   const current=chatTermFind(chatOpenId);
-  if(current&&['working','blocked'].includes(current.agentState)){
+  if(current?.agentState==='working'){
     try{await chatStageMessage(chatAgent+'/'+chatOpenId,chatAgent,chatTermBase(chatOpenId)+'/input',{text,...context});return true;}
     catch(e){showToast(e.message);return false;}
   }
@@ -3423,7 +3423,7 @@ async function chatUpdateStaged(item,next){
  const url='/api/chat/state/'+encodeURIComponent(item.stateKey)+'/deliveries';
  for(let n=0;n<4;n++){
   const r=await fetch(url,{cache:'no-store'});if(!r.ok)throw Error('Pending messages could not be loaded.');const state=await r.json(),items={...state.value?.items},current=items[item.payload.requestId];
-  if(!current?.staged||JSON.stringify(current.payload)!==JSON.stringify(item.payload))throw Error('This message changed on another device. Reload before continuing.');
+  if(!current?.staged||!chatStateEqual(current.payload,item.payload))throw Error('This message changed on another device. Reload before continuing.');
   if(next)items[item.payload.requestId]=next;else delete items[item.payload.requestId];
   const saved=await fetch(url,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({revision:state.revision,value:{...state.value,items}})});
   if(saved.status===409)continue;if(!saved.ok)throw Error('Pending message was not saved.');
