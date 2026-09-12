@@ -1,0 +1,10 @@
+const fs=require('fs'),vm=require('vm'),assert=require('node:assert/strict'),path=require('path');
+const source=fs.readFileSync(path.join(__dirname,'../web/js/96-aion-recruiting.js'),'utf8');
+const context=vm.createContext({});vm.runInContext(source.slice(source.indexOf('function recLookupMessage('),source.indexOf('// ---- the decision card')),context);
+const message=r=>context.recLookupMessage({name:'P. J. Ross',...r});
+assert.match(message({failed:['deepseek']}),/lookup incomplete/);
+assert.doesNotMatch(message({failed:['deepseek']}),/nothing new|unreachable/);
+assert.match(message({failed:['deepseek'],cites:2,matched:['pubmed']}),/2 citations from pubmed.*Could not finish deepseek/);
+assert.match(message({}),/nothing new under that exact name/);
+assert.doesNotMatch(message({cites:1,matched:['pubmed']}),/incomplete|Could not finish/);
+console.log('PASS lookup failures remain visible with or without partial results; empty successful lookups stay distinct.');

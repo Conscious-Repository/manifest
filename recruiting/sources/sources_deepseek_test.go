@@ -141,3 +141,12 @@ func TestDeepSeekRetriesReplayPOST(t *testing.T) {
 		t.Fatal("POST not replayed")
 	}
 }
+
+func TestDeepSeekPreservesEndpointFailure(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusBadGateway) }))
+	defer ts.Close()
+	_, err := (DeepSeek{BaseURL: ts.URL, Client: *ts.Client()}).LookupCandidate(context.Background(), reasoningDraft(), Scope{})
+	if err == nil || !strings.Contains(err.Error(), "endpoint unavailable") || !strings.Contains(err.Error(), "HTTP 502") {
+		t.Fatalf("lost actionable endpoint diagnostic: %v", err)
+	}
+}

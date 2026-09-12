@@ -91,7 +91,7 @@ func (ds DeepSeek) LookupCandidate(ctx context.Context, d CandidateDraft, _ Scop
 	_, err = scholarlyGet(ds.Client, req, ds.ID(), "/models", 64<<10)
 	probeCancel()
 	if err != nil {
-		return nil, fmt.Errorf("deepseek: endpoint unavailable")
+		return nil, fmt.Errorf("deepseek: endpoint unavailable: %w", err)
 	}
 	input := deepseekContext(d)
 	data, _ := json.Marshal(input)
@@ -114,7 +114,7 @@ func (ds DeepSeek) LookupCandidate(ctx context.Context, d CandidateDraft, _ Scop
 	req.Header.Set("Content-Type", "application/json")
 	body, err := scholarlyRequest(ds.Client, req, ds.ID(), "/chat/completions", (128<<10)+1)
 	if err != nil {
-		return nil, fmt.Errorf("deepseek: completion unavailable")
+		return nil, fmt.Errorf("deepseek: completion unavailable: %w", err)
 	}
 	if len(body) > 128<<10 {
 		return nil, fmt.Errorf("deepseek: oversized completion")

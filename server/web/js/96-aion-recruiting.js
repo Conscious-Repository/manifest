@@ -2131,16 +2131,20 @@ function recHost(u) {
 async function recDraftLookup(run, d) {
   const out = await recSourcesPost("/api/aion/recruiting/sources/lookup/" + run.id + "/" + d.id, {});
   if (!out) return;
-  const r = out.lookup || {};
+  showToast(recLookupMessage(out.lookup || {}));
+}
+
+function recLookupMessage(r) {
   const bits = [];
   if (r.cites) bits.push(r.cites + " citation" + (r.cites === 1 ? "" : "s"));
   if (r.links) bits.push(r.links + " link" + (r.links === 1 ? "" : "s"));
   if ((r.filled || []).length) bits.push("filled " + r.filled.join(" + "));
   const where = (r.matched || []).length ? " from " + r.matched.join(", ") : "";
-  showToast(bits.length
-    ? "looked up " + r.name + ": " + bits.join(" · ") + where
-    : "looked up " + r.name + " — nothing new under that exact name" +
-      ((r.failed || []).length ? " (" + r.failed.join(", ") + " unreachable)" : ""));
+  const failed = r.failed || [];
+  const result = bits.length ? "looked up " + r.name + ": " + bits.join(" · ") + where
+    : failed.length ? "lookup incomplete for " + r.name
+    : "looked up " + r.name + " — nothing new under that exact name";
+  return result + (failed.length ? ". Could not finish " + failed.join(", ") + "; try the lookup again when the service is available." : "");
 }
 
 // ---- the decision card (enrichment Phase 2) ----
