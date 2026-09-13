@@ -198,8 +198,10 @@ function renderSpiritRituals(rows) {
   const groups = { yours: [], internal: [], paused: [] };
   all.slice().sort(byName).forEach((r) => groups[schedGroupOf(r)].push(r));
   groups.yours.sort((a, b) => (fireAt(a) - fireAt(b)) || byName(a, b)); // soonest first; invalid (no fire) last
+  // the re-intake lane: one status row (state chip + bits + details →), never
+  // the full policy sentence — that is level two on Settings › Agents
+  host.append(reIntakeStatusRow(hermesInfo && hermesInfo.reIntakePrimary));
   // what the Hermes projection could not read (D4 graceful degrade) — said once, quietly
-  host.append(el("div", "sched-degraded", reIntakePrimarySummary(hermesInfo && hermesInfo.reIntakePrimary)));
   (hermesInfo && hermesInfo.dutyRefusals || []).forEach((r) => host.append(el("div", "sched-degraded", r.label)));
   const cron = (hermesInfo && hermesInfo.cron) || null;
   if (hermesInfo === null) host.append(el("div", "sched-degraded", "alfred: /api/agents/hermes did not answer — Hermes jobs not shown"));

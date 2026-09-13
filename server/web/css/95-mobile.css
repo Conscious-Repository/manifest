@@ -619,6 +619,13 @@
   .harness-spirit-model { flex: 1 1 100%; }
   .harness-portal-sel { max-width: 100%; }
   .harness-hint, .harness-line, .portal-dim { overflow-wrap: anywhere; }
+  /* the legacy card's fold and the re-intake status row: touch-height summary, the
+     details → link on its own line under the bits, receipt lines never pan sideways */
+  .harness-fold-summary { min-height: var(--touch-sm); align-items: center; }
+  .harness-receipt-line, .harness-summary-bits { max-width: 100%; }
+  .sched-status { row-gap: var(--sp-3); padding: var(--sp-4) 0; }
+  .sched-status-bits { flex: 1 1 100%; }
+  .sched-status-more { margin-left: 0; min-height: var(--touch-sm); display: inline-flex; align-items: center; }
   .cb-row { gap: var(--sp-4); }
   .cb-key { overflow-wrap: anywhere; }
 

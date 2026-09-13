@@ -83,6 +83,22 @@
 .harness-line { display: flex; flex-wrap: wrap; gap: var(--sp-5); align-items: baseline; padding: var(--sp-1) 0; font-size: var(--fs-sm); color: var(--base-70); border-top: 1px solid var(--line-soft); }
 .harness-line .k { font-family: var(--mono); font-size: var(--fs-2xs); color: var(--base-40); min-width: 72px; }
 .harness-hint .pill { margin-left: var(--sp-3); }
+/* a card's level one tally (state chip + counts) and its level-two fold (native details:
+   `details` + what is folded on the summary; the inventory / evidence / receipt inside) */
+.harness-summary { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--sp-2) var(--sp-4); padding: var(--sp-2) 0 var(--sp-3); font-family: var(--mono); font-size: var(--fs-2xs); color: var(--base-70); }
+.harness-summary-bits { min-width: 0; overflow-wrap: anywhere; line-height: 1.5; }
+.harness-fold { margin-top: var(--sp-3); border-top: 1px solid var(--line-soft); }
+.harness-fold-summary { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--sp-4); padding: var(--sp-3) 0; cursor: pointer; list-style: none; font-family: var(--mono); font-size: var(--fs-2xs); color: var(--base-40); }
+.harness-fold-summary::-webkit-details-marker { display: none; }
+.harness-fold-summary:hover, .harness-fold[open] > .harness-fold-summary { color: var(--base-100); }
+.harness-fold-verb::before { content: "▸ "; color: var(--icon); }
+.harness-fold[open] > .harness-fold-summary .harness-fold-verb::before { content: "▾ "; }
+.harness-fold-inventory { color: var(--muted); min-width: 0; overflow-wrap: anywhere; }
+.harness-fold[open] > .harness-fold-summary .harness-fold-inventory { display: none; }
+.harness-fold-body { display: flex; flex-direction: column; padding: 0 0 var(--sp-3); }
+.harness-fold-body > .portal-note { padding-left: 0; padding-right: 0; }
+.harness-receipt-line { font-family: var(--mono); font-size: var(--fs-2xs); color: var(--base-70); padding: var(--sp-1) 0; border-top: 1px solid var(--line-soft); overflow-wrap: anywhere; line-height: 1.5; max-width: 72ch; }
+.harness-card > .sched-status { padding-left: 0; padding-right: 0; }
 .portal-form.connect-flow, .portal-form.bank-accounts { display: block; }
 .portal-row.state-sealed .portal-state { color: var(--base-40); }
 .consume-signin-link { font-size: var(--fs-sm); color: var(--accent); }

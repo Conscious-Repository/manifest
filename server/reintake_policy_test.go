@@ -62,7 +62,8 @@ func TestReIntakePolicyBrowserProjection(t *testing.T) {
  const ctx={}; vm.createContext(ctx); vm.runInContext(fn,ctx);
  const result=ctx.reIntakePrimarySummary({canaryStatus:'passed (synthetic only)',primary:'local DeepSeek',model:'deepseek-v4.1-flash',cost_policy:'local-zero-marginal',cost_telemetry:'unavailable',provider_binding:'fixed-local-endpoint',configuredAuthority:'missing or invalid',fallback:'owner-invoked Claude Code/Codex only; unsupported/unverified; never automatic',lastAttempt:'35-deepseek-primary-canary.jsonl',lastError:'missing usage evidence'});
  for (const text of ['production route disabled','owner: owner','lane: Excalibur','productionEnabled: false','candidate → pending approval','pilot: unknown','canary: passed (synthetic only)','shadow / not routed','local-zero-marginal policy; provider cost telemetry unavailable','owner-invoked','unsupported/unverified','last attempt receipt: 35-','last error: missing usage evidence']) assert(result.includes(text),text);
- for (const f of ['41-agents-schedule.js','42-agents-runs.js','60-settings.js']) assert(fs.readFileSync('web/js/'+f,'utf8').includes('reIntakePrimarySummary('),f);
+ for (const f of ['41-agents-schedule.js','42-agents-runs.js','60-settings.js']) assert(fs.readFileSync('web/js/'+f,'utf8').includes('reIntakeStatusRow('),f);
+ assert(fs.readFileSync('web/js/60-settings.js','utf8').includes('reIntakePrimarySummary('));
  assert(ctx.reIntakePrimarySummary(null).includes('unavailable'));`
 	if out, err := exec.Command(node, "-e", script).CombinedOutput(); err != nil {
 		t.Fatalf("%v: %s", err, out)

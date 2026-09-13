@@ -409,3 +409,43 @@ function reIntakePrimarySummary(p) {
     " · fallback: " + p.fallback + " · last attempt receipt: " + p.lastAttempt +
     (p.evidenceUpdatedAt ? " (receipt updated " + p.evidenceUpdatedAt + ")" : "") + " · last error: " + p.lastError;
 }
+// reIntakeStatusBits — the same projection folded to what a board needs to
+// know: the lane state, whether the production route is open, the pilot and
+// canary words, and any refusal the last receipt carried. Fail-closed states
+// (blocked / refused / evidence unavailable) stay VISIBLE here — they are
+// the point of the row — everything else is level two on Settings › Agents.
+function reIntakeStatusBits(p) {
+  const clause = (s, dflt) => String(s || dflt || "").split(";")[0].trim();
+  if (!p) return { status: "policy evidence unavailable", tone: "unknown", bits: ["fail-closed", "not routed"], attention: true };
+  const status = clause(p.status, "shadow / not routed");
+  const route = clause(p.productionRoute, "disabled");
+  const err = String(p.lastError || "");
+  const refused = !!err && err !== "unknown" && !/^none reported/.test(err);
+  const blocked = /^blocked/.test(status) || /^blocked/.test(route);
+  const bits = [
+    (route === "disabled" ? "route disabled" : blocked ? "route blocked" : "route " + route),
+    "pilot " + clause(p.pilotStatus, "unknown"),
+    "canary " + clause(p.canaryStatus, "unknown"),
+    "lane " + clause(p.productionOwner, "Excalibur").replace(/\s*\(.*$/, ""),
+  ];
+  if (refused) bits.push("last error " + err);
+  return { status, tone: blocked || refused ? "error" : /pilot/.test(status) ? "late" : "unknown", bits, attention: blocked || refused };
+}
+// reIntakeStatusRow — the one-line status card the SCHEDULE and RUNS boards
+// carry instead of the full sentence: name · state chip · the bits · a
+// `details →` that opens the read-only receipt on Settings › Agents. The full
+// text rides the tooltip, so nothing the projection said is lost from the board.
+function reIntakeStatusRow(p) {
+  const s = reIntakeStatusBits(p);
+  const row = el("div", "sched-status" + (s.attention ? " attn" : ""));
+  row.setAttribute("role", "status");
+  row.append(el("span", "sched-status-name", "re-intake"));
+  row.append(el("span", "run-outcome oc-" + s.tone, s.status));
+  row.append(el("span", "sched-status-bits", s.bits.join(" · ")));
+  const more = el("a", "sprt-quiet sched-status-more", "details →");
+  more.href = "#/settings/agents/re-intake";
+  more.title = "the full lane policy receipt on Settings › Agents (read-only)";
+  row.append(more);
+  row.title = reIntakePrimarySummary(p);
+  return row;
+}

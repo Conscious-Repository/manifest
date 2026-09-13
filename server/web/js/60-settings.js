@@ -301,8 +301,10 @@ async function renderSettingsAgents(pane) {
   settingsEnginesDown = harnesses.filter((h) => !h.engineAlive).length + (gatewayDown ? 1 : 0);
   renderSettingsRail();
   const primary = harnesses.find((h) => h.primary) || harnesses[0] || null;
-  board.append(excaliburCard(primary, (portals && portals.rows) || []));
+  // the successor runtime first, the legacy engine (compact, its inventory
+  // folded) under it — so Alfred is never pushed below the legacy detail
   board.append(alfredCard(hermes));
+  board.append(excaliburCard(primary, (portals && portals.rows) || []));
   board.append(teamAgentsCard(harnesses.filter((h) => h !== primary)));
   if (settingsGroup === "agents" && pane.isConnected && typeof setCrumbMeta === "function") {
     setCrumbMeta(settingsEnginesDown ? settingsEnginesDown + " engine" + (settingsEnginesDown === 1 ? "" : "s") + " down" : "all engines live");
@@ -386,13 +388,23 @@ function excaliburCard(h, portalRows) {
   head.append(el("span", "harness-chip", h.name), engineChip(h.engineAlive, h.heartbeat, h.queued));
   card.append(head);
   card.append(el("div", "harness-path", h.path));
-  card.append(el("div", "portal-note", "legacy engine · " + h.name + " harness tree — existing rituals keep running here until each duty moves to Hermes; retired rituals stay paused with their run reports preserved as read-only history (artifacts/runs/)"));
+  // level one: what it is, in one line, and the counts / health tally. The
+  // inventory, the evidence path and the migration note are level two below.
+  card.append(el("div", "portal-note", "legacy engine · runs its existing rituals until each duty moves to Alfred (Hermes)"));
   const observation = h.observation || {};
-  cardLine(card, "observation", observation.health || "unknown");
-  card.append(el("div", "portal-note", "read-only / edit on metis and restart · engine evidence: " + (observation.evidence || "ritual-status.json")));
-  (observation.rituals || []).forEach((r) => {
-    cardLine(card, r.spirit + "/" + r.ritual, r.health + " · last attempt " + (r.lastAttempt ? fmtWhen(r.lastAttempt) : "unknown") + (r.lastError ? " · " + r.lastError : "") + (r.why ? " · " + r.why : ""));
-  });
+  const rituals = observation.rituals || [];
+  const spirits = h.spirits || [];
+  const conduits = portalRows.filter((r) => r.kind === "llm" || /deepseek/i.test(r.id || ""));
+  const tally = {};
+  rituals.forEach((r) => { const k = r.health || "unknown"; tally[k] = (tally[k] || 0) + 1; });
+  const tallyText = Object.keys(tally).sort().map((k) => tally[k] + " " + k).join(", ");
+  const summary = el("div", "harness-summary");
+  summary.append(el("span", "run-outcome oc-" + healthTone(observation.health), "observation " + (observation.health || "unknown")));
+  summary.append(el("span", "harness-summary-bits",
+    rituals.length + " ritual" + (rituals.length === 1 ? "" : "s") + (tallyText ? " (" + tallyText + ")" : "")
+    + " · " + spirits.length + " agent" + (spirits.length === 1 ? "" : "s")
+    + " · " + conduits.length + " conduit" + (conduits.length === 1 ? "" : "s")));
+  card.append(summary);
   if (!h.engineAlive) {
     // disabled beats hidden (§3.1): the affordance exists, the title says whose
     // action it is. The sudo string stays out of the card.
@@ -403,13 +415,6 @@ function excaliburCard(h, portalRows) {
     hint.append(start);
     card.append(hint);
   }
-  const spirits = h.spirits || [];
-  card.append(el("div", "portal-note", spirits.length + " agent" + (spirits.length === 1 ? "" : "s") + " on the legacy engine (spirits/) · model per agent (switch it on the agent page)"));
-  spirits.forEach((sp) => {
-    const row = el("div", "harness-spirit");
-    row.append(el("span", "harness-spirit-name", sp.name), el("span", "harness-spirit-model", sp.portal || "—"));
-    card.append(row);
-  });
   // ＋ agent opens the wizard (agents plan §4.3, Phase 6): a spirit arrives
   // with its first ritual, never as an empty folder
   if (h.primary !== false && typeof newAgent === "function") {
@@ -418,13 +423,55 @@ function excaliburCard(h, portalRows) {
     add.onclick = () => newAgent();
     card.append(add);
   }
+  // level two (progressive disclosure): the migration note, the evidence
+  // path, every ritual's last attempt, the agents and the conduits. Read-only
+  // history — retired rituals stay listed here with their evidence intact.
+  const fold = harnessFold(card, "details", rituals.length + " rituals · evidence · conduits");
+  fold.append(el("div", "portal-note", "legacy engine · " + h.name + " harness tree — existing rituals keep running here until each duty moves to Hermes; retired rituals stay paused with their run reports preserved as read-only history (artifacts/runs/)"));
+  fold.append(el("div", "portal-note", "read-only / edit on metis and restart · engine evidence: " + (observation.evidence || "ritual-status.json")));
+  rituals.forEach((r) => {
+    cardLine(fold, r.spirit + "/" + r.ritual, r.health + " · last attempt " + (r.lastAttempt ? fmtWhen(r.lastAttempt) : "unknown") + (r.lastError ? " · " + r.lastError : "") + (r.why ? " · " + r.why : ""));
+  });
+  fold.append(el("div", "portal-note", spirits.length + " agent" + (spirits.length === 1 ? "" : "s") + " on the legacy engine (spirits/) · model per agent (switch it on the agent page)"));
+  spirits.forEach((sp) => {
+    const row = el("div", "harness-spirit");
+    row.append(el("span", "harness-spirit-name", sp.name), el("span", "harness-spirit-model", sp.portal || "—"));
+    fold.append(row);
+  });
   // the engine's conduits (formerly the Portals pane's "via engine" rows)
-  const conduits = portalRows.filter((r) => r.kind === "llm" || /deepseek/i.test(r.id || ""));
   if (conduits.length) {
-    cardLine(card, "conduits", conduits.map((r) =>
+    cardLine(fold, "conduits", conduits.map((r) =>
       r.kind === "llm" ? r.name : r.name + " (" + (r.masked || "unset") + " · " + (r.state || "?") + ")").join(" · "));
   }
   return card;
+}
+
+// healthTone — the observation health word → the .oc-* vocabulary the chips
+// already use (late / silent → warn, failed → danger, else muted / neutral).
+function healthTone(health) {
+  const h = health || "unknown";
+  if (h === "ok" || h === "healthy" || h === "completed") return "completed";
+  if (h === "late" || h === "silent") return "late";
+  if (h === "failed" || h === "error") return "error";
+  if (h === "paused") return "paused";
+  return "unknown";
+}
+
+// harnessFold — a card's level-two disclosure: a native <details> whose
+// summary is the lowercase verb (`details`) plus a one-line inventory of
+// what is folded, so a closed card still says what it is holding. Returns
+// the body to append into. Opened by hash (#/settings/agents/<key>) when the
+// board's `details →` link points here.
+function harnessFold(card, verb, inventory, key) {
+  const det = el("details", "harness-fold");
+  const sum = el("summary", "harness-fold-summary");
+  sum.append(el("span", "harness-fold-verb", verb), el("span", "harness-fold-inventory", inventory));
+  det.append(sum);
+  const body = el("div", "harness-fold-body");
+  det.append(body);
+  if (key && settingsArg === key) det.open = true;
+  card.append(det);
+  return body;
 }
 
 // 2. Alfred (Hermes) — the owner's do-bot and the successor runtime the
@@ -458,7 +505,13 @@ function alfredCard(hz) {
   cardLine(card, "model pin", r.model || "unconfigured");
   cardLine(card, "toolset authority", r.toolsets || "default-resolved · no migrated authority");
   card.append(el("div", "portal-note", hz.authorityBoundary || "read-only / edit on metis and restart"));
-  card.append(el("div", "portal-note", reIntakePrimarySummary(hz.reIntakePrimary)));
+  // the re-intake lane: the board's status row at level one, the full policy
+  // receipt (every clause of the shared sentence, one per line) at level two.
+  // #/settings/agents/re-intake — the board's `details →` — opens it.
+  card.append(reIntakeStatusRow(hz.reIntakePrimary));
+  const receipt = harnessFold(card, "details", "re-intake policy receipt", "re-intake");
+  receipt.classList.add("harness-receipt");
+  reIntakePrimarySummary(hz.reIntakePrimary).split(" · ").forEach((clause) => receipt.append(el("div", "harness-receipt-line", clause)));
   Object.entries(r.duties || {}).forEach(([name, a]) => cardLine(card, name, (a.provider || "unconfigured") + "/" + (a.model || "unconfigured") + " · " + (a.tools || []).join(", ") + " · " + (a.mcp || "MCP unconfigured") + " · " + a.timeoutSeconds + "s / " + a.maxSteps + " steps / $" + a.ceilingUsd + " · tool-free helper only; no duty routed; live usage contract unverified"));
   (hz.dutyRefusals || []).forEach((r) => cardLine(card, "successor refusal", r.label));
   const cron = hz.cron || {};

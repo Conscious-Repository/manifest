@@ -120,7 +120,7 @@ function renderSpiritRuns() {
     evidence.title = "read-only source path; no run artifact was fabricated";
     row.append(evidence); host.append(row);
   });
-  host.append(el("div", "run-why", reIntakePrimarySummary(hermesInfo && hermesInfo.reIntakePrimary)));
+  host.append(reIntakeStatusRow(hermesInfo && hermesInfo.reIntakePrimary)); // the same one-line card as the SCHEDULE board
   (hermesInfo && hermesInfo.dutyRefusals || []).forEach((r) => host.append(el("div", "run-why", r.label)));
   const cron = hermesInfo && hermesInfo.cron;
   if (cron && cron.why) host.append(el("div", "runs-degraded", "alfred · " + cron.why));

@@ -280,6 +280,13 @@
 .ritual-row.hermes { cursor: default; }
 /* the one-line degrade notes (D4): what the projection could not read */
 .sched-degraded, .runs-degraded { font-family: var(--mono); font-size: var(--fs-2xs); color: var(--base-50); padding: var(--sp-1) var(--sp-4); }
+/* the re-intake lane status row (SCHEDULE / RUNS / Settings › Agents): name · state chip ·
+   the bits · details → — one line that wraps, never the full policy sentence */
+.sched-status { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--sp-2) var(--sp-4); padding: var(--sp-2) var(--sp-4); font-family: var(--mono); font-size: var(--fs-2xs); color: var(--base-50); }
+.sched-status-name { color: var(--base-70); text-transform: uppercase; letter-spacing: 0.4px; }
+.sched-status-bits { min-width: 0; overflow-wrap: anywhere; line-height: 1.5; }
+.sched-status.attn .sched-status-bits { color: var(--base-100); }
+.sched-status-more { margin-left: auto; text-decoration: none; white-space: nowrap; }
 .harness-add { align-self: flex-start; margin-top: var(--sp-3); }
 
 /* ---- the "new agent" wizard (#/agents/new — agents plan §4.3, Phase 6) ---- */
