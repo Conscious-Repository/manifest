@@ -86,13 +86,17 @@ const (
 // --- claude ---
 
 type claudeRecord struct {
-	Type        string          `json:"type"`
-	Timestamp   string          `json:"timestamp"`
-	IsMeta      bool            `json:"isMeta"`
-	IsSidechain bool            `json:"isSidechain"`
-	Message     json.RawMessage `json:"message"`
-	AITitle     string          `json:"aiTitle"`
-	TotalCost   float64         `json:"totalCostUSD"`
+	Type         string          `json:"type"`
+	Timestamp    string          `json:"timestamp"`
+	IsMeta       bool            `json:"isMeta"`
+	IsSidechain  bool            `json:"isSidechain"`
+	Message      json.RawMessage `json:"message"`
+	AITitle      string          `json:"aiTitle"`
+	TotalCost    float64         `json:"totalCostUSD"`
+	PromptSource string          `json:"promptSource"` // "system" when the harness, not the owner, wrote the user turn
+	Origin       struct {
+		Kind string `json:"kind"` // e.g. "task-notification"
+	} `json:"origin"`
 }
 
 type claudeMessage struct {
@@ -139,6 +143,10 @@ func (b *transcriptBuilder) assistant(ts string) *termTurn {
 
 func (b *transcriptBuilder) user(ts, text string) {
 	b.out.Turns = append(b.out.Turns, termTurn{ID: b.recordID, Who: "user", TS: ts, Text: text})
+}
+
+func (b *transcriptBuilder) system(ts, text string) {
+	b.out.Turns = append(b.out.Turns, termTurn{ID: b.recordID, Who: "system", TS: ts, Text: text})
 }
 
 func (b *transcriptBuilder) step(ts, id, cast, input string) {
@@ -210,6 +218,22 @@ func parseClaudeTranscript(r io.Reader, base ...int64) termTranscript {
 				return
 			}
 			blocks, text := claudeContent(m.Content, rec.Type == "user")
+			if rec.Type == "user" && (rec.PromptSource == "system" || rec.Origin.Kind != "") {
+				// the harness speaking in the user's slot (a background task's
+				// notification, a scheduled wake-up): a system line, not a bubble
+				if text == "" {
+					for _, bl := range blocks {
+						if bl.Type == "text" {
+							text = bl.Text
+							break
+						}
+					}
+				}
+				if n := claudeSystemNotice(text); n != "" {
+					b.system(rec.Timestamp, n)
+				}
+				return
+			}
 			if rec.Type == "user" {
 				if strings.TrimSpace(text) != "" && !claudeNoiseRe.MatchString(text) {
 					b.user(rec.Timestamp, text)
@@ -240,6 +264,29 @@ func parseClaudeTranscript(r io.Reader, base ...int64) termTranscript {
 		}
 	})
 	return b.out
+}
+
+// claudeSystemNotice reduces a harness-written user turn to one readable
+// line: a <task-notification> to its summary (falling back to its status),
+// anything else to its text with the tags stripped, clipped.
+var (
+	claudeTagRe     = regexp.MustCompile(`<[^>\n]{1,60}>`)
+	claudeSummaryRe = regexp.MustCompile(`(?s)<summary>\s*(.*?)\s*</summary>`)
+	claudeStatusRe  = regexp.MustCompile(`(?s)<status>\s*(.*?)\s*</status>`)
+)
+
+func claudeSystemNotice(text string) string {
+	if strings.Contains(text, "<task-notification>") {
+		if m := claudeSummaryRe.FindStringSubmatch(text); m != nil && strings.TrimSpace(m[1]) != "" {
+			return clip(strings.Join(strings.Fields(m[1]), " "), 400)
+		}
+		if m := claudeStatusRe.FindStringSubmatch(text); m != nil {
+			return "Background task " + strings.TrimSpace(m[1])
+		}
+		return "Background task update"
+	}
+	plain := strings.Join(strings.Fields(claudeTagRe.ReplaceAllString(text, " ")), " ")
+	return clip(plain, 400)
 }
 
 // claudeNoiseRe: slash-command echo rows the CLI writes as user text.

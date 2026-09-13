@@ -371,3 +371,32 @@ func TestCodexRunLifecycleEvidence(t *testing.T) {
 		t.Fatal("message fabricated lifecycle", got.Run)
 	}
 }
+
+// A user record the harness wrote (promptSource "system" / origin kind
+// "task-notification") is a system line carrying the notification's summary,
+// never a user bubble of raw XML; other harness prompts lose their tags.
+func TestClaudeTranscriptHarnessNotices(t *testing.T) {
+	notice := "<task-notification>\n<task-id>bk1</task-id>\n<tool-use-id>toolu_1</tool-use-id>\n<output-file>/tmp/bk1.output</output-file>\n<status>completed</status>\n<summary>Background command \"Wait for the deploy\" completed (exit code 0)</summary>\n</task-notification>"
+	rows := []string{
+		`{"type":"user","timestamp":"2026-09-13T01:00:00Z","message":{"role":"user","content":"hello"}}`,
+		`{"type":"user","timestamp":"2026-09-13T01:01:00Z","promptSource":"system","origin":{"kind":"task-notification"},"message":{"role":"user","content":` + jsonString(notice) + `}}`,
+		`{"type":"user","timestamp":"2026-09-13T01:02:00Z","promptSource":"system","message":{"role":"user","content":[{"type":"text","text":"<wake-up>\n<reason>scheduled</reason>\nTime to check the queue.\n</wake-up>"}]}}`,
+		`{"type":"user","timestamp":"2026-09-13T01:03:00Z","promptSource":"system","origin":{"kind":"task-notification"},"message":{"role":"user","content":"<task-notification><status>failed</status></task-notification>"}}`,
+	}
+	tr := parseClaudeTranscript(strings.NewReader(strings.Join(rows, "\n") + "\n"))
+	want := []struct{ who, text string }{
+		{"user", "hello"},
+		{"system", `Background command "Wait for the deploy" completed (exit code 0)`},
+		{"system", "scheduled Time to check the queue."},
+		{"system", "Background task failed"},
+	}
+	if len(tr.Turns) != len(want) {
+		b, _ := json.MarshalIndent(tr.Turns, "", " ")
+		t.Fatalf("got %d turns, want %d:\n%s", len(tr.Turns), len(want), b)
+	}
+	for i, w := range want {
+		if tr.Turns[i].Who != w.who || tr.Turns[i].Text != w.text {
+			t.Fatalf("turn %d = %q %q, want %q %q", i, tr.Turns[i].Who, tr.Turns[i].Text, w.who, w.text)
+		}
+	}
+}
