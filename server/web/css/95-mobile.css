@@ -270,14 +270,16 @@
   #feedView .appr-body { font-size: 16px; line-height: 1.5; }
   .appr-apply { flex-wrap: wrap; row-gap: var(--sp-2); }
   .appr-apply-path { white-space: normal; overflow-wrap: anywhere; }
-  .aion-appr-form { grid-template-columns: minmax(0, 1fr); row-gap: var(--sp-2); column-gap: 0; margin: var(--sp-4) 0; }
+  .aion-appr-form { grid-template-columns: minmax(0, 1fr); row-gap: var(--sp-2); column-gap: 0; }
   .aion-appr-form > .aion-vto-key { width: auto; margin-top: var(--sp-4); }
   .aion-appr-form > .aion-vto-key:first-child { margin-top: 0; }
   .aion-appr-form .pp-in, .aion-appr-form .ta-in { min-height: var(--touch); font-size: 16px; padding: var(--sp-3) var(--sp-4); }
   .aion-appr-form .ta-drop { left: 0; right: 0; min-width: 0; }
   .aion-appr-preview > summary { min-height: var(--touch-sm); display: flex; align-items: center; }
   .aion-appr-line { font-size: var(--fs-2xs); }
-  .aion-appr > .pill.light { min-height: var(--touch-sm); }
+  /* save edit rides the pinned verdict row as a quiet third control */
+  #feedView .approval-card > .feed-actions > .pill { min-width: 0; }
+  #feedView .approval-card > .feed-actions > .appr-save { flex: 0 0 auto; min-height: var(--touch); padding-inline: var(--sp-2); border-color: transparent; background: transparent; margin-left: auto; }
   #feedView .approval-card > .feed-actions { position: sticky; bottom: 0; z-index: 2; background: var(--bg); padding: var(--sp-4) 0 max(var(--sp-4), env(safe-area-inset-bottom)); border-top: 1px solid var(--line); }
 
   /* ---- CALENDAR: cells become day number + ≤3 accent dots; no titles ---- */

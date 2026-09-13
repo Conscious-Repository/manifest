@@ -259,6 +259,9 @@ function approvalCardEl(a) {
     });
   if (blocked) { confirmBtn.disabled = true; confirmBtn.classList.add("disabled"); }
   actions.append(confirmBtn, pillLight("Reject", () => spiritApprovalAct(a.id, "reject")));
+  // a payload editor's "save edit" sits with the verdicts, not under its
+  // caption: one row of everything the owner can do with the card
+  if (a.__saveEdit) { a.__saveEdit.classList.add("appr-save"); actions.append(a.__saveEdit); }
   // a card whose payload can be internally inconsistent (the contract split
   // vs its total) says so on the button, not only after the click: the
   // editor's own check drives the disabled state and the note beside it
@@ -1014,7 +1017,7 @@ function buildAionEditor(a) {
       line = (p.kind === "task" ? "- [ ] " : "- ") + (p.title || "…") + " " + f.join(" ");
     }
     preview.textContent = line;
-    dirtyNote.textContent = "edits ride Confirm automatically — save edit persists them without confirming";
+    dirtyNote.textContent = "edits ride Confirm — save edit keeps them without confirming";
   };
   rebuild();
   wrap.append(previewFold);
@@ -1033,7 +1036,8 @@ function buildAionEditor(a) {
       loadFeed();
     } catch (e) { showToast(String(e.message || e).slice(0, 120)); }
   });
-  wrap.append(save);
+  save.title = "Keep these edits on the proposal without confirming it";
+  a.__saveEdit = save; // rides the card's verdict row, beside Confirm / Reject
   return wrap;
 }
 
@@ -1081,7 +1085,8 @@ function buildResolveEditor(a) {
     try { await flush(); showToast("Proposal updated"); loadFeed(); }
     catch (e) { showToast(String(e.message || e).slice(0, 120)); }
   });
-  wrap.append(save);
+  save.title = "Keep these edits on the proposal without confirming it";
+  a.__saveEdit = save; // rides the card's verdict row, beside Confirm / Reject
   return wrap;
 }
 
