@@ -330,7 +330,7 @@ async function spiritPick(onPick) {
     area: sp,
     items: (spirits[sp] || []).map((rit) => ({ id: sp + "/" + rit, text: rit })),
   })).filter((g) => g.items.length);
-  if (!groups.length) { showToast("No agent/ritual found in the excalibur tree.", null, "error"); return; }
+  if (!groups.length) { showToast("No agent/ritual found in the configured runtimes.", null, "error"); return; }
   openPicker("Run a ritual now", groups, (id) => {
     const [sp, rit] = id.split("/");
     onPick(sp, rit);

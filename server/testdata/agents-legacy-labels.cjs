@@ -80,4 +80,8 @@ assert.match(settings, /HOSTS & PATHS — config\.json as loaded, read-only/);
 // the schedule row never hard-codes the harness name as its runtime again
 assert.doesNotMatch(js('41-agents-schedule.js'), /"harness-chip ritual-runtime", "excalibur"/);
 assert.doesNotMatch(js('42-agents-runs.js'), /\|\| "excalibur"/);
+// the ritual picker's empty-state toast spans every runtime, not the excalibur tree
+const agents = js('40-agents.js');
+assert.match(agents, /showToast\("No agent\/ritual found in the configured runtimes\.", null, "error"\)/);
+assert.doesNotMatch(agents, /found in the excalibur tree/);
 console.log('agents legacy-engine labels passed');
