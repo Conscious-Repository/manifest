@@ -93,10 +93,7 @@ type claudeRecord struct {
 	Message      json.RawMessage `json:"message"`
 	AITitle      string          `json:"aiTitle"`
 	TotalCost    float64         `json:"totalCostUSD"`
-	PromptSource string          `json:"promptSource"` // "system" when the harness, not the owner, wrote the user turn
-	Origin       struct {
-		Kind string `json:"kind"` // e.g. "task-notification"
-	} `json:"origin"`
+	PromptSource string          `json:"promptSource"` // "system" when the harness wrote the user turn; "typed" for the owner
 }
 
 type claudeMessage struct {
@@ -218,9 +215,11 @@ func parseClaudeTranscript(r io.Reader, base ...int64) termTranscript {
 				return
 			}
 			blocks, text := claudeContent(m.Content, rec.Type == "user")
-			if rec.Type == "user" && (rec.PromptSource == "system" || rec.Origin.Kind != "") {
+			if rec.Type == "user" && rec.PromptSource == "system" {
 				// the harness speaking in the user's slot (a background task's
-				// notification, a scheduled wake-up): a system line, not a bubble
+				// notification, a scheduled wake-up): a system line, not a bubble.
+				// Owner turns are promptSource "typed" (origin kind "human") or
+				// carry neither field — those stay user turns.
 				if text == "" {
 					for _, bl := range blocks {
 						if bl.Type == "text" {

@@ -379,6 +379,7 @@ func TestClaudeTranscriptHarnessNotices(t *testing.T) {
 	notice := "<task-notification>\n<task-id>bk1</task-id>\n<tool-use-id>toolu_1</tool-use-id>\n<output-file>/tmp/bk1.output</output-file>\n<status>completed</status>\n<summary>Background command \"Wait for the deploy\" completed (exit code 0)</summary>\n</task-notification>"
 	rows := []string{
 		`{"type":"user","timestamp":"2026-09-13T01:00:00Z","message":{"role":"user","content":"hello"}}`,
+		`{"type":"user","timestamp":"2026-09-13T01:00:30Z","promptSource":"typed","origin":{"kind":"human"},"message":{"role":"user","content":"typed by the owner"}}`,
 		`{"type":"user","timestamp":"2026-09-13T01:01:00Z","promptSource":"system","origin":{"kind":"task-notification"},"message":{"role":"user","content":` + jsonString(notice) + `}}`,
 		`{"type":"user","timestamp":"2026-09-13T01:02:00Z","promptSource":"system","message":{"role":"user","content":[{"type":"text","text":"<wake-up>\n<reason>scheduled</reason>\nTime to check the queue.\n</wake-up>"}]}}`,
 		`{"type":"user","timestamp":"2026-09-13T01:03:00Z","promptSource":"system","origin":{"kind":"task-notification"},"message":{"role":"user","content":"<task-notification><status>failed</status></task-notification>"}}`,
@@ -386,6 +387,7 @@ func TestClaudeTranscriptHarnessNotices(t *testing.T) {
 	tr := parseClaudeTranscript(strings.NewReader(strings.Join(rows, "\n") + "\n"))
 	want := []struct{ who, text string }{
 		{"user", "hello"},
+		{"user", "typed by the owner"},
 		{"system", `Background command "Wait for the deploy" completed (exit code 0)`},
 		{"system", "scheduled Time to check the queue."},
 		{"system", "Background task failed"},
