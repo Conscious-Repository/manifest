@@ -126,6 +126,13 @@
 .aion-appr-form { display: grid; grid-template-columns: 84px 1fr; gap: var(--sp-2) var(--sp-4); align-items: center; margin: var(--sp-4) 0; }
 .aion-appr-form .pp-in, .aion-appr-form .ta-in { width: 100%; box-sizing: border-box; }
 .aion-appr-form .ta-wrap { display: block; position: relative; }
+/* the record line, folded behind a summary (55-approvals.js buildAionEditor) */
+.aion-appr-preview > summary { cursor: pointer; list-style: none; font-family: var(--mono); font-size: var(--fs-2xs); text-transform: uppercase; letter-spacing: 0.4px; color: var(--muted); }
+.aion-appr-preview > summary::-webkit-details-marker { display: none; }
+.aion-appr-preview > summary::before { content: "▸ "; }
+.aion-appr-preview[open] > summary::before { content: "▾ "; }
+.aion-appr-preview[open] > summary { margin-bottom: var(--sp-3); }
+.aion-appr-preview .appr-title-label { margin-top: var(--sp-2); }
 .aion-appr-line { background: var(--streak-bg); border: 1px solid var(--streak-bd); border-radius: var(--radius); padding: var(--sp-3) var(--sp-4); font-family: var(--mono); font-size: var(--fs-xs); white-space: pre-wrap; word-break: break-word; }
 /* org registry tables */
 .cols-aion-hiring { grid-template-columns: minmax(140px, 1.3fr) minmax(120px, 1fr) 130px 48px 24px; align-items: center; }

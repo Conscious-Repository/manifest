@@ -872,11 +872,18 @@ function buildAionEditor(a) {
   const p = Object.assign({}, a.aionPayload);
   p.heuristic = Object.assign({ mode: "", target: "" }, p.heuristic || {});
   const wrap = el("div", "aion-appr");
-  wrap.append(el("div", "appr-diff-label", "Appends to " + a.applyPath + " — edit before confirming"));
+  // the APPLIES TO chip above already names the file — this line says what
+  // the owner does here, not where it lands
+  wrap.append(el("div", "appr-diff-label", "Edit before confirming"));
   const form = el("div", "aion-appr-form");
   wrap.append(form);
   const preview = el("pre", "aion-appr-line");
   const dirtyNote = el("div", "appr-title-label", "");
+  // the exact record line is orientation, not the form: folded on phones
+  // (2026-09-13), open on the desktop where the card has the room
+  const previewFold = el("details", "aion-appr-preview");
+  previewFold.open = !(window.matchMedia && window.matchMedia("(max-width: 860px)").matches);
+  previewFold.append(el("summary", "", "Line to be written"), preview, dirtyNote);
 
   const row = (label, node) => {
     form.append(el("span", "aion-vto-key", label), node);
@@ -1010,7 +1017,7 @@ function buildAionEditor(a) {
     dirtyNote.textContent = "edits ride Confirm automatically — save edit persists them without confirming";
   };
   rebuild();
-  wrap.append(preview, dirtyNote);
+  wrap.append(previewFold);
   const flush = async () => {
     const r = await fetch("/api/spirits/approvals/" + encodeURIComponent(a.id) + "/aion", {
       method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(p),

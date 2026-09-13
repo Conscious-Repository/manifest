@@ -263,6 +263,22 @@
   .re-intake-ident { padding-bottom: 0; }
   .re-intake-bar { display: none; }
   .appr-gate { margin-left: 0; width: 100%; }
+  /* ---- approval cards (aion / RE task, decision, heuristic): the payload
+     form stacks each label over a full-width 44px field, the apply path wraps,
+     the evidence reads at body size, and the verdicts stay pinned to the
+     bottom of the screen while a long card scrolls (2026-09-13) ---- */
+  #feedView .appr-body { font-size: 16px; line-height: 1.5; }
+  .appr-apply { flex-wrap: wrap; row-gap: var(--sp-2); }
+  .appr-apply-path { white-space: normal; overflow-wrap: anywhere; }
+  .aion-appr-form { grid-template-columns: minmax(0, 1fr); row-gap: var(--sp-2); column-gap: 0; margin: var(--sp-4) 0; }
+  .aion-appr-form > .aion-vto-key { width: auto; margin-top: var(--sp-4); }
+  .aion-appr-form > .aion-vto-key:first-child { margin-top: 0; }
+  .aion-appr-form .pp-in, .aion-appr-form .ta-in { min-height: var(--touch); font-size: 16px; padding: var(--sp-3) var(--sp-4); }
+  .aion-appr-form .ta-drop { left: 0; right: 0; min-width: 0; }
+  .aion-appr-preview > summary { min-height: var(--touch-sm); display: flex; align-items: center; }
+  .aion-appr-line { font-size: var(--fs-2xs); }
+  .aion-appr > .pill.light { min-height: var(--touch-sm); }
+  #feedView .approval-card > .feed-actions { position: sticky; bottom: 0; z-index: 2; background: var(--bg); padding: var(--sp-4) 0 max(var(--sp-4), env(safe-area-inset-bottom)); border-top: 1px solid var(--line); }
 
   /* ---- CALENDAR: cells become day number + ≤3 accent dots; no titles ---- */
   .cal-grid { grid-auto-rows: minmax(56px, auto); }
