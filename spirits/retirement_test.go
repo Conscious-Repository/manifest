@@ -9,11 +9,11 @@ import (
 )
 
 func TestRetirementExactIdentities(t *testing.T) {
-	for _, p := range [][2]string{{"concierge", "briefing"}, {"ea-coordinator", "waiting-on"}, {"sage", "skill-cast"}} {
+	for _, p := range [][2]string{{"concierge", "briefing"}, {"ea-coordinator", "waiting-on"}, {"sage", "skill-cast"}, {"extractor", "re-intake"}} {
 		if RetirementReason("excalibur", p[0], p[1]) == "" {
 			t.Fatal("missing retirement")
 		}
-		if RetirementReason("other", p[0], p[1]) != "" || RetirementReason("excalibur", p[0], p[1]+"-other") != "" {
+		if RetirementReason("other", p[0], p[1]) != "" || RetirementReason("excalibur", p[0]+"-other", p[1]) != "" || RetirementReason("excalibur", p[0], p[1]+"-other") != "" {
 			t.Fatal("overbroad retirement")
 		}
 	}
@@ -46,7 +46,7 @@ func TestPhase2HarnessMetadata(t *testing.T) {
 			t.Fatalf("not paused: %s", row.Path)
 		}
 	}
-	if n != 3 {
+	if n != 4 {
 		t.Fatalf("retired metadata count=%d", n)
 	}
 }

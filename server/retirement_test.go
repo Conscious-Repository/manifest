@@ -14,10 +14,10 @@ import (
 	"manifest/spirits"
 )
 
-func TestPhase2RetirementLaunchPaths(t *testing.T) {
+func TestRetirementLaunchPaths(t *testing.T) {
 	root := t.TempDir()
 	st := spirits.NewStore(root).WithHarnessName("excalibur")
-	pairs := [][2]string{{"concierge", "briefing"}, {"ea-coordinator", "waiting-on"}, {"sage", "skill-cast"}}
+	pairs := [][2]string{{"concierge", "briefing"}, {"ea-coordinator", "waiting-on"}, {"sage", "skill-cast"}, {"extractor", "re-intake"}}
 	write := func(rel, body string) {
 		t.Helper()
 		p := filepath.Join(root, rel)
@@ -48,8 +48,8 @@ func TestPhase2RetirementLaunchPaths(t *testing.T) {
 		if w.Code != http.StatusConflict || !strings.Contains(w.Body.String(), "retired/paused") || !strings.Contains(w.Body.String(), "#/agents/ritual/"+p[0]+"/"+p[1]) {
 			t.Fatalf("refusal: %d %s", w.Code, w.Body.String())
 		}
-		if err := st.SpoolRunNow(p[0], p[1], "fixture", ""); err == nil {
-			t.Fatal("direct launch allowed")
+		if err := st.SpoolRunNow(p[0], p[1], "fixture", ""); err == nil || !strings.Contains(err.Error(), "retired/paused") || !strings.Contains(err.Error(), "#/agents/ritual/"+p[0]+"/"+p[1]) {
+			t.Fatalf("direct launch refusal: %v", err)
 		}
 		_, body, ok := st.Run("old-" + p[1])
 		if !ok || !strings.Contains(body, "preserved history") {
@@ -77,7 +77,7 @@ func TestPhase2RetirementLaunchPaths(t *testing.T) {
 			}
 		}
 	}
-	if retired != 3 {
+	if retired != len(pairs) {
 		t.Fatalf("retired=%d", retired)
 	}
 	for sp, rr := range st.Spirits() {
@@ -111,7 +111,34 @@ func TestPhase2RetirementLaunchPaths(t *testing.T) {
 		t.Fatal("refusal created runtime/spool state")
 	}
 	entries, err := os.ReadDir(filepath.Join(root, "artifacts/runs"))
-	if err != nil || len(entries) != 3 {
+	if err != nil || len(entries) != len(pairs) {
 		t.Fatal("refusal changed run artifacts")
+	}
+}
+
+func TestRetirementAllowsNonRetiredLaunches(t *testing.T) {
+	for _, tc := range [][3]string{
+		{"excalibur", "ea-coordinator", "email-sync"},
+		{"excalibur", "ea-coordinator", "granola-sync"},
+		{"excalibur", "ea-coordinator", "pocket-sync"},
+		{"excalibur", "extractor", "ooda-email"},
+		{"other", "extractor", "re-intake"},
+	} {
+		t.Run(strings.Join(tc[:], "/"), func(t *testing.T) {
+			root := t.TempDir()
+			st := spirits.NewStore(root).WithHarnessName(tc[0])
+			s := &Server{}
+			s.UseHarnesses([]Harness{{Name: tc[0], Spirits: st}})
+			w := httptest.NewRecorder()
+			req := httptest.NewRequest(http.MethodPost, "/api/spirits/run-now", strings.NewReader(fmt.Sprintf(`{"spirit":%q,"ritual":%q}`, tc[1], tc[2])))
+			s.handleSpiritsRunNow(w, req)
+			if w.Code != http.StatusAccepted || !strings.Contains(w.Body.String(), `"spooled":true`) {
+				t.Fatalf("launch: %d %s", w.Code, w.Body.String())
+			}
+			entries, err := os.ReadDir(filepath.Join(root, "vessel", "spool"))
+			if err != nil || len(entries) != 1 {
+				t.Fatalf("spool: %v, %v", entries, err)
+			}
+		})
 	}
 }
