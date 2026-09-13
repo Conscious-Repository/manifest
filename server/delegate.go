@@ -122,6 +122,23 @@ func (s *Server) delegationIndex() map[string]delegationView {
 				}
 			}
 			for _, r := range h.Spirits.Runs() {
+				// a terminal report never changes again and its brief was written
+				// before it closed: the per-report work below (a body read to
+				// recover a truncated token, the phase/persona ladder, the
+				// deliverable) is served from the memo while the file stamp holds
+				memoKey := h.Name + "\n" + r.ID
+				terminal := r.Outcome != "running" && r.Outcome != "" && !r.Mod.IsZero()
+				if m, ok := s.delegRunLookup(memoKey, r); ok && terminal {
+					if m.taskID == "" {
+						continue
+					}
+					d := m.view
+					if d.ArtifactPath != "" || d.ArtifactRef != "" {
+						d.ArtifactID = refIndex[h.Name+"\n"+m.ref]
+					}
+					set(m.taskID, d)
+					continue
+				}
 				var taskID string
 				var doc spirits.LibraryDoc // the brief this run wrote, if any
 				if m := todoTokenRe.FindStringSubmatch(r.Request); m != nil {
@@ -150,6 +167,9 @@ func (s *Server) delegationIndex() map[string]delegationView {
 					}
 				}
 				if taskID == "" {
+					if terminal {
+						s.delegRunStore(memoKey, r, "", delegationView{}, "")
+					}
 					continue
 				}
 				state := "done"
@@ -207,6 +227,9 @@ func (s *Server) delegationIndex() map[string]delegationView {
 				if d.ArtifactPath != "" || d.ArtifactRef != "" {
 					d.ArtifactID = refIndex[h.Name+"\n"+ref]
 				}
+				if terminal {
+					s.delegRunStore(memoKey, r, taskID, d, ref)
+				}
 				set(taskID, d)
 			}
 		}
@@ -220,6 +243,35 @@ func (s *Server) delegationIndex() map[string]delegationView {
 	}
 	s.overlayHermesRunning(out) // in-flight do-bot turns have no spool/run to scan
 	return out
+}
+
+// delegRunEntry is one terminal report's contribution to the delegation
+// index, valid while the report file's mtime and size hold.
+type delegRunEntry struct {
+	mod    time.Time
+	size   int64
+	taskID string
+	view   delegationView
+	ref    string
+}
+
+func (s *Server) delegRunLookup(key string, r spirits.RunSummary) (delegRunEntry, bool) {
+	s.delegRunMu.Lock()
+	defer s.delegRunMu.Unlock()
+	m, ok := s.delegRunMemo[key]
+	if !ok || !m.mod.Equal(r.Mod) || m.size != r.Size {
+		return delegRunEntry{}, false
+	}
+	return m, true
+}
+
+func (s *Server) delegRunStore(key string, r spirits.RunSummary, taskID string, view delegationView, ref string) {
+	s.delegRunMu.Lock()
+	defer s.delegRunMu.Unlock()
+	if s.delegRunMemo == nil {
+		s.delegRunMemo = map[string]delegRunEntry{}
+	}
+	s.delegRunMemo[key] = delegRunEntry{mod: r.Mod, size: r.Size, taskID: taskID, view: view, ref: ref}
 }
 
 // ---- the assign-to-agent lane (todo-panel plan Phase 4) ---------------------
@@ -470,6 +522,17 @@ func (s *Server) agentLoopSweep(index map[string]delegationView) {
 	}
 	defer s.threads.sweepMu.Unlock()
 	priv := s.threads.private
+	// one library read per harness for the whole sweep — a fresh lazy reader
+	// per entry re-parsed every brief for every delegated task
+	libs := map[string]libraryFn{}
+	libFor := func(h *Harness) libraryFn {
+		if l, ok := libs[h.Name]; ok {
+			return l
+		}
+		l := harnessLibrary(*h)
+		libs[h.Name] = l
+		return l
+	}
 	for id, d := range index {
 		if d.RunID == "" {
 			continue
@@ -504,7 +567,7 @@ func (s *Server) agentLoopSweep(index map[string]delegationView) {
 			if priv.HasAction(id, threads.ActReply, marker) {
 				continue
 			}
-			doc, ok := libraryDocForRun(*h, d.RunID, harnessLibrary(*h))
+			doc, ok := libraryDocForRun(*h, d.RunID, libFor(h))
 			if !ok || strings.TrimSpace(doc.Body) == "" {
 				continue
 			}
@@ -523,7 +586,7 @@ func (s *Server) agentLoopSweep(index map[string]delegationView) {
 			// deliverable itself posts into the thread — portal members read
 			// the result where they fired it, not behind a dashboard link.
 			if s.threadKind(id) == "aion" || isCodingAgent(d.Harness) || d.Persona == "auto" {
-				doc, ok := libraryDocForRun(*h, d.RunID, harnessLibrary(*h))
+				doc, ok := libraryDocForRun(*h, d.RunID, libFor(h))
 				body := strings.TrimSpace(doc.Body)
 				if !ok || body == "" {
 					if _, rb, ok2 := h.Spirits.Run(d.RunID); ok2 {
@@ -552,7 +615,7 @@ func (s *Server) agentLoopSweep(index map[string]delegationView) {
 			priv.HasAction(id, threads.ActReply, d.RunID) {
 			continue
 		}
-		doc, ok := libraryDocForRun(*h, d.RunID, harnessLibrary(*h))
+		doc, ok := libraryDocForRun(*h, d.RunID, libFor(h))
 		brief := strings.TrimSpace(doc.Body)
 		if !ok || brief == "" { // no brief — fall back to the run report body
 			if _, body, ok2 := h.Spirits.Run(d.RunID); ok2 {

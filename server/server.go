@@ -134,6 +134,10 @@ type Server struct {
 	delegMemoMu sync.Mutex
 	delegMemoAt time.Time
 	delegMemo   map[string]delegationView
+	// delegRunMemo: the per-report part of the delegation index for terminal
+	// runs, keyed by harness+report and stamped with the file's mtime+size
+	delegRunMu   sync.Mutex
+	delegRunMemo map[string]delegRunEntry
 	// CONSUME (subscribed reading → the fifth attention kind; §5 amendment
 	// 2026-08-24). Nilable. consumePublicURL is the public curation feed's
 	// address, for display only — this server never serves it.

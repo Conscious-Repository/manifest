@@ -95,6 +95,11 @@ type Entry struct {
 type Store struct {
 	dir string
 	mu  sync.Mutex
+	// the parsed state for the read-only accessors, re-read only when the
+	// file's size or mtime moves (readCached); write drops it
+	memo     *state
+	memoMod  time.Time
+	memoSize int64
 }
 
 // New opens (creating if needed) a thread store directory.
@@ -123,9 +128,31 @@ func (s *Store) read() state {
 	return st
 }
 
+// readCached is read() for the read-only accessors: the parsed file stays in
+// memory until its size or mtime moves. Thread, TaskIDs and HasAction are
+// asked dozens of times per FEED pass over a state file that grows with
+// every agent reply (190 KB today); parsing it once per change instead of
+// once per call is what keeps the plan-ready signal cheap. Caller holds
+// s.mu; the returned state is shared and must not be mutated.
+func (s *Store) readCached() *state {
+	fi, err := os.Stat(s.statePath())
+	if err != nil {
+		s.memo = nil
+		st := s.read()
+		return &st
+	}
+	if s.memo != nil && fi.ModTime().Equal(s.memoMod) && fi.Size() == s.memoSize {
+		return s.memo
+	}
+	st := s.read()
+	s.memo, s.memoMod, s.memoSize = &st, fi.ModTime(), fi.Size()
+	return s.memo
+}
+
 // write lands state atomically, THEN the activity line — a crash between the
 // two loses only the trail line, never the state (teamportal's ordering).
 func (s *Store) write(st state, e Entry) error {
+	s.memo = nil
 	b, err := json.MarshalIndent(st, "", "  ")
 	if err != nil {
 		return err
@@ -183,7 +210,7 @@ func (s *Store) Add(author Identity, taskID, action, text string, mentions []str
 func (s *Store) Thread(taskID string) []Comment {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return s.read().Comments[taskID]
+	return append([]Comment(nil), s.readCached().Comments[taskID]...)
 }
 
 // TaskIDs lists every todo with at least one entry — the agent-loop sweep
@@ -191,7 +218,7 @@ func (s *Store) Thread(taskID string) []Comment {
 func (s *Store) TaskIDs() []string {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	st := s.read()
+	st := s.readCached()
 	out := make([]string, 0, len(st.Comments))
 	for id := range st.Comments {
 		out = append(out, id)
@@ -204,7 +231,7 @@ func (s *Store) TaskIDs() []string {
 func (s *Store) HasAction(taskID, action, runID string) bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	for _, c := range s.read().Comments[taskID] {
+	for _, c := range s.readCached().Comments[taskID] {
 		if c.Action != action || c.Meta == nil {
 			continue
 		}

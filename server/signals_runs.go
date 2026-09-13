@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"manifest/signals"
+	"manifest/tasks"
 	"manifest/threads"
 )
 
@@ -58,7 +59,27 @@ func (e taskAgentReplyEmitter) Emit(now time.Time) ([]signals.Signal, error) {
 		return nil, err
 	}
 	out := []signals.Signal{}
+	// only a task with thread entries can carry an unanswered agent reply
+	// (planner notes are human): read the three stores' id sets once instead
+	// of opening every open task's thread
+	threaded := map[string]bool{}
+	for _, st := range []*threads.Store{e.s.threads.private, e.s.threads.re, e.s.threads.aionFS} {
+		if st == nil {
+			continue
+		}
+		for _, id := range st.TaskIDs() {
+			threaded[id] = true
+		}
+	}
+	if e.s.threads.aion != nil {
+		for item := range e.s.threads.aion.Ext().Comments {
+			threaded["aion:"+item] = true
+		}
+	}
 	for _, row := range e.s.unifiedRows(doc, now) {
+		if !threaded[row.ID] {
+			continue
+		}
 		thread := e.s.listThread(row.ID)
 		if len(thread) == 0 {
 			continue
@@ -99,6 +120,7 @@ func (e planReadyEmitter) Emit(now time.Time) ([]signals.Signal, error) {
 	if s.threads == nil || s.threads.private == nil {
 		return out, nil
 	}
+	tasksDoc := s.tasksDocOrNil() // one parse for every id below, not one per id
 	// signal state derives from the PRIVATE structural trail: the newest of
 	// {questions, plan, fire, result} decides what (if anything) pages —
 	// answering/firing naturally clears the card because a newer marker lands.
@@ -124,7 +146,7 @@ func (e planReadyEmitter) Emit(now time.Time) ([]signals.Signal, error) {
 		if harness == "" {
 			harness = s.agentHarness(s.readPlanRecord(id).Assignee)
 		}
-		text, open := s.openTaskText(id)
+		text, open := s.openTaskTextIn(tasksDoc, id)
 		if !open {
 			continue
 		}
@@ -173,11 +195,12 @@ type delegDoneEmitter struct{ s *Server }
 
 func (e delegDoneEmitter) Emit(now time.Time) ([]signals.Signal, error) {
 	out := []signals.Signal{}
+	tasksDoc := e.s.tasksDocOrNil()
 	for id, d := range e.s.delegationIndexAt(now) {
 		if d.State != "done" || d.RunID == "" {
 			continue
 		}
-		text, open := e.s.openTaskText(id)
+		text, open := e.s.openTaskTextIn(tasksDoc, id)
 		if !open {
 			continue // human already closed it — nothing to page
 		}
@@ -215,6 +238,25 @@ func (s *Server) delegationIndexAt(now time.Time) map[string]delegationView {
 
 // openTaskText resolves a unified composite id to (text, still-open).
 func (s *Server) openTaskText(id string) (string, bool) {
+	return s.openTaskTextIn(s.tasksDocOrNil(), id)
+}
+
+// tasksDocOrNil is the personal tasks document, or nil when unavailable — a
+// caller resolving many ids parses it once and hands it to openTaskTextIn.
+func (s *Server) tasksDocOrNil() *tasks.Doc {
+	if s.tasksStore == nil {
+		return nil
+	}
+	doc, err := s.tasksStore.Load()
+	if err != nil {
+		return nil
+	}
+	return doc
+}
+
+// openTaskTextIn is openTaskText against an already-loaded tasks document
+// (nil = personal ids resolve as closed).
+func (s *Server) openTaskTextIn(doc *tasks.Doc, id string) (string, bool) {
 	switch {
 	case strings.HasPrefix(id, "aion:"), strings.HasPrefix(id, "re:"):
 		if store, bare, ok := s.backlogStoreFor(id); ok {
@@ -234,11 +276,9 @@ func (s *Server) openTaskText(id string) (string, bool) {
 		}
 		return id, false
 	default:
-		if s.tasksStore != nil {
-			if doc, err := s.tasksStore.Load(); err == nil {
-				if _, t := doc.Find(id); t != nil {
-					return t.Text, !t.Checked
-				}
+		if doc != nil {
+			if _, t := doc.Find(id); t != nil {
+				return t.Text, !t.Checked
 			}
 		}
 		return id, false

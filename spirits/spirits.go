@@ -92,6 +92,11 @@ type RunSummary struct {
 	// The frontmatter outcome alone ("error (protocol)") told the owner nothing
 	// actionable, and the detail was already written one section down.
 	OutcomeDetail string `json:"outcomeDetail,omitempty"`
+	// Mod/Size stamp the report file the summary was parsed from (zero when
+	// the store has no run memo) — a terminal report never changes again, so
+	// derived views can be memoized against them.
+	Mod  time.Time `json:"-"`
+	Size int64     `json:"-"`
 }
 
 // QueuedRun is a spool file the engine hasn't picked up yet — the `queued`
@@ -191,6 +196,7 @@ func (s *Store) Runs() []RunSummary {
 			continue
 		}
 		if info != nil {
+			sum.Mod, sum.Size = info.ModTime(), info.Size()
 			s.runs.byID[e.Name()] = runMemoEntry{mod: info.ModTime(), size: info.Size(), sum: sum}
 		}
 		out = append(out, sum)

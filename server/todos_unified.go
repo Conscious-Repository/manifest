@@ -174,8 +174,9 @@ func (s *Server) unifiedRows(doc *tasks.Doc, now time.Time) []unifiedRow {
 			})
 		}
 	}
-	// Phase 6: attach the delegation projection (one trace scan per request)
-	deleg := s.delegationIndex()
+	// Phase 6: attach the delegation projection (one trace scan per request —
+	// keyed by now, so a signals pass and its emitters share the same scan)
+	deleg := s.delegationIndexAt(now)
 	for i := range rows {
 		if d, ok := deleg[rows[i].ID]; ok {
 			rows[i].Delegation = &d
@@ -251,7 +252,7 @@ func (s *Server) unifiedView(doc *tasks.Doc) map[string]any {
 		// delegation state keyed by todo id — so a DONE todo (absent from the
 		// open rows) can still show its "view result" chip (Phase 6 result
 		// visibility, owner ask 2026-08-11)
-		"delegations": s.delegationIndex(),
+		"delegations": s.delegationIndexAt(now),
 	}
 }
 
