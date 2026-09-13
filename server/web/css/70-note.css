@@ -57,7 +57,7 @@ h1.md-h { font-size: var(--fs-2xl); } h2.md-h { font-size: var(--fs-2xl); } h3.m
    against this recurring. */
 
 /* [[wikilink]] autocomplete popup */
-.wl-popup { position: fixed; z-index: 300; background: var(--bg); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow-2); min-width: 220px; max-width: 360px; max-height: 260px; overflow-y: auto; }
+.wl-popup { position: fixed; z-index: 300; background: var(--bg); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow-2); min-width: 220px; max-width: min(360px, calc(100vw - 16px)); max-height: 260px; overflow-y: auto; overscroll-behavior: contain; }
 .wl-item { display: flex; justify-content: space-between; align-items: baseline; gap: var(--sp-6); padding: var(--sp-3) var(--sp-6); cursor: pointer; }
 .wl-item.sel, .wl-item:hover { background: var(--hover); }
 .wl-name { font-family: var(--sans); font-size: var(--fs-lg); color: var(--text); }

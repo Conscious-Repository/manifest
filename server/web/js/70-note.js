@@ -283,8 +283,18 @@ function inlineInto(host, text, notePath) {
 let _wlPopup = null, _wlItems = [], _wlSel = -1, _wlStart = -1, _wlTa = null, _wlTimer = null;
 
 function wlClose() {
-  if (_wlPopup) { _wlPopup.remove(); _wlPopup = null; }
+  if (_wlPopup) { _wlPopup.remove(); _wlPopup = null; wlFollow(false); }
   _wlItems = []; _wlSel = -1; _wlStart = -1; _wlTa = null;
+}
+// while the popup is open it follows the field through keyboard animations,
+// visual-viewport pans and scrolling of whatever holds the field
+function wlReposition() { if (_wlPopup && _wlTa) wlPosition(_wlTa); }
+function wlFollow(on) {
+  const m = on ? "addEventListener" : "removeEventListener";
+  window.visualViewport?.[m]("resize", wlReposition);
+  window.visualViewport?.[m]("scroll", wlReposition);
+  window[m]("scroll", wlReposition, true);
+  window[m]("resize", wlReposition);
 }
 
 // wlQuery finds an open, unclosed `[[…` immediately before the caret.
@@ -327,7 +337,7 @@ async function wlSearch(ta, query) {
   _wlItems = results.slice(0, 8);
   if (!_wlItems.length) { wlClose(); return; }
   _wlSel = 0;
-  if (!_wlPopup) { _wlPopup = el("div", "wl-popup"); document.body.appendChild(_wlPopup); }
+  if (!_wlPopup) { _wlPopup = el("div", "wl-popup"); document.body.appendChild(_wlPopup); wlFollow(true); }
   _wlPopup.innerHTML = "";
   _wlItems.forEach((it, i) => {
     const row = el("div", "wl-item");
@@ -358,12 +368,46 @@ function wlInsert(it) {
   ta.dispatchEvent(new Event("input", { bubbles: true })); // run the field's own state/save handlers
 }
 
+// wlVisibleRange — the band of client-rect space the reader can actually see.
+// With a phone keyboard up the visual viewport is shorter than the window and
+// may be panned; whether client rects count from the layout viewport (iOS
+// Safari) or the visual one, the focused field is on screen, so the band
+// that holds it is the right one.
+function wlVisibleRange(anchor) {
+  const vv = window.visualViewport;
+  if (!vv) return { top: 0, bottom: window.innerHeight };
+  const a = { top: 0, bottom: vv.height }, b = { top: vv.offsetTop, bottom: vv.offsetTop + vv.height };
+  if (!vv.offsetTop) return a;
+  const mid = (anchor.top + anchor.bottom) / 2;
+  const inA = mid >= a.top && mid <= a.bottom, inB = mid >= b.top && mid <= b.bottom;
+  return inA && !inB ? a : b; // client rects count from the layout viewport (CSSOM), so the panned band wins a tie
+}
+
+// wlPosition — below the caret line when it fits in the visible band, else
+// above it; the list is capped to the room it has and scrolls inside. On a
+// phone with the keyboard up (2026-09-13) the fixed popup used to run off the
+// top of the screen with half its rows unreachable.
 function wlPosition(ta) {
   if (!_wlPopup) return;
-  const c = caretCoords(ta, ta.selectionStart);
-  const maxLeft = window.innerWidth - _wlPopup.offsetWidth - 12;
-  _wlPopup.style.left = Math.round(Math.min(c.left, Math.max(8, maxLeft))) + "px";
-  _wlPopup.style.top = Math.round(c.top) + "px";
+  const pop = _wlPopup, gap = 2, margin = 8;
+  const c = caretCoords(ta, ta.selectionStart), rect = ta.getBoundingClientRect();
+  const vis = wlVisibleRange(rect);
+  pop.style.maxHeight = "";
+  const natural = pop.offsetHeight;
+  const roomBelow = vis.bottom - margin - c.top, roomAbove = c.lineTop - gap - (vis.top + margin);
+  let top, room;
+  if (natural <= roomBelow || roomBelow >= roomAbove) { room = roomBelow; top = c.top; }
+  else { room = roomAbove; top = c.lineTop - gap - Math.min(natural, room); }
+  if (natural > room) pop.style.maxHeight = Math.max(72, Math.floor(room)) + "px";
+  top = Math.max(vis.top + margin, top);
+  const width = window.visualViewport?.width || window.innerWidth;
+  const maxLeft = width - pop.offsetWidth - 12;
+  pop.style.left = Math.round(Math.min(c.left, Math.max(8, maxLeft))) + "px";
+  pop.style.top = Math.round(top) + "px";
+  // fixed coordinates need not map 1:1 onto client rects while the visual
+  // viewport is panned: measure where the popup landed and correct once
+  const landed = pop.getBoundingClientRect().top;
+  if (Math.abs(landed - top) > 1) pop.style.top = Math.round(top + (top - landed)) + "px";
 }
 
 // caretCoords returns viewport coords just below the caret (mirror-div technique).
@@ -390,9 +434,10 @@ function caretCoords(ta, position) {
   const rect = ta.getBoundingClientRect();
   const lh = parseFloat(s.lineHeight) || parseFloat(s.fontSize) * 1.4;
   const left = rect.left + (span.offsetLeft - ta.scrollLeft);
-  const top = isInput ? rect.bottom + 2 : rect.top + (span.offsetTop - ta.scrollTop) + lh;
+  const lineTop = isInput ? rect.top : rect.top + (span.offsetTop - ta.scrollTop);
+  const top = isInput ? rect.bottom + 2 : lineTop + lh;
   document.body.removeChild(div);
-  return { left, top };
+  return { left, top, lineTop };
 }
 
 if (els.noteRaw) attachWikilinkAutocomplete(els.noteRaw);
