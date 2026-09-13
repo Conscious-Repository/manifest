@@ -129,8 +129,8 @@
 /* the record line, folded behind a summary (55-approvals.js buildAionEditor) */
 .aion-appr-preview > summary { cursor: pointer; list-style: none; font-family: var(--mono); font-size: var(--fs-2xs); text-transform: uppercase; letter-spacing: 0.4px; color: var(--muted); }
 .aion-appr-preview > summary::-webkit-details-marker { display: none; }
-.aion-appr-preview > summary::before { content: "▸ "; }
-.aion-appr-preview[open] > summary::before { content: "▾ "; }
+.aion-appr-preview > summary::before { content: "\25B8  "; }
+.aion-appr-preview[open] > summary::before { content: "\25BE  "; }
 .aion-appr-preview[open] > summary { margin-bottom: var(--sp-3); }
 .aion-appr-preview .appr-title-label { margin-top: var(--sp-2); }
 .aion-appr-line { background: var(--streak-bg); border: 1px solid var(--streak-bd); border-radius: var(--radius); padding: var(--sp-3) var(--sp-4); font-family: var(--mono); font-size: var(--fs-xs); white-space: pre-wrap; word-break: break-word; }
