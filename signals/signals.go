@@ -7,10 +7,12 @@
 package signals
 
 import (
+	"fmt"
 	"net/url"
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"manifest/contacts"
@@ -54,6 +56,28 @@ type Emitter interface {
 type Service struct {
 	store    *Store
 	emitters []Emitter
+	// WithCache: one computed pass served for ttl (zero = compute every call)
+	ttl      time.Duration
+	cacheMu  sync.Mutex
+	cachedAt time.Time
+	cached   []Signal
+	cachedOK bool
+}
+
+// WithCache makes Active serve one computed pass for ttl before recomputing.
+// The FEED list, its badge and the AGENTS status all ask within a second of
+// each other and the phone polls every 3 s, while a pass costs ~0.7 s (the
+// delegation index, the contacts list). Dismiss and Snooze drop the cached
+// pass so a verdict shows on the very next read; anything else moves within
+// ttl. Tests construct without it and see every emitter call.
+func (s *Service) WithCache(ttl time.Duration) *Service { s.ttl = ttl; return s }
+
+// Invalidate drops the cached pass (a verdict, or a caller that just changed
+// what an emitter reads).
+func (s *Service) Invalidate() {
+	s.cacheMu.Lock()
+	s.cached, s.cachedOK, s.cachedAt = nil, false, time.Time{}
+	s.cacheMu.Unlock()
 }
 
 func New(store *Store, emitters ...Emitter) *Service {
@@ -63,10 +87,41 @@ func New(store *Store, emitters ...Emitter) *Service {
 // Active returns the signals to render: every emitter's output minus the ones
 // the user dismissed (while the hash still matches) or snoozed (until lapsed),
 // most-overdue first. An emitter error drops only that emitter's signals.
-func (s *Service) Active(now time.Time) []Signal {
+func (s *Service) Active(now time.Time) []Signal { return s.ActiveTraced(now, nil) }
+
+// Timing is one emitter's cost in a traced pass (FEED ?trace=1 diagnostics).
+type Timing struct {
+	Emitter string        `json:"emitter"`
+	Took    time.Duration `json:"took"`
+	Count   int           `json:"count"`
+}
+
+// ActiveTraced is Active with a per-emitter cost record appended to *trace
+// when it is non-nil — the diagnostic behind the FEED's ?trace=1.
+func (s *Service) ActiveTraced(now time.Time, trace *[]Timing) []Signal {
+	if s.ttl <= 0 || trace != nil {
+		return s.compute(now, trace)
+	}
+	// one pass at a time: a second reader arriving mid-compute waits for this
+	// result instead of starting its own
+	s.cacheMu.Lock()
+	defer s.cacheMu.Unlock()
+	if s.cachedOK && time.Since(s.cachedAt) < s.ttl {
+		return append([]Signal(nil), s.cached...)
+	}
+	all := s.compute(now, nil)
+	s.cached, s.cachedOK, s.cachedAt = all, true, time.Now()
+	return append([]Signal(nil), all...)
+}
+
+func (s *Service) compute(now time.Time, trace *[]Timing) []Signal {
 	var all []Signal
 	for _, e := range s.emitters {
+		start := time.Now()
 		sigs, err := e.Emit(now)
+		if trace != nil {
+			*trace = append(*trace, Timing{Emitter: fmt.Sprintf("%T", e), Took: time.Since(start), Count: len(sigs)})
+		}
 		if err != nil {
 			continue // no data ≠ all-clear; just contribute nothing this pass
 		}
@@ -90,10 +145,16 @@ func (s *Service) Active(now time.Time) []Signal {
 func (s *Service) Count(now time.Time) int { return len(s.Active(now)) }
 
 // Dismiss suppresses a signal while its condition hash is unchanged.
-func (s *Service) Dismiss(id, hash string) error { return s.store.Dismiss(id, hash) }
+func (s *Service) Dismiss(id, hash string) error {
+	defer s.Invalidate()
+	return s.store.Dismiss(id, hash)
+}
 
 // Snooze suppresses a signal until the given time.
-func (s *Service) Snooze(id string, until time.Time) error { return s.store.Snooze(id, until) }
+func (s *Service) Snooze(id string, until time.Time) error {
+	defer s.Invalidate()
+	return s.store.Snooze(id, until)
+}
 
 // ---- emitters ----
 
@@ -104,6 +165,36 @@ type ContactLister interface {
 
 // ColdContacts emits one card per going-cold contact (the existing neglect lens).
 func ColdContacts(l ContactLister) Emitter { return coldEmitter{l} }
+
+// ColdContactsCached is ColdContacts over a list held for ttl. The contacts
+// list is six index queries plus calendar joins (~0.3 s) and only moves when
+// notes or meetings do, so a minute-old read serves the cold signal as well
+// as a fresh one; the Contacts tab keeps its own live read.
+func ColdContactsCached(l ContactLister, ttl time.Duration) Emitter {
+	return coldEmitter{&cachedLister{l: l, ttl: ttl}}
+}
+
+type cachedLister struct {
+	l    ContactLister
+	ttl  time.Duration
+	mu   sync.Mutex
+	at   time.Time
+	rows []contacts.Contact
+}
+
+func (c *cachedLister) List(now time.Time) ([]contacts.Contact, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.rows != nil && time.Since(c.at) < c.ttl {
+		return c.rows, nil
+	}
+	rows, err := c.l.List(now)
+	if err != nil {
+		return nil, err // no data ≠ all-clear, and never cached
+	}
+	c.rows, c.at = rows, time.Now()
+	return rows, nil
+}
 
 type coldEmitter struct{ l ContactLister }
 

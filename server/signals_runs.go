@@ -94,7 +94,7 @@ type planReadyEmitter struct{ s *Server }
 func (e planReadyEmitter) Emit(now time.Time) ([]signals.Signal, error) {
 	out := []signals.Signal{}
 	s := e.s
-	index := s.delegationIndex()
+	index := s.delegationIndexAt(now)
 	s.agentLoopSweep(index)
 	if s.threads == nil || s.threads.private == nil {
 		return out, nil
@@ -173,7 +173,7 @@ type delegDoneEmitter struct{ s *Server }
 
 func (e delegDoneEmitter) Emit(now time.Time) ([]signals.Signal, error) {
 	out := []signals.Signal{}
-	for id, d := range e.s.delegationIndex() {
+	for id, d := range e.s.delegationIndexAt(now) {
 		if d.State != "done" || d.RunID == "" {
 			continue
 		}
@@ -196,6 +196,21 @@ func (e delegDoneEmitter) Emit(now time.Time) ([]signals.Signal, error) {
 		})
 	}
 	return out, nil
+}
+
+// delegationIndexAt shares one delegation index across the emitters of a
+// single signals pass: they all receive the pass's `now`, so an exact match
+// is the memo key — no wall-clock staleness, and every other caller keeps the
+// live read. The index walks every run report (700+), so building it once
+// per pass instead of once per emitter is the difference the FEED feels.
+func (s *Server) delegationIndexAt(now time.Time) map[string]delegationView {
+	s.delegMemoMu.Lock()
+	defer s.delegMemoMu.Unlock()
+	if s.delegMemo != nil && now.Equal(s.delegMemoAt) {
+		return s.delegMemo
+	}
+	s.delegMemo, s.delegMemoAt = s.delegationIndex(), now
+	return s.delegMemo
 }
 
 // openTaskText resolves a unified composite id to (text, still-open).

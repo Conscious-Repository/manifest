@@ -125,6 +125,15 @@ type Server struct {
 	signals *signals.Service
 	// Portals (external realms — ClickUp, Benchling — polled into the FEED). Nilable.
 	portals *portals.Service
+	// portalCardsCached: the notices lane, built once per portalCardsTTL
+	portalCardsMu   sync.Mutex
+	portalCardsAt   time.Time
+	portalCardsMemo []portals.Card
+	// delegationIndexAt: one delegation index per signals pass (keyed by the
+	// pass's `now`), shared by the plan-ready and delegation-done emitters
+	delegMemoMu sync.Mutex
+	delegMemoAt time.Time
+	delegMemo   map[string]delegationView
 	// CONSUME (subscribed reading → the fifth attention kind; §5 amendment
 	// 2026-08-24). Nilable. consumePublicURL is the public curation feed's
 	// address, for display only — this server never serves it.

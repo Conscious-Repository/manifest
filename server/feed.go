@@ -66,14 +66,34 @@ var libraryRefRe = regexp.MustCompile(`artifacts/library/[^\s)"']+\.md`)
 // badge. Adding a kind = registering a source; no hand-merged fields.
 func (s *Server) handleFeedList(w http.ResponseWriter, r *http.Request) {
 	now := time.Now()
+	// ?trace=1 — per-stage cost, for finding what makes the inbox slow. Read
+	// by hand (curl), never by the client.
+	var stages map[string]any
+	if r.URL.Query().Get("trace") != "" {
+		stages = map[string]any{}
+	}
+	timed := func(name string, fn func() any) any {
+		start := time.Now()
+		out := fn()
+		if stages != nil {
+			stages[name] = time.Since(start).String()
+		}
+		return out
+	}
 	resp := map[string]any{
-		"proposals":   s.feedProposals(),
-		"badge":       s.feedInboxCount(now),
-		"bankPending": s.bankPendingRows(),
+		"proposals":   timed("proposals", func() any { return s.feedProposals() }),
+		"badge":       timed("badge", func() any { return s.feedInboxCount(now) }),
+		"bankPending": timed("bankPending", func() any { return s.bankPendingRows() }),
+	}
+	if stages != nil && s.signals != nil {
+		var emitters []signals.Timing
+		start := time.Now()
+		s.signals.ActiveTraced(now, &emitters)
+		stages["signals.emitters"] = map[string]any{"total": time.Since(start).String(), "each": emitters}
 	}
 	for _, src := range s.attentionRegistry().Sources() {
 		field := kindField[src.Kind()]
-		cards := src.Active(now, r.URL.Query())
+		cards := timed("source."+src.Kind(), func() any { return src.Active(now, r.URL.Query()) }).([]attention.Card)
 		// two sources may share a kind (errand + aion-publish receipts):
 		// append into the field instead of overwriting — same field, same
 		// array shape, client-invisible
@@ -82,6 +102,10 @@ func (s *Server) handleFeedList(w http.ResponseWriter, r *http.Request) {
 		} else {
 			resp[field] = cards
 		}
+	}
+	if stages != nil {
+		stages["total"] = time.Since(now).String()
+		resp["trace"] = stages
 	}
 	writeJSON(w, resp)
 }

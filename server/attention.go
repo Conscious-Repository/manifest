@@ -105,7 +105,7 @@ func (n noticesSource) Kind() string                   { return "notice" }
 func (n noticesSource) Lifecycle() attention.Lifecycle { return attention.LifecycleDismissExpire }
 func (n noticesSource) Active(_ time.Time, _ url.Values) []attention.Card {
 	out := []attention.Card{}
-	for _, c := range n.s.portalCards() {
+	for _, c := range n.s.portalCardsCached() {
 		out = append(out, c)
 	}
 	return out

@@ -660,7 +660,7 @@ func main() {
 	} else {
 		var emitters []signals.Emitter
 		if contactsSvc != nil {
-			emitters = append(emitters, signals.ColdContacts(contactsSvc))
+			emitters = append(emitters, signals.ColdContactsCached(contactsSvc, time.Minute))
 		}
 		emitters = append(emitters, signals.StalledRocks(goalsStore))
 		emitters = append(emitters, signals.StaleTasks(tasksStore))
@@ -697,7 +697,8 @@ func main() {
 				signals.StalledProperties(reSvc), signals.NoNextAction(reSvc),
 				signals.StalePropertyTasks(reSvc))
 		}
-		srv.UseSignals(signals.New(sigStore, emitters...))
+		// one pass per 5 s: the list, its badge and the AGENTS status share it
+		srv.UseSignals(signals.New(sigStore, emitters...).WithCache(5 * time.Second))
 		log.Printf("feed signals: enabled (%d emitters)", len(emitters))
 	}
 

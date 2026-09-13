@@ -165,6 +165,11 @@ func (s *Store) HaveKeys(id string, def Def) []string {
 type Cache struct {
 	dir string
 	mu  sync.Mutex
+	// the parsed file for the read-only accessors, re-read only when the
+	// file's size or mtime moves (readCached)
+	memo     *cacheState
+	memoMod  time.Time
+	memoSize int64
 }
 
 type cacheState struct {
@@ -200,6 +205,26 @@ func (c *Cache) read() cacheState {
 	return st
 }
 
+// readCached is read() for the read-only accessors: the parsed file stays in
+// memory and is re-read only when its size or mtime moves. Without it every
+// Dismissed() probe re-parsed the whole event log — a 250 KB Benchling cache
+// checked once per card put the FEED's notices lane at half a second.
+// Caller holds c.mu; the returned state is shared and must not be mutated.
+func (c *Cache) readCached() *cacheState {
+	fi, err := os.Stat(c.file())
+	if err != nil {
+		c.memo = nil
+		st := c.read()
+		return &st
+	}
+	if c.memo != nil && fi.ModTime().Equal(c.memoMod) && fi.Size() == c.memoSize {
+		return c.memo
+	}
+	st := c.read()
+	c.memo, c.memoMod, c.memoSize = &st, fi.ModTime(), fi.Size()
+	return c.memo
+}
+
 func (c *Cache) write(st cacheState) {
 	b, err := json.MarshalIndent(st, "", "  ")
 	if err != nil {
@@ -211,6 +236,7 @@ func (c *Cache) write(st cacheState) {
 	if existing, err := os.ReadFile(c.file()); err == nil && string(existing) == string(b) {
 		return // unchanged — no churn
 	}
+	c.memo = nil
 	_ = os.WriteFile(c.file(), b, 0o644)
 }
 
@@ -218,7 +244,7 @@ func (c *Cache) write(st cacheState) {
 func (c *Cache) Cursor(kind string) time.Time {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if v := c.read().Cursors[kind]; v != "" {
+	if v := c.readCached().Cursors[kind]; v != "" {
 		if t, err := time.Parse(time.RFC3339, v); err == nil {
 			return t
 		}
@@ -232,7 +258,7 @@ func (c *Cache) Snapshots() map[string]string {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	out := map[string]string{}
-	for k, v := range c.read().Snapshots {
+	for k, v := range c.readCached().Snapshots {
 		out[k] = v
 	}
 	return out
@@ -295,7 +321,7 @@ func (c *Cache) Commit(now time.Time, ok bool, events []Event, cursors, snaps ma
 func (c *Cache) Events() []Event {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	st := c.read()
+	st := c.readCached()
 	out := append([]Event(nil), st.Events...)
 	sort.Slice(out, func(i, j int) bool { return out[i].At.After(out[j].At) })
 	return out
@@ -314,7 +340,7 @@ func (c *Cache) Dismiss(cardID string, now time.Time) {
 func (c *Cache) Dismissed(cardID string) bool {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	_, ok := c.read().Dismissed[cardID]
+	_, ok := c.readCached().Dismissed[cardID]
 	return ok
 }
 
@@ -322,7 +348,7 @@ func (c *Cache) Dismissed(cardID string) bool {
 func (c *Cache) Status() (lastOK time.Time, errMsg string) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	st := c.read()
+	st := c.readCached()
 	if st.LastOK != "" {
 		lastOK, _ = time.Parse(time.RFC3339, st.LastOK)
 	}

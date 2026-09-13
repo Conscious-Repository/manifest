@@ -334,6 +334,7 @@ func (s *Server) handlePortalDismiss(w http.ResponseWriter, r *http.Request) {
 	}
 	// team-portal notices dismiss into the bridge's own cache (same id-prefix
 	// routing the portals service uses internally for clickup/benchling)
+	defer s.invalidatePortalCards() // the verdict shows on the next read
 	for _, tb := range s.teamBridges {
 		if tb.Owns(b.ID) {
 			tb.Dismiss(b.ID, time.Now())
@@ -355,6 +356,28 @@ func (s *Server) handlePortalDismiss(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, map[string]bool{"ok": true})
 }
 
+// portalCardsTTL bounds how stale the notices lane may be between reads: new
+// cards arrive from 30-minute polls and team activity, dismissals invalidate.
+const portalCardsTTL = 10 * time.Second
+
+// portalCardsCached serves portalCards from one build per portalCardsTTL —
+// the FEED list and its badge both ask, and the phone polls every 3 s.
+func (s *Server) portalCardsCached() []portals.Card {
+	s.portalCardsMu.Lock()
+	defer s.portalCardsMu.Unlock()
+	if s.portalCardsMemo != nil && time.Since(s.portalCardsAt) < portalCardsTTL {
+		return s.portalCardsMemo
+	}
+	s.portalCardsMemo, s.portalCardsAt = s.portalCards(), time.Now()
+	return s.portalCardsMemo
+}
+
+func (s *Server) invalidatePortalCards() {
+	s.portalCardsMu.Lock()
+	s.portalCardsMemo = nil
+	s.portalCardsMu.Unlock()
+}
+
 // portalCards is the feed's portal-item slice (empty when portals disabled).
 // Team-portal notices (Phase 4 bridge) join the same slice — same kind, same
 // renderer, same dismiss-expire lifecycle.
@@ -370,15 +393,6 @@ func (s *Server) portalCards() []portals.Card {
 	return cards
 }
 
-// portalInboxCount feeds the badge (0 when disabled).
-func (s *Server) portalInboxCount() int {
-	n := 0
-	if s.portals != nil {
-		n = s.portals.InboxCount()
-	}
-	for _, tb := range s.teamBridges {
-		n += len(tb.Cards(time.Now()))
-	}
-	n += len(s.bankFeedCards())
-	return n
-}
+// portalInboxCount feeds the badge (0 when disabled) — the same cached set
+// the notices lane renders, so the two can never disagree.
+func (s *Server) portalInboxCount() int { return len(s.portalCardsCached()) }
