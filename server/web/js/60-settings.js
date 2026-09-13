@@ -367,11 +367,17 @@ function cardLine(card, key, value) {
   return row;
 }
 
-// 1. Excalibur engine — liveness, path, spirits, model per spirit, conduits.
+// 1. Excalibur engine — the LEGACY runtime (retiring under
+// plans/2026-09-11-excalibur-deprecation.md; it still runs its existing
+// rituals while they migrate to Hermes): liveness, path, spirits, model per
+// spirit, conduits. Named by what it is, never as the successor.
 function excaliburCard(h, portalRows) {
   const card = el("div", "harness-card");
   const head = el("div", "harness-head");
   head.append(el("span", "harness-name", "Excalibur engine"));
+  const legacy = el("span", "harness-chip legacy", "legacy · retiring");
+  legacy.title = "the legacy runtime — still owns its existing rituals during the migration; Alfred (Hermes) is the successor. Nothing here is the successor's authority.";
+  head.append(legacy);
   if (!h) {
     head.append(el("span", "harness-engine off", "not configured"));
     card.append(head, emptyRow("no harness in config.json (harnesses[] / excaliburPath)"));
@@ -380,9 +386,10 @@ function excaliburCard(h, portalRows) {
   head.append(el("span", "harness-chip", h.name), engineChip(h.engineAlive, h.heartbeat, h.queued));
   card.append(head);
   card.append(el("div", "harness-path", h.path));
+  card.append(el("div", "portal-note", "legacy engine · " + h.name + " harness tree — existing rituals keep running here until each duty moves to Hermes; retired rituals stay paused with their run reports preserved as read-only history (artifacts/runs/)"));
   const observation = h.observation || {};
   cardLine(card, "observation", observation.health || "unknown");
-  card.append(el("div", "portal-note", "read-only / edit on metis and restart · source: " + (observation.evidence || "ritual-status.json")));
+  card.append(el("div", "portal-note", "read-only / edit on metis and restart · engine evidence: " + (observation.evidence || "ritual-status.json")));
   (observation.rituals || []).forEach((r) => {
     cardLine(card, r.spirit + "/" + r.ritual, r.health + " · last attempt " + (r.lastAttempt ? fmtWhen(r.lastAttempt) : "unknown") + (r.lastError ? " · " + r.lastError : "") + (r.why ? " · " + r.why : ""));
   });
@@ -397,7 +404,7 @@ function excaliburCard(h, portalRows) {
     card.append(hint);
   }
   const spirits = h.spirits || [];
-  card.append(el("div", "portal-note", spirits.length + " agent" + (spirits.length === 1 ? "" : "s") + " on the engine (spirits/) · model per agent (switch it on the agent page)"));
+  card.append(el("div", "portal-note", spirits.length + " agent" + (spirits.length === 1 ? "" : "s") + " on the legacy engine (spirits/) · model per agent (switch it on the agent page)"));
   spirits.forEach((sp) => {
     const row = el("div", "harness-spirit");
     row.append(el("span", "harness-spirit-name", sp.name), el("span", "harness-spirit-model", sp.portal || "—"));
@@ -420,11 +427,15 @@ function excaliburCard(h, portalRows) {
   return card;
 }
 
-// 2. Alfred (Hermes) — the owner's do-bot: runner, gateway, cron ticker, profiles.
+// 2. Alfred (Hermes) — the owner's do-bot and the successor runtime the
+// legacy engine's duties migrate to: runner, gateway, cron ticker, profiles.
 function alfredCard(hz) {
   const card = el("div", "harness-card");
   const head = el("div", "harness-head");
   head.append(el("span", "harness-name", "Alfred (Hermes)"));
+  const successor = el("span", "harness-chip alfred", "successor runtime");
+  successor.title = "the one agent runtime the legacy engine's duties migrate to, duty by duty (plans/2026-09-11-excalibur-deprecation.md); the two-scheduler rule on Hosts & paths says what has moved";
+  head.append(successor);
   if (!hz) {
     head.append(el("span", "harness-engine off", "unavailable"));
     card.append(head, emptyRow("/api/agents/hermes did not answer"));
@@ -655,7 +666,7 @@ async function renderSettingsHosts(pane) {
     ["rsshubBase", cs.rsshubBase || "http://127.0.0.1:1200 (default)"],
   ]);
   group("HERMES", [["enabled", hm.enabled ? "true" : "false"], ["bin", hm.bin], ["timeoutSeconds", hm.timeoutSeconds || "default"], ["HERMES_HOME", d.hermesHome]]);
-  group("runtime ownership", [["manifest", "config.json · pollers, approvals, vaultwriter"], ["successor reasoning", "Manifest-owned tool-free helper; no Hermes profile/state; no duty routed; live usage contract unverified"], ["hermes", (d.hermesHome || "~/.hermes") + " · config.yaml, gateway_state.json, cron/jobs.json, cron/ticker_heartbeat, cron/ticker_last_success"], ["excalibur", "harness roots above · spirits/, chargebook.md, vessel/state/ritual-status.json, artifacts/runs/"]], "read-only / edit on metis and restart; Excalibur markdown is hot-read by its engine");
+  group("runtime ownership", [["manifest", "config.json · pollers, approvals, vaultwriter"], ["successor reasoning", "Manifest-owned tool-free helper; no Hermes profile/state; no duty routed; live usage contract unverified"], ["hermes", (d.hermesHome || "~/.hermes") + " · config.yaml, gateway_state.json, cron/jobs.json, cron/ticker_heartbeat, cron/ticker_last_success"], ["excalibur (legacy engine · retiring)", "harness roots above · spirits/, chargebook.md, vessel/state/ritual-status.json (engine evidence), artifacts/runs/ (run history, read-only)"]], "read-only / edit on metis and restart; Excalibur markdown is hot-read by its engine");
   pane.append(el("div", "portal-note", "two-scheduler rule: Manifest pollers + supervised Hermes ticker is the approved successor topology; Excalibur still owns its existing duties during transition. no third scheduler. no duty moved."));
   group("ENVIRONMENT", env.map((e) => [e.name, e.set ? (e.value || "set") : "unset"]), "the process environment on metis — presence only; values never leave the box");
 }

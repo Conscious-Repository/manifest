@@ -12,7 +12,8 @@
 // run state) and the live poll stay in 40-agents.js; `hermesRuns` lives in
 // 41-agents-schedule.js (the board's strip reads it too).
 
-// ---- run reports (artifacts/runs/) — live strip + finished list ----
+// ---- run reports (each harness tree's artifacts/runs/ — the legacy engine's
+// history plus the team trees) ∪ Alfred's fires — live strip + finished list ----
 async function loadSpiritRuns() {
   const [runs, hr, hz] = await Promise.all([fetchSpiritRuns(), fetchHermesRuns(spRunWindow), fetchHermes()]);
   hermesInfo = hz;
@@ -21,16 +22,34 @@ async function loadSpiritRuns() {
   renderSpiritRuns();
   ensureLivePoll();
 }
-// spiritWeekSpend — Σ spentUsd over excalibur runs started in the last 7 days
-// (the section head + crumb meta both read this; no endpoint involved).
-function spiritWeekSpend() {
+// spiritWeekSpend — Σ spentUsd over harness-tree run reports started in the
+// last 7 days (the section head + crumb meta both read this; no endpoint
+// involved). `only` narrows to one tree: "" = the primary (the legacy
+// engine's reports carry no harness tag), a name = that team tree.
+function spiritWeekSpend(only) {
   const cutoff = Date.now() - 7 * 86400000;
   let sum = 0;
   (spiritRuns.data || []).forEach((r) => {
+    if (only !== undefined && (r.harness || "") !== only) return;
     const t = new Date(r.started).getTime();
     if (!isNaN(t) && t >= cutoff) sum += r.spentUsd || 0;
   });
   return sum;
+}
+// weekSpendLine — the RUNS head's 7-day figures by runtime, as text + tooltip:
+// the legacy engine's dollars (its run reports), the team trees' dollars when
+// any, then alfred's priced dollars and raw tokens. The legacy engine is
+// named as such — its history is evidence, not the successor's spend.
+function weekSpendLine() {
+  const hf = hermesWeekFigures();
+  const bits = ["$" + spiritWeekSpend("").toFixed(2) + " legacy engine"];
+  const team = spiritWeekSpend() - spiritWeekSpend("");
+  if (team > 0) bits.push("$" + team.toFixed(2) + " team trees");
+  bits.push("$" + hf.usd.toFixed(2) + " alfred", fmtTokens(hf.tokens) + " tokens alfred");
+  if (hf.unknown) bits.push(hf.unknown + " fire" + (hf.unknown === 1 ? "" : "s") + " untallied");
+  const title = ["legacy engine: run reports in the " + (primaryHarnessName() || "primary") + " harness tree (retiring; history preserved) · alfred: Hermes fires, the successor runtime"];
+  if (hf.unknown) title.push("untallied: fires with no usage_audit line (a drift skip makes no inference call; or the audit file is missing)");
+  return { text: bits.join(" · ") + " · last 7 days", title: title.join(" · ") };
 }
 // hermesWeekFigures — the alfred side of the header: priced dollars (only
 // where the chargebook prices the model) and raw tokens, last 7 days.
@@ -109,7 +128,7 @@ function renderSpiritRuns() {
 
   const running = (spiritRuns.data || []).filter((r) => r.outcome === "running");
   const queued = spiritRuns.queued || [];
-  // excalibur reports ∪ alfred fires, newest first (both arrive newest-first)
+  // harness-tree reports ∪ alfred fires, newest first (both arrive newest-first)
   const finished = (spiritRuns.data || []).filter((r) => r.outcome !== "running").concat(hermesRunRows())
     .sort((a, b) => String(b.started || "").localeCompare(String(a.started || "")));
 
@@ -125,11 +144,9 @@ function renderSpiritRuns() {
   // runtime, tokens for alfred (dollars only where the chargebook prices the model)
   const ws = document.getElementById("spiritWeekSpend");
   if (ws) {
-    const hf = hermesWeekFigures();
-    const bits = ["$" + spiritWeekSpend().toFixed(2) + " excalibur", "$" + hf.usd.toFixed(2) + " alfred", fmtTokens(hf.tokens) + " tokens alfred"];
-    if (hf.unknown) bits.push(hf.unknown + " fire" + (hf.unknown === 1 ? "" : "s") + " untallied");
-    ws.textContent = bits.join(" · ") + " · last 7 days";
-    ws.title = hf.unknown ? "untallied: fires with no usage_audit line (a drift skip makes no inference call; or the audit file is missing)" : "";
+    const line = weekSpendLine();
+    ws.textContent = line.text;
+    ws.title = line.title;
   }
   if (typeof updateSpiritsCrumb === "function") updateSpiritsCrumb();
 
@@ -278,7 +295,7 @@ function renderRunFilters(visible, hiddenInternal) {
     host.append(b);
   };
   // a window change refetches the alfred fires for that window (the
-  // excalibur list is already complete; the fires are read per window)
+  // harness-tree report list is already complete; the fires are read per window)
   ["7d", "30d", "all"].forEach((w) =>
     chip(w, spRunWindow === w, () => { spRunWindow = w; loadSpiritRuns(); },
       w === "all" ? "every run report, no recency cap" : "runs started in the last " + w.replace("d", " days")));
@@ -349,6 +366,23 @@ function runDeliverables(body) {
   return parseRunWrites(body).filter((p) => /^artifacts\/(feed|library)\/[^/]+\.md$/.test(p));
 }
 
+// runRuntimeChip — which runtime produced a log row: alfred (a Hermes fire or
+// ledger turn), a team tree's own runner (the row's harness tag), or — for an
+// un-tagged report — the primary tree's legacy engine, labelled as such so a
+// historical report never reads as the successor's work.
+function runRuntimeChip(r) {
+  if (r.hermes) {
+    const chip = el("span", "harness-chip alfred", r.harness || "alfred");
+    chip.title = r.hermes.source === "ledger" ? "an in-process Hermes turn (manifest's ledger)" : "Hermes cron fire · " + (r.hermes.source || "") + (r.hermes.model ? " · " + r.hermes.model : "");
+    return chip;
+  }
+  if (r.harness) {
+    const chip = el("span", "harness-chip", r.harness);
+    chip.title = r.harness + " harness tree · its own runner's report";
+    return chip;
+  }
+  return legacyEngineChip();
+}
 // spiritRunRow — one log line (plan §4.3): outcome word · runtime chip ·
 // agent / job · figures (wrote · duration · $cost) · when, then the WHY line
 // (the first line of "## Outcome") on every run that has one. The charge bar
@@ -359,9 +393,7 @@ function spiritRunRow(r) {
   const row = el("div", "sprt-run");
   const top = el("div", "sprt-run-top");
   top.append(el("span", "run-outcome " + outcomeClass(r.outcome), r.outcome || "never run"));
-  const chip = el("span", "harness-chip" + (r.hermes ? " alfred" : ""), r.harness || "excalibur"); // runtime
-  if (r.hermes) chip.title = r.hermes.source === "ledger" ? "an in-process Hermes turn (manifest's ledger)" : "Hermes cron fire · " + (r.hermes.source || "") + (r.hermes.model ? " · " + r.hermes.model : "");
-  top.append(chip);
+  top.append(runRuntimeChip(r));
   top.append(el("span", "sprt-run-title", r.hermes ? `agent:alfred / ${r.ritual}` : `${r.spirit} / ${r.ritual}`));
   const figs = el("span", "sprt-run-figs");
   figs.append(el("span", "sprt-run-wrote", r.itemsWritten ? "wrote " + r.itemsWritten : "—"));

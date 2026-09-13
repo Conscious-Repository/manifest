@@ -18,6 +18,7 @@
 
 let spiritRitualRows = []; // the crumb meta's ritual count reads this
 let spiritModels = {};     // spirit → conduit name (from /api/harnesses; display only)
+let spiritPrimaryHarness = ""; // the primary tree's name (from /api/harnesses; display only)
 let hermesInfo = null;     // last /api/agents/hermes — the jobs list + degrade notes (display only)
 let hermesRuns = [];       // last /api/agents/hermes/runs rows — the strip + health on Hermes rows
 let hermesRunsDegraded = []; // what the fires projection could not read (usage_audit.jsonl gone…)
@@ -55,7 +56,30 @@ async function loadSpiritModels() {
     const out = {};
     ((h && h.spirits) || []).forEach((sp) => { out[sp.name] = sp.portal || ""; });
     spiritModels = out;
+    if (h && h.name) spiritPrimaryHarness = h.name;
   } catch (e) {}
+}
+// primaryHarnessName — the tree the SCHEDULE rituals and every un-tagged run
+// row belong to (config.json harnesses[0]; "excalibur" on metis). Read from
+// whichever payload has answered — runs, /api/harnesses, status — never
+// hard-coded, so a renamed tree relabels itself.
+function primaryHarnessName() {
+  if (typeof spiritRuns !== "undefined" && spiritRuns && spiritRuns.primary) return spiritRuns.primary;
+  if (spiritPrimaryHarness) return spiritPrimaryHarness;
+  const hs = (typeof spiritStatusCache !== "undefined" && spiritStatusCache && spiritStatusCache.harnesses) || [];
+  return hs.length ? hs[0].name || "" : "";
+}
+// legacyEngineChip — the runtime chip for work the primary harness tree's
+// engine schedules and runs. The chip names what that runtime IS today: the
+// legacy engine, still owning its existing duties while they migrate to
+// Hermes (plans/2026-09-11-excalibur-deprecation.md) — never the successor.
+// The tree's real name rides the tooltip so history stays attributable.
+// Alfred rows and team trees (kairos, zeck) carry their own chips.
+function legacyEngineChip(extraClass, harness) {
+  const name = harness || primaryHarnessName();
+  const chip = el("span", "harness-chip legacy" + (extraClass ? " " + extraClass : ""), "legacy engine");
+  chip.title = (name ? name + " harness tree · " : "") + "the legacy engine — it still runs its existing rituals while they migrate to Alfred (Hermes), the successor runtime; reports stay in the tree as read-only history";
+  return chip;
 }
 // loadSchedule — entering #/agents: rituals + runs together (the strip, the
 // health chips and the next-up line read both), then one paint.
@@ -394,8 +418,9 @@ function ritualRow(r) {
   const runs = ritualRuns(r);
   const health = ritualHealth(r, runs);
   const row = el("div", "ritual-row" + (r.valid ? "" : " invalid") + (paused ? " paused" : ""));
-  // runtime — excalibur only until Phase 4 puts Hermes jobs on the board
-  row.append(el("span", "harness-chip ritual-runtime", "excalibur"));
+  // runtime — the primary tree's engine (legacy, retiring); Hermes jobs paint
+  // through hermesJobRow with the alfred chip
+  row.append(legacyEngineChip("ritual-runtime"));
   // name — spirit (its own page) · ritual
   const name = el("span", "ritual-name");
   const sp = el("a", "sprt-spirit", r.spirit);

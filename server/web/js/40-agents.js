@@ -386,7 +386,7 @@ function spiritAskScout() {
 async function fetchSpiritRuns() {
   try {
     const d = await (await fetch("/api/spirits/runs")).json();
-    return { data: d.data || [], queued: d.queued || [], observations: d.observations || [] };
+    return { data: d.data || [], queued: d.queued || [], observations: d.observations || [], primary: d.primary || "" };
   } catch (e) { return { data: [], queued: [] }; }
 }
 
