@@ -17,6 +17,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"manifest/feed"
@@ -37,10 +38,25 @@ type Store struct {
 	harnessName string
 	skillsRoot  string // <vault>/skills — explicit since the harness left the vault
 	Feed        *feed.Store
+	runs        *runMemo // parsed run summaries by file (nil = parse every call)
+}
+
+// runMemo keeps each run report's parsed frontmatter until the file's size or
+// mtime moves. Runs() is asked several times per FEED pass (the delegation
+// index, the failed-run signal, the runs tab) over 700+ reports; re-parsing
+// them all each time was the largest remaining cost of a cold pass.
+type runMemo struct {
+	mu   sync.Mutex
+	byID map[string]runMemoEntry
+}
+type runMemoEntry struct {
+	mod  time.Time
+	size int64
+	sum  RunSummary
 }
 
 func NewStore(root string) *Store {
-	return &Store{root: root, Feed: feed.NewStoreDir(filepath.Join(root, "artifacts", "feed"))}
+	return &Store{root: root, Feed: feed.NewStoreDir(filepath.Join(root, "artifacts", "feed")), runs: &runMemo{byID: map[string]runMemoEntry{}}}
 }
 
 // WithSkillsRoot sets the vault-skills directory explicitly (chainable). The
@@ -148,15 +164,43 @@ func (s *Store) Runs() []RunSummary {
 	dir := filepath.Join(s.root, "artifacts", "runs")
 	entries, _ := os.ReadDir(dir)
 	var out []RunSummary
+	if s.runs != nil {
+		s.runs.mu.Lock()
+		defer s.runs.mu.Unlock()
+	}
+	seen := map[string]bool{}
 	for _, e := range entries {
 		if e.IsDir() || !strings.HasSuffix(e.Name(), ".md") {
 			continue
+		}
+		var info os.FileInfo
+		if s.runs != nil {
+			fi, err := e.Info()
+			if err != nil {
+				continue
+			}
+			info = fi
+			seen[e.Name()] = true
+			if m, ok := s.runs.byID[e.Name()]; ok && m.mod.Equal(fi.ModTime()) && m.size == fi.Size() {
+				out = append(out, m.sum)
+				continue
+			}
 		}
 		sum, _, err := s.parseRun(filepath.Join(dir, e.Name()))
 		if err != nil {
 			continue
 		}
+		if info != nil {
+			s.runs.byID[e.Name()] = runMemoEntry{mod: info.ModTime(), size: info.Size(), sum: sum}
+		}
 		out = append(out, sum)
+	}
+	if s.runs != nil {
+		for name := range s.runs.byID {
+			if !seen[name] {
+				delete(s.runs.byID, name) // the report is gone
+			}
+		}
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Started > out[j].Started })
 	return out

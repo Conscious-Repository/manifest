@@ -18,6 +18,7 @@ const SIGNAL_CAP = 8; // most-overdue signals shown; the rest fold behind "N mor
 let signalsExpanded = false;
 let feedCache = { items: [], signals: [], proposals: [], portalItems: [], consumeItems: [], receipts: [], bankPending: [] };
 let feedLoadError = false; // a network failure must render as an error, not a fake "inbox zero" (§C2)
+let feedLoaded = false; // one successful load — showFeed paints the last inbox before refreshing it
 
 // ⚠ THE STALE-PAINT RACE. /api/feed is the slow endpoint of the two and CONSUME
 // is one chip-click away, painting off /api/consume instead. Without a token the
@@ -81,6 +82,9 @@ const FEED_TAIL_LANES = [ // after the empty-state check, like today
 
 function showFeed() {
   renderFeedFilters();
+  // paint the last known inbox at once and refresh behind it — the fetch used
+  // to be the only thing on screen every time the tab opened
+  if (feedLoaded && feedFilter() !== "consume") renderFeed();
   loadFeed();
   ensureLivePoll(); // a dig/ask spooled from here is watched without leaving the tab
 }
@@ -110,6 +114,7 @@ async function loadFeed() {
   if (next) {
     feedCache = next;
     feedLoadError = false;
+    feedLoaded = true;
     setBadge(els.feedNavBadge, badge);
     diffDigests(feedCache.items); // catch digests landed while unpolled
   } else {
