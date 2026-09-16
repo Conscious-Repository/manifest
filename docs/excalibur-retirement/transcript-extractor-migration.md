@@ -1,13 +1,13 @@
 # Transcript and extractor replacement — implementation checkpoint, 2026-09-16
 
-**Current status:** Granola and Pocket were transferred to Manifest in
-[the ready-connector cutover](ready-connectors-cutover.md), initially in read-only
-continuity mode. Email remains Excalibur-owned. Watermark-only applied imports
-remain disabled. The implementation narrative below is historical.
-
-The replacement code is disabled by default. Granola/Pocket and the retained
-extractors still belong to the live engine. No live state import, duty pause,
-new approval, vault write, or engine shutdown was performed by this change.
+**Current status:** Granola and Pocket transferred to Manifest in
+[the ready-connector cutover](ready-connectors-cutover.md); email subsequently
+transferred as recorded in the [personal email runbook](personal-email-successor.md).
+The three retained extractors still belong to the live engine. Their enablement now requires the
+[extractor ownership substrate](extractor-ownership-substrate.md); that note
+records exact remaining engine, semantic and application gates. No extractor
+cutover or final engine shutdown occurred. The implementation narrative and
+canary observations below describe the earlier checkpoint.
 
 ## Delivered
 

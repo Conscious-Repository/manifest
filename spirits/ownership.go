@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 
 	"manifest/connectorhandoff"
+	"manifest/domainextract"
 )
 
 // Ownership describes routing intent and the legacy file independently. Neither
@@ -39,6 +40,14 @@ func (s *Store) projectOwnership(r *RitualRow) {
 			r.MigrationState, r.MigrationDetail = "blocked", "Successor flag configured without handoff evidence; polling remains blocked."
 		} else {
 			r.ConfiguredOwner = "excalibur"
+		}
+		return
+	}
+	if r.Harness == "excalibur" && r.Spirit == "extractor" && (r.Ritual == "aion" || r.Ritual == "real-estate" || r.Ritual == "ooda-email") {
+		r.MigrationState, r.MigrationDetail = domainextract.Readiness(s.migrationDataDir, s.root, r.Ritual, r.ConfiguredOwner != "")
+		r.LegacyActionable = r.LegacyActionable && s.connectorDispatchGuard(r.Spirit, r.Ritual) == nil
+		if f, err := connectorhandoff.DutyFenceSnapshot(s.root, r.Spirit+"/"+r.Ritual); err == nil {
+			r.ConfiguredOwner = f.Owner
 		}
 		return
 	}

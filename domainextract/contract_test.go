@@ -62,7 +62,8 @@ func TestRecoverVerifiedBatchWithoutModelOrDecisionReplay(t *testing.T) {
 	input := inputFixture()
 	writeInput(t, vault, input)
 	ap := approvals.NewStore(filepath.Join(dir, "artifacts"))
-	s := New(context.Background(), dir, vault, "", Config{Aion: true}, nil, ap)
+	harness := prepareHandoff(t, dir, "aion", 1)
+	s := New(context.Background(), dir, vault, harness, Config{Aion: true}, nil, ap)
 	candidates, e := ValidateReply(input, replyFixture)
 	if e != nil {
 		t.Fatal(e)
@@ -75,7 +76,7 @@ func TestRecoverVerifiedBatchWithoutModelOrDecisionReplay(t *testing.T) {
 	if e = ap.Reject(candidates[0].ID, "reviewed"); e != nil {
 		t.Fatal(e)
 	}
-	j := Job{ID: input.ID(), Input: input, State: "verified", Started: time.Now(), Candidates: candidates}
+	j := Job{Version: 1, OwnershipRevision: 1, ID: input.ID(), Input: input, State: "verified", Started: time.Now(), Candidates: candidates}
 	if e = s.save(j); e != nil {
 		t.Fatal(e)
 	}
@@ -85,6 +86,18 @@ func TestRecoverVerifiedBatchWithoutModelOrDecisionReplay(t *testing.T) {
 	if j.State != "completed" || j.Published != 1 || len(ap.List("pending")) != 0 || len(ap.List("rejected")) != 1 {
 		t.Fatal(j.State, j.Published)
 	}
+	for name, before := range input.Context {
+		after, err := os.ReadFile(filepath.Join(vault, name))
+		if err != nil || string(after) != before {
+			t.Fatal("publication changed vault context", name, err)
+		}
+	}
+	for _, doc := range input.Documents {
+		after, err := os.ReadFile(filepath.Join(vault, doc.Name))
+		if err != nil || string(after) != doc.Text {
+			t.Fatal("publication changed source", err)
+		}
+	}
 }
 func TestInterruptedAndStaleDoNotExecute(t *testing.T) {
 	for _, state := range []string{"running", "verified"} {
@@ -93,9 +106,10 @@ func TestInterruptedAndStaleDoNotExecute(t *testing.T) {
 			input := inputFixture()
 			writeInput(t, vault, input)
 			ap := approvals.NewStore(filepath.Join(dir, "artifacts"))
-			s := New(context.Background(), dir, vault, "", Config{Aion: true}, nil, ap)
+			harness := prepareHandoff(t, dir, "aion", 1)
+			s := New(context.Background(), dir, vault, harness, Config{Aion: true}, nil, ap)
 			candidates, _ := ValidateReply(input, replyFixture)
-			j := Job{ID: input.ID(), Input: input, State: state, Candidates: candidates}
+			j := Job{Version: 1, OwnershipRevision: 1, ID: input.ID(), Input: input, State: state, Candidates: candidates}
 			s.save(j)
 			if state == "verified" {
 				os.WriteFile(filepath.Join(vault, input.Documents[0].Name), []byte("changed"), 0600)

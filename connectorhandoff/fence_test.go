@@ -70,3 +70,27 @@ func TestFencePrepareDoesNotWriteAndRejectsUnknown(t *testing.T) {
 		t.Fatal("unknown source admitted")
 	}
 }
+
+func TestExtractorDutyScope(t *testing.T) {
+	for _, duty := range []string{"extractor/aion", "extractor/real-estate", "extractor/ooda-email"} {
+		root := t.TempDir()
+		f, err := DutyFenceSnapshot(root, duty)
+		if err != nil || f.Owner != Legacy || f.Duty != duty {
+			t.Fatal(f, err)
+		}
+		_, release, err := AcquireDutyFence(root, duty)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, other, err := AcquireDutyFence(root, duty); err == nil {
+			other()
+			t.Fatal("dual claim")
+		}
+		release()
+	}
+	for _, duty := range []string{"extractor/../extractor/aion", "extractor/re-intake", "extractor/unknown"} {
+		if _, _, err := AcquireDutyFence(t.TempDir(), duty); err == nil {
+			t.Fatal("noncanonical duty accepted", duty)
+		}
+	}
+}

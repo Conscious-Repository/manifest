@@ -36,16 +36,19 @@ func (c Config) Enabled(ritual string) bool {
 }
 
 type Job struct {
-	ID         string               `json:"id"`
-	Input      Input                `json:"input"`
-	State      string               `json:"state"`
-	Reason     string               `json:"reason,omitempty"`
-	Started    time.Time            `json:"started"`
-	Finished   time.Time            `json:"finished"`
-	Model      string               `json:"model,omitempty"`
-	SpentUSD   float64              `json:"spentUsd"`
-	Candidates []approvals.Proposal `json:"candidates,omitempty"`
-	Published  int                  `json:"published"`
+	Version           int                  `json:"version"`
+	OwnershipRevision uint64               `json:"ownershipRevision"`
+	Replay            bool                 `json:"replay"`
+	ID                string               `json:"id"`
+	Input             Input                `json:"input"`
+	State             string               `json:"state"`
+	Reason            string               `json:"reason,omitempty"`
+	Started           time.Time            `json:"started"`
+	Finished          time.Time            `json:"finished"`
+	Model             string               `json:"model,omitempty"`
+	SpentUSD          float64              `json:"spentUsd"`
+	Candidates        []approvals.Proposal `json:"candidates,omitempty"`
+	Published         int                  `json:"published"`
 }
 type Service struct {
 	dir, vault, harness string
@@ -106,6 +109,20 @@ func (s *Service) Submit(input Input) (string, error) {
 	if e := input.Validate(); e != nil {
 		return "", e
 	}
+	fence, release, e := s.acquire(input.Ritual)
+	if e != nil {
+		return "", e
+	}
+	notify := false
+	defer func() {
+		release()
+		if notify {
+			select {
+			case s.wake <- struct{}{}:
+			default:
+			}
+		}
+	}()
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	id := input.ID()
@@ -127,18 +144,19 @@ func (s *Service) Submit(input Input) (string, error) {
 		if json.Unmarshal(b, &j) != nil || j.ID != id {
 			return "", fmt.Errorf("extraction job unreadable")
 		}
+		if j.Version != 1 || j.Replay || j.OwnershipRevision != fence.Revision || j.State == "uncertain" || j.State == "refused" {
+			return "", fmt.Errorf("existing extraction held; reconciliation required, replay=false")
+		}
+		notify = j.State == "queued" || j.State == "verified"
 		return id, nil
 	} else if !os.IsNotExist(e) {
 		return "", e
 	}
-	j := Job{ID: id, Input: input, State: "queued", Started: time.Now().UTC()}
+	j := Job{Version: 1, OwnershipRevision: fence.Revision, ID: id, Input: input, State: "queued", Started: time.Now().UTC()}
 	if e := s.save(j); e != nil {
 		return "", e
 	}
-	select {
-	case s.wake <- struct{}{}:
-	default:
-	}
+	notify = true
 	return id, nil
 }
 func (s *Service) Start() {
@@ -188,6 +206,25 @@ func (s *Service) run(path string) {
 		return
 	}
 	s.mu.Unlock()
+	if j.State == "completed" || j.State == "refused" || j.State == "uncertain" {
+		return
+	}
+	if j.Version != 1 || j.Replay || j.OwnershipRevision == 0 {
+		j.State, j.Reason = "uncertain", "historical or unsupported job; quarantined with replay=false"
+		j.Replay = false
+		_ = s.save(j)
+		return
+	}
+	fence, release, err := s.acquire(j.Input.Ritual)
+	if err != nil {
+		return
+	}
+	defer release()
+	if fence.Revision != j.OwnershipRevision {
+		j.State, j.Reason = "refused", "ownership revision changed; stale job cannot publish or execute"
+		_ = s.save(j)
+		return
+	}
 	if j.State == "running" {
 		j.State = "uncertain"
 		j.Reason = "interrupted execution; owner review required"
@@ -216,6 +253,10 @@ func (s *Service) run(path string) {
 		return
 	}
 	if j.State == "queued" {
+		if s.runner == nil || s.runner.ValidateExtractionDuty(j.Input.Ritual) != nil {
+			finish("refused", "extraction authority unavailable")
+			return
+		}
 		prompt, e := j.Input.Prompt()
 		if e != nil {
 			finish("refused", e.Error())

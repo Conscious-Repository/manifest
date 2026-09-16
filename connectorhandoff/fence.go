@@ -33,8 +33,9 @@ type RecordFence struct {
 }
 
 func Managed(duty string) bool {
-	switch filepath.ToSlash(filepath.Clean(duty)) {
-	case "ea-coordinator/granola-sync", "ea-coordinator/pocket-sync", "ea-coordinator/email-sync":
+	switch duty {
+	case "ea-coordinator/granola-sync", "ea-coordinator/pocket-sync", "ea-coordinator/email-sync",
+		"extractor/aion", "extractor/real-estate", "extractor/ooda-email":
 		return true
 	}
 	return false
@@ -202,9 +203,17 @@ func FenceSnapshot(root, source string) (RecordFence, error) {
 	if source != "granola" && source != "pocket" && source != "email" {
 		return RecordFence{}, fmt.Errorf("unsupported connector source")
 	}
-	duty := "ea-coordinator/" + source + "-sync"
+	return DutyFenceSnapshot(root, "ea-coordinator/"+source+"-sync")
+}
+
+// DutyFenceSnapshot reads a canonical duty without creating state. Extractor
+// support here does not establish support in the deployed legacy engine.
+func DutyFenceSnapshot(root, duty string) (RecordFence, error) {
+	if !Managed(duty) || root == "" {
+		return RecordFence{}, fmt.Errorf("unsupported duty or missing harness")
+	}
 	dir := root
-	for _, part := range []string{"vessel", "state", "dispatch-fence", "ea-coordinator", source + "-sync"} {
+	for _, part := range append([]string{"vessel", "state", "dispatch-fence"}, strings.Split(duty, "/")...) {
 		dir = filepath.Join(dir, part)
 		info, err := os.Lstat(dir)
 		if os.IsNotExist(err) {
@@ -226,7 +235,14 @@ func AcquireFence(root, source string) (RecordFence, func(), error) {
 	if source != "granola" && source != "pocket" && source != "email" {
 		return RecordFence{}, nil, fmt.Errorf("unsupported connector source")
 	}
-	duty := "ea-coordinator/" + source + "-sync"
+	return AcquireDutyFence(root, "ea-coordinator/"+source+"-sync")
+}
+
+// AcquireDutyFence retains the shared inode through execution and publication.
+func AcquireDutyFence(root, duty string) (RecordFence, func(), error) {
+	if !Managed(duty) || root == "" {
+		return RecordFence{}, nil, fmt.Errorf("unsupported duty or missing harness")
+	}
 	f, err := lock(root, duty)
 	if err != nil {
 		return RecordFence{}, nil, err

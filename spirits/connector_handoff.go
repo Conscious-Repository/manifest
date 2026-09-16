@@ -1,6 +1,7 @@
 package spirits
 
 import (
+	"fmt"
 	"path/filepath"
 	"strings"
 
@@ -23,6 +24,15 @@ func (s *Store) connectorSource(spirit, ritual string) string {
 	return ""
 }
 func (s *Store) connectorDispatchGuard(spirit, ritual string) error {
+	if spirit == "extractor" && (ritual == "aion" || ritual == "real-estate" || ritual == "ooda-email") && (s.harnessName == "excalibur" || s.harnessName == "" && filepath.Base(s.root) == "excalibur") {
+		f, err := connectorhandoff.DutyFenceSnapshot(s.root, spirit+"/"+ritual)
+		if err != nil {
+			return err
+		}
+		if f.Owner != connectorhandoff.Legacy {
+			return fmt.Errorf("extractor legacy dispatch fenced")
+		}
+	}
 	source := s.connectorSource(spirit, ritual)
 	if source == "" {
 		return nil

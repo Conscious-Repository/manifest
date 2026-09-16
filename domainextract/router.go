@@ -2,6 +2,7 @@ package domainextract
 
 import (
 	"fmt"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -24,7 +25,7 @@ func (r *Router) EngineAlive() (bool, time.Time) {
 	if r.Config.Aion || r.Config.RealEstate {
 		r.mu.RLock()
 		defer r.mu.RUnlock()
-		return r.service != nil, time.Now()
+		return r.service != nil && r.service.ready("aion", "real-estate"), time.Now()
 	}
 	if r.Legacy != nil {
 		return r.Legacy.EngineAlive()
@@ -75,7 +76,7 @@ func (r *Route) EngineAlive() (bool, time.Time) {
 	if r.router.Config.Enabled(r.ritual) {
 		r.router.mu.RLock()
 		defer r.router.mu.RUnlock()
-		return r.router.service != nil, time.Now()
+		return r.router.service != nil && r.router.service.ready(r.ritual), time.Now()
 	}
 	if r.router.Legacy != nil {
 		return r.router.Legacy.EngineAlive()
@@ -87,4 +88,16 @@ func (r *Route) SpoolRunNow(spirit, ritual, request, skill string) error {
 		return fmt.Errorf("wrong extraction route")
 	}
 	return r.router.SpoolRunNow(spirit, ritual, request, skill)
+}
+
+func (s *Service) ready(rituals ...string) bool {
+	for _, ritual := range rituals {
+		if s.cfg.Enabled(ritual) {
+			state, _ := Readiness(filepath.Dir(s.dir), s.harness, ritual, true)
+			if state != "successor-enabled" {
+				return false
+			}
+		}
+	}
+	return true
 }
