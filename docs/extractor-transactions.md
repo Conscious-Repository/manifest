@@ -126,3 +126,89 @@ partial/interrupted writes, restart, duplicate transaction, replay, approval
 settlement crash, corrupt receipts, and unchanged vault/approval bytes on refusal.
 Recovery scenarios synthesize interrupted future-writer records; they do not
 claim this phase executes or safely commits those writes.
+
+## Commit feasibility decision (2026-09-16): outcome B
+
+The narrowest currently safe extractor boundary ends at durable refusal. Even a
+single AION backlog append cannot bind its source/context observations, target
+publication, audit, and approval decision into a safe commit using today's APIs.
+A journal around those calls would document partial effects, not exclude owner
+edits or establish a committed outcome. No transaction coordinator or commit
+support was added, and production routing/configuration remains unchanged.
+
+New receipts carry `feasibility`, an additive version-1 assessment with
+`state: "commitUnavailable"`, `replay: false`, and stable blocker codes. Each
+blocker names the observed boundary and required replacement contract. This is
+separate from transaction `state`: `aborted` means a durable refusal, while
+`uncertain` means evidence requires reconciliation. The assessment is architectural,
+not a claim to have revalidated a live dependency manifest. All seven barriers
+remain even if the declared positive hashes match. Refusal errors also include
+`commitUnavailable` when the journal cannot be written. Old terminal receipts
+are not backfilled or rewritten; absence of `feasibility` never grants authority.
+
+| Blocker code | Inspected implementation |
+| --- | --- |
+| `external-writers-uncoordinated` | `vaultwriter/edit.go` (`UpdateCap`, revision check then rename); `cmd/manifest-sync/main.go` (`cycle`, process-local mutex then git rebase); Obsidian writes are outside these locks |
+| `dependency-manifest-incomplete` | `domainextract/service.go` (`ReadInput`) input enumeration and `contract.go` snapshot encoding; `approvals/extraction_safety.go` V1 positive hashes omit absence, namespace and external identities |
+| `write-set-not-prepared` | `approvals/aion.go`, `re.go`, `resolve.go` read/transform before `WriteCap`; `recontract.go` selects free suffixes, then contractor/property/contract writes |
+| `stores-not-enlisted` | `realestate/cas.go` blob then files.json; `vaultindex/index.go` and `watch.go` SQLite-only transactions; `artifacts/artifacts.go` pool and `object.go` registry mutexes, blob then object publication |
+| `audit-not-transactional` | `vaultwriter/capability.go` mutation then append-only audit, optional audit configuration, no fsync or before/after hashes; `traced` reports landed failures |
+| `settlement-not-transactional` | `approvals/approvals.go` Confirm: apply, write approved, remove pending; Settle independently archives; `email_fence.go` fences cooperating decisions only |
+| `recovery-refusal-only` | `main.go` configures and recovers before serving; `approvals/extraction_journal.go` quarantines unsupported states without mutation/settlement, logging recovery errors while keeping snapshots held |
+
+The router (`domainextract/router.go`) chooses configured successor versus legacy
+routes; sinks (`aion/sink.go`, parameterized for RE) queue inputs, not storage
+transactions. `domainextract.Service` publishes snapshot-bearing proposals via
+`ProposeOnce`; readiness and proposal publication do not confer commit authority.
+OODA-email requires explicit source submission and reaches the same snapshot
+approval gate. Neither routing nor recovery supplies an external editor fence.
+Artifact pool/object publication has no joint vault audit or settlement record;
+a hash-addressed filename alone does not prove current blob bytes or store identity.
+
+### Minimum prerequisite
+
+First establish an **enforced coordination boundary**, by owner decision: either
+one owner-controlled write service that mediates *all* writes (including editor
+and sync imports), or an explicit filesystem protocol every editor, sync process,
+app writer and transaction reader participates in. An advisory flock added only
+to Manifest is insufficient. This task does not change the current hand-editable
+vault doctrine or stop any writer.
+
+Inside that boundary a future implementation must capture the complete consistent
+read manifest (including absence and namespace predicates), pin external store
+identities/revisions, render and capability-check all writes before mutation, and
+persist exact images plus settlement intent. It must publish one durable commit
+generation with hash-linked audit and approval settlement evidence. Separate
+derived indexes may follow that generation only if they cannot supply unpinned
+inputs during validation. Failures after any write remain uncertain unless the
+entire write/audit/settlement evidence proves commit; recovery must preserve owner
+edits and never blindly roll back. A filesystem fence alone does not supply this
+crash/settlement protocol. These are prerequisites, not implemented guarantees.
+
+### Deterministic offline checker
+
+Run the machine-readable architecture assessment (no arguments, config reads,
+store reads, model calls, upstream calls or operational writes):
+
+```sh
+go run ./cmd/extractor-boundary-check
+```
+
+Exit 0 means the assessment printed successfully, **not** that commits are
+available; consumers must inspect `state`. This command reports compiled-in API
+constraints, not live storage health. Run its behavioral witnesses in disposable
+fixtures to verify the boundary against the implementation:
+
+```sh
+go test ./approvals ./vaultwriter -run 'TestExtraction|TestAuditFailure' -count=1
+```
+
+The checker suite demonstrates a source changing while `editMu` is held, partial
+multi-file publication, a real FileStore blob surviving failed files.json
+publication, SQLite projection lag/advance and artifact head drift independent of
+a matching V1 source hash, and a legacy AION write surviving failed approval
+settlement. The same settlement obstacle with a snapshot proves no vault write.
+It also checks machine-readable receipts, unavailable journaling, immutable old
+receipts, duplicate/restart behavior, and the existing interrupted/foreign
+commit/audit/settlement recovery cases. Those recovery cases are synthetic;
+they do not claim successful atomic commit or power-loss certification.

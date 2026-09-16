@@ -46,6 +46,7 @@ type ExtractionTransition struct {
 	Reason string    `json:"reason"`
 }
 type ExtractionTransaction struct {
+	Feasibility          *ExtractionFeasibility `json:"feasibility,omitempty"`
 	Version              int                    `json:"version"`
 	ID                   string                 `json:"id"`
 	Actor                string                 `json:"actor"`
@@ -258,7 +259,8 @@ func (s *Store) journalExtractionRefusal(p Proposal, reason string) (string, err
 		if p.Type == TypeAionBacklog || p.Type == TypeAionResolve || p.Type == TypeAionHeuristic {
 			cap = s.aionCap
 		}
-		r := ExtractionTransaction{Version: 1, ID: id, Actor: "approved-proposal", Capabilities: []string{cap}, ApprovalStore: s.dir, ApprovalID: p.ID, ApprovalDigest: digest, ApprovalBytes: []byte(serialize(p)), Snapshot: p.ExtractionSnapshot,
+		feasibility := CheckExtractionCommitBoundary()
+		r := ExtractionTransaction{Feasibility: &feasibility, Version: 1, ID: id, Actor: "approved-proposal", Capabilities: []string{cap}, ApprovalStore: s.dir, ApprovalID: p.ID, ApprovalDigest: digest, ApprovalBytes: []byte(serialize(p)), Snapshot: p.ExtractionSnapshot,
 			Dependencies: []ExtractionDependency{}, Writes: []ExtractionWrite{}, Missing: []string{"expected-absent paths", "category namespace identity", "vault index identity/revision", "artifact store identity/revision", "complete dependency manifest", "exact capability-checked before/after write set", "atomic write/audit/approval settlement"}}
 		var snap ExtractionSnapshot
 		b, _ := base64.RawURLEncoding.DecodeString(p.ExtractionSnapshot)

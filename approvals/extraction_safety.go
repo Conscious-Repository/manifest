@@ -44,7 +44,7 @@ func (s *Store) checkExtractionSnapshot(p Proposal) error {
 				status = receipt
 			}
 		}
-		return fmt.Errorf("extraction uncertain/stale: %s; %s; pending, replay=false", reason, status)
+		return fmt.Errorf("extraction uncertain/stale: %s; %s; %s; pending, replay=false", reason, ExtractionCommitUnavailable, status)
 	}
 	switch p.Type {
 	case TypeAionBacklog, TypeAionResolve, TypeAionHeuristic, TypeReBacklog, TypeReResolve, TypeReContract:
