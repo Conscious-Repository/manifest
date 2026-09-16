@@ -10,3 +10,10 @@ Changes:
 - Confirmation remains explicit. Portal copy says “confirm & extract” and identifies tasks/decisions as reviewable suggestions.
 - Feed shows the member's last successful mailbox scan or sync trouble; Archive distinguishes awaiting a receipt from a recorded extraction outcome.
 - Tests cover recovery, queue deduplication, preservation of unconfirmed mail, failure-receipt no-replay, existing privacy boundaries, and conversation deduplication.
+
+Live validation (2026-09-15):
+- Manifest deployed at 3bb4c10; engine request fix committed as 6db8489.
+- All four missing confirmed-thread extractions completed: 20260915-212407-8ab1, 20260915-212607-ecd4, 20260915-212707-d6a7, and 20260915-212807-a8a9.
+- Four suggestions were written to pending approvals; two runs correctly produced no new items. Live authenticated Feed shows four proposed tasks/decisions with separate confirm/reject actions. No proposals were approved during verification.
+- Live Feed displays successful sync time and explicit confirm & extract controls; Archive displays durable extraction outcomes. No pending email was confirmed during verification.
+- Focused OODA, Gmail sync, and email-health Go tests passed; scheduler regression passed.
