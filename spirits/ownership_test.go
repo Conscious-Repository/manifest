@@ -13,7 +13,7 @@ func TestOwnershipProjectionAndControls(t *testing.T) {
 		name, harness, spirit, ritual, owner, enabled, state string
 		actionable                                           bool
 	}{
-		{"connector", "excalibur", "ea-coordinator", "email-sync", "", "true", "legacy-retiring", true},
+		{"connector", "excalibur", "ea-coordinator", "email-sync", "", "true", "blocked", false},
 		{"disabled-successor", "excalibur", "ea-coordinator", "pocket-sync", "", "true", "legacy-retiring", true},
 		{"dual-dispatch", "excalibur", "extractor", "aion", "manifest", "true", "blocked", false},
 		{"flag-is-not-proof", "excalibur", "extractor", "aion", "manifest", "false", "blocked", false},

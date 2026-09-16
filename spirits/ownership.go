@@ -7,6 +7,7 @@ import (
 
 	"manifest/connectorhandoff"
 	"manifest/domainextract"
+	"manifest/personalemail"
 )
 
 // Ownership describes routing intent and the legacy file independently. Neither
@@ -18,6 +19,10 @@ func (s *Store) projectOwnership(r *RitualRow) {
 	}
 	r.ConfiguredOwner = s.dutyOwners[r.Spirit+"/"+r.Ritual]
 	r.LegacyActionable = r.Valid && !r.Retired && r.ConfiguredOwner == ""
+	if s.emailDuty(r.Spirit, r.Ritual) {
+		s.projectEmailOwnership(r)
+		return
+	}
 	if source := s.connectorSource(r.Spirit, r.Ritual); source != "" {
 		record, err := connectorhandoff.Read(s.migrationDataDir, source)
 		if err == nil {
@@ -83,4 +88,38 @@ func (s *Store) projectOwnership(r *RitualRow) {
 	default:
 		r.MigrationDetail = "Legacy owner; no successor ownership established."
 	}
+}
+
+// Email has a dedicated activation receipt; connector-handoff/email.json is
+// not written by its worker and cannot establish successor ownership.
+func (s *Store) projectEmailOwnership(r *RitualRow) {
+	r.ConfiguredOwner = connectorhandoff.Legacy
+	r.LegacyActionable = false
+	r.MigrationState = "blocked"
+	r.MigrationDetail = "Email ownership uncertain: matching dispatch fence and worker activation required."
+	f, enabled, err := personalemail.OwnershipSnapshot(s.migrationDataDir, s.root)
+	r.FenceProtected = f.Revision > 0 && f.Owner != connectorhandoff.Legacy
+	if err != nil {
+		r.MigrationDetail += " " + err.Error() + "."
+		return
+	}
+	// A surviving incompatible migration label is an explicit contradiction.
+	record, err := connectorhandoff.Read(s.migrationDataDir, "email")
+	if err != nil && !errors.Is(err, os.ErrNotExist) || err == nil && record.Owner != "manifest" {
+		r.MigrationDetail += " Connector handoff label contradicts activation or is unreadable."
+		return
+	}
+	r.ConfiguredOwner = "manifest"
+	r.SuccessorEnabled = enabled
+	r.MigrationState = "fence-protected"
+	if enabled {
+		r.MigrationState = "successor-enabled"
+	}
+	r.MigrationDetail = "Hash-bound personal-email activation matches dispatch fence; legacy dispatch fenced."
+	if !r.LegacyEnabled {
+		r.MigrationDetail += " Legacy schedule disabled."
+	} else {
+		r.MigrationDetail += " Legacy schedule still enabled; fence protects dispatch."
+	}
+	r.MigrationDetail += " Worker enablement is configuration, not liveness, semantic parity or final decommission."
 }

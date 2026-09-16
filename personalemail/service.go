@@ -289,8 +289,8 @@ func (s *Service) Poll(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	if f.Owner != "manifest" || f.Revision != st.Revision || f.Evidence != st.PlanHash || st.BindingHash != approvals.EvidenceHash(binding+"\x00"+s.Config.Account) {
-		return fmt.Errorf("email ownership/activation mismatch")
+	if err := s.matchOwnership(f, st, binding); err != nil {
+		return err
 	}
 	if s.Config.Sync == nil || *s.Config.Sync {
 		if err = s.pollMailbox(ctx, st); err != nil {

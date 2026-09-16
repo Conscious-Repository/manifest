@@ -23,7 +23,25 @@ func (s *Store) connectorSource(spirit, ritual string) string {
 	}
 	return ""
 }
+func (s *Store) emailDuty(spirit, ritual string) bool {
+	name := s.harnessName
+	if name == "" {
+		name = filepath.Base(filepath.Clean(s.root))
+	}
+	return name == "excalibur" && spirit == "ea-coordinator" && ritual == "email-sync"
+}
+
 func (s *Store) connectorDispatchGuard(spirit, ritual string) error {
+	if s.emailDuty(spirit, ritual) {
+		f, err := connectorhandoff.FenceSnapshot(s.root, "email")
+		if err != nil {
+			return err
+		}
+		if f.Owner != connectorhandoff.Legacy {
+			return fmt.Errorf("email legacy dispatch fenced")
+		}
+	}
+
 	if spirit == "extractor" && (ritual == "aion" || ritual == "real-estate" || ritual == "ooda-email") && (s.harnessName == "excalibur" || s.harnessName == "" && filepath.Base(s.root) == "excalibur") {
 		f, err := connectorhandoff.DutyFenceSnapshot(s.root, spirit+"/"+ritual)
 		if err != nil {

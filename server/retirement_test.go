@@ -70,6 +70,9 @@ func TestRetirementLaunchPaths(t *testing.T) {
 	}
 	retired := 0
 	for _, r := range data.Data {
+		if r.Ritual == "email-sync" && (r.ConfiguredOwner != "excalibur" || r.MigrationState != "blocked" || r.LegacyActionable) {
+			t.Fatalf("email without ownership evidence: %+v", r)
+		}
 		if r.Retired {
 			retired++
 			if r.Enabled || r.NextFire != "" || !strings.Contains(r.PausedReason, "#/agents/") {
@@ -88,7 +91,8 @@ func TestRetirementLaunchPaths(t *testing.T) {
 		}
 	}
 	cast := st.Castables(time.Now())
-	if len(cast) != 3 {
+	// Email without verifiable activation is not advertised as actionable.
+	if len(cast) != 2 {
 		t.Fatalf("connector castables=%d", len(cast))
 	}
 	for _, c := range cast {

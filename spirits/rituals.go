@@ -30,6 +30,8 @@ type RitualRow struct {
 	Harness          string            `json:"harness"`
 	ConfiguredOwner  string            `json:"configuredOwner"`
 	LegacyEnabled    bool              `json:"legacyEnabled"`
+	FenceProtected   bool              `json:"fenceProtected"`
+	SuccessorEnabled bool              `json:"successorEnabled"`
 	LegacyActionable bool              `json:"legacyActionable"`
 	MigrationState   string            `json:"migrationState"`
 	MigrationDetail  string            `json:"migrationDetail"`
