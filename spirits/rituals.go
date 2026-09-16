@@ -27,24 +27,30 @@ import (
 
 // RitualRow is one row of the RITUALS board.
 type RitualRow struct {
-	Model          string            `json:"model"`
-	Provider       string            `json:"provider"`
-	Toolset        string            `json:"toolset"`
-	MaxSteps       string            `json:"maxSteps"`
-	Observation    RitualObservation `json:"observation"`
-	Spirit         string            `json:"spirit"`
-	Ritual         string            `json:"ritual"`
-	Path           string            `json:"path"` // repo-relative ritual file, for the editor
-	Cadence        string            `json:"cadence"`
-	CadenceHuman   string            `json:"cadenceHuman"`
-	NextFire       string            `json:"nextFire"` // RFC3339; "" for on-demand/invalid
-	CeilingUSD     float64           `json:"ceilingUsd"`
-	CeilingDefault bool              `json:"ceilingDefault"` // ceiling came from the chargebook default
-	LastOutcome    string            `json:"lastOutcome"`    // "" = never run
-	LastRunID      string            `json:"lastRunId"`
-	Valid          bool              `json:"valid"`
-	Error          string            `json:"error"`
-	Enabled        bool              `json:"enabled"` // false = paused (manual override allowed unless retired)
+	Harness          string            `json:"harness"`
+	ConfiguredOwner  string            `json:"configuredOwner"`
+	LegacyEnabled    bool              `json:"legacyEnabled"`
+	LegacyActionable bool              `json:"legacyActionable"`
+	MigrationState   string            `json:"migrationState"`
+	MigrationDetail  string            `json:"migrationDetail"`
+	Model            string            `json:"model"`
+	Provider         string            `json:"provider"`
+	Toolset          string            `json:"toolset"`
+	MaxSteps         string            `json:"maxSteps"`
+	Observation      RitualObservation `json:"observation"`
+	Spirit           string            `json:"spirit"`
+	Ritual           string            `json:"ritual"`
+	Path             string            `json:"path"` // repo-relative ritual file, for the editor
+	Cadence          string            `json:"cadence"`
+	CadenceHuman     string            `json:"cadenceHuman"`
+	NextFire         string            `json:"nextFire"` // RFC3339; "" for on-demand/invalid
+	CeilingUSD       float64           `json:"ceilingUsd"`
+	CeilingDefault   bool              `json:"ceilingDefault"` // ceiling came from the chargebook default
+	LastOutcome      string            `json:"lastOutcome"`    // "" = never run
+	LastRunID        string            `json:"lastRunId"`
+	Valid            bool              `json:"valid"`
+	Error            string            `json:"error"`
+	Enabled          bool              `json:"enabled"` // false = paused (manual override allowed unless retired)
 	// Retirement is a code policy; ordinary pauses come from markdown.
 	// PausedReason projects paused_reason, or the retirement policy when retired.
 	Retired          bool   `json:"retired"`
@@ -82,6 +88,7 @@ func (s *Store) Rituals(now time.Time) []RitualRow {
 				continue
 			}
 			row := s.ritualRow(sp.Name(), rdir, rf.Name(), def, now, latest, engErr)
+			s.projectOwnership(&row)
 			row.Observation = observed.For(row.Spirit, row.Ritual)
 			rows = append(rows, row)
 		}
@@ -141,6 +148,7 @@ func (s *Store) ritualRow(spirit, rdir, file string, def float64, now time.Time,
 	row.RetirementReason = s.RetirementReason(spirit, stem)
 	row.Retired = row.RetirementReason != ""
 	row.Enabled = ritualEnabled(fm)
+	row.LegacyEnabled = row.Enabled
 	if !row.Enabled {
 		row.PausedReason = strings.TrimSpace(fm["paused_reason"])
 	}
@@ -206,6 +214,9 @@ func (s *Store) WriteFile(rel, content string) (res LintResult, allowed bool, er
 	if len(parts) == 4 && parts[2] == "rituals" {
 		reason := s.RetirementReason(parts[1], strings.TrimSuffix(parts[3], ".md"))
 		fm, _ := mdfm.Split(content)
+		if owner := s.dutyOwners[parts[1]+"/"+strings.TrimSuffix(parts[3], ".md")]; owner != "" && ritualEnabled(fm) {
+			return LintResult{OK: false, Errors: []string{"legacy enablement refused: duty configured for " + owner}}, true, nil
+		}
 		if reason != "" && ritualEnabled(fm) {
 			return LintResult{OK: false, Errors: []string{reason}}, true, nil
 		}

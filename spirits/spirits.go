@@ -409,7 +409,7 @@ func (s *Store) Spirits() map[string][]string {
 		for _, r := range rits {
 			if !r.IsDir() && strings.HasSuffix(r.Name(), ".md") {
 				name := strings.TrimSuffix(r.Name(), ".md")
-				if s.RetirementReason(e.Name(), name) == "" {
+				if s.RetirementReason(e.Name(), name) == "" && s.dutyOwners[e.Name()+"/"+name] == "" {
 					rituals = append(rituals, name)
 				}
 			}

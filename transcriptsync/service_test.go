@@ -44,6 +44,9 @@ func fixtureService(t *testing.T, source string, h http.HandlerFunc) (*Service, 
 	if _, e := os.Stat(s.statePath(source)); !os.IsNotExist(e) {
 		t.Fatal("preview wrote state")
 	}
+	ritual := filepath.Join(legacy, "spirits", "ea-coordinator", "rituals", source+"-sync.md")
+	os.MkdirAll(filepath.Dir(ritual), 0700)
+	os.WriteFile(ritual, []byte("---\nenabled: false\npaused_reason: fixture handoff\n---\n"), 0600)
 	if _, e := s.Import(source, legacy, "fixture-key", true); e != nil {
 		t.Fatal(e)
 	}
@@ -258,5 +261,39 @@ func TestPollInputEdgesAndRetry(t *testing.T) {
 				t.Fatal("invalid/disabled input filed proposal")
 			}
 		})
+	}
+}
+
+func TestImportRefusesUnpausedLegacyWithoutWriting(t *testing.T) {
+	for _, source := range []string{"granola", "pocket"} {
+		for _, metadata := range []string{"", "---\nenabled: true\n---\n", "---\nenabled: false\n---\n"} {
+			t.Run(source+metadata, func(t *testing.T) {
+				dir, legacy := t.TempDir(), t.TempDir()
+				svc := New(dir, Config{Granola: SourceConfig{Account: "fixture"}, Pocket: SourceConfig{Account: "fixture"}}, nil, nil)
+				watermark := filepath.Join(legacy, "vessel", "state", source, "watermark")
+				os.MkdirAll(filepath.Dir(watermark), 0700)
+				original := []byte("2026-09-10T00:00:00Z\n")
+				os.WriteFile(watermark, original, 0600)
+				if metadata != "" {
+					ritual := filepath.Join(legacy, "spirits", "ea-coordinator", "rituals", source+"-sync.md")
+					os.MkdirAll(filepath.Dir(ritual), 0700)
+					os.WriteFile(ritual, []byte(metadata), 0600)
+				}
+				if _, err := svc.Import(source, legacy, "", false); err != nil {
+					t.Fatal("preview refused", err)
+				}
+				if _, err := svc.Import(source, legacy, "fixture-key", true); err == nil {
+					t.Fatal("unsafe import accepted")
+				}
+				entries, err := os.ReadDir(dir)
+				if err != nil || len(entries) != 0 {
+					t.Fatal("refusal wrote successor state or key")
+				}
+				after, _ := os.ReadFile(watermark)
+				if string(after) != string(original) {
+					t.Fatal("legacy checkpoint changed")
+				}
+			})
+		}
 	}
 }

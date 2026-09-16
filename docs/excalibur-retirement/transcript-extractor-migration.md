@@ -93,6 +93,9 @@ queued/running work, and back up/hash its watermark plus the complete canonical
 approval inventory. While the source is disabled in configuration, repeat the
 import with `-apply -key-file /path/to/existing/key` (or its environment override).
 The importer refuses an existing imported state rather than overwriting it.
+It also requires the legacy ritual file to declare `enabled: false` and a
+nonempty `paused_reason` before an applied import writes state or a key. This
+check does not prove queued/running work has drained; reconcile that separately.
 Approval files remain in place; only checkpoint/credential ownership moves.
 Enable one source only after reconciliation. The state/credential paths are
 `<dataDir>/transcript-sync/<source>/{state.json,key}`. Old files are retained;

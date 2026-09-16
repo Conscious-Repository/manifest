@@ -45,7 +45,7 @@ func (s *Store) Castables(now time.Time) []Castable {
 		})
 	}
 	for _, r := range s.Rituals(now) {
-		if r.Cadence != "" || !r.Valid || !r.Enabled {
+		if r.Cadence != "" || !r.Valid || !r.Enabled || !r.LegacyActionable {
 			continue // scheduled, broken, or paused — not an on-demand cast
 		}
 		if r.Spirit == "sage" && r.Ritual == "skill-cast" {

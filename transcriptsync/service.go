@@ -20,6 +20,7 @@ import (
 
 	"golang.org/x/sys/unix"
 	"manifest/approvals"
+	"manifest/mdfm"
 )
 
 type SourceConfig struct {
@@ -194,6 +195,17 @@ func (s *Service) Import(source, legacyRoot, key string, apply bool) (State, err
 	s.locks[source].Lock()
 	defer s.locks[source].Unlock()
 	if apply {
+		// Importing while the old schedule is enabled creates a stale snapshot
+		// before activation even begins. This is a prerequisite, not proof that
+		// queued/running work drained; the operator must still reconcile it.
+		b, err := os.ReadFile(filepath.Join(legacyRoot, "spirits", "ea-coordinator", "rituals", source+"-sync.md"))
+		if err != nil {
+			return State{}, fmt.Errorf("legacy ritual unreadable; pause and reconcile before import")
+		}
+		fm, _ := mdfm.Split(string(b))
+		if fm["enabled"] != "false" || strings.TrimSpace(fm["paused_reason"]) == "" {
+			return State{}, fmt.Errorf("legacy ritual must have enabled: false and paused_reason before import")
+		}
 		if e := os.MkdirAll(filepath.Join(s.dir, source), 0700); e != nil {
 			return State{}, e
 		}

@@ -90,3 +90,22 @@ const agents = js('40-agents.js');
 assert.match(agents, /showToast\("No agent\/ritual found in the configured runtimes\.", null, "error"\)/);
 assert.doesNotMatch(agents, /found in the excalibur tree/);
 console.log('agents legacy-engine labels passed');
+
+// Schedule ownership comes from the server; a configured flag is not a handoff.
+const ownershipRow = (extra) => context.ritualRow({spirit:'ea-coordinator', ritual:'pocket-sync', valid:true, enabled:true, ceilingUsd:1, harness:'excalibur', path:'spirits/ea-coordinator/rituals/pocket-sync.md', ...extra});
+const legacy = ownershipRow({migrationState:'legacy-retiring', migrationDetail:'State reconciliation required', configuredOwner:'excalibur', legacyActionable:true});
+assert.equal(legacy.querySelector('.ritual-runtime').textContent, 'legacy · retiring');
+assert.match(legacy.querySelector('.ritual-runtime').title, /excalibur harness tree.*spirits\/ea-coordinator\/rituals\/pocket-sync.md/);
+assert.equal(legacy.querySelector('.ritual-acts').children[0].disabled, false);
+const conflict = ownershipRow({migrationState:'ownership-conflict', migrationDetail:'Legacy file remains enabled', configuredOwner:'manifest', legacyActionable:false, legacyEnabled:true, cadence:'0 9 * * *'});
+assert.match(conflict.querySelector('.ritual-runtime').textContent, /manifest · ownership-conflict/);
+assert.equal(conflict.querySelector('.ritual-acts').children[0].disabled, true);
+assert.equal(conflict.querySelector('.ritual-acts').children[1].textContent, 'pause');
+const pending = ownershipRow({enabled:false, migrationState:'handoff-unverified', migrationDetail:'Handoff evidence required', configuredOwner:'manifest', legacyActionable:false, legacyEnabled:false});
+assert.equal(pending.querySelector('.ritual-acts').children.length, 1); // no resume
+const retired = ownershipRow({enabled:false, retired:true, migrationState:'retired', legacyActionable:false});
+assert.equal(retired.querySelector('.ritual-runtime').textContent, 'retired · history');
+assert.equal(retired.querySelector('.ritual-acts').children.length, 1);
+assert.equal(retired.querySelector('.ritual-acts').children[0].disabled, true);
+assert.ok(context.scheduleRuntimeOrder({hermes:{}}, {}) < 0);
+assert.equal(context.scheduleRuntimeOrder({}, {}), 0);

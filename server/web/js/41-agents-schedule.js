@@ -133,6 +133,7 @@ function ritualRuns(r) {
 // silent   the three newest runs all completed with itemsWritten 0
 // Both late and silent are --warn, never --danger.
 function ritualHealth(r, runs) {
+  if (["ownership-conflict", "retirement-conflict", "handoff-unverified"].includes(r.migrationState)) return { state: "unknown", why: r.migrationDetail };
   if (r.retired) return { state: "paused", why: r.retirementReason };
   const observed = r.observation;
   if (observed && ["late", "failed", "paused", "stopped", "unknown", "unconfigured"].includes(observed.health)) return { state: observed.health, why: observed.why || observed.lastError || "" };
@@ -190,6 +191,9 @@ function openHermesOnRuns() {
 }
 
 // ---- the board ----
+function scheduleRuntimeOrder(a, b) {
+  return Number(!a.hermes) - Number(!b.hermes);
+}
 function renderSpiritRituals(rows) {
   spiritRitualRows = rows;
   const host = els.spiritRitualBoard; host.innerHTML = "";
@@ -198,8 +202,8 @@ function renderSpiritRituals(rows) {
   const byName = (a, b) => (a.spirit + "/" + a.ritual).localeCompare(b.spirit + "/" + b.ritual);
   const fireAt = (r) => { const t = new Date(r.nextFire || "").getTime(); return isNaN(t) ? Infinity : t; };
   const groups = { yours: [], internal: [], paused: [] };
-  all.slice().sort(byName).forEach((r) => groups[schedGroupOf(r)].push(r));
-  groups.yours.sort((a, b) => (fireAt(a) - fireAt(b)) || byName(a, b)); // soonest first; invalid (no fire) last
+  all.slice().sort((a, b) => scheduleRuntimeOrder(a, b) || byName(a, b)).forEach((r) => groups[schedGroupOf(r)].push(r));
+  groups.yours.sort((a, b) => scheduleRuntimeOrder(a, b) || (fireAt(a) - fireAt(b)) || byName(a, b)); // soonest first; invalid (no fire) last
   // the re-intake lane: one status row (state chip + bits + details →), never
   // the full policy sentence — that is level two on Settings › Agents
   host.append(reIntakeStatusRow(hermesInfo && hermesInfo.reIntakePrimary));
@@ -454,7 +458,16 @@ function ritualRow(r) {
   const row = el("div", "ritual-row" + (r.valid ? "" : " invalid") + (paused ? " paused" : ""));
   // runtime — the primary tree's engine (legacy, retiring); Hermes jobs paint
   // through hermesJobRow with the alfred chip
-  row.append(legacyEngineChip("ritual-runtime"));
+  const runtime = legacyEngineChip("ritual-runtime", r.harness);
+  if (r.migrationState) {
+    runtime.textContent = r.retired ? "retired · history" : r.migrationState === "legacy-retiring" ? "legacy · retiring" : r.configuredOwner + " · " + r.migrationState;
+    runtime.title = (r.harness || primaryHarnessName()) + " harness tree · " + r.path + " · " + r.migrationDetail;
+  } else if (r.harness && r.harness !== "excalibur") {
+    runtime.textContent = r.harness;
+    runtime.className = "harness-chip ritual-runtime";
+    runtime.title = r.harness + " harness tree · " + r.path;
+  }
+  row.append(runtime);
   // name — spirit (its own page) · ritual
   const name = el("span", "ritual-name");
   const sp = el("a", "sprt-spirit", r.spirit);
@@ -527,12 +540,12 @@ function ritualRow(r) {
   // actions — run now (the spool), pause / resume (enabled: line surgery)
   const acts = el("span", "ritual-acts");
   const run = el("button", "sprt-quiet", "run now");
-  run.disabled = !!r.retired;
-  run.textContent = r.retired ? "retired" : "run now";
-  run.title = r.retirementReason || "spool a run — the engine picks it up within ~5s";
+  run.disabled = !!r.retired || r.legacyActionable === false;
+  run.textContent = r.retired ? "retired" : r.legacyActionable === false ? "legacy blocked" : "run now";
+  run.title = r.retirementReason || (r.legacyActionable === false && r.migrationDetail) || "spool a run — the engine picks it up within ~5s";
   run.onclick = (e) => { e.stopPropagation(); spiritSpool(r.spirit, r.ritual, "", { stay: true }); };
   acts.append(run);
-  if (!r.retired && (r.cadence || paused)) {
+  if (!r.retired && (r.legacyActionable !== false || r.legacyEnabled) && (r.cadence || paused)) {
     const tog = el("button", "sprt-quiet", paused ? "resume" : "pause");
     tog.title = paused ? "delete the enabled: false line — the engine reschedules it"
       : "write enabled: false — the engine unschedules it; run now stays a manual override";
@@ -540,6 +553,7 @@ function ritualRow(r) {
     acts.append(tog);
   }
   row.append(acts);
+  if (r.migrationDetail && !r.retired) row.append(el("div", "ritual-note", r.migrationDetail));
   if (!r.valid && r.error) row.append(el("div", "ritual-error", r.error));
   else if (paused && r.pausedReason) row.append(el("div", "ritual-note", r.pausedReason));
   row.onclick = () => { location.hash = "#/agents/ritual/" + encodeURIComponent(r.spirit) + "/" + encodeURIComponent(r.ritual); };
@@ -959,10 +973,12 @@ async function renderRitualEditor(path) {
   try { raw = (await (await fetch("/api/spirits/file?path=" + encodeURIComponent(path))).json()).content || ""; }
   catch (e) { host.innerHTML = ""; host.append(emptyRow("Couldn't load " + path)); return; }
   const rows = await fetchSpiritRituals();
-  const retirement = rows.find((r) => r.path === path && r.retired);
+  const ownership = rows.find((r) => r.path === path);
+  const retirement = ownership && ownership.retired ? ownership : null;
   const record = parseRitualRecord(raw);
   const cad = cadParse(record.cadence);
   ritEd = {
+    ownership,
     retirement,
     path,
     spirit: spSpirit,
@@ -1010,9 +1026,15 @@ function paintRitualEditor(host) {
     } catch (e) { showToast("Couldn't delete: " + (e.message || e), null, "error"); }
   });
   if (ritEd.retirement) {
-    pause.disabled = true; run.disabled = true; pause.textContent = "retired";
+    pause.disabled = true; run.disabled = true; del.disabled = true; pause.textContent = "retired";
     pause.title = run.title = ritEd.retirement.retirementReason;
     host.append(el("div", "ritual-note", ritEd.retirement.retirementReason));
+  }
+  if (ritEd.ownership && !ritEd.retirement && ritEd.ownership.legacyActionable === false) {
+    run.disabled = true;
+    pause.disabled = !open.enabled;
+    pause.title = run.title = ritEd.ownership.migrationDetail;
+    host.append(el("div", "ritual-note", ritEd.ownership.migrationDetail));
   }
   acts.append(pause, run, rawT, del);
   head.append(acts);
