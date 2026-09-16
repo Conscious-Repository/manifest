@@ -207,6 +207,7 @@ func (s *Server) handleTaskPanel(w http.ResponseWriter, r *http.Request) {
 		"text":         text, // the task's own words — the panel's title off the Tasks route
 		"record":       rec,
 		"thread":       thread,
+		"timeline":     s.taskTimeline(id, thread), // the thread with the board sessions' turns interleaved
 		"conversation": s.taskConversation(id, thread),
 		"threadKind":   s.threadKind(id),
 		"proposals":    s.taskProposals(id),

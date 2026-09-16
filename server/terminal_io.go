@@ -46,6 +46,11 @@ func (s *Server) handleTermTranscript(w http.ResponseWriter, r *http.Request) {
 	}
 	if se.BoardBrief != "" {
 		s.boardTranscriptOverlay(se, &tr, &full)
+		// the task's own activity (assignment, the owner's notes, run markers)
+		// rides along as system lines so this thread reads as the task's
+		if task := conversationTaskLink(s.terminalConversation(se)); task != "" {
+			tr.Turns = mergeThreadTurns(tr.Turns, s.boardThreadTurns(task), after == 0)
+		}
 	}
 	planningTimeline, _ := s.terminalPlanningTimeline(r.Context(), se)
 	writeJSON(w, map[string]any{

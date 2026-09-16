@@ -226,6 +226,8 @@ button.chat-attach-chip { min-height: 44px; max-width: 100%; background: transpa
 .chat-term-cmd > .chat-attach-chips { flex: 1 1 100%; order: -1; margin: 0 0 var(--sp-3); }
 .chat-term-sys { color: var(--base-60); }
 .chat-term-fail { color: var(--base-100); }
+.chat-turn-session { border: 0; background: none; cursor: pointer; color: inherit; font: inherit; padding: 0; }
+.chat-turn-session:hover { color: var(--accent); }
 /* a board run's work order: the task on the summary line, the order behind a fold */
 .chat-term-workorder-fold { flex: 1 1 auto; min-width: 0; }
 .chat-term-workorder-fold > summary { cursor: pointer; color: var(--base-100); }

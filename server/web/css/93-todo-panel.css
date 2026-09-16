@@ -22,6 +22,9 @@ body.tdo-panel-open .tdo-shell > #todosRows { padding-right: var(--sp-8); }
 .tdo-p-thread-kind { color: var(--base-30); text-transform: none; letter-spacing: 0.2px; }
 .tdo-p-linky { border: 0; background: none; color: var(--base-40); cursor: pointer; font-family: var(--mono); font-size: var(--fs-2xs); padding: 0; }
 .tdo-p-linky:hover { color: var(--accent); }
+.tdo-p-c-session { border: 0; background: none; cursor: pointer; color: var(--base-40); padding: 0; }
+.tdo-p-c-session:hover { color: var(--accent); }
+.tdo-p-comment.from-session { border-left: 2px solid var(--base-25); padding-left: var(--sp-4); }
 .tdo-p-empty { font-size: var(--fs-sm); color: var(--base-40); }
 
 .tdo-p-textarea { width: 100%; font: inherit; font-size: var(--fs-md); line-height: 1.45; border: 1px solid var(--line); border-radius: var(--radius-lg); padding: var(--sp-4) var(--sp-5); background: var(--bg); color: var(--base-100); resize: vertical; }

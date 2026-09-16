@@ -538,7 +538,7 @@ async function renderTaskChat(taskID, refetch) {
   head.append(chatArtifactActions(d));
   head.append(info);
   chatMountHeader(head);
-  (d.thread || []).forEach((c) => host.append(chatTaskThreadEntry(c, taskID)));
+  (d.timeline || d.thread || []).forEach((c) => host.append(chatTaskThreadEntry(c, taskID)));
   if (d.inflight) host.append(el("div", "chat-thinking", "✦ " + (d.inflight.name || "agent") + " is working…"));
   if (!(d.thread || []).length && !d.inflight) host.append(emptyRow("no comments yet"));
   appendTaskApprovals(host, d);
@@ -596,6 +596,11 @@ function chatTaskThreadEntry(c, taskID) {
   const foot = el("div", "chat-turn-foot");
   foot.append(el("span", "chat-turn-when", (c.author_name || c.authorName || c.author || "?") + " · " + fmtWhen(c.at)));
   if (c.action && c.action !== "comment") foot.append(el("span", "chat-turn-usd", c.action));
+  if (c.meta?.from === "session" && c.meta.chat) {
+    const link = el("button", "chat-turn-usd chat-turn-session", "in chat ↗");
+    link.onclick = () => { location.hash = "#/chat/a/" + encodeURIComponent(c.meta.chat.agent) + "/" + encodeURIComponent(c.meta.chat.id); };
+    foot.append(link);
+  }
   wrap.append(foot);
   return wrap;
 }
@@ -3378,7 +3383,11 @@ async function chatTermTail(o) {
 // instead of a chip of its own.
 function chatTermMerge(turns, tail) {
   tail.forEach((t) => {
-    if (t.who !== "assistant") { turns.push(t); return; }
+    if (t.who !== "assistant") {
+      // the task thread's projected lines ride every read; keep each once
+      if (t.id && t.id.startsWith("thread:") && turns.some((x) => x.id === t.id)) return;
+      turns.push(t); return;
+    }
     const blocks = (t.blocks || []).filter((b) => !(b.t === "step" && b.cast === "result" && b.id && chatTermPairResult(turns, b)));
     const last = turns[turns.length - 1];
     if (last && last.who === "assistant") { last.blocks = (last.blocks || []).concat(blocks); return; }

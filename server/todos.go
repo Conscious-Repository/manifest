@@ -574,6 +574,9 @@ func (s *Server) handleTaskCheck(w http.ResponseWriter, r *http.Request) {
 		httpError(w, errBadRequest("id is required"))
 		return
 	}
+	if b.Checked {
+		defer s.archiveTaskChats(b.ID) // done: the sessions that worked it leave the active chats
+	}
 	// composite ids route to the owning file (stage 4): completed anywhere =
 	// completed everywhere, because there is only one line in one file.
 	if strings.HasPrefix(b.ID, "prop:") {

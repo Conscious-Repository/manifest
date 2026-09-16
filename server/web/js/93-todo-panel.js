@@ -400,7 +400,7 @@ async function renderTodoPanel(refetch) {
   thHead.append(thActs);
   th.append(thHead);
   const list = el("div", "tdo-p-thread");
-  (d.thread || []).forEach((c) => list.append(todoThreadEntry(c, todoSelId)));
+  (d.timeline || d.thread || []).forEach((c) => list.append(todoThreadEntry(c, todoSelId)));
   if (d.inflight) list.append(todoInflightEntry(d.inflight));
   if (!(d.thread || []).length && !d.inflight) list.append(el("div", "tdo-p-empty", "Add context, ask a question, or tell an agent what to do."));
   th.append(list);
@@ -618,6 +618,15 @@ function todoThreadEntry(c, taskID) {
   if (c.meta && c.meta.persona) head.append(el("span", "tdo-p-c-persona", c.meta.persona));
   // an entry copied in by "→ task" (§3.4f) says so
   if (c.meta && c.meta.from === "chat") { const f = el("span", "tdo-p-c-persona", "from chat"); f.title = "copied from the conversation this task was promoted from"; head.append(f); }
+  // a line the agent's own session said or was told — the same line the chat
+  // thread shows; the chip opens it there
+  if (c.meta && c.meta.from === "session" && c.meta.chat) {
+    e.classList.add("from-session");
+    const f = el("button", "tdo-p-c-persona tdo-p-c-session", "in chat ↗");
+    f.title = "said in the " + (c.meta.chat.agent || "agent") + " session — open it";
+    f.onclick = (ev) => { ev.stopPropagation(); location.hash = "#/chat/a/" + encodeURIComponent(c.meta.chat.agent) + "/" + encodeURIComponent(c.meta.chat.id); };
+    head.append(f);
+  }
   head.append(el("span", "tdo-p-c-when", fmtWhen(c.at)));
   e.append(head);
   if (c.text) {
