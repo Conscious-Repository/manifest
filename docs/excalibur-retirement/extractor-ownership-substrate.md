@@ -127,3 +127,11 @@ checkpoint was available or invented. The live engine therefore remains needed.
 `git diff --check` passed. The read-only live ownership probes and the offline
 shape probe above also passed with the stated blocked/legacy results. No live
 semantic validation was performed.
+
+## Application gate update, 2026-09-16
+
+[The bounded application-safety hold](extractor-application-safety.md) now binds
+successor proposals to source/context evidence and blocks Confirm pending an
+atomic dependency CAS. OODA contract references are validated against bounded
+canonical records. This is a mechanical refusal gate, not a claim that application
+CAS, semantic validation, ownership cutover or final decommission is complete.

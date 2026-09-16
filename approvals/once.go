@@ -21,6 +21,9 @@ func (s *Store) ProposeOnce(p Proposal) (Proposal, error) {
 		path := filepath.Join(s.dir, status, p.ID+".md")
 		if _, e := os.Stat(path); e == nil {
 			old, e := s.parse(path)
+			if e == nil && p.ExtractionSnapshot != "" && old.ExtractionSnapshot != p.ExtractionSnapshot {
+				return Proposal{}, fmt.Errorf("extraction snapshot conflict; reconciliation required, replay=false")
+			}
 			old.Status = status
 			return old, e
 		} else if !os.IsNotExist(e) {

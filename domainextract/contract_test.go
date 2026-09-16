@@ -171,3 +171,45 @@ func TestDisabledExtractionAndInvalidInputs(t *testing.T) {
 		}
 	}
 }
+
+func TestSnapshotBindsContextWithoutChangingReplayIdentity(t *testing.T) {
+	i := inputFixture()
+	before, err := ValidateReply(i, replyFixture)
+	if err != nil {
+		t.Fatal(err)
+	}
+	i.Context["system/aion/backlog.md"] = "changed"
+	after, err := ValidateReply(i, replyFixture)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if before[0].ID != after[0].ID {
+		t.Fatal("context drift must not create a replay identity")
+	}
+	if before[0].ExtractionSnapshot == after[0].ExtractionSnapshot {
+		t.Fatal("context absent from snapshot")
+	}
+}
+
+func TestOodaArtifactProvenance(t *testing.T) {
+	source := "Builder offers renovation for ten dollars."
+	hash := "sha256:" + approvals.EvidenceHash(source)
+	i := Input{Ritual: "ooda-email", Documents: []Document{{Name: hash, Text: source}}, Context: map[string]string{
+		"system/realestate/people.md":              "",
+		"system/realestate/properties/home.md":     "---\ncategories: [property]\n---\n## rocks\n- [ ] Renovation\n",
+		"system/realestate/contractors/builder.md": "---\ncategories: [contractor]\n---\n",
+	}}
+	reply := `{"summary":"Bid found","candidates":[{"type":"re-contract","applyPath":"system/realestate/contracts/bid.md","source":"` + hash + `","payload":{"kind":"bid","contractor":"builder","name":"Bid","total":10,"doc":"` + hash + `","allocations":[{"property":"home","node":"renovation","amount":10}]}}]}`
+	ps, err := ValidateReply(i, reply)
+	if err != nil {
+		t.Fatal(err)
+	}
+	payload, ok := approvals.ParseReContractPayload(ps[0].Body)
+	if !ok || payload.Doc != hash || !strings.Contains(ps[0].Body, "Source: portal email "+hash) || ps[0].ExtractionSnapshot == "" {
+		t.Fatal("lost exact provenance")
+	}
+	i.Documents[0].Text += " drift"
+	if _, err := ValidateReply(i, reply); err == nil {
+		t.Fatal("accepted mismatched source hash")
+	}
+}

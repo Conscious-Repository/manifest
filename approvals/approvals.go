@@ -29,17 +29,18 @@ import (
 // on Confirm, the dashboard writes it to ApplyPath (within the hard allow-list)
 // before recording the decision. Plain proposals leave both empty.
 type Proposal struct {
-	ID        string `json:"id"`
-	Type      string `json:"type"` // "approval" (default) | "create-vault-note" | aion/re twins | "run-errand"
-	Action    string `json:"action"`
-	Agent     string `json:"agent"`
-	Ritual    string `json:"ritual"`  // the filing ritual
-	Section   string `json:"section"` // optional section hint carried in frontmatter (legacy; unused)
-	Created   string `json:"created"` // RFC3339
-	Status    string `json:"status"`  // pending|approved|rejected (= folder)
-	Body      string `json:"body"`
-	ApplyPath string `json:"applyPath"` // target (allow-list only), "" if none
-	Proposed  string `json:"proposed"`  // full new file content, "" if none
+	ExtractionSnapshot string `json:"extractionSnapshot,omitempty"` // application-owned safety evidence
+	ID                 string `json:"id"`
+	Type               string `json:"type"` // "approval" (default) | "create-vault-note" | aion/re twins | "run-errand"
+	Action             string `json:"action"`
+	Agent              string `json:"agent"`
+	Ritual             string `json:"ritual"`  // the filing ritual
+	Section            string `json:"section"` // optional section hint carried in frontmatter (legacy; unused)
+	Created            string `json:"created"` // RFC3339
+	Status             string `json:"status"`  // pending|approved|rejected (= folder)
+	Body               string `json:"body"`
+	ApplyPath          string `json:"applyPath"` // target (allow-list only), "" if none
+	Proposed           string `json:"proposed"`  // full new file content, "" if none
 	// run-errand fields (errands-aside §4): the one errand this proposal
 	// authorizes. Empty for every other type.
 	ErrandText    string `json:"errandText,omitempty"`
@@ -441,6 +442,9 @@ func (s *Store) confirm(id string, e ConfirmEdits) error {
 			p.ApplyPath = np
 		}
 	}
+	if err := s.checkExtractionSnapshot(p); err != nil {
+		return err
+	}
 	if p.ApplyPath != "" {
 		if err := s.apply(p); err != nil {
 			return err
@@ -841,16 +845,17 @@ func (s *Store) parse(path string) (Proposal, error) {
 		typ = "approval"
 	}
 	return Proposal{
-		ID:        fm["id"],
-		Type:      typ,
-		Action:    fm["action"],
-		Agent:     fm["agent"],
-		Ritual:    strings.TrimSpace(fm["ritual"]),
-		Section:   strings.TrimSpace(fm["section"]),
-		Created:   fm["created"],
-		Body:      body, // keeps the ````proposed fence, so the record round-trips
-		ApplyPath: strings.TrimSpace(fm["apply-path"]),
-		Proposed:  proposed,
+		ExtractionSnapshot: strings.TrimSpace(fm["extraction-snapshot"]),
+		ID:                 fm["id"],
+		Type:               typ,
+		Action:             fm["action"],
+		Agent:              fm["agent"],
+		Ritual:             strings.TrimSpace(fm["ritual"]),
+		Section:            strings.TrimSpace(fm["section"]),
+		Created:            fm["created"],
+		Body:               body, // keeps the ````proposed fence, so the record round-trips
+		ApplyPath:          strings.TrimSpace(fm["apply-path"]),
+		Proposed:           proposed,
 		// run-errand payload (errands-aside §4)
 		ErrandText:    strings.TrimSpace(fm["errand-text"]),
 		ErrandAccount: strings.TrimSpace(fm["errand-account"]),
@@ -872,6 +877,7 @@ func serialize(p Proposal) string {
 		Set("id", p.ID).
 		Set("action", p.Action).
 		Set("agent", p.Agent).
+		Set("extraction-snapshot", p.ExtractionSnapshot).
 		Set("ritual", p.Ritual). // omitted when empty (Set skips blanks)
 		Set("section", p.Section).
 		Set("created", p.Created).

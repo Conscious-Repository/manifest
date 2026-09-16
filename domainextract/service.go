@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -295,10 +296,12 @@ func (s *Service) run(path string) {
 		return
 	}
 	for n, p := range j.Candidates {
+		if p.ExtractionSnapshot == "" || p.ExtractionSnapshot != j.Input.snapshot(p) {
+			finish("uncertain", "candidate snapshot absent or changed; reconciliation required, replay=false")
+			return
+		}
 		if _, e = s.ap.ProposeOnce(p); e != nil {
-			j.Reason = "candidate publication incomplete; preserved for reconciliation"
-			s.save(j)
-			s.report(j)
+			finish("uncertain", "candidate publication incomplete or snapshot conflict; reconciliation required, replay=false")
 			return
 		}
 		j.Published = n + 1
@@ -383,6 +386,37 @@ func ReadInput(vault, ritual string, documents []Document) (Input, error) {
 		}
 		i.Context[name] = string(b)
 	}
+	if ritual != "aion" {
+		for _, dir := range []string{"system/realestate/properties", "system/realestate/contractors", "system/realestate/contracts"} {
+			err := fs.WalkDir(root.FS(), dir, func(name string, entry fs.DirEntry, err error) error {
+				if err != nil {
+					return err
+				}
+				if entry.IsDir() {
+					return nil
+				}
+				if entry.Type()&os.ModeSymlink != 0 {
+					return fmt.Errorf("uncertain domain symlink")
+				}
+				if !strings.HasSuffix(name, ".md") {
+					return nil
+				}
+				b, err := root.ReadFile(name)
+				if err != nil {
+					return err
+				}
+				i.Context[name] = string(b)
+				b, _ = json.Marshal(i)
+				if len(b) > 56000 {
+					return fmt.Errorf("domain context exceeds bound")
+				}
+				return nil
+			})
+			if err != nil {
+				return i, fmt.Errorf("canonical domain context unavailable: %w", err)
+			}
+		}
+	}
 	if ritual != "ooda-email" {
 		for n, d := range i.Documents {
 			if filepath.ToSlash(filepath.Clean(d.Name)) != d.Name || !strings.HasSuffix(d.Name, ".md") || strings.Contains(d.Name, "..") || strings.HasPrefix(d.Name, "system/") || strings.HasPrefix(d.Name, "extrinsic/") || filepath.IsAbs(d.Name) {
@@ -395,5 +429,6 @@ func ReadInput(vault, ritual string, documents []Document) (Input, error) {
 			i.Documents[n].Text = string(b)
 		}
 	}
+
 	return i, i.Validate()
 }

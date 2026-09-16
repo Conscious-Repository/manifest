@@ -47,6 +47,9 @@ func (i Input) Validate() error {
 		if strings.TrimSpace(d.Name) == "" || strings.TrimSpace(d.Text) == "" || seen[d.Name] {
 			return fmt.Errorf("invalid extraction source")
 		}
+		if i.Ritual == "ooda-email" && d.Name != "sha256:"+approvals.EvidenceHash(d.Text) {
+			return fmt.Errorf("source artifact hash mismatch")
+		}
 		seen[d.Name] = true
 	}
 	b, _ := json.Marshal(i)
@@ -165,6 +168,9 @@ func ValidateReply(i Input, reply string) ([]approvals.Proposal, error) {
 			if strict(c.Payload, &payload) != nil || payload.Doc != c.Source || payload.Validate() != nil {
 				return fail()
 			}
+			if approvals.ValidateExtractionContractReferences(payload, i.Context) != nil {
+				return fail()
+			}
 			raw, _ := json.Marshal(payload)
 			p.Body = "Source: portal email " + c.Source + "\n\n````re-contract\n" + string(raw) + "\n````"
 			p.Action = "re: contract — " + payload.Name
@@ -198,6 +204,7 @@ func ValidateReply(i Input, reply string) ([]approvals.Proposal, error) {
 			p.Body = "Source: " + c.Source + "\n\n" + aion.RenderPayloadFenceIn(fence, payload)
 			p.Action = domain + ": " + payload.Kind + " — " + payload.Title
 		}
+		p.ExtractionSnapshot = i.snapshot(p)
 		// Deterministic IDs permit recovery after a partially published batch without
 		// replaying a model call or changing an existing owner decision.
 		sum := sha256.Sum256([]byte(i.ID() + "|" + p.Type + "|" + p.ApplyPath + "|" + p.Body))
@@ -245,4 +252,15 @@ func exactKeys(v any, t reflect.Type) bool {
 		}
 	}
 	return true
+}
+
+func (i Input) snapshot(p approvals.Proposal) string {
+	files := map[string]string{}
+	for name, value := range i.Context {
+		files[name] = approvals.EvidenceHash(value)
+	}
+	for _, d := range i.Documents {
+		files[d.Name] = approvals.EvidenceHash(d.Text)
+	}
+	return approvals.EncodeExtractionSnapshot(files, p)
 }
