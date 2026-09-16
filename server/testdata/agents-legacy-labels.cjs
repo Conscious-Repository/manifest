@@ -45,6 +45,7 @@ assert.doesNotMatch(context.legacyEngineChip().title, /excalibur|renamed/);
 vm.runInContext('spiritRuns = { data: [], queued: [], primary: "excalibur" };', context);
 const engineRow = context.runRuntimeChip({ id: 'r1', spirit: 'warden', ritual: 'audit', outcome: 'completed' });
 assert.equal(engineRow.textContent, 'legacy engine');
+assert.equal(context.runRuntimeChip({executor:'manifest'}).textContent, 'manifest');
 assert.match(engineRow.cls, /\blegacy\b/);
 assert.match(engineRow.title, /excalibur harness tree/);
 const teamRow = context.runRuntimeChip({ id: 'r2', harness: 'kairos', spirit: 'kairos', ritual: 'chat', outcome: 'completed' });

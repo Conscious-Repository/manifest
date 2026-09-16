@@ -13,6 +13,7 @@ package server
 import (
 	"context"
 	"fmt"
+	"manifest/domainextract"
 	"net/http"
 	"path"
 	"strings"
@@ -277,6 +278,20 @@ func (s *Server) SpoolOodaEmailExtract(cand gmailsync.Candidate, hash string) bo
 		return true
 	} // accepted runs are never blindly replayed
 	req := s.oodaEmailRequest(cand, hash)
+	if s.domainExtraction != nil && s.domainExtraction.Config.Enabled("ooda-email") {
+		input, err := domainextract.ReadInput(s.domainExtraction.Vault, "ooda-email", []domainextract.Document{{Name: "sha256:" + hash, Text: cand.Note}})
+		if err != nil {
+			return false
+		}
+		// Keep matching context but never accept the legacy request's truncation.
+		prefix, _, ok := strings.Cut(req, "\n--- THE NOTE")
+		if !ok {
+			return false
+		}
+		input.Context["portal-records"] = prefix
+		_, err = s.domainExtraction.Submit(input)
+		return err == nil
+	}
 	if err := s.spirits.SpoolRunNow("extractor", "ooda-email", req, ""); err != nil {
 		if err != spirits.ErrAlreadyActive {
 			// visible but non-fatal: the confirm stands, the spool retries
@@ -351,6 +366,9 @@ func (s *Server) ReconcileOodaEmailExtracts() {
 		return
 	}
 	alive, _ := s.spirits.EngineAlive()
+	if s.domainExtraction != nil && s.domainExtraction.Config.Enabled("ooda-email") {
+		alive = true
+	}
 	if !alive {
 		return
 	}

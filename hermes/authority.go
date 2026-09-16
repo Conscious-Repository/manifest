@@ -112,6 +112,9 @@ func (r *Runner) dutyAuthority(req Request) (DutyAuthority, error) {
 	if req.Toolsets != "" && req.Toolsets != strings.Join(append(append([]string{}, a.Tools...), a.MCP), ",") {
 		return a, refuse("tool override differs from duty authority")
 	}
+	if claudeDutyAllowed(req.MigratedDuty, a) {
+		return a, nil
+	}
 	if a.Provider != "deepseek-local" || a.Model != "deepseek-v4.1-flash" || *a.CeilingUSD != 0 {
 		return a, refuse("unsupported zero-cost successor identity")
 	}

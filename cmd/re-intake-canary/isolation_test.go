@@ -17,6 +17,7 @@ import (
 // Fixed MigratedDuty takes Runner.Run's early runSuccessor return. Its reachable
 // effects are one temporary usage file, isolated Python, and one fixed HTTP POST.
 // No legacy CLI, proposals parser, production package, or writer is reachable.
+// The subscription branch excludes extractor/re-intake by exact duty and provider.
 // Hash changes require repeating that branch-sensitive review, not blind refresh.
 func TestCanarySourceCallGraphIsolation(t *testing.T) {
 	for path, allowed := range map[string]string{
@@ -129,10 +130,15 @@ func TestCanarySourceCallGraphIsolation(t *testing.T) {
 // Re-audited for policy-aware receipt 36: the early successor branch only
 // creates a temporary usage file and runs isolated Python; authority and usage
 // checks are pure, fallback still refuses, and no production writer is reachable.
+// Re-audited 2026-09-16: claudeDutyAllowed rejects the fixed re-intake duty
+// before inspecting subscription authority. The canary retains the exact local
+// provider, so Runner.Run still returns through runSuccessor only.
 var reviewedSuccessorSources = map[string]string{
-	"../../hermes/runner.go":    "f97d593a97fdc53e17c80b676a0fdf34b3171dcdc1f1649ccbb601e1e7e0a841",
-	"../../hermes/successor.go": "27d4d63b5ce75faa2e1be6e837cf117f1d45a3e1fdc0e0ff1026231f695aa65a",
-	"../../hermes/successor.py": "a7737229609b18c627c720f466858045b7aa06b4e03ed29ce1c0774d8385ae5c",
-	"../../hermes/authority.go": "e70c31d863b4858d6d4733bc05e9bde7ed0cbac0942c095494c5dcb72ba02092",
-	"../../hermes/fallback.go":  "361d54087bd0eb76a98ee1014717e86632c7f037ab5dab4643528f91142f98e6",
+	"../../hermes/claude_successor.py": "55f426b17ec69b530a92a7d8b13dd19c047dc8a14dfd77761b46c601e4878720",
+	"../../hermes/claude_successor.go": "43b67c71795aad78d553dfcb18c7c7250e88d75ab0658791ff6480741d31e62f",
+	"../../hermes/runner.go":           "d30e9e237838dbdfe30e6d9403c2f8707f8d8f5785eb8d98c9d01d4e16a2c1d2",
+	"../../hermes/successor.go":        "27164fb50d86de4558218552054211252607249982fd2b951c4688627cc982a4",
+	"../../hermes/successor.py":        "a7737229609b18c627c720f466858045b7aa06b4e03ed29ce1c0774d8385ae5c",
+	"../../hermes/authority.go":        "6ab63dfbbaea01e289ecbb1eba3bf52dbc2cc8751915056dda5a014d1acaede5",
+	"../../hermes/fallback.go":         "361d54087bd0eb76a98ee1014717e86632c7f037ab5dab4643528f91142f98e6",
 }

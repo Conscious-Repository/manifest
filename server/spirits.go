@@ -722,12 +722,20 @@ func (s *Server) handleSpiritsRunNow(w http.ResponseWriter, r *http.Request) {
 		httpError(w, err)
 		return
 	}
+	if s.transcriptSync != nil && b.Spirit == "ea-coordinator" && ((b.Ritual == "granola-sync" && s.transcriptSync.Enabled("granola")) || (b.Ritual == "pocket-sync" && s.transcriptSync.Enabled("pocket"))) {
+		http.Error(w, "connector owned by Manifest; use Settings → Portals → poll", http.StatusConflict)
+		return
+	}
 	if reason := s.spirits.RetirementReason(b.Spirit, b.Ritual); reason != "" {
 		w.WriteHeader(http.StatusConflict)
 		writeJSON(w, map[string]any{"retired": true, "error": reason})
 		return
 	}
-	if err := s.spirits.SpoolRunNow(b.Spirit, b.Ritual, b.Request, b.Skill); err != nil {
+	spool := s.spirits.SpoolRunNow
+	if s.domainExtraction != nil {
+		spool = s.domainExtraction.SpoolRunNow
+	}
+	if err := spool(b.Spirit, b.Ritual, b.Request, b.Skill); err != nil {
 		if errors.Is(err, spirits.ErrAlreadyActive) {
 			w.WriteHeader(http.StatusConflict) // the ritual is already queued/running
 			writeJSON(w, map[string]any{"active": true, "error": "already queued or running"})

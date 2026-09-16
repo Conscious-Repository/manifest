@@ -31,6 +31,7 @@ import (
 	"manifest/contacts"
 	"manifest/daily"
 	"manifest/decisions"
+	"manifest/domainextract"
 	"manifest/errands"
 	"manifest/fundraising"
 	"manifest/geocode"
@@ -53,6 +54,7 @@ import (
 	"manifest/tasks"
 	"manifest/teamportal"
 	"manifest/threads"
+	"manifest/transcriptsync"
 	"manifest/vault"
 	"manifest/vaultindex"
 	"manifest/vaultwriter"
@@ -127,12 +129,27 @@ func main() {
 	// system/realestate/backlog.md decision log). A note tagged for both
 	// reaches both sinks — each files against its own record.
 	var spiritsStore *spirits.Store
+	var extractionRouter *domainextract.Router
 	var aionSink *aion.ExtractSink
 	var reSink *aion.ExtractSink
 	if cfg.ExcaliburPath != "" {
 		spiritsStore = spirits.NewStore(cfg.ExcaliburPath).WithHarnessName("excalibur").
 			WithSkillsRoot(filepath.Join(cfg.VaultPath, "skills"))
-		aionSink = aion.NewExtractSink(aion.ExtractorDomain, cfg.VaultPath, cfg.SystemRoot, cfg.ExtrinsicRoot, cfg.DataDir, spiritsStore)
+		owners := map[string]string{}
+		if cfg.TranscriptSync.Granola.Enabled {
+			owners["ea-coordinator/granola-sync"] = "manifest"
+		}
+		if cfg.TranscriptSync.Pocket.Enabled {
+			owners["ea-coordinator/pocket-sync"] = "manifest"
+		}
+		for _, ritual := range []string{"aion", "real-estate", "ooda-email"} {
+			if cfg.DomainExtraction.Enabled(ritual) {
+				owners["extractor/"+ritual] = "manifest"
+			}
+		}
+		spiritsStore.WithDutyOwners(owners)
+		extractionRouter = &domainextract.Router{Config: cfg.DomainExtraction, Vault: cfg.VaultPath, Legacy: spiritsStore}
+		aionSink = aion.NewExtractSink(aion.ExtractorDomain, cfg.VaultPath, cfg.SystemRoot, cfg.ExtrinsicRoot, cfg.DataDir, extractionRouter.For("aion"))
 		aionSink.Start(ctx)
 		reSink = aion.NewExtractSink(aion.DomainSpec{
 			Name:       "realestate",
@@ -140,7 +157,7 @@ func main() {
 			Spirit:     "extractor",
 			Ritual:     "real-estate",
 			Request:    "extract real-estate items from these vault notes:",
-		}, cfg.VaultPath, cfg.SystemRoot, cfg.ExtrinsicRoot, cfg.DataDir, spiritsStore)
+		}, cfg.VaultPath, cfg.SystemRoot, cfg.ExtrinsicRoot, cfg.DataDir, extractionRouter.For("real-estate"))
 		reSink.Start(ctx)
 	}
 	// THE vault watcher (kernel-followups F2): one fsnotify descriptor set,
@@ -816,6 +833,15 @@ func main() {
 			hs = append(hs, server.Harness{Name: ref.Name, Surface: ref.Surface, Spirits: sp, Approvals: ap})
 		}
 		srv.UseHarnesses(hs) // sets the primary spirits+approvals fields too
+		if len(hs) > 0 && (cfg.TranscriptSync.Granola.Enabled || cfg.TranscriptSync.Pocket.Enabled) {
+			var transcriptIndex *transcriptsync.Index
+			if vix != nil {
+				transcriptIndex = transcriptsync.NewIndex(vix.DB())
+			}
+			syncer := transcriptsync.New(cfg.DataDir, cfg.TranscriptSync, transcriptIndex, hs[0].Approvals)
+			srv.UseTranscriptSync(syncer)
+			syncer.Start(ctx)
+		}
 		if adapter, err := manifestmcp.New(cfg.VaultPath, cfg.DataDir, cfg.SystemRoot); err != nil {
 			log.Fatalf("manifest operations: %v", err)
 		} else {
@@ -836,6 +862,13 @@ func main() {
 				Enabled: true, Bin: cfg.Hermes.Bin, Model: cfg.Hermes.Model, AnnotationPython: cfg.Hermes.AnnotationPython,
 				Duties: cfg.Hermes.Duties, Toolsets: cfg.Hermes.Toolsets, TimeoutSeconds: cfg.Hermes.TimeoutSeconds,
 			}), orDefault(cfg.Hermes.ReadToolsets, DefaultHermesReadToolsets))
+		}
+		if extractionRouter != nil && (cfg.DomainExtraction.Aion || cfg.DomainExtraction.RealEstate || cfg.DomainExtraction.OodaEmail) {
+			runner := hermes.NewRunner(hermes.Config{Enabled: cfg.Hermes.Enabled, Duties: cfg.Hermes.Duties})
+			extraction := domainextract.New(ctx, cfg.DataDir, cfg.VaultPath, cfg.ExcaliburPath, cfg.DomainExtraction, runner, hs[0].Approvals)
+			extractionRouter.Attach(extraction)
+			srv.UseDomainExtraction(extractionRouter)
+			extraction.Start()
 		}
 		srv.UseAionSink(sinkFan{aionSink, reSink}) // transcript-confirm → instant extraction spool (both domains)
 		// email-sync auto-append (standing consent): a confirmed thread note

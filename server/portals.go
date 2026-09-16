@@ -67,7 +67,14 @@ func (s *Server) portalRows() []panelRow {
 	}
 	rows = append(rows, s.calendarPortalRow())
 	rows = append(rows, s.gmailPortalRow())
-	rows = append(rows, s.heypocketPortalRow())
+	if s.transcriptSync != nil && s.transcriptSync.Enabled("pocket") {
+		rows = append(rows, s.transcriptPortalRow("pocket"))
+	} else {
+		rows = append(rows, s.heypocketPortalRow())
+	}
+	if s.transcriptSync != nil && s.transcriptSync.Enabled("granola") {
+		rows = append(rows, s.transcriptPortalRow("granola"))
+	}
 	rows = append(rows, s.consumeXPortalRow())
 	rows = append(rows, s.consumeSiteRows()...)
 	rows = append(rows, s.deepseekPortalRow()) // the testable lab conduit (Phase 5a)
@@ -184,6 +191,9 @@ func (s *Server) portalService(w http.ResponseWriter) (*portals.Service, bool) {
 // handlePortalKey sets/replaces an api-key portal's credentials (paste → save →
 // auto-test). The key is written 0600 and never echoed back.
 func (s *Server) handlePortalKey(w http.ResponseWriter, r *http.Request) {
+	if s.handleTranscriptPortal(w, r, "key") {
+		return
+	}
 	if r.PathValue("id") == heypocketID {
 		s.handleHeypocketKey(w, r)
 		return
@@ -222,6 +232,9 @@ func (s *Server) handlePortalKey(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handlePortalTest(w http.ResponseWriter, r *http.Request) {
+	if s.handleTranscriptPortal(w, r, "test") {
+		return
+	}
 	if r.PathValue("id") == heypocketID {
 		s.handleHeypocketTest(w, r)
 		return
@@ -253,6 +266,9 @@ func (s *Server) handlePortalTest(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handlePortalPoll(w http.ResponseWriter, r *http.Request) {
+	if s.handleTranscriptPortal(w, r, "poll") {
+		return
+	}
 	if r.PathValue("id") == heypocketID {
 		// engine-synced — nothing for manifest to poll; just refresh the row
 		writeJSON(w, s.heypocketPortalRow())
@@ -284,6 +300,9 @@ func (s *Server) handlePortalPoll(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handlePortalDisconnect(w http.ResponseWriter, r *http.Request) {
+	if s.handleTranscriptPortal(w, r, "disconnect") {
+		return
+	}
 	if r.PathValue("id") == deepseekID {
 		s.handleDeepseekDisconnect(w, r)
 		return

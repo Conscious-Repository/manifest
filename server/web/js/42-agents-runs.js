@@ -371,6 +371,11 @@ function runDeliverables(body) {
 // un-tagged report — the primary tree's legacy engine, labelled as such so a
 // historical report never reads as the successor's work.
 function runRuntimeChip(r) {
+  if (r.executor === "manifest") {
+    const chip = el("span", "harness-chip", "manifest");
+    chip.title = "Manifest extraction · bounded reasoning · owner-reviewed proposals";
+    return chip;
+  }
   if (r.hermes) {
     const chip = el("span", "harness-chip alfred", r.harness || "alfred");
     chip.title = r.hermes.source === "ledger" ? "an in-process Hermes turn (manifest's ledger)" : "Hermes cron fire · " + (r.hermes.source || "") + (r.hermes.model ? " · " + r.hermes.model : "");

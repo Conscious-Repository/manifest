@@ -32,6 +32,7 @@ import (
 	"manifest/contacts"
 	"manifest/daily"
 	"manifest/decisions"
+	"manifest/domainextract"
 	"manifest/errands"
 	"manifest/fundraising"
 	"manifest/geocode"
@@ -52,6 +53,7 @@ import (
 	"manifest/spirits"
 	"manifest/tasks"
 	"manifest/teamportal"
+	"manifest/transcriptsync"
 	"manifest/vaultindex"
 	"manifest/vaultwriter"
 	"manifest/writing"
@@ -124,7 +126,9 @@ type Server struct {
 	// Signals (app-derived FEED cards: cold contacts, stalled Rocks). Nilable.
 	signals *signals.Service
 	// Portals (external realms — ClickUp, Benchling — polled into the FEED). Nilable.
-	portals *portals.Service
+	portals          *portals.Service
+	transcriptSync   *transcriptsync.Service
+	domainExtraction *domainextract.Router
 	// portalCardsCached: the notices lane, built once per portalCardsTTL
 	portalCardsMu   sync.Mutex
 	portalCardsAt   time.Time

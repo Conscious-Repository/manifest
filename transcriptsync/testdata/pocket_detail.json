@@ -1,0 +1,26 @@
+{
+  "success": true,
+  "data": {
+    "id": "rec_fixture",
+    "title": "Fixture conversation",
+    "duration": 90,
+    "state": "completed",
+    "recording_at": "2026-07-29T18:43:33Z",
+    "transcript": {
+      "segments": [
+        {
+          "speaker": "SPEAKER_00",
+          "text": "First synthetic turn."
+        },
+        {
+          "speaker": "SPEAKER_00",
+          "text": "Second synthetic turn."
+        },
+        {
+          "speaker": "SPEAKER_01",
+          "text": "A reply."
+        }
+      ]
+    }
+  }
+}

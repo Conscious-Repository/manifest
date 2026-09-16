@@ -36,6 +36,7 @@ const heartbeatFresh = 90 * time.Second
 type Store struct {
 	root        string
 	harnessName string
+	dutyOwners  map[string]string
 	skillsRoot  string // <vault>/skills — explicit since the harness left the vault
 	Feed        *feed.Store
 	runs        *runMemo // parsed run summaries by file (nil = parse every call)
@@ -73,6 +74,7 @@ func (s *Store) Root() string { return s.root }
 
 // RunSummary is one run report's frontmatter, as the runs list renders it.
 type RunSummary struct {
+	Executor     string  `json:"executor,omitempty"`
 	ID           string  `json:"id"` // report filename stem
 	Run          string  `json:"run"`
 	Spirit       string  `json:"spirit"`
@@ -239,6 +241,7 @@ func (s *Store) parseRun(path string) (RunSummary, string, error) {
 		Ritual:        fm["ritual"],
 		Request:       fm["request"],
 		Started:       fm["started"],
+		Executor:      fm["executor"],
 		Finished:      fm["finished"],
 		Outcome:       fm["outcome"],
 		Steps:         n("steps"),
@@ -337,6 +340,9 @@ const MaxRequestChars = maxRequestChars
 // engine loads for this run (the command bar casts skills through sage); empty
 // for none.
 func (s *Store) SpoolRunNow(spirit, ritual, request, skill string) error {
+	if owner := s.dutyOwners[spirit+"/"+ritual]; owner != "" {
+		return fmt.Errorf("%s/%s is owned by %s; legacy launch refused", spirit, ritual, owner)
+	}
 	if !validID(spirit) || !validID(ritual) {
 		return fmt.Errorf("bad spirit/ritual name")
 	}
@@ -420,4 +426,14 @@ func validID(s string) bool {
 		return false
 	}
 	return true
+}
+
+// WithDutyOwners freezes ownership before starting watchers. Every legacy spool
+// entry point, including delegation and feed retry, shares this guard.
+func (s *Store) WithDutyOwners(owners map[string]string) *Store {
+	s.dutyOwners = map[string]string{}
+	for duty, owner := range owners {
+		s.dutyOwners[duty] = owner
+	}
+	return s
 }

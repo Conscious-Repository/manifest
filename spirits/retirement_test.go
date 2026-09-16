@@ -50,3 +50,12 @@ func TestPhase2HarnessMetadata(t *testing.T) {
 		t.Fatalf("retired metadata count=%d", n)
 	}
 }
+
+func TestMigratedDutyCannotUseLegacySpool(t *testing.T) {
+	store := NewStore(t.TempDir()).WithDutyOwners(map[string]string{"extractor/aion": "manifest", "ea-coordinator/pocket-sync": "manifest"})
+	for _, pair := range [][2]string{{"extractor", "aion"}, {"ea-coordinator", "pocket-sync"}} {
+		if err := store.SpoolRunNow(pair[0], pair[1], "fixture", ""); err == nil {
+			t.Fatal("legacy spool accepted migrated duty")
+		}
+	}
+}

@@ -1,0 +1,10 @@
+{
+  "success": true,
+  "data": {
+    "id": "rec_fixture",
+    "title": "Fixture conversation",
+    "duration": 90,
+    "state": "pending",
+    "recording_at": "2026-07-29T18:43:33Z"
+  }
+}

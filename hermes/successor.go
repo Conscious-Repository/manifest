@@ -111,5 +111,8 @@ func (r *Runner) DutyEvidence(duty string) map[string]any {
 	if err != nil {
 		return nil
 	}
+	if a.Provider == "claude-sub" {
+		return map[string]any{"provider": a.Provider, "model": a.Model, "tools": []string{"none"}, "mcp": a.MCP, "timeoutSeconds": a.TimeoutSeconds, "enforcedMaxSteps": 1, "ceilingUsd": *a.CeilingUSD, "fallback": false, "isolation": "landlock+seccomp", "cost_telemetry": "CLI reported; requires verified completion"}
+	}
 	return map[string]any{"cost_policy": a.CostPolicy, "cost_telemetry": "unavailable", "provider_binding": a.ProviderBinding, "endpoint": a.Endpoint, "provider": a.Provider, "model": a.Model, "tools": []string{"none"}, "mcp": a.MCP, "timeoutSeconds": a.TimeoutSeconds, "maxSteps": a.MaxSteps, "enforcedMaxSteps": 1, "ceilingUsd": 0, "fallback": false, "isolation": "landlock+seccomp"}
 }

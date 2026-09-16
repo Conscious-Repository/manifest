@@ -228,6 +228,9 @@ func (r *Runner) Run(ctx context.Context, req Request) (Result, error) {
 		if err != nil {
 			return Result{}, err
 		}
+		if a.Provider == "claude-sub" {
+			return r.runClaudeSuccessor(ctx, req, a)
+		}
 		return r.runSuccessor(ctx, req, a)
 	}
 	if !r.Enabled() {
