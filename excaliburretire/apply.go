@@ -50,7 +50,9 @@ func Unavailable(data string) bool {
 }
 
 // Apply has no data mutation callback: its only effect besides receipts is
-// service retirement. All six shared fence locks span validation and stop/mask.
+// service retirement. The three paused extractor locks span validation and
+// stop/mask. Migrated lanes remain protected by Manifest ownership fences and
+// live successors, whose workers hold their locks; Build verifies all six lanes.
 func Apply(c Config, m Manager, plan []byte, expected string) error {
 	if !connectorhandoff.ValidHash(expected) || Hash(plan) != expected {
 		return fmt.Errorf("plan hash mismatch")
@@ -84,7 +86,7 @@ func Apply(c Config, m Manager, plan []byte, expected string) error {
 			releases[i]()
 		}
 	}()
-	for _, duty := range Duties {
+	for _, duty := range Paused {
 		// Never create a missing fence to make an uncertain state look complete.
 		f, e := connectorhandoff.DutyFenceSnapshot(c.Root, duty)
 		if e != nil || f.Revision == 0 {

@@ -28,7 +28,11 @@ func (m *manager) Snapshot() ([]Service, []string, error) {
 	if m.retired {
 		active, enabled = "inactive", "masked"
 	}
-	return []Service{{Name: engineUnit, Active: active, Enabled: enabled}}, m.blockers, nil
+	return []Service{
+		{Name: engineUnit, Active: active, Enabled: enabled},
+		{Name: "manifest-personal-email.service", Active: "active", Enabled: "enabled"},
+		{Name: "manifest-transcripts.service", Active: "active", Enabled: "enabled"},
+	}, m.blockers, nil
 }
 func (m *manager) Retire() error {
 	m.calls++
@@ -211,5 +215,70 @@ func TestInventoryFailClosed(t *testing.T) {
 	}
 	if e := Apply(c, m, p.Bytes(), p.Hash()); e == nil {
 		t.Fatal("blocked plan accepted")
+	}
+}
+
+// Separate open file descriptions contend via the same flock used by workers.
+func TestApplyLockScope(t *testing.T) {
+	for _, busy := range []string{"", "extractor/aion", "extractor/ooda-email", "extractor/real-estate"} {
+		t.Run("busy="+busy, func(t *testing.T) {
+			c, m := fixture(t)
+			for _, duty := range []string{"ea-coordinator/email-sync", "ea-coordinator/granola-sync", "ea-coordinator/pocket-sync", busy} {
+				if duty == "" {
+					continue
+				}
+				_, release, err := connectorhandoff.AcquireDutyFence(c.Root, duty)
+				if err != nil {
+					t.Fatal(err)
+				}
+				t.Cleanup(release)
+			}
+			before := Build(c, m)
+			if len(before.Blockers) != 0 || len(before.Lanes) != 6 {
+				t.Fatalf("incomplete plan: %+v", before)
+			}
+			m.mutate = func() {
+				for _, duty := range Paused {
+					_, release, err := connectorhandoff.AcquireDutyFence(c.Root, duty)
+					if err == nil {
+						release()
+						t.Fatalf("extractor lock not held during stop: %s", duty)
+					}
+				}
+			}
+			err := Apply(c, m, before.Bytes(), before.Hash())
+			if busy != "" {
+				if err == nil || err.Error() != "duty busy or uncertain" || m.calls != 0 || Retired(c.DataDir) {
+					t.Fatalf("extractor contention did not refuse before stop: err=%v calls=%d", err, m.calls)
+				}
+				return
+			}
+			if err != nil || m.calls != 1 || !Retired(c.DataDir) {
+				t.Fatalf("migrated worker locks blocked retirement: err=%v calls=%d", err, m.calls)
+			}
+			after := Build(c, m)
+			if len(after.Blockers) != 0 || len(after.Lanes) != 6 || !preserved(before, after) {
+				t.Fatal("post-stop ownership, continuity or preserved state changed")
+			}
+			for _, service := range after.Services {
+				if service.Name != engineUnit && (service.Active != "active" || service.Enabled != "enabled") {
+					t.Fatalf("successor interrupted: %+v", service)
+				}
+			}
+		})
+	}
+}
+
+func TestApplyRefusesPostStopSuccessorFailure(t *testing.T) {
+	c, m := fixture(t)
+	p := Build(c, m)
+	m.mutate = func() {
+		m.blockers = []string{"manifest-personal-email.service: successor service not active and enabled"}
+	}
+	if err := Apply(c, m, p.Bytes(), p.Hash()); err == nil || !strings.Contains(err.Error(), "post-stop preconditions uncertain") {
+		t.Fatalf("post-stop successor failure accepted: %v", err)
+	}
+	if m.calls != 1 || Retired(c.DataDir) {
+		t.Fatal("false retirement after successor failure")
 	}
 }

@@ -97,8 +97,15 @@ plan_hash=$(sha256sum /tmp/excalibur-final-plan.json | cut -d' ' -f1)
 ```
 
 Apply needs existing sudo authorization for system service operations; it uses
-`sudo -n` and never prompts or approves itself. It holds all six existing fence
-locks, rechecks the exact plan, persists intent, disables/stops the service,
+`sudo -n` and never prompts or approves itself. It holds only the three paused
+extractor fence locks (`extractor/aion`, `extractor/ooda-email`, and
+`extractor/real-estate`) through final validation and engine stop/mask. Migrated
+email, Granola and Pocket lanes remain protected by their `owner=manifest` fence
+records and live Manifest successor services. Their locks are intentionally not
+acquired because their workers hold them; successor services must remain running.
+Build still checks all six ownership/fence records, migrated-lane continuity and
+successor service health before and after stopping the engine.
+Apply rechecks the exact plan, persists intent, disables/stops the engine service,
 preserves `/etc/systemd/system/excalibur-engine.service` as
 `excalibur-engine.service.pre-decommission`, and installs a persistent `/dev/null`
 mask. It verifies inactive+masked, successor ownership/services and unchanged
