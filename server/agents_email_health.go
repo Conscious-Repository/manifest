@@ -44,13 +44,20 @@ func (s *Server) agentEmailHealth(rows []spirits.RitualRow) []agentEmailHealth {
 	if s.oodaEmail != nil && s.oodaGmail != nil {
 		accounts := s.oodaGmail.List()
 		needs := 0
+		failed := 0
 		for _, a := range accounts {
 			if a.NeedsReauth {
 				needs++
 			}
+			if a.SyncError != "" {
+				failed++
+			}
 		}
 		pending := len(oodaPendingEmailCards(s.oodaEmail.List(gmailsync.StatusPending), true, ""))
 		detail := fmt.Sprintf("%d connected mailboxes · %d conversations awaiting review in OODA Feed. Confirmation starts extraction.", len(accounts)-needs, pending)
+		if failed > 0 {
+			detail += fmt.Sprintf(" %d mailbox scan(s) incomplete; checkpoints retained for retry.", failed)
+		}
 		if needs > 0 {
 			detail += fmt.Sprintf(" %d mailbox(es) need sign-in again.", needs)
 		}

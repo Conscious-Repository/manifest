@@ -25,8 +25,10 @@ import (
 // storedToken ({email, token}) so the file stays readable by anything that
 // speaks that shape, plus the reauth state the sync loop maintains.
 type storedAccount struct {
-	Email string        `json:"email"`
-	Token *oauth2.Token `json:"token"`
+	LastSync  string        `json:"lastSync,omitempty"`
+	SyncError string        `json:"syncError,omitempty"`
+	Email     string        `json:"email"`
+	Token     *oauth2.Token `json:"token"`
 	// NeedsReauth is set when a refresh fails (revoked grant / invalid_grant).
 	// The sync loop skips the account; the portal FEED shows "reconnect".
 	// Signing in again overwrites the whole record and clears it.
@@ -37,6 +39,8 @@ type storedAccount struct {
 
 // Account is the read-side view (no token material).
 type Account struct {
+	LastSync    string `json:"lastSync,omitempty"`
+	SyncError   string `json:"syncError,omitempty"`
 	Email       string `json:"email"`
 	NeedsReauth bool   `json:"needsReauth"`
 	Error       string `json:"error,omitempty"`
@@ -130,7 +134,7 @@ func (t *Tokens) List() []Account {
 		if err != nil || json.Unmarshal(b, &st) != nil || st.Email == "" {
 			continue
 		}
-		out = append(out, Account{Email: st.Email, NeedsReauth: st.NeedsReauth, Error: st.Error, CheckedAt: st.CheckedAt})
+		out = append(out, Account{Email: st.Email, NeedsReauth: st.NeedsReauth, Error: st.Error, CheckedAt: st.CheckedAt, LastSync: st.LastSync, SyncError: st.SyncError})
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Email < out[j].Email })
 	return out
@@ -146,7 +150,7 @@ func (t *Tokens) Status(email string) (Account, bool) {
 	if !ok {
 		return Account{}, false
 	}
-	return Account{Email: st.Email, NeedsReauth: st.NeedsReauth, Error: st.Error, CheckedAt: st.CheckedAt}, true
+	return Account{Email: st.Email, NeedsReauth: st.NeedsReauth, Error: st.Error, CheckedAt: st.CheckedAt, LastSync: st.LastSync, SyncError: st.SyncError}, true
 }
 
 // MarkNeedsReauth records a refresh failure; the account sits out sync until
@@ -221,4 +225,21 @@ func (p *persistingSource) Token() (*oauth2.Token, error) {
 	}
 	p.tokens.touch(p.email, tok, time.Now())
 	return tok, nil
+}
+
+// RecordSync distinguishes successful authentication from a completed scan.
+func (t *Tokens) RecordSync(email string, syncErr error) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	st, ok := t.read(email)
+	if !ok {
+		return
+	}
+	st.SyncError = ""
+	if syncErr != nil {
+		st.SyncError = syncErr.Error()
+	} else {
+		st.LastSync = time.Now().UTC().Format(time.RFC3339)
+	}
+	_ = t.write(st)
 }

@@ -9,6 +9,7 @@ package gmailsync
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"strings"
@@ -82,7 +83,9 @@ func (l *Loop) Pass(ctx context.Context) {
 		if acc.NeedsReauth {
 			continue
 		}
-		if err := l.syncAccount(ctx, cfg, acc.Email, res); err != nil {
+		err := l.syncAccount(ctx, cfg, acc.Email, res)
+		l.Tokens.RecordSync(acc.Email, err)
+		if err != nil {
 			log.Printf("gmailsync: %s: %v", acc.Email, err)
 		}
 	}
@@ -128,6 +131,10 @@ func (l *Loop) syncAccount(ctx context.Context, cfg *oauth2.Config, email string
 		}
 		subject, msgs, err := fc.ThreadFull(ctx, id)
 		if err != nil || len(msgs) == 0 {
+			var apiErr *gmailReadError
+			if errors.As(err, &apiErr) && apiErr.retryable {
+				return err
+			}
 			passErr = fmt.Errorf("gmail thread %s could not be read; checkpoint retained: %v", id, err)
 			continue // process other threads, but retry this interval next pass
 		}

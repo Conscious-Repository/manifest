@@ -14,7 +14,7 @@ type pageTransport func(*http.Request) (*http.Response, error)
 func (f pageTransport) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
 func TestThreadListingConsumesPages(t *testing.T) {
 	calls := 0
-	c := &Client{http: &http.Client{Transport: pageTransport(func(r *http.Request) (*http.Response, error) {
+	c := &Client{wait: func(context.Context, time.Duration) error { return nil }, http: &http.Client{Transport: pageTransport(func(r *http.Request) (*http.Response, error) {
 		calls++
 		body := `{"threads":[{"id":"first"}],"nextPageToken":"next"}`
 		if calls == 2 {
@@ -53,10 +53,10 @@ func TestUnreadThreadRetainsCheckpoint(t *testing.T) {
 
 func TestThreadListingFailureDoesNotReturnPartialPage(t *testing.T) {
 	calls := 0
-	c := &Client{http: &http.Client{Transport: pageTransport(func(r *http.Request) (*http.Response, error) {
+	c := &Client{wait: func(context.Context, time.Duration) error { return nil }, http: &http.Client{Transport: pageTransport(func(r *http.Request) (*http.Response, error) {
 		calls++
 		status, body := 200, `{"threads":[{"id":"first"}],"nextPageToken":"next"}`
-		if calls == 2 {
+		if calls >= 2 {
 			status, body = 503, `unavailable`
 		}
 		return &http.Response{StatusCode: status, Body: io.NopCloser(strings.NewReader(body)), Header: make(http.Header)}, nil
@@ -64,5 +64,35 @@ func TestThreadListingFailureDoesNotReturnPartialPage(t *testing.T) {
 	ids, err := c.ThreadIDsSince(context.Background(), time.Now(), 100)
 	if err == nil || len(ids) != 0 {
 		t.Fatalf("partial page must not advance checkpoint: %v %v", ids, err)
+	}
+}
+
+func TestGmailQuotaBackoffDoesNotRetryPermissionErrors(t *testing.T) {
+	for _, tc := range []struct {
+		body  string
+		calls int
+	}{{`{"error":{"message":"Quota exceeded","errors":[{"reason":"userRateLimitExceeded"}]}}`, 2}, {`{"error":{"message":"Forbidden","errors":[{"reason":"insufficientPermissions"}]}}`, 1}} {
+		calls, waits := 0, 0
+		c := &Client{wait: func(ctx context.Context, d time.Duration) error {
+			waits++
+			if d < time.Second {
+				t.Fatal("retry too soon")
+			}
+			return nil
+		}, http: &http.Client{Transport: pageTransport(func(r *http.Request) (*http.Response, error) {
+			calls++
+			status, body := 403, tc.body
+			if calls == 2 {
+				status, body = 200, `{"threads":[]}`
+			}
+			return &http.Response{StatusCode: status, Body: io.NopCloser(strings.NewReader(body)), Header: make(http.Header)}, nil
+		})}}
+		_, err := c.ThreadIDsSince(context.Background(), time.Now(), 100)
+		if calls != tc.calls || waits != tc.calls-1 {
+			t.Fatalf("calls %d waits %d", calls, waits)
+		}
+		if (err == nil) != (tc.calls == 2) {
+			t.Fatal(err)
+		}
 	}
 }

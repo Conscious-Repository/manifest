@@ -16,3 +16,9 @@ The old engine is not fully removed: email, Granola, Pocket, and on-demand extra
 ## Validation
 
 Gmail sync package and spirits package tests pass. Focused Agents, retirement, email-health privacy, and CSS tests pass. Full server run encountered pre-existing real-estate intake storage failures; isolated baseline reproduction checked separately. No outgoing email or pending email approval was performed.
+
+## Recovery follow-up
+
+The owner's 30-day recovery scan exposed Gmail HTTP 403 quota exhaustion. Token validity had hidden this distinction. Added one-request-per-second pacing, bounded exponential retries for quota/429/5xx errors, and durable per-mailbox last-success/error metadata; exhausted retries abort that account without advancing its checkpoint. Permission errors do not retry. This follows Google's Gmail error-handling guidance: https://developers.google.com/workspace/gmail/api/guides/handle-errors.
+
+The OODA state was backed up before resetting only ben@ooda.group's watermark for a 30-day recovery. Candidate decisions remained intact. The board reports 165 distinct pending conversations (190 mailbox copies at audit time). Aion's connection was absent at deployment verification and remains explicitly blocked until the owner completes reconnection.

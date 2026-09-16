@@ -10,6 +10,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -46,16 +47,59 @@ type Msg struct {
 type Client struct {
 	mailbox string
 	http    *http.Client
+	pace    time.Duration
+	wait    func(context.Context, time.Duration) error
 }
 
 // NewClient builds a client over a member's token source (Tokens.Source).
 func NewClient(src oauth2.TokenSource) *Client {
 	hc := oauth2.NewClient(context.Background(), src)
 	hc.Timeout = 60 * time.Second
-	return &Client{http: hc}
+	return &Client{http: hc, pace: time.Second}
 }
 
+type gmailReadError struct {
+	status    int
+	message   string
+	retryable bool
+}
+
+func (e *gmailReadError) Error() string {
+	return fmt.Sprintf("gmail: HTTP %d: %.300s", e.status, e.message)
+}
+func waitForMail(ctx context.Context, d time.Duration) error {
+	t := time.NewTimer(d)
+	defer t.Stop()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-t.C:
+		return nil
+	}
+}
 func (c *Client) get(ctx context.Context, u string, into any) error {
+	wait := c.wait
+	if wait == nil {
+		wait = waitForMail
+	}
+	for attempt := 0; ; attempt++ {
+		delay := c.pace
+		if attempt > 0 {
+			delay = time.Second * time.Duration(1<<uint(attempt-1))
+		}
+		if delay > 0 {
+			if err := wait(ctx, delay); err != nil {
+				return err
+			}
+		}
+		err := c.getOnce(ctx, u, into)
+		var apiErr *gmailReadError
+		if err == nil || !errors.As(err, &apiErr) || !apiErr.retryable || attempt >= 7 {
+			return err
+		}
+	}
+}
+func (c *Client) getOnce(ctx context.Context, u string, into any) error {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
 	if err != nil {
 		return err
@@ -68,7 +112,9 @@ func (c *Client) get(ctx context.Context, u string, into any) error {
 	if resp.StatusCode != http.StatusOK {
 		var msg bytes.Buffer
 		_, _ = msg.ReadFrom(resp.Body)
-		return fmt.Errorf("gmail: HTTP %d: %.300s", resp.StatusCode, msg.String())
+		body := msg.String()
+		rate := resp.StatusCode == 429 || (resp.StatusCode == 403 && (strings.Contains(body, "rateLimitExceeded") || strings.Contains(body, "userRateLimitExceeded") || strings.Contains(body, "Quota exceeded")))
+		return &gmailReadError{resp.StatusCode, body, rate || resp.StatusCode >= 500}
 	}
 	return json.NewDecoder(resp.Body).Decode(into)
 }
