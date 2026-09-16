@@ -195,3 +195,8 @@ need reconciliation; semantic comparison, deployed ownership-fence evidence and
 reviewed handoff receipts remain outstanding. Atomic dependency/write/audit/
 approval settlement and crash recovery remain unavailable pending the owner’s
 writer/reader coordination decision. Fixture validation lifts none of these gates.
+
+The [copied semantic evaluation substrate](extractor-semantic-evaluation.md)
+now provides a no-write refusal-only CLI that validates successor reducer evidence
+and owner-supplied legacy claims together. A reviewed native-history adapter and
+actual semantic comparison remain unavailable; live state is `comparison-unrun`.
