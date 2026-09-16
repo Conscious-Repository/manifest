@@ -20,13 +20,17 @@ func (s *Server) agentEmailHealth(rows []spirits.RitualRow) []agentEmailHealth {
 	out := []agentEmailHealth{}
 	if s.gmail != nil {
 		var failures []string
-		for _, a := range s.gmail.Accounts(time.Now()) {
+		accounts := s.gmail.Accounts(time.Now())
+		for _, a := range accounts {
 			if a.Sync && a.NeedsReauth {
 				failures = append(failures, a.Email)
 			}
 		}
-		if len(failures) > 0 {
+		if len(failures) > 0 || len(accounts) == 0 {
 			why := "Reconnect Gmail for " + strings.Join(failures, ", ") + "; email sync is blocked."
+			if len(accounts) == 0 {
+				why = "No Gmail mailbox connected; connect an account to restore email sync."
+			}
 			out = append(out, agentEmailHealth{"Email sync", why, "#/settings/portals"})
 			for i := range rows {
 				if rows[i].Spirit == "ea-coordinator" && rows[i].Ritual == "email-sync" && !rows[i].Retired {
