@@ -4,6 +4,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"io/fs"
 	"os"
 	"path"
 	"slices"
@@ -36,10 +37,29 @@ func (s *Store) checkExtractionSnapshot(p Proposal) error {
 	blocked := func(reason string) error {
 		return fmt.Errorf("extraction uncertain/stale: %s; pending, replay=false", reason)
 	}
+	switch p.Type {
+	case TypeAionBacklog, TypeAionResolve, TypeAionHeuristic, TypeReBacklog, TypeReResolve, TypeReContract:
+	default:
+		return blocked("snapshot on unsupported proposal type")
+	}
 	b, err := base64.RawURLEncoding.DecodeString(p.ExtractionSnapshot)
 	var snap ExtractionSnapshot
 	if err != nil || json.Unmarshal(b, &snap) != nil || snap.Version != 1 || snap.Replay || len(snap.Files) == 0 || snap.Proposal != extractionProposalHash(p) {
 		return blocked("invalid or edited snapshot")
+	}
+	// This is diagnostic validation only. V1 cannot express absence predicates,
+	// a category namespace revision, or artifact store identity. Never interpret
+	// matching declared files as evidence that the complete read set is stable.
+	for name, hash := range snap.Files {
+		if len(hash) != 64 || strings.Trim(hash, "0123456789abcdef") != "" {
+			return blocked("invalid dependency hash")
+		}
+		if strings.HasPrefix(name, "sha256:") || name == "portal-records" {
+			return blocked("artifact or portal dependency cannot be revalidated by this snapshot version")
+		}
+		if !fs.ValidPath(name) || name == "." || strings.Contains(name, "\\") {
+			return blocked("invalid dependency path")
+		}
 	}
 	root, err := os.OpenRoot(s.vaultRoot)
 	if err != nil {
@@ -47,9 +67,6 @@ func (s *Store) checkExtractionSnapshot(p Proposal) error {
 	}
 	defer root.Close()
 	for name, hash := range snap.Files {
-		if strings.HasPrefix(name, "sha256:") || name == "portal-records" {
-			continue
-		}
 		raw, err := root.ReadFile(name)
 		if err != nil || EvidenceHash(string(raw)) != hash {
 			return blocked("source or context changed")
@@ -59,7 +76,7 @@ func (s *Store) checkExtractionSnapshot(p Proposal) error {
 	// may mutate several files. A preflight is not an atomic compare-and-swap.
 	// Until the writer can commit the complete read/write set, refuse even a
 	// matching snapshot. In particular, never turn this check into a retry.
-	return blocked("atomic dependency CAS and artifact revalidation not implemented")
+	return blocked("atomic dependency CAS and artifact revalidation not implemented (no complete dependency manifest or durable write/audit/decision transaction)")
 }
 
 // ValidateExtractionContractReferences accepts only exact canonical slugs and

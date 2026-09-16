@@ -240,6 +240,10 @@ function approvalCardEl(a) {
     card.append(cardActions([pillLight("Dismiss", () => postApprovalDecision(a.id, "dismiss", {}))]));
     return card;
   }
+  if (a.extractionSnapshot) {
+    blocked = true;
+    blockMsg = "Extraction is on hold: atomic dependency checks and recoverable writes are not implemented. Semantic comparison, live validation and retirement are still pending. Reject or leave pending; replay is disabled.";
+  }
   if (blocked && blockMsg) card.append(el("div", "appr-blocked", "⚠ " + blockMsg));
 
   const actions = cardActions([]);

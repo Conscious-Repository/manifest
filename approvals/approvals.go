@@ -405,6 +405,11 @@ func (s *Store) confirm(id string, e ConfirmEdits) error {
 		return err
 	}
 	if p.Type == TypeManifestOperation {
+		// Operation callbacks run before the ordinary apply gate. Snapshot
+		// evidence must never bypass that gate by changing the proposal type.
+		if err := s.checkExtractionSnapshot(p); err != nil {
+			return err
+		}
 		if s.operationDecision == nil {
 			return errors.New("operation executor unavailable")
 		}

@@ -17,6 +17,53 @@ The refusal explicitly reports uncertain/stale, pending and replay=false. There
 is no retry, fallback, direct vault write or new approval lane. Rejection remains
 available. Snapshot metadata survives approval serialization and card edits;
 editing payloads invalidates the binding instead of silently refreshing evidence.
+Artifact and portal dependencies now explicitly refuse as unverifiable instead
+of being skipped during diagnostic checks. Noncanonical paths and malformed
+hashes refuse. A snapshot on an unsupported proposal type refuses, including
+the operation dispatcher that otherwise runs before the ordinary apply gate.
+The approval card disables Confirm for snapshot-bearing proposals and names the
+application hold separately from semantic comparison, live validation and retirement.
+
+## Atomic CAS feasibility review — 2026-09-16
+
+**Atomic extraction CAS is not implemented.** This phase takes the explicitly
+authorized bounded-hold outcome. The current APIs cannot meet the requested
+contract; a journal added solely around `Confirm` would not repair them.
+
+| Boundary inspected | Concrete blocker |
+| --- | --- |
+| `vaultwriter/edit.go`, `capability.go` | `editMu` serializes cooperating writers only within one process. Each capability call releases it after one file. `atomicBytes` renames one file; it cannot commit a read/write set. External editors and sync do not acquire this lock. Directory sync errors are ignored after rename. |
+| `approvals/aion.go`, `re.go`, `resolve.go` | Corpus reads and transforms occur before the capability write lock. Matching source/context hashes in Confirm cannot prevent changes between those reads and the write. |
+| `approvals/recontract.go` | Contractor creation, property section changes and the contract record are independent writes. `freeContractPath` probes up to 20 names outside the writer lock and can select an undeclared suffix. Earlier writes survive a later failure. The bounded successor currently forbids tree additions, but its references and destination checks still lack a transaction. |
+| `domainextract/contract.go`, `service.go` | V1 snapshots are maps of present file hashes, not complete dependency manifests. They lack expected-absent targets, namespace membership and category-index revisions. Bounded canonical-folder context cannot prove absence of a same-category slug elsewhere in the vault. RE backlog payloads lack explicit property/contract reference fields. |
+| `realestate/cas.go`, `artifacts/` | RE blob and `files.json` updates are separate capability writes; `Lookup` checks existence, not the blob hash, and index read/parse errors collapse to an empty index. The separate artifact pool has its own store identity and locks. A bare `sha256:` entry in V1 does not identify which store to revalidate. Raw email bytes and extracted document text must not be conflated. |
+| `vaultindex/index.go`, `watch.go` | SQLite transactions cover derived tables only. `Rebuild` and `ReindexPaths` read filesystem bytes independently; neither pins vault namespace membership nor participates in writer locks. A SQL rollback cannot undo vault writes. |
+| `vaultwriter/capability.go`, `approvals/approvals.go` | Audit appends occur after bytes land, have no durable transaction identity, and failure is reported through health state rather than failing the write. Confirm separately writes approved state and removes pending state after apply. A crash between these steps leaves replay ambiguity. |
+
+A correct next substrate needs a versioned complete dependency manifest, pure
+rendering of the entire write set, and a common lock/recovery protocol for all
+participating writers and readers. It must cover category namespace additions
+and removals, exact source/artifact store identity, bytes and metadata, explicit
+property/contract identities, destination absence, and the reviewed approval.
+Define a single lock order before integrating the domain and index locks.
+
+For a journal design, prepare must durably retain transaction identity, exact
+before/after hashes and bytes, declared capabilities and actor, approval digest,
+and dependency evidence outside the vault. Sync prepare before any vault write;
+perform each write through the canonical capability boundary. Audit receipts and
+decision settlement need durable transaction identities and a commit record.
+Startup must quarantine unfinished transactions before accepting more writes or
+serving partially applied projections. Recovery must inspect recorded evidence,
+fail closed on uncertainty, and never replay the model or silently re-Confirm.
+Blind rollback is also unsafe: it could overwrite an intervening owner edit.
+External editors do not honor application locks, so their coordination or a
+stronger storage visibility boundary must be resolved explicitly. Independent
+renames plus a preflight or best-effort rollback cannot satisfy atomic CAS.
+
+No prepare/commit/recovery journal is introduced here. No successful snapshot
+apply, transactional audit receipt, partial-write recovery, semantic parity,
+live validation, ownership cutover or final decommission is claimed. Existing
+legacy/non-snapshot behavior and audit semantics remain unchanged.
 
 OODA successor input uses bounded raw canonical property, contractor and contract
 records rather than the legacy portal summary. The source name must be the exact
@@ -47,6 +94,16 @@ Offline adversarial tests cover source/context drift, proposal edits, missing an
 ambiguous references, invalid nodes/contractors, exact artifact provenance,
 unchanged replay identity, and no vault writes on Confirm refusal. Their success
 is mechanical evidence only, never semantic parity.
+
+The bounded-hold regression additionally uses a fully configured capability
+writer, checks whole vault/audit trees, and exercises category and `files.json`
+drift, removed property/contract dependencies, newly added ambiguous properties
+and contracts, an unavailable audit destination, artifact/portal evidence,
+repeated Confirm and duplicate publication, and reopening the store. Unchanged
+snapshots must refuse too. These tests do **not** establish SQL-index CAS,
+partial-write rollback or journal recovery: those remain acceptance requirements
+for the missing transaction substrate. Existing non-snapshot successful apply
+tests continue to require canonical approved-proposal audit lines.
 
 Validation for this phase: gofmt, `go test ./...`, `go build ./...`,
 `go vet ./...`, `go test -race ./...`, and `git diff --check` passed locally.
