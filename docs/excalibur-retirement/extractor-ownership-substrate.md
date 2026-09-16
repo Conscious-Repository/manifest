@@ -142,3 +142,12 @@ The [refusal-only comparison checker](extractor-comparison.md) retains explicitl
 hash-bound artifact evidence and reports `comparison-unrun`. Existing native
 formats do not bind the complete structural evidence needed for a safe match.
 Its reports never establish semantic parity or change migration readiness.
+
+### 2026-09-16 context planning follow-up
+
+[Offline context planning](../extractor-context-planning.md) now inventories the
+complete copied context and measures the unchanged serialized-input budget.
+Oversized inputs refuse with `contextPartitionUnavailable`: there is no merge
+protocol preserving global deduplication, closure and reference semantics.
+Single-input byte fit still requires semantic review. This diagnostic neither
+reads live context by default nor establishes successor enablement or migration.

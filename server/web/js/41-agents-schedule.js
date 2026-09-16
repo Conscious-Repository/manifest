@@ -479,6 +479,11 @@ function ritualRow(r) {
   job.onclick = (e) => e.stopPropagation();
   name.append(sp, el("span", "ritual-name-sep", " · "), job);
   name.append(el("span", "cad-raw", "pin " + (r.provider || "unknown") + " / " + (r.model === "discover" ? "discover — unpinned" : r.model || "unknown") + " · " + (r.toolset || "tools unknown") + " · " + (r.maxSteps || "unknown") + " steps · $" + r.ceilingUsd));
+  if (r.spirit === "extractor" && ["aion", "real-estate", "ooda-email"].includes(r.ritual)) {
+    const context = el("span", "cad-raw", "context: unmeasured · semantic-review-required");
+    context.title = "Offline copied-fixture planning only: context-too-large means serialized input exceeds the budget; partition-planned means a complete single input fits; partition-unavailable means contextPartitionUnavailable and missing merge semantics. No multi-partition reducer exists. A plan does not establish semantic quality, enable the successor, or prove migration.";
+    name.append(context);
+  }
   if (r.observation && r.observation.lastRun) name.append(el("span", "cad-raw", "last " + fmtWhen(r.observation.lastRun)));
   row.append(name);
   // cadence — human phrase over the raw cron (both visible)
