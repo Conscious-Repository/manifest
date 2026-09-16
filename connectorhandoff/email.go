@@ -33,6 +33,17 @@ type EmailCheckpoint struct {
 	Uncertain    []string                `json:"uncertain"`
 }
 
+type legacyEmail struct {
+	Watermark string `json:"watermark"`
+	Threads   map[string]*struct {
+		Status         string `json:"status"`
+		ProposalID     string `json:"proposal_id,omitempty"`
+		LastMsgID      string `json:"last_msg_id,omitempty"`
+		LastInternalMS int64  `json:"last_internal_ms,omitempty"`
+		Filename       string `json:"filename,omitempty"`
+	} `json:"threads"`
+}
+
 // PrepareEmail preserves the entire legacy ledger. account is an operator-supplied
 // binding, not inferred from a slug/token. This never enables a mailbox or turns
 // missing decisions into retryable work. An unresolved append holds the handoff.
@@ -55,16 +66,7 @@ func PrepareEmailWithReconciliation(raw []byte, account string, inv approvals.Co
 	if err := uniqueJSON(raw); err != nil {
 		return out, err
 	}
-	var legacy struct {
-		Watermark string `json:"watermark"`
-		Threads   map[string]*struct {
-			Status         string `json:"status"`
-			ProposalID     string `json:"proposal_id,omitempty"`
-			LastMsgID      string `json:"last_msg_id,omitempty"`
-			LastInternalMS int64  `json:"last_internal_ms,omitempty"`
-			Filename       string `json:"filename,omitempty"`
-		} `json:"threads"`
-	}
+	var legacy legacyEmail
 	dec := json.NewDecoder(bytes.NewReader(raw))
 	dec.DisallowUnknownFields()
 	if dec.Decode(&legacy) != nil || legacy.Threads == nil {

@@ -67,6 +67,17 @@ func (s *Store) connectorInventoryForSource(scope string) (ConnectorInventory, e
 	return s.connectorInventoryWithReconciliation(scope, false)
 }
 func (s *Store) connectorInventoryWithReconciliation(scope string, owner bool) (ConnectorInventory, error) {
+	return s.connectorInventoryMode(scope, owner, false)
+}
+
+// ReadEmailContinuityInventory preserves duplicate source claims for quarantine.
+// Malformed identities and duplicate proposal IDs still fail closed. This grants
+// no owner reconciliation or permission to apply an approval.
+func ReadEmailContinuityInventory(artifacts string) (ConnectorInventory, error) {
+	return (&Store{dir: filepath.Join(artifacts, "approvals")}).connectorInventoryMode("gmail-thread", false, true)
+}
+
+func (s *Store) connectorInventoryMode(scope string, owner, continuity bool) (ConnectorInventory, error) {
 	result := ConnectorInventory{Items: []ConnectorApproval{}}
 	h := sha256.New()
 	ids, sources := map[string]bool{}, map[string]bool{}
@@ -137,7 +148,7 @@ func (s *Store) connectorInventoryWithReconciliation(scope string, owner bool) (
 				}
 				key := source + "/" + sid
 				if typ == TypeCreateVaultNote {
-					if sources[key] && !(owner && source == "gmail-thread" && sid == "19fdd282744d15a0" && status == "rejected" && (id == "2a71f54cd7b3" || id == "d75af2b821e6")) {
+					if sources[key] && !continuity && !(owner && source == "gmail-thread" && sid == "19fdd282744d15a0" && status == "rejected" && (id == "2a71f54cd7b3" || id == "d75af2b821e6")) {
 						return result, fmt.Errorf("duplicate connector source identity [REDACTED]")
 					}
 					sources[key] = true

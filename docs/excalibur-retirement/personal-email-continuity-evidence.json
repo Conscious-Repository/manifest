@@ -1,0 +1,1706 @@
+{
+  "identity": {
+    "version": 1,
+    "accountHash": "318d0b6b7d1333419ca637645422a87f3f1366bf14df6fcd56deee7e2d216f38",
+    "legacyHash": "1fb30007fe012ed409ca017c2f0389763132d63073ebd73ba2bd70a085c8f936",
+    "approvalHash": "6615e58300a382d9066bb05a96aa0a0707e355d7c9f9115d26089a4d50716b6c",
+    "watermark": "2026-09-16T11:57:04Z",
+    "replay": false,
+    "identityComplete": false,
+    "parity": false,
+    "threads": [
+      {
+        "threadId": "19b9fc128b78abcf",
+        "legacyProposalId": "d54e5e8d2235",
+        "legacyThreadHash": "e39bc50e29fa2938952dcc3d01653d2c2912bbeac079b35c04befb6fb6e68185",
+        "disposition": "legacy-reconciled-uncertain",
+        "replay": false,
+        "stopReasons": [
+          "append-lineage-needs-effect-evidence"
+        ],
+        "claims": [
+          {
+            "proposalId": "0ccfda6fec25",
+            "threadId": "19b9fc128b78abcf",
+            "status": "approved",
+            "artifactHash": "04a1716b768e19ec0d384ea21ca4275675c62ec10709590a311bd4b9e3e4482a"
+          },
+          {
+            "proposalId": "0f1974612d0a",
+            "threadId": "19b9fc128b78abcf",
+            "status": "approved",
+            "artifactHash": "d015b9564a2e0d8288f25605fd877ca4876394d6085ddd31d32173ac7e424ebd"
+          },
+          {
+            "proposalId": "59594abd1108",
+            "threadId": "19b9fc128b78abcf",
+            "status": "approved",
+            "artifactHash": "889a94a62a35521ed9489cdaed2a657650201a3e7a40509ac5a1d939049ac520"
+          },
+          {
+            "proposalId": "d54e5e8d2235",
+            "threadId": "19b9fc128b78abcf",
+            "status": "approved",
+            "artifactHash": "fefebe04fbfb2e7d5b493da999bfd51c8ffef3f87e066766c2fc329303bf4927"
+          }
+        ]
+      },
+      {
+        "threadId": "19c6d99101d26db6",
+        "legacyProposalId": "25c2cae8383c",
+        "legacyThreadHash": "419a99bb9e13b26a4c95b3b5f9c70b9ab735805df94334b22b357968f5d85cef",
+        "disposition": "legacy-reconciled-uncertain",
+        "replay": false,
+        "stopReasons": [
+          "append-lineage-needs-effect-evidence"
+        ],
+        "claims": [
+          {
+            "proposalId": "25c2cae8383c",
+            "threadId": "19c6d99101d26db6",
+            "status": "approved",
+            "artifactHash": "b6c661a65217e9ec401f1c565f8da552b183318238f2c3521f408dc6a5bf8a10"
+          },
+          {
+            "proposalId": "61aca24aef06",
+            "threadId": "19c6d99101d26db6",
+            "status": "approved",
+            "artifactHash": "4fe6f7a21560aa55b466a0730bbc9c1fd10b789fbbe7adeb6bab2117007f17a7"
+          },
+          {
+            "proposalId": "67e1c07257d6",
+            "threadId": "19c6d99101d26db6",
+            "status": "approved",
+            "artifactHash": "e7e24fa02e140ebb8fcb655ab64dfe797480265873318b0c429831617d5b67c0"
+          }
+        ]
+      },
+      {
+        "threadId": "19cc4bddaf501996",
+        "legacyProposalId": "4ecc7bfa43c9",
+        "legacyThreadHash": "6c0a452bcdffc31c4a6a54e1342dc77621f414cea65c61e404424f93539c7eab",
+        "disposition": "legacy-reconciled-uncertain",
+        "replay": false,
+        "stopReasons": [
+          "append-lineage-needs-effect-evidence"
+        ],
+        "claims": [
+          {
+            "proposalId": "0c774c6eef3f",
+            "threadId": "19cc4bddaf501996",
+            "status": "approved",
+            "artifactHash": "a264d39f2b6d034702b51791025f2466f8498a630d09f9962e4f2c995b79d198"
+          },
+          {
+            "proposalId": "36687d0d6ac7",
+            "threadId": "19cc4bddaf501996",
+            "status": "approved",
+            "artifactHash": "f1f1b87b4e42c04b8376ac78abc67330500bdfe93b8c6736bcd1bb658dd03d1a"
+          },
+          {
+            "proposalId": "4ecc7bfa43c9",
+            "threadId": "19cc4bddaf501996",
+            "status": "approved",
+            "artifactHash": "d1aef7deb621e7475dabc0bf5202721de14f723cf9c279337499b831f7fd30cd"
+          },
+          {
+            "proposalId": "959cee0ae40f",
+            "threadId": "19cc4bddaf501996",
+            "status": "approved",
+            "artifactHash": "ad39aa5de11671dee3bde5f82dc5e1a09cd5570593b0ae2037f10a44df29fd02"
+          }
+        ]
+      },
+      {
+        "threadId": "19d53d5b170b05d9",
+        "legacyProposalId": "3e5e0ef9d08d",
+        "legacyThreadHash": "188444d4c238179473591c203ff513256d3d931dc43fede22c22e5d5b6d872ec",
+        "disposition": "legacy-continuity-only",
+        "replay": false,
+        "stopReasons": [],
+        "claims": [
+          {
+            "proposalId": "3e5e0ef9d08d",
+            "threadId": "19d53d5b170b05d9",
+            "status": "approved",
+            "artifactHash": "c7abdd512332111adcc1debf32530366128c93f7494dd670dafd721936efca95"
+          }
+        ]
+      },
+      {
+        "threadId": "19e4816232a5095f",
+        "legacyProposalId": "7644f05829ee",
+        "legacyThreadHash": "ae500d25145d51773bfdb943dc4b9e756285bdfc92ae504f401c9ecd145ae5d2",
+        "disposition": "legacy-reconciled-uncertain",
+        "replay": false,
+        "stopReasons": [
+          "append-lineage-needs-effect-evidence"
+        ],
+        "claims": [
+          {
+            "proposalId": "5ecf25c8c049",
+            "threadId": "19e4816232a5095f",
+            "status": "approved",
+            "artifactHash": "8cb6e67b72e63c1e90b496d5394fb74951b4ebdaa9e17b39490819306ff70afa"
+          },
+          {
+            "proposalId": "7644f05829ee",
+            "threadId": "19e4816232a5095f",
+            "status": "approved",
+            "artifactHash": "7c29d03b193285971bcc8e2e42cce0df63b991d44aec95ae028067332890636b"
+          },
+          {
+            "proposalId": "a2507af41235",
+            "threadId": "19e4816232a5095f",
+            "status": "approved",
+            "artifactHash": "7d20f5875b3e03fc5b1493d2b5b02f19f3cfaa4c73d69af9a77b40befcefeaeb"
+          },
+          {
+            "proposalId": "d01d181cccb2",
+            "threadId": "19e4816232a5095f",
+            "status": "approved",
+            "artifactHash": "ebbad84c44405b1071e109add1d2619eb24d275760e40f32a732e84c1edee648"
+          },
+          {
+            "proposalId": "d2dd2085b1ae",
+            "threadId": "19e4816232a5095f",
+            "status": "approved",
+            "artifactHash": "9c9d5ade36418451cf29cce27ab70f0df0f3fb6f258693ab5fa5fc1d356c0d2f"
+          }
+        ]
+      },
+      {
+        "threadId": "19ef62818f02c1eb",
+        "disposition": "legacy-reconciled-uncertain",
+        "replay": false,
+        "stopReasons": [
+          "approval-thread-absent-from-state"
+        ],
+        "claims": [
+          {
+            "proposalId": "12b1cab18f39",
+            "threadId": "19ef62818f02c1eb",
+            "status": "rejected",
+            "artifactHash": "229709bb44ca1b9005ad5bdc67899ae8cc42fa0224b84d52bfc57f7b779ab09b"
+          }
+        ]
+      },
+      {
+        "threadId": "19f148075edf4186",
+        "legacyProposalId": "5cf99c08b2f0",
+        "legacyThreadHash": "7e253fac78c0a99dfa919dd50c761e8cdcbe10a7a777a18363a9e0b5eaae1eb1",
+        "disposition": "legacy-reconciled-uncertain",
+        "replay": false,
+        "stopReasons": [
+          "append-lineage-needs-effect-evidence"
+        ],
+        "claims": [
+          {
+            "proposalId": "5cf99c08b2f0",
+            "threadId": "19f148075edf4186",
+            "status": "approved",
+            "artifactHash": "5cbc3678eca9d1098519da14ce9af54a4fa741a85c986fe5ea660e9f3c185676"
+          },
+          {
+            "proposalId": "60d27aeb93eb",
+            "threadId": "19f148075edf4186",
+            "status": "approved",
+            "artifactHash": "29d7169a4646fbddf4dd073d85f82072305a89c2c1029be70afce5d6a53a5c56"
+          }
+        ]
+      },
+      {
+        "threadId": "19f614d70386365b",
+        "legacyProposalId": "1ea75ce14631",
+        "legacyThreadHash": "7abefc45de959e074b27d7831c12d4894a767175bba4a8ed2c6a9e7d412bf20c",
+        "disposition": "legacy-continuity-only",
+        "replay": false,
+        "stopReasons": [],
+        "claims": [
+          {
+            "proposalId": "1ea75ce14631",
+            "threadId": "19f614d70386365b",
+            "status": "approved",
+            "artifactHash": "69a1dde38badca97cdb269c75b730b4ceb9dbffabfd97c629580755f7d47af81"
+          }
+        ]
+      },
+      {
+        "threadId": "19f8083a80a95b64",
+        "legacyProposalId": "b0f0b74507ee",
+        "legacyThreadHash": "10b8c74c8efd66ee5d6d62506ad445335135c453dd05cf4593557a191ca181dc",
+        "disposition": "legacy-continuity-only",
+        "replay": false,
+        "stopReasons": [],
+        "claims": [
+          {
+            "proposalId": "b0f0b74507ee",
+            "threadId": "19f8083a80a95b64",
+            "status": "rejected",
+            "artifactHash": "6be7c370c31d28265b0f3525395335fe48c519ca1ac38826068f506c1e6e6bc9"
+          }
+        ]
+      },
+      {
+        "threadId": "19f814db1776bda6",
+        "legacyProposalId": "c213419e16db",
+        "legacyThreadHash": "4bbd3effeeef7101df683a3d462e7eab2126781247878ccb25a1e4929ddd29b5",
+        "disposition": "legacy-continuity-only",
+        "replay": false,
+        "stopReasons": [],
+        "claims": [
+          {
+            "proposalId": "c213419e16db",
+            "threadId": "19f814db1776bda6",
+            "status": "rejected",
+            "artifactHash": "bcc4ede4d06564fac2ab0b17aef341c4caa88c267d33615bbcac58d172835de9"
+          }
+        ]
+      },
+      {
+        "threadId": "19f8539853480369",
+        "disposition": "legacy-reconciled-uncertain",
+        "replay": false,
+        "stopReasons": [
+          "approval-thread-absent-from-state"
+        ],
+        "claims": [
+          {
+            "proposalId": "8d0329ba0ed3",
+            "threadId": "19f8539853480369",
+            "status": "rejected",
+            "artifactHash": "f57bfac8169c4a14360c73346519998b1dbf1a0a5b33e4524886955140f5f933"
+          }
+        ]
+      },
+      {
+        "threadId": "19f856c09a8f2918",
+        "disposition": "legacy-reconciled-uncertain",
+        "replay": false,
+        "stopReasons": [
+          "approval-thread-absent-from-state"
+        ],
+        "claims": [
+          {
+            "proposalId": "c77c9efcf4e7",
+            "threadId": "19f856c09a8f2918",
+            "status": "rejected",
+            "artifactHash": "cefc9403aa4b43d4b7595ffcab4788a4c3946356a47e5209af8c722c9f48f69c"
+          }
+        ]
+      },
+      {
+        "threadId": "19f8a57db6f2f9bf",
+        "disposition": "legacy-reconciled-uncertain",
+        "replay": false,
+        "stopReasons": [
+          "approval-thread-absent-from-state"
+        ],
+        "claims": [
+          {
+            "proposalId": "0ee91d2cb8a2",
+            "threadId": "19f8a57db6f2f9bf",
+            "status": "rejected",
+            "artifactHash": "d14fe4117f5f28348f39ceefeff77e6ebcbcd25fe221f4aee6bc61100e65873c"
+          }
+        ]
+      },
+      {
+        "threadId": "19f8fae57d251d83",
+        "disposition": "legacy-reconciled-uncertain",
+        "replay": false,
+        "stopReasons": [
+          "approval-thread-absent-from-state"
+        ],
+        "claims": [
+          {
+            "proposalId": "82d0904f19d9",
+            "threadId": "19f8fae57d251d83",
+            "status": "rejected",
+            "artifactHash": "963b97b85c04f16536a9fc9e8808bf74d6c51be54750436afd028631b3f9d0ab"
+          }
+        ]
+      },
+      {
+        "threadId": "19f906585ee8adb2",
+        "disposition": "legacy-reconciled-uncertain",
+        "replay": false,
+        "stopReasons": [
+          "approval-thread-absent-from-state"
+        ],
+        "claims": [
+          {
+            "proposalId": "ddecb7464ece",
+            "threadId": "19f906585ee8adb2",
+            "status": "rejected",
+            "artifactHash": "acdaa8c92300c5505985493175ad128a7f13c14b6f540b458a6d97b87fb04ce4"
+          }
+        ]
+      },
+      {
+        "threadId": "19f94e296de47531",
+        "disposition": "legacy-reconciled-uncertain",
+        "replay": false,
+        "stopReasons": [
+          "approval-thread-absent-from-state"
+        ],
+        "claims": [
+          {
+            "proposalId": "5eb33b575740",
+            "threadId": "19f94e296de47531",
+            "status": "rejected",
+            "artifactHash": "8a31226f1b05b007c2cda5a6d525410569260069baa8498c1c7c5d3f6d24656c"
+          }
+        ]
+      },
+      {
+        "threadId": "19f953efc1fd915f",
+        "disposition": "legacy-reconciled-uncertain",
+        "replay": false,
+        "stopReasons": [
+          "approval-thread-absent-from-state"
+        ],
+        "claims": [
+          {
+            "proposalId": "70ff49a63cc5",
+            "threadId": "19f953efc1fd915f",
+            "status": "rejected",
+            "artifactHash": "162226c8eeaf612ccb56b5d20313b2491c3042c1a850433b09797df8329422a3"
+          }
+        ]
+      },
+      {
+        "threadId": "19f961304fb3a4c4",
+        "disposition": "legacy-reconciled-uncertain",
+        "replay": false,
+        "stopReasons": [
+          "approval-thread-absent-from-state"
+        ],
+        "claims": [
+          {
+            "proposalId": "63e042662479",
+            "threadId": "19f961304fb3a4c4",
+            "status": "rejected",
+            "artifactHash": "8c6ec2c6faa9ed6f65e79b515dbde2f549f74d7a818583d569dcde4a30e1289f"
+          }
+        ]
+      },
+      {
+        "threadId": "19f961ec28c2a81a",
+        "disposition": "legacy-reconciled-uncertain",
+        "replay": false,
+        "stopReasons": [
+          "approval-thread-absent-from-state"
+        ],
+        "claims": [
+          {
+            "proposalId": "331b81b63e00",
+            "threadId": "19f961ec28c2a81a",
+            "status": "approved",
+            "artifactHash": "b7af526ae08206b2afc604ec2b34f469961550d80b5e66c0422b16369739a9ce"
+          }
+        ]
+      },
+      {
+        "threadId": "19f9f9ab74d56e8c",
+        "disposition": "legacy-reconciled-uncertain",
+        "replay": false,
+        "stopReasons": [
+          "approval-thread-absent-from-state"
+        ],
+        "claims": [
+          {
+            "proposalId": "dde858cedd1e",
+            "threadId": "19f9f9ab74d56e8c",
+            "status": "rejected",
+            "artifactHash": "8faf636eaead4d53ebaee903101c10c5d35bd17810cdad2791966ed1946fcbcd"
+          }
+        ]
+      },
+      {
+        "threadId": "19fa4b004bc9e87c",
+        "legacyProposalId": "9ed159115156",
+        "legacyThreadHash": "260536e6fbb72c5c22d5061bbec4096ce004fa877d33085664951708496daf83",
+        "disposition": "legacy-continuity-only",
+        "replay": false,
+        "stopReasons": [],
+        "claims": [
+          {
+            "proposalId": "9ed159115156",
+            "threadId": "19fa4b004bc9e87c",
+            "status": "rejected",
+            "artifactHash": "24b5abfc40d95fe75000ff29a2a40a5a10ed0e4c7f7f9ee4161139127ad64eb6"
+          }
+        ]
+      },
+      {
+        "threadId": "19fa55e0e7f9e5a8",
+        "disposition": "legacy-reconciled-uncertain",
+        "replay": false,
+        "stopReasons": [
+          "approval-thread-absent-from-state"
+        ],
+        "claims": [
+          {
+            "proposalId": "96e12028d8ca",
+            "threadId": "19fa55e0e7f9e5a8",
+            "status": "rejected",
+            "artifactHash": "79d8277b988c0766f1b2f5fbf3b70f5176adce303d7d1bb3add9b6c78f48393c"
+          }
+        ]
+      },
+      {
+        "threadId": "19fae82d3ed553ee",
+        "disposition": "legacy-reconciled-uncertain",
+        "replay": false,
+        "stopReasons": [
+          "approval-thread-absent-from-state"
+        ],
+        "claims": [
+          {
+            "proposalId": "d8988d2f0485",
+            "threadId": "19fae82d3ed553ee",
+            "status": "rejected",
+            "artifactHash": "2d48ccd6965a54b07beaef401b8fc21f2108f1a1db6ef942f234854a573a1b2f"
+          }
+        ]
+      },
+      {
+        "threadId": "19fae8705194b62d",
+        "disposition": "legacy-reconciled-uncertain",
+        "replay": false,
+        "stopReasons": [
+          "approval-thread-absent-from-state"
+        ],
+        "claims": [
+          {
+            "proposalId": "8db2aedb89dc",
+            "threadId": "19fae8705194b62d",
+            "status": "rejected",
+            "artifactHash": "59cb3b2452228c2a656951bb0cd5f3f3ba5d6f3181406ed0cef7dcee6cd15ee7"
+          }
+        ]
+      },
+      {
+        "threadId": "19faf46259d8368b",
+        "disposition": "legacy-reconciled-uncertain",
+        "replay": false,
+        "stopReasons": [
+          "approval-thread-absent-from-state"
+        ],
+        "claims": [
+          {
+            "proposalId": "660b727b4a20",
+            "threadId": "19faf46259d8368b",
+            "status": "rejected",
+            "artifactHash": "dab76322c789c747251ebf733c74bd6fb3f4f37e7fc262c24d1685ba51d350cf"
+          }
+        ]
+      },
+      {
+        "threadId": "19fb473ea2687f32",
+        "disposition": "legacy-reconciled-uncertain",
+        "replay": false,
+        "stopReasons": [
+          "approval-thread-absent-from-state"
+        ],
+        "claims": [
+          {
+            "proposalId": "fddb46aa0444",
+            "threadId": "19fb473ea2687f32",
+            "status": "rejected",
+            "artifactHash": "243884d5311ef0fb7025bd6e1ff4cbb12f301c7f70125af1c2f601b39b70e980"
+          }
+        ]
+      },
+      {
+        "threadId": "19fb8d0b009e856b",
+        "disposition": "legacy-reconciled-uncertain",
+        "replay": false,
+        "stopReasons": [
+          "approval-thread-absent-from-state"
+        ],
+        "claims": [
+          {
+            "proposalId": "032e6a82f9f8",
+            "threadId": "19fb8d0b009e856b",
+            "status": "rejected",
+            "artifactHash": "ebe6a68a31e96a30d15f0c9b714d3cc46b06eb08aee2f1d2c8c45f4e63d76b51"
+          }
+        ]
+      },
+      {
+        "threadId": "19fb90ecd60de4af",
+        "disposition": "legacy-reconciled-uncertain",
+        "replay": false,
+        "stopReasons": [
+          "approval-thread-absent-from-state"
+        ],
+        "claims": [
+          {
+            "proposalId": "fb2671d997d5",
+            "threadId": "19fb90ecd60de4af",
+            "status": "rejected",
+            "artifactHash": "4563cc3bf3e2ceb44c41523affc5f16b0d2da440f2e276b8081966904e1580d3"
+          }
+        ]
+      },
+      {
+        "threadId": "19fb9374577b6a14",
+        "disposition": "legacy-reconciled-uncertain",
+        "replay": false,
+        "stopReasons": [
+          "approval-thread-absent-from-state"
+        ],
+        "claims": [
+          {
+            "proposalId": "237ded02cdab",
+            "threadId": "19fb9374577b6a14",
+            "status": "rejected",
+            "artifactHash": "f9b21b5addafaf8b2832743b3448621636338c39ca01d4bafa19f761b29f5167"
+          }
+        ]
+      },
+      {
+        "threadId": "19fb9cf78ddd4802",
+        "disposition": "legacy-reconciled-uncertain",
+        "replay": false,
+        "stopReasons": [
+          "approval-thread-absent-from-state"
+        ],
+        "claims": [
+          {
+            "proposalId": "689fa7229c90",
+            "threadId": "19fb9cf78ddd4802",
+            "status": "rejected",
+            "artifactHash": "d3dd19228ce8f16165262cf4727d3d833bafff183024f15892e07f57d8d1ae2c"
+          }
+        ]
+      },
+      {
+        "threadId": "19fc857d9758933d",
+        "disposition": "legacy-reconciled-uncertain",
+        "replay": false,
+        "stopReasons": [
+          "approval-thread-absent-from-state"
+        ],
+        "claims": [
+          {
+            "proposalId": "2c635fd1e528",
+            "threadId": "19fc857d9758933d",
+            "status": "rejected",
+            "artifactHash": "11cf4394e837810a94d9bd1f7eb54fa7c04da4c38f26d4483b41338d6365127d"
+          }
+        ]
+      },
+      {
+        "threadId": "19fc88638ef89635",
+        "disposition": "legacy-reconciled-uncertain",
+        "replay": false,
+        "stopReasons": [
+          "approval-thread-absent-from-state"
+        ],
+        "claims": [
+          {
+            "proposalId": "b57a1be05880",
+            "threadId": "19fc88638ef89635",
+            "status": "rejected",
+            "artifactHash": "9af8110ed77aec021ac5c485349b7007f825a8eee678b5107542dae917dc0414"
+          }
+        ]
+      },
+      {
+        "threadId": "19fc9426585c4823",
+        "disposition": "legacy-reconciled-uncertain",
+        "replay": false,
+        "stopReasons": [
+          "approval-thread-absent-from-state"
+        ],
+        "claims": [
+          {
+            "proposalId": "eb436d38feea",
+            "threadId": "19fc9426585c4823",
+            "status": "rejected",
+            "artifactHash": "719377169b4c1d246596e3b497788f8a3299779d248ab7413753a7bfb034632b"
+          }
+        ]
+      },
+      {
+        "threadId": "19fcddd9c0b89e26",
+        "disposition": "legacy-reconciled-uncertain",
+        "replay": false,
+        "stopReasons": [
+          "approval-thread-absent-from-state"
+        ],
+        "claims": [
+          {
+            "proposalId": "5044f44f44db",
+            "threadId": "19fcddd9c0b89e26",
+            "status": "rejected",
+            "artifactHash": "13b8f334d071e329d7641e99e00463864d9569c179cc18abd53c6ecad380f319"
+          }
+        ]
+      },
+      {
+        "threadId": "19fd7d95371caab0",
+        "disposition": "legacy-reconciled-uncertain",
+        "replay": false,
+        "stopReasons": [
+          "approval-thread-absent-from-state"
+        ],
+        "claims": [
+          {
+            "proposalId": "a06089642692",
+            "threadId": "19fd7d95371caab0",
+            "status": "rejected",
+            "artifactHash": "e57fd173ae9d7bce9a68cfbad3b1d73c43350c8b28795f011f51d55cf941d48d"
+          }
+        ]
+      },
+      {
+        "threadId": "19fdb1f919851e6a",
+        "legacyProposalId": "3d1655f7c07a",
+        "legacyThreadHash": "b690acffbbfd66f3c95cec99e54834cf7bb38f6c84dfe03d4f2fa83fc4629c10",
+        "disposition": "legacy-continuity-only",
+        "replay": false,
+        "stopReasons": [],
+        "claims": [
+          {
+            "proposalId": "3d1655f7c07a",
+            "threadId": "19fdb1f919851e6a",
+            "status": "rejected",
+            "artifactHash": "edda913c327840eb6b18b490f463a14b31a58147f3c5c20ddec834102a608b14"
+          }
+        ]
+      },
+      {
+        "threadId": "19fdd26132e9cc60",
+        "legacyProposalId": "2a71f54cd7b3",
+        "legacyThreadHash": "ce34433b9562e006076eba530ea66bb73b592cefcca00e612c4320ada614f269",
+        "disposition": "legacy-reconciled-uncertain",
+        "replay": false,
+        "stopReasons": [
+          "proposal-thread-mismatch"
+        ],
+        "claims": [
+          {
+            "proposalId": "2a71f54cd7b3",
+            "threadId": "19fdd282744d15a0",
+            "status": "rejected",
+            "artifactHash": "5319c32081e75b46ebaf1bd3647e8dcaf2fa0e9da6405aa325957475d9130c86"
+          }
+        ]
+      },
+      {
+        "threadId": "19fdd282744d15a0",
+        "legacyProposalId": "d75af2b821e6",
+        "legacyThreadHash": "1828dc795e22f4ed6e22c2e30dfa1b7c5e17fb86f99ea56480295808bdb9b771",
+        "disposition": "legacy-reconciled-uncertain",
+        "replay": false,
+        "stopReasons": [
+          "duplicate-thread-create-claims",
+          "proposal-thread-mismatch"
+        ],
+        "claims": [
+          {
+            "proposalId": "2a71f54cd7b3",
+            "threadId": "19fdd282744d15a0",
+            "status": "rejected",
+            "artifactHash": "5319c32081e75b46ebaf1bd3647e8dcaf2fa0e9da6405aa325957475d9130c86"
+          },
+          {
+            "proposalId": "d75af2b821e6",
+            "threadId": "19fdd282744d15a0",
+            "status": "rejected",
+            "artifactHash": "0efc0401072559025ae01f5c6b7992857bffc25260ea7c2716bbd3b5c5a6b439"
+          }
+        ]
+      },
+      {
+        "threadId": "19fe2354fdc6120d",
+        "disposition": "legacy-reconciled-uncertain",
+        "replay": false,
+        "stopReasons": [
+          "approval-thread-absent-from-state"
+        ],
+        "claims": [
+          {
+            "proposalId": "80219b61bf54",
+            "threadId": "19fe2354fdc6120d",
+            "status": "rejected",
+            "artifactHash": "9d4e26eb779f03e4d34b43845625991d70593f37669a2fc4b0326580378f3ec7"
+          }
+        ]
+      },
+      {
+        "threadId": "19feca8f2c14d6d8",
+        "legacyProposalId": "f4567fdc74c2",
+        "legacyThreadHash": "900dcb663678513a9db31599736ccb101ce1b35dac6929ff3e43491a34aa08e2",
+        "disposition": "legacy-continuity-only",
+        "replay": false,
+        "stopReasons": [],
+        "claims": [
+          {
+            "proposalId": "f4567fdc74c2",
+            "threadId": "19feca8f2c14d6d8",
+            "status": "rejected",
+            "artifactHash": "b16ae03ae21d77759f722900565bdb98a75f3024cd4603ce22bfc1ab2974ba93"
+          }
+        ]
+      },
+      {
+        "threadId": "19feded4fdcb273b",
+        "legacyProposalId": "75e72b001ee4",
+        "legacyThreadHash": "b390d4abe5c924a9391f1729f61b0db098671d3595df2b3e3064ed7fb426b7fc",
+        "disposition": "legacy-continuity-only",
+        "replay": false,
+        "stopReasons": [],
+        "claims": [
+          {
+            "proposalId": "75e72b001ee4",
+            "threadId": "19feded4fdcb273b",
+            "status": "rejected",
+            "artifactHash": "96cc25a9296551fd993fc59dde86a9fd41d033d83134f90cdd4537cffc55de94"
+          }
+        ]
+      },
+      {
+        "threadId": "19feeb1882e71bfd",
+        "disposition": "legacy-reconciled-uncertain",
+        "replay": false,
+        "stopReasons": [
+          "approval-thread-absent-from-state"
+        ],
+        "claims": [
+          {
+            "proposalId": "53fdc536573f",
+            "threadId": "19feeb1882e71bfd",
+            "status": "rejected",
+            "artifactHash": "ed05cda6d8c3779ebd5ce42d7f8b9cf7defca07f8a14b2ca0a7bc4997309f64f"
+          }
+        ]
+      },
+      {
+        "threadId": "19ff13c7150d370e",
+        "legacyProposalId": "77e80e46fda4",
+        "legacyThreadHash": "529f5b92f9eed39d355535c0a3e9802eab079a364fa38f1e03035dffba7eb16b",
+        "disposition": "legacy-continuity-only",
+        "replay": false,
+        "stopReasons": [],
+        "claims": [
+          {
+            "proposalId": "77e80e46fda4",
+            "threadId": "19ff13c7150d370e",
+            "status": "rejected",
+            "artifactHash": "2d82737e5470ed95f4508a9531ab72c6e697cc78666c3d287a0def2053afe024"
+          }
+        ]
+      },
+      {
+        "threadId": "19ff1eb632eff206",
+        "disposition": "legacy-reconciled-uncertain",
+        "replay": false,
+        "stopReasons": [
+          "approval-thread-absent-from-state"
+        ],
+        "claims": [
+          {
+            "proposalId": "2e515009514e",
+            "threadId": "19ff1eb632eff206",
+            "status": "rejected",
+            "artifactHash": "c9001e51ae353debd7eaf56b1d1f2d83f2a8d867e665156b101bb326af32b0ca"
+          }
+        ]
+      },
+      {
+        "threadId": "19ff1ed3d6d85c68",
+        "disposition": "legacy-reconciled-uncertain",
+        "replay": false,
+        "stopReasons": [
+          "approval-thread-absent-from-state"
+        ],
+        "claims": [
+          {
+            "proposalId": "b07deecf8d6a",
+            "threadId": "19ff1ed3d6d85c68",
+            "status": "rejected",
+            "artifactHash": "18fabdadca9b96d57606f3575ce87c44b3f55fd0f86f89abc1e3b6536d54d22a"
+          }
+        ]
+      },
+      {
+        "threadId": "19ff2cdf10b351c9",
+        "disposition": "legacy-reconciled-uncertain",
+        "replay": false,
+        "stopReasons": [
+          "approval-thread-absent-from-state"
+        ],
+        "claims": [
+          {
+            "proposalId": "a74b20de6886",
+            "threadId": "19ff2cdf10b351c9",
+            "status": "rejected",
+            "artifactHash": "d4e78683211ad7c8de37a68db22a8ee1069e618eb8088239f9c78cbe5b778b6f"
+          }
+        ]
+      },
+      {
+        "threadId": "19ff379026f72b6e",
+        "disposition": "legacy-reconciled-uncertain",
+        "replay": false,
+        "stopReasons": [
+          "approval-thread-absent-from-state"
+        ],
+        "claims": [
+          {
+            "proposalId": "ab25889f14c1",
+            "threadId": "19ff379026f72b6e",
+            "status": "approved",
+            "artifactHash": "9b0999d11066f43da7e7697a57b37196e12933e96d94480488314ba82f0e328f"
+          }
+        ]
+      },
+      {
+        "threadId": "19ff64d992d58fea",
+        "disposition": "legacy-reconciled-uncertain",
+        "replay": false,
+        "stopReasons": [
+          "approval-thread-absent-from-state"
+        ],
+        "claims": [
+          {
+            "proposalId": "2a759ee089ee",
+            "threadId": "19ff64d992d58fea",
+            "status": "rejected",
+            "artifactHash": "769e490af5f4f3fbccfa0b08ba9d70241200c41babcb0fe614bc379dc509bb4a"
+          }
+        ]
+      },
+      {
+        "threadId": "19ff6dbcd7a7e76e",
+        "legacyProposalId": "a88534ac6230",
+        "legacyThreadHash": "b2838f81f95b4737e30e378768983a22003c88e891a363a363b78bcabc97a729",
+        "disposition": "legacy-continuity-only",
+        "replay": false,
+        "stopReasons": [],
+        "claims": [
+          {
+            "proposalId": "a88534ac6230",
+            "threadId": "19ff6dbcd7a7e76e",
+            "status": "rejected",
+            "artifactHash": "77c775544ba49bdbb8f12e0c7aea1125edfb067ade0ea732c764095846394ae7"
+          }
+        ]
+      },
+      {
+        "threadId": "19ff73336f8bb630",
+        "legacyProposalId": "807706d9e90b",
+        "legacyThreadHash": "a53f1288e45af89fe7378e8b1be044c3c06cbdfe73ffc88fe030c00081cc2c8c",
+        "disposition": "legacy-continuity-only",
+        "replay": false,
+        "stopReasons": [],
+        "claims": [
+          {
+            "proposalId": "807706d9e90b",
+            "threadId": "19ff73336f8bb630",
+            "status": "rejected",
+            "artifactHash": "97b7ad2f996ca1662116988e9412a12313b0226ed0b972ad99f69883aeab2da1"
+          }
+        ]
+      },
+      {
+        "threadId": "19ff7b306f26d116",
+        "disposition": "legacy-reconciled-uncertain",
+        "replay": false,
+        "stopReasons": [
+          "approval-thread-absent-from-state"
+        ],
+        "claims": [
+          {
+            "proposalId": "23ec2889b7bb",
+            "threadId": "19ff7b306f26d116",
+            "status": "rejected",
+            "artifactHash": "8c4d11c31d34970d75fc05d690a8adb63d4ce90335f73bdb42824cf6ca8043b0"
+          }
+        ]
+      },
+      {
+        "threadId": "19ff7b400e22f149",
+        "legacyProposalId": "f5d6ae40671a",
+        "legacyThreadHash": "0ab507b91b2aa7eae201ee351d5b8d9a20371e31df7ac54c2d2b32e6be6a1a35",
+        "disposition": "legacy-continuity-only",
+        "replay": false,
+        "stopReasons": [],
+        "claims": [
+          {
+            "proposalId": "f5d6ae40671a",
+            "threadId": "19ff7b400e22f149",
+            "status": "rejected",
+            "artifactHash": "8fd4586cbad3593a77a5050c70f435eeb3e511a9f3bcb1f40a04d3542c54c580"
+          }
+        ]
+      },
+      {
+        "threadId": "19ff7b44fd678598",
+        "disposition": "legacy-reconciled-uncertain",
+        "replay": false,
+        "stopReasons": [
+          "approval-thread-absent-from-state"
+        ],
+        "claims": [
+          {
+            "proposalId": "671dffadc282",
+            "threadId": "19ff7b44fd678598",
+            "status": "rejected",
+            "artifactHash": "71bc13550afeef6a95cc725cdc0d793d6f27e062bcb164e5f096d1a3f25dfa01"
+          }
+        ]
+      },
+      {
+        "threadId": "19ffb787b96b2891",
+        "disposition": "legacy-reconciled-uncertain",
+        "replay": false,
+        "stopReasons": [
+          "approval-thread-absent-from-state"
+        ],
+        "claims": [
+          {
+            "proposalId": "18ee6986e4fc",
+            "threadId": "19ffb787b96b2891",
+            "status": "rejected",
+            "artifactHash": "163b43ce6a80574fb5948e9bfda633e7e556af575a3dc7e2a5fdf41f4d4ae9cb"
+          }
+        ]
+      },
+      {
+        "threadId": "19ffbb053a794017",
+        "disposition": "legacy-reconciled-uncertain",
+        "replay": false,
+        "stopReasons": [
+          "approval-thread-absent-from-state"
+        ],
+        "claims": [
+          {
+            "proposalId": "7abc8b103fa1",
+            "threadId": "19ffbb053a794017",
+            "status": "rejected",
+            "artifactHash": "2d3324025eece4bc0c992769b7324d7d223936140a910a2394cd9f1390b0bdb1"
+          }
+        ]
+      },
+      {
+        "threadId": "19ffcd6949a271a6",
+        "legacyProposalId": "ca90d08183c4",
+        "legacyThreadHash": "36fba7058f2fbfd0e67335570fb40a31ba1fe94f64cd18f52d6a5979e0fbd246",
+        "disposition": "legacy-continuity-only",
+        "replay": false,
+        "stopReasons": [],
+        "claims": [
+          {
+            "proposalId": "ca90d08183c4",
+            "threadId": "19ffcd6949a271a6",
+            "status": "rejected",
+            "artifactHash": "d39eab76af555e2e5f2dbeae44da8e9fcc681556ad5af4d2aac9b98dd4633a46"
+          }
+        ]
+      },
+      {
+        "threadId": "19ffce472bae0190",
+        "legacyProposalId": "cabb1d99a7c0",
+        "legacyThreadHash": "154003b4e52fc82ee758102dfe41d6fcb9e81e1e5515a0a7963229779c84ce8e",
+        "disposition": "legacy-continuity-only",
+        "replay": false,
+        "stopReasons": [],
+        "claims": [
+          {
+            "proposalId": "cabb1d99a7c0",
+            "threadId": "19ffce472bae0190",
+            "status": "rejected",
+            "artifactHash": "229f593ed9cfad80daac03a9ad8bbb84f9efd75caffb6ccf3309a0a8cd24afb9"
+          }
+        ]
+      },
+      {
+        "threadId": "19ffced1e422fc7f",
+        "legacyProposalId": "20f78c1ed8a1",
+        "legacyThreadHash": "67a638a7d046aa286671dd664277701e499c78336c6b53b6230a68614a01ba3d",
+        "disposition": "legacy-continuity-only",
+        "replay": false,
+        "stopReasons": [],
+        "claims": [
+          {
+            "proposalId": "20f78c1ed8a1",
+            "threadId": "19ffced1e422fc7f",
+            "status": "rejected",
+            "artifactHash": "ae473e7ebef761673de143dfafae5392a6ab91664eabc6d75643b1635d9e7441"
+          }
+        ]
+      },
+      {
+        "threadId": "19ffcf8dfd8b9bfa",
+        "legacyProposalId": "701ef25f2ff7",
+        "legacyThreadHash": "8b5e9004c94463fb0d7d0c0808745ff8475d4ed601b4baf631fb6af50c45170b",
+        "disposition": "legacy-continuity-only",
+        "replay": false,
+        "stopReasons": [],
+        "claims": [
+          {
+            "proposalId": "701ef25f2ff7",
+            "threadId": "19ffcf8dfd8b9bfa",
+            "status": "rejected",
+            "artifactHash": "f85e399440da967ba6c99eda9eaf0781c4a252b0c1f72c452cb969b2a9017ff4"
+          }
+        ]
+      },
+      {
+        "threadId": "19ffd028f127c84b",
+        "legacyProposalId": "a8ef7eceae44",
+        "legacyThreadHash": "4748de3f3be52f581858f335f5d941f44149d54448639bfa904b40f67558d4ca",
+        "disposition": "legacy-continuity-only",
+        "replay": false,
+        "stopReasons": [],
+        "claims": [
+          {
+            "proposalId": "a8ef7eceae44",
+            "threadId": "19ffd028f127c84b",
+            "status": "rejected",
+            "artifactHash": "2f2ad2acabe4f95a7a8060b27c7010d8f155cd631c6794819b90154c7e0ba425"
+          }
+        ]
+      },
+      {
+        "threadId": "19ffd0929a13d55a",
+        "legacyProposalId": "bcf4d31f6d11",
+        "legacyThreadHash": "ae40ebf90be9b984bc9efb4b6c37d67e2500b3d5970f1b11b2267880d0c93523",
+        "disposition": "legacy-continuity-only",
+        "replay": false,
+        "stopReasons": [],
+        "claims": [
+          {
+            "proposalId": "bcf4d31f6d11",
+            "threadId": "19ffd0929a13d55a",
+            "status": "rejected",
+            "artifactHash": "e18f86ff65c0c5e9b2daa63ad055d538e71dafb12f2b45be7eb9319c2af59833"
+          }
+        ]
+      },
+      {
+        "threadId": "19ffd3bea0ca404b",
+        "legacyProposalId": "2ce4e75c4d16",
+        "legacyThreadHash": "03862a737ef104d48005f47fcd23fbb35cc519bc5686b9581ddca24aa0c5aff8",
+        "disposition": "legacy-continuity-only",
+        "replay": false,
+        "stopReasons": [],
+        "claims": [
+          {
+            "proposalId": "2ce4e75c4d16",
+            "threadId": "19ffd3bea0ca404b",
+            "status": "rejected",
+            "artifactHash": "2d5c29706ed801394597e159848d200e8c093ef5ebebc14e93d3f7cb117c70a3"
+          }
+        ]
+      },
+      {
+        "threadId": "1a0068d7deb34c1d",
+        "disposition": "legacy-reconciled-uncertain",
+        "replay": false,
+        "stopReasons": [
+          "approval-thread-absent-from-state"
+        ],
+        "claims": [
+          {
+            "proposalId": "8c36d568a2e0",
+            "threadId": "1a0068d7deb34c1d",
+            "status": "rejected",
+            "artifactHash": "88e11b9a164a2dc1d0733b6bcab3f11d968589e0f98c644112651cabc714317a"
+          }
+        ]
+      },
+      {
+        "threadId": "1a00c9b718e63465",
+        "legacyProposalId": "3f4ad68cdb8d",
+        "legacyThreadHash": "6415c156618d40ec7cd779f341bfcb22f3e01d1938b5ec8b8995ed24a508c98f",
+        "disposition": "legacy-continuity-only",
+        "replay": false,
+        "stopReasons": [],
+        "claims": [
+          {
+            "proposalId": "3f4ad68cdb8d",
+            "threadId": "1a00c9b718e63465",
+            "status": "rejected",
+            "artifactHash": "315038381f6511b33fbdb1cbc0778fe1baf6cec0ea8dd7e283d4b8372a7033e3"
+          }
+        ]
+      },
+      {
+        "threadId": "1a0101ac06fd4034",
+        "disposition": "legacy-reconciled-uncertain",
+        "replay": false,
+        "stopReasons": [
+          "approval-thread-absent-from-state"
+        ],
+        "claims": [
+          {
+            "proposalId": "88578cc27f3f",
+            "threadId": "1a0101ac06fd4034",
+            "status": "rejected",
+            "artifactHash": "4c5f1e9986a212eeb4d0df341c9c1e1044bb2db661d16244f4cbd2698c91f464"
+          }
+        ]
+      },
+      {
+        "threadId": "1a0108c88a6c9d97",
+        "legacyProposalId": "8db3a342d0c5",
+        "legacyThreadHash": "6eb0b5e045ee6dfc4efc34b37eab5978e23a8fc6c286551adf27e55348589c3c",
+        "disposition": "legacy-continuity-only",
+        "replay": false,
+        "stopReasons": [],
+        "claims": [
+          {
+            "proposalId": "8db3a342d0c5",
+            "threadId": "1a0108c88a6c9d97",
+            "status": "rejected",
+            "artifactHash": "16388c4c65589b9a4ca54a4af79b037696e474b819919ceb0bf006679789fb1e"
+          }
+        ]
+      },
+      {
+        "threadId": "1a0110a6d8ee8c60",
+        "disposition": "legacy-reconciled-uncertain",
+        "replay": false,
+        "stopReasons": [
+          "approval-thread-absent-from-state"
+        ],
+        "claims": [
+          {
+            "proposalId": "40fd78f5a553",
+            "threadId": "1a0110a6d8ee8c60",
+            "status": "rejected",
+            "artifactHash": "cd1ea141746745d0ac11cfab1e3e836b36cfa4b80b2bf8f8d00e81c005f83080"
+          }
+        ]
+      },
+      {
+        "threadId": "1a0164f9465db1e0",
+        "legacyProposalId": "240cc59ad499",
+        "legacyThreadHash": "672cb8b1503161d90887978f9318298d93a25828a1b4e2802720ac513f901b57",
+        "disposition": "legacy-continuity-only",
+        "replay": false,
+        "stopReasons": [],
+        "claims": [
+          {
+            "proposalId": "240cc59ad499",
+            "threadId": "1a0164f9465db1e0",
+            "status": "rejected",
+            "artifactHash": "2185c7a8714ed91be4ae55dff1e2200e5447e2e01dd1f6fea8df3c1f9679799f"
+          }
+        ]
+      },
+      {
+        "threadId": "1a01948632e2b023",
+        "disposition": "legacy-reconciled-uncertain",
+        "replay": false,
+        "stopReasons": [
+          "approval-thread-absent-from-state"
+        ],
+        "claims": [
+          {
+            "proposalId": "bf4c5ee9e582",
+            "threadId": "1a01948632e2b023",
+            "status": "rejected",
+            "artifactHash": "017fb03500a188b87669397e6b2b952fa61b068aa7a38dc7aed05829a1ebcff2"
+          }
+        ]
+      },
+      {
+        "threadId": "1a01a817ed790f96",
+        "disposition": "legacy-reconciled-uncertain",
+        "replay": false,
+        "stopReasons": [
+          "approval-thread-absent-from-state"
+        ],
+        "claims": [
+          {
+            "proposalId": "6072646904b2",
+            "threadId": "1a01a817ed790f96",
+            "status": "rejected",
+            "artifactHash": "c382da74621d48eaba26aed59e82478c29f345261d75582b3c1861a98fa558b4"
+          }
+        ]
+      },
+      {
+        "threadId": "1a0208b541ed8626",
+        "legacyProposalId": "2ee64e2ab123",
+        "legacyThreadHash": "d943b986744e37116f7781504a74b520e24b4ebb7b4c9a025e2f66cd207a26e0",
+        "disposition": "legacy-continuity-only",
+        "replay": false,
+        "stopReasons": [],
+        "claims": [
+          {
+            "proposalId": "2ee64e2ab123",
+            "threadId": "1a0208b541ed8626",
+            "status": "rejected",
+            "artifactHash": "822b8e20b95fe4835312bd7cbc21541c7d822f5ecfcd2b25c828c757ba49a169"
+          }
+        ]
+      },
+      {
+        "threadId": "1a024a3b4afce7d6",
+        "legacyProposalId": "fd37efa746a1",
+        "legacyThreadHash": "9e0ef3a2ef55e6ab39ae73e67bd9a583712be637ae4b6a790730fa44c50c0cf2",
+        "disposition": "legacy-continuity-only",
+        "replay": false,
+        "stopReasons": [],
+        "claims": [
+          {
+            "proposalId": "fd37efa746a1",
+            "threadId": "1a024a3b4afce7d6",
+            "status": "rejected",
+            "artifactHash": "d0f919df9a5fce0bae1a370431674cae04346b1bce780b59483d364ec0930b16"
+          }
+        ]
+      },
+      {
+        "threadId": "1a024f20567b0ad8",
+        "legacyProposalId": "477e534dfbca",
+        "legacyThreadHash": "d9fc070ee9dcb2f8c9fdc05d7cf0562752d7d64391293c1711ba406b190022fb",
+        "disposition": "legacy-continuity-only",
+        "replay": false,
+        "stopReasons": [],
+        "claims": [
+          {
+            "proposalId": "477e534dfbca",
+            "threadId": "1a024f20567b0ad8",
+            "status": "rejected",
+            "artifactHash": "0fc5200c7add01c4720c3b696852fe0b0b63dcb48bffd6210b861f1368913e0b"
+          }
+        ]
+      },
+      {
+        "threadId": "1a026203cdf06b94",
+        "legacyProposalId": "f3be850fec18",
+        "legacyThreadHash": "c7d8a2d450a2c2c012a4f02b6017372e3d8cc07566dd761666ba23ba04a7c021",
+        "disposition": "legacy-continuity-only",
+        "replay": false,
+        "stopReasons": [],
+        "claims": [
+          {
+            "proposalId": "f3be850fec18",
+            "threadId": "1a026203cdf06b94",
+            "status": "rejected",
+            "artifactHash": "ea0b19a35f376dea0a0e172d9c9bfd292fd40a756b114d7f891032759fa2ad79"
+          }
+        ]
+      },
+      {
+        "threadId": "1a02feca5cb4b693",
+        "legacyProposalId": "24529ee3940e",
+        "legacyThreadHash": "07cc952c3f6132402fa24a065c20bf82cf4e67adfe1487cccbadcbd243caec02",
+        "disposition": "legacy-continuity-only",
+        "replay": false,
+        "stopReasons": [],
+        "claims": [
+          {
+            "proposalId": "24529ee3940e",
+            "threadId": "1a02feca5cb4b693",
+            "status": "rejected",
+            "artifactHash": "6a32deca89698c55a14e578d6c384fe1094721810cd3718971c392fef4c2dd53"
+          }
+        ]
+      },
+      {
+        "threadId": "1a0349ea23850a6e",
+        "legacyProposalId": "b3d46314b585",
+        "legacyThreadHash": "36e44ff95797e5ece1ed36adefbe723dcc56ecabf2cc92221afccd92e2eeaa8e",
+        "disposition": "legacy-continuity-only",
+        "replay": false,
+        "stopReasons": [],
+        "claims": [
+          {
+            "proposalId": "b3d46314b585",
+            "threadId": "1a0349ea23850a6e",
+            "status": "rejected",
+            "artifactHash": "df1336a81ab9baccf6e3d04daf5cbcf7ffc3894876dd5a99c6b9e83693511297"
+          }
+        ]
+      },
+      {
+        "threadId": "1a034a1ff0042f89",
+        "legacyProposalId": "e5a7877ce74e",
+        "legacyThreadHash": "b6519cfa6f121fde8be8b13e5cd90f9f049888ef8cabbd7992353f510fa0776e",
+        "disposition": "legacy-reconciled-uncertain",
+        "replay": false,
+        "stopReasons": [
+          "append-lineage-needs-effect-evidence"
+        ],
+        "claims": [
+          {
+            "proposalId": "a35b7eb33900",
+            "threadId": "1a034a1ff0042f89",
+            "status": "approved",
+            "artifactHash": "592a250587957734a75854a5be0c551099fe06d96ef627231946f0807805ea80"
+          },
+          {
+            "proposalId": "e5a7877ce74e",
+            "threadId": "1a034a1ff0042f89",
+            "status": "approved",
+            "artifactHash": "51c88079fdcd8a6b33c17c7c124be1205325d22d6e3460c7d21f0eb466186713"
+          }
+        ]
+      },
+      {
+        "threadId": "1a034c3528e01287",
+        "legacyProposalId": "5923762d146a",
+        "legacyThreadHash": "add72649496025f3882b02c53bb43ce21e49fd7249e0c63f293c5908d40d14ba",
+        "disposition": "legacy-continuity-only",
+        "replay": false,
+        "stopReasons": [],
+        "claims": [
+          {
+            "proposalId": "5923762d146a",
+            "threadId": "1a034c3528e01287",
+            "status": "rejected",
+            "artifactHash": "0c32f857e0361d27cc0fbdcf811f86dacce2c286c509678aba117b083948d9c3"
+          }
+        ]
+      },
+      {
+        "threadId": "1a035f59dccb28e6",
+        "legacyProposalId": "43cb40be5577",
+        "legacyThreadHash": "41aae0969f66f5a8df0b94d8c3ab48b728a4674312108cbb9e16e6e02dbccc70",
+        "disposition": "legacy-continuity-only",
+        "replay": false,
+        "stopReasons": [],
+        "claims": [
+          {
+            "proposalId": "43cb40be5577",
+            "threadId": "1a035f59dccb28e6",
+            "status": "rejected",
+            "artifactHash": "cebec223aab14b3321267f1fc59d5d55919b85ee1f51f793944d929701a41074"
+          }
+        ]
+      },
+      {
+        "threadId": "1a03e89e1e41e391",
+        "legacyProposalId": "715135aac7c3",
+        "legacyThreadHash": "93ff6f82a952efcf13b0a27a87d51bc16cad670a7b0738d509fe0ef319c0bdac",
+        "disposition": "legacy-continuity-only",
+        "replay": false,
+        "stopReasons": [],
+        "claims": [
+          {
+            "proposalId": "715135aac7c3",
+            "threadId": "1a03e89e1e41e391",
+            "status": "rejected",
+            "artifactHash": "297df8503e8ae074083ea93e5dc95c03a3fb4f4e9e3c7256f578dfc839c36e69"
+          }
+        ]
+      },
+      {
+        "threadId": "1a03ea35535b9653",
+        "legacyProposalId": "9062875f1003",
+        "legacyThreadHash": "dbc30e69f86944ba710b8d4e98b4be3c97f07e65f035aa9b713a9309c2eb9748",
+        "disposition": "legacy-continuity-only",
+        "replay": false,
+        "stopReasons": [],
+        "claims": [
+          {
+            "proposalId": "9062875f1003",
+            "threadId": "1a03ea35535b9653",
+            "status": "rejected",
+            "artifactHash": "8c61afa605743d73f257bdb881ae0f9bb0333f2e2684d18871301aeada0157ad"
+          }
+        ]
+      },
+      {
+        "threadId": "1a03fa98004524fe",
+        "legacyProposalId": "b502da5d8e17",
+        "legacyThreadHash": "f427fa4d52b008c7e698f58b95321c8dedc2ce64d8f426d7a8ed73b06dcf870e",
+        "disposition": "legacy-continuity-only",
+        "replay": false,
+        "stopReasons": [],
+        "claims": [
+          {
+            "proposalId": "b502da5d8e17",
+            "threadId": "1a03fa98004524fe",
+            "status": "rejected",
+            "artifactHash": "55779d55b84db9b781ecd3c3157b19aa0b9d737f6b843531819abf37a58c20d0"
+          }
+        ]
+      },
+      {
+        "threadId": "1a040f54e04f9e1f",
+        "legacyProposalId": "ff57abefe244",
+        "legacyThreadHash": "0d63b0e0c9e8c51c396185bec400d8a1c77a6cf0a30d085a5cd2d971e5d14ac7",
+        "disposition": "legacy-continuity-only",
+        "replay": false,
+        "stopReasons": [],
+        "claims": [
+          {
+            "proposalId": "ff57abefe244",
+            "threadId": "1a040f54e04f9e1f",
+            "status": "rejected",
+            "artifactHash": "03bb2e47c1b295b01389a8185e2458f2379989fcd6463c264e2627552fb5e0a4"
+          }
+        ]
+      },
+      {
+        "threadId": "1a04102cff03392a",
+        "legacyProposalId": "104c5eb764a3",
+        "legacyThreadHash": "2880edebec920e8367dca6323d394b4859adfe0c780d65ec0e88f0b6f48cc339",
+        "disposition": "legacy-continuity-only",
+        "replay": false,
+        "stopReasons": [],
+        "claims": [
+          {
+            "proposalId": "104c5eb764a3",
+            "threadId": "1a04102cff03392a",
+            "status": "rejected",
+            "artifactHash": "aed9c76a23b070689f0259a9f04f3766a77317dd24b09d0ee40b75528b0a0191"
+          }
+        ]
+      },
+      {
+        "threadId": "1a043e66c00343e0",
+        "legacyProposalId": "b449366e45e7",
+        "legacyThreadHash": "0df7c58080ccd4587cb1e356577a3a4305155b2346d38595de17ff6f50fd4be0",
+        "disposition": "legacy-continuity-only",
+        "replay": false,
+        "stopReasons": [],
+        "claims": [
+          {
+            "proposalId": "b449366e45e7",
+            "threadId": "1a043e66c00343e0",
+            "status": "rejected",
+            "artifactHash": "ac064870120178ba13a0ea5defe68a336f9782813e420f13e97dd2af19268249"
+          }
+        ]
+      },
+      {
+        "threadId": "1a048f0d04319ca2",
+        "legacyProposalId": "2d6432fdc9c7",
+        "legacyThreadHash": "92814667a1f3ee0baba45a2fda96bf29046a3b473708dba1e10ed9fae5114a1b",
+        "disposition": "legacy-continuity-only",
+        "replay": false,
+        "stopReasons": [],
+        "claims": [
+          {
+            "proposalId": "2d6432fdc9c7",
+            "threadId": "1a048f0d04319ca2",
+            "status": "rejected",
+            "artifactHash": "fd815b77546866bef2e7d928c02ea746d02e15c26f5beb926cbe7bd4a5671925"
+          }
+        ]
+      },
+      {
+        "threadId": "1a054ae394256d20",
+        "legacyProposalId": "7b70c2da9916",
+        "legacyThreadHash": "f1e7d8088eea8af13895cbcc558b9842875e18e3643e61d9f9fc3e100bad08f0",
+        "disposition": "legacy-continuity-only",
+        "replay": false,
+        "stopReasons": [],
+        "claims": [
+          {
+            "proposalId": "7b70c2da9916",
+            "threadId": "1a054ae394256d20",
+            "status": "rejected",
+            "artifactHash": "fa623c6bf3fc0f03853dcce4a7ad3287c1ec36777ad2c49006a4de874bd6da3f"
+          }
+        ]
+      },
+      {
+        "threadId": "1a05875cbd110100",
+        "legacyProposalId": "91c5ab6b1773",
+        "legacyThreadHash": "0ab6a417a3f955ddb4db2987b3478e7bab9ab46ac2d89dce8c6ede0a854984ed",
+        "disposition": "legacy-continuity-only",
+        "replay": false,
+        "stopReasons": [],
+        "claims": [
+          {
+            "proposalId": "91c5ab6b1773",
+            "threadId": "1a05875cbd110100",
+            "status": "approved",
+            "artifactHash": "456c149b200ede962e0a01691e1b03284813ad9272ef4441b5d17944ee82f4be"
+          }
+        ]
+      },
+      {
+        "threadId": "1a0587faa41baebb",
+        "legacyProposalId": "b4046f722b61",
+        "legacyThreadHash": "5cfba4c4b3bc082fdfb80abad768ccac277c780bced4b765738ccf5898a2e68f",
+        "disposition": "legacy-reconciled-uncertain",
+        "replay": false,
+        "stopReasons": [
+          "append-lineage-needs-effect-evidence"
+        ],
+        "claims": [
+          {
+            "proposalId": "4f2a82c9dc18",
+            "threadId": "1a0587faa41baebb",
+            "status": "approved",
+            "artifactHash": "1ed0f189195e4b5e78362b37d91b4619c6ae38d915f518e7813da5950ad31753"
+          },
+          {
+            "proposalId": "94e52c33fd92",
+            "threadId": "1a0587faa41baebb",
+            "status": "approved",
+            "artifactHash": "15410d865552bd57634b6691ef8da661ffbbd6f0bed173947116e1a4d9b18d14"
+          },
+          {
+            "proposalId": "b4046f722b61",
+            "threadId": "1a0587faa41baebb",
+            "status": "approved",
+            "artifactHash": "d94131ee4b6bf4109280d6de1ff98d1eb89cec4aee314183f3a8da306a6b778c"
+          }
+        ]
+      },
+      {
+        "threadId": "1a058ddc592f53ce",
+        "legacyProposalId": "ee447c541e9a",
+        "legacyThreadHash": "8d60232272cf4ff87b909788a7307620e78d0036be86797ffcca74697a1b1a79",
+        "disposition": "legacy-continuity-only",
+        "replay": false,
+        "stopReasons": [],
+        "claims": [
+          {
+            "proposalId": "ee447c541e9a",
+            "threadId": "1a058ddc592f53ce",
+            "status": "rejected",
+            "artifactHash": "49e2ac9dfe51893e542edc8b2606e1d6370a7d49b0535494dbe45f55c83fc379"
+          }
+        ]
+      },
+      {
+        "threadId": "1a058dfea4847a19",
+        "legacyProposalId": "f71ebab1c589",
+        "legacyThreadHash": "45a63d636404101ba28dbc05ae8c09e3d76acd088587c7de6c061042bf4d6f25",
+        "disposition": "legacy-continuity-only",
+        "replay": false,
+        "stopReasons": [],
+        "claims": [
+          {
+            "proposalId": "f71ebab1c589",
+            "threadId": "1a058dfea4847a19",
+            "status": "rejected",
+            "artifactHash": "3f903bd6dcf76a2ef1b8d9ae6694ea78388fb40d2b8ddfec1289c855b09c9da5"
+          }
+        ]
+      },
+      {
+        "threadId": "1a0629a6e8caface",
+        "legacyProposalId": "a18afc890ad9",
+        "legacyThreadHash": "60b72c0ce9cf7e42ec5bb8ff6746c5e0d38ec9546255daac55930575237f7409",
+        "disposition": "legacy-continuity-only",
+        "replay": false,
+        "stopReasons": [],
+        "claims": [
+          {
+            "proposalId": "a18afc890ad9",
+            "threadId": "1a0629a6e8caface",
+            "status": "rejected",
+            "artifactHash": "55cdc21a22ffed9e2216598ca6dec1a31b66466a76956cc66fa5cb936c821607"
+          }
+        ]
+      },
+      {
+        "threadId": "1a072becee770e6d",
+        "legacyProposalId": "c877060d0a58",
+        "legacyThreadHash": "c9ebefa64a3604615688173beb69f4de7b78a69e4ae66b6ad5bd788a4c11b916",
+        "disposition": "legacy-continuity-only",
+        "replay": false,
+        "stopReasons": [],
+        "claims": [
+          {
+            "proposalId": "c877060d0a58",
+            "threadId": "1a072becee770e6d",
+            "status": "rejected",
+            "artifactHash": "e7309529a0ad5144d69ac1ce9d6aec4e25298b0c6b71df223038fe9fb856ac01"
+          }
+        ]
+      },
+      {
+        "threadId": "1a09e1724415d00f",
+        "legacyProposalId": "b8367443abbb",
+        "legacyThreadHash": "017829ab7b38e87aa24bb4ddccf7de7e0607fa6abd86073621aa3c10677ed716",
+        "disposition": "legacy-continuity-only",
+        "replay": false,
+        "stopReasons": [],
+        "claims": [
+          {
+            "proposalId": "b8367443abbb",
+            "threadId": "1a09e1724415d00f",
+            "status": "rejected",
+            "artifactHash": "b120864d1d14afaaf91da4b9aa2663e30915fb11751dd1fca7cd9effc4de183b"
+          }
+        ]
+      },
+      {
+        "threadId": "1a0a5b454acc0795",
+        "legacyProposalId": "7d1d56287d9d",
+        "legacyThreadHash": "9977e22487dcca3e50f79f7606177c117a8c8695f449203b54e4aa4e6a768b75",
+        "disposition": "legacy-continuity-only",
+        "replay": false,
+        "stopReasons": [],
+        "claims": [
+          {
+            "proposalId": "7d1d56287d9d",
+            "threadId": "1a0a5b454acc0795",
+            "status": "rejected",
+            "artifactHash": "33cce58aaf0af198474a756eaea7addc19ea42a06563a154e72036440ede6aca"
+          }
+        ]
+      },
+      {
+        "threadId": "1a0a5f25cde147c2",
+        "legacyProposalId": "3d60c2a7cbe6",
+        "legacyThreadHash": "f936223f8b91a4c16674fcba16dc7137d7f5ac0750f21873eee119b39aabded0",
+        "disposition": "legacy-continuity-only",
+        "replay": false,
+        "stopReasons": [],
+        "claims": [
+          {
+            "proposalId": "3d60c2a7cbe6",
+            "threadId": "1a0a5f25cde147c2",
+            "status": "rejected",
+            "artifactHash": "8ea7b2df485fc34d7de0bf5fff5bf55659082514f402f3759d379ea597c90439"
+          }
+        ]
+      },
+      {
+        "threadId": "1a0a725071831fce",
+        "legacyProposalId": "ab7a79c36ab4",
+        "legacyThreadHash": "dd481153f0a215b838513057770ed63faa4295688519eb0ce7c3f1732f7103f4",
+        "disposition": "legacy-continuity-only",
+        "replay": false,
+        "stopReasons": [],
+        "claims": [
+          {
+            "proposalId": "ab7a79c36ab4",
+            "threadId": "1a0a725071831fce",
+            "status": "rejected",
+            "artifactHash": "636d2e940dae8ce752b810c2b2d409bba2657413f2d18bf7927939df53453703"
+          }
+        ]
+      },
+      {
+        "threadId": "1a0a7704c692221c",
+        "legacyProposalId": "e4694576f198",
+        "legacyThreadHash": "9ce8e90f9175d1d83221f5c523437d647904d69bbc5c31d0eed0596fa742cb43",
+        "disposition": "legacy-continuity-only",
+        "replay": false,
+        "stopReasons": [],
+        "claims": [
+          {
+            "proposalId": "e4694576f198",
+            "threadId": "1a0a7704c692221c",
+            "status": "rejected",
+            "artifactHash": "80a5b861ca8aa392ee1eb213d0297b0b03159630dc6f7c8ea67651e967f9fd7a"
+          }
+        ]
+      }
+    ]
+  },
+  "enabled": false,
+  "mode": "continuity-only",
+  "observations": []
+}
