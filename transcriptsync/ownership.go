@@ -2,6 +2,7 @@ package transcriptsync
 
 import (
 	"fmt"
+	"path/filepath"
 
 	"manifest/approvals"
 	"manifest/connectorhandoff"
@@ -11,7 +12,7 @@ import (
 // Unlike enterSuccessor it creates no fence lock or operational files and does
 // not contact upstreams. Recorded outcomes are not proof of current liveness.
 func (s *Service) OwnershipSnapshot(dataDir, root, source string, f connectorhandoff.RecordFence, r connectorhandoff.Record) (State, bool, error) {
-	if s == nil || s.handoffDataDir != dataDir || s.cfg.LegacyRoot != root {
+	if s == nil || dataDir == "" || root == "" || s.handoffDataDir != dataDir || s.dir != filepath.Join(dataDir, "transcript-sync") || s.cfg.LegacyRoot != root {
 		return State{}, false, fmt.Errorf("matching guarded transcript service required")
 	}
 	c, err := s.config(source)

@@ -33,6 +33,11 @@ func TestTranscriptOwnershipEvidence(t *testing.T) {
 			{"corrupt-fence-history", "history", "blocked", "", true, false, false, false},
 			{"no-service", "service", "blocked", "", true, false, true, false},
 			{"wrong-root", "root", "blocked", "", true, false, true, false},
+			{"wrong-guard-dataDir", "guard", "blocked", "", true, false, true, false},
+			{"wrong-state-dataDir", "data", "blocked", "", true, false, true, false},
+			{"unguarded-service", "unguarded", "blocked", "", true, false, true, false},
+			{"bad-account-binding", "account-binding", "blocked", "", true, false, true, false},
+			{"stale-handoff", "stale", "blocked", "", true, false, true, false},
 			{"unobserved", "unobserved", "fence-protected", "unknown", true, false, true, true},
 			{"failed", "failed", "blocked", "error", true, false, true, true},
 			{"attempt-without-success", "attempt", "fence-protected", "unknown", true, false, true, true},
@@ -71,6 +76,10 @@ func TestTranscriptOwnershipEvidence(t *testing.T) {
 					st.ImportedFrom = strings.Repeat("b", 64)
 				case "account":
 					st.Account = "other"
+				case "account-binding":
+					record.Evidence["account-binding"] = approvals.EvidenceHash("other")
+				case "stale":
+					record.Evidence["dispatch-exclusion"] = strings.Repeat("b", 64)
 				case "binding":
 					f.Evidence = strings.Repeat("b", 64)
 				case "root":
@@ -98,7 +107,18 @@ func TestTranscriptOwnershipEvidence(t *testing.T) {
 				}
 				store := NewStore(root).WithHarnessName("excalibur").WithConnectorHandoffs(data)
 				if tc.damage != "service" {
-					store.WithTranscriptSync(transcriptsync.New(data, cfg, nil, nil).WithHandoffGuard(data))
+					stateData, guardData := data, data
+					if tc.damage == "guard" {
+						guardData = t.TempDir()
+					}
+					if tc.damage == "unguarded" {
+						guardData = ""
+					}
+					if tc.damage == "data" {
+						stateData = t.TempDir()
+						put(filepath.Join(stateData, "transcript-sync", source, "state.json"), st)
+					}
+					store.WithTranscriptSync(transcriptsync.New(stateData, cfg, nil, nil).WithHandoffGuard(guardData))
 				}
 				row := RitualRow{Spirit: "ea-coordinator", Ritual: source + "-sync", Valid: true, LegacyEnabled: tc.schedule}
 				store.projectOwnership(&row)

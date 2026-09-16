@@ -848,10 +848,8 @@ func main() {
 			}
 			syncer := transcriptsync.New(cfg.DataDir, cfg.TranscriptSync, transcriptIndex, transcriptApprovals).WithHandoffGuard(cfg.DataDir)
 			srv.UseTranscriptSync(syncer)
-			for _, h := range hs {
-				if h.Name == "excalibur" {
-					h.Spirits.WithConnectorHandoffs(cfg.DataDir).WithTranscriptSync(syncer)
-				}
+			if err := wireTranscriptOwnership(cfg, hs, syncer); err != nil {
+				log.Printf("transcript ownership blocked: %v", err)
 			}
 			syncer.Start(ctx)
 		}
