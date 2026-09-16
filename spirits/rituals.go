@@ -214,6 +214,9 @@ func (s *Store) WriteFile(rel, content string) (res LintResult, allowed bool, er
 	if len(parts) == 4 && parts[2] == "rituals" {
 		reason := s.RetirementReason(parts[1], strings.TrimSuffix(parts[3], ".md"))
 		fm, _ := mdfm.Split(content)
+		if err := s.connectorDispatchGuard(parts[1], strings.TrimSuffix(parts[3], ".md")); err != nil && ritualEnabled(fm) {
+			return LintResult{OK: false, Errors: []string{err.Error()}}, true, nil
+		}
 		if owner := s.dutyOwners[parts[1]+"/"+strings.TrimSuffix(parts[3], ".md")]; owner != "" && ritualEnabled(fm) {
 			return LintResult{OK: false, Errors: []string{"legacy enablement refused: duty configured for " + owner}}, true, nil
 		}

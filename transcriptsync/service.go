@@ -20,7 +20,7 @@ import (
 
 	"golang.org/x/sys/unix"
 	"manifest/approvals"
-	"manifest/mdfm"
+	"manifest/connectorhandoff"
 )
 
 type SourceConfig struct {
@@ -50,19 +50,24 @@ type State struct {
 	Waiting      int                `json:"waiting"`
 }
 type Service struct {
-	dir       string
-	cfg       Config
-	idx       *Index
-	approvals *approvals.Store
-	locks     map[string]*sync.Mutex
-	now       func() time.Time
-	granola   func(string) *GranolaClient
-	pocket    func(string) *PocketClient
+	dir            string
+	handoffDataDir string
+	cfg            Config
+	idx            *Index
+	approvals      *approvals.Store
+	locks          map[string]*sync.Mutex
+	now            func() time.Time
+	granola        func(string) *GranolaClient
+	pocket         func(string) *PocketClient
 }
 
 func New(dataDir string, cfg Config, idx *Index, ap *approvals.Store) *Service {
 	return &Service{dir: filepath.Join(dataDir, "transcript-sync"), cfg: cfg, idx: idx, approvals: ap, locks: map[string]*sync.Mutex{"granola": {}, "pocket": {}}, now: time.Now, granola: NewGranolaClient, pocket: NewPocketClient}
 }
+
+// WithHandoffGuard requires durable migration evidence in production. Tests of
+// the isolated polling mechanism can use synthetic state without a live harness.
+func (s *Service) WithHandoffGuard(dataDir string) *Service { s.handoffDataDir = dataDir; return s }
 func (s *Service) config(source string) (SourceConfig, error) {
 	switch source {
 	case "granola":
@@ -181,70 +186,39 @@ func (s *Service) Disconnect(source string) error {
 	return e
 }
 
-// Import records the exact old checkpoint and copies a supplied secret to the
-// private store. It never changes old state or approval decisions. Activation
-// remains a separate configuration change after the old duty has been paused.
+// Import previews the legacy cursor without writing. Applying the former
+// watermark-only import is unsafe: Excalibur does not share a dispatch fence.
+// Use ReconcileCheckpoint for approval/source continuity before a future handoff.
 func (s *Service) Import(source, legacyRoot, key string, apply bool) (State, error) {
 	c, e := s.config(source)
 	if e != nil {
 		return State{}, e
+	}
+	if apply {
+		return State{}, fmt.Errorf("handoff blocked: enforceable legacy dispatch exclusion, drained work, account binding and source reconciliation required; no state or credential written")
 	}
 	if c.Account == "" || c.Enabled {
 		return State{}, fmt.Errorf("import requires named account and disabled source")
 	}
 	s.locks[source].Lock()
 	defer s.locks[source].Unlock()
-	if apply {
-		// Importing while the old schedule is enabled creates a stale snapshot
-		// before activation even begins. This is a prerequisite, not proof that
-		// queued/running work drained; the operator must still reconcile it.
-		b, err := os.ReadFile(filepath.Join(legacyRoot, "spirits", "ea-coordinator", "rituals", source+"-sync.md"))
-		if err != nil {
-			return State{}, fmt.Errorf("legacy ritual unreadable; pause and reconcile before import")
-		}
-		fm, _ := mdfm.Split(string(b))
-		if fm["enabled"] != "false" || strings.TrimSpace(fm["paused_reason"]) == "" {
-			return State{}, fmt.Errorf("legacy ritual must have enabled: false and paused_reason before import")
-		}
-		if e := os.MkdirAll(filepath.Join(s.dir, source), 0700); e != nil {
-			return State{}, e
-		}
-		claim, e := os.OpenFile(filepath.Join(s.dir, source, "poll.lock"), os.O_CREATE|os.O_RDWR, 0600)
-		if e != nil {
-			return State{}, e
-		}
-		defer claim.Close()
-		if e = unix.Flock(int(claim.Fd()), unix.LOCK_EX|unix.LOCK_NB); e != nil {
-			return State{}, fmt.Errorf("source operation active")
-		}
-		defer unix.Flock(int(claim.Fd()), unix.LOCK_UN)
-	}
 	if _, e := os.Lstat(s.statePath(source)); e == nil {
 		return State{}, fmt.Errorf("state already imported")
 	} else if !os.IsNotExist(e) {
-		return State{}, e
+		return State{}, fmt.Errorf("successor state unavailable")
 	}
 	b, e := os.ReadFile(filepath.Join(legacyRoot, "vessel", "state", source, "watermark"))
 	if e != nil {
-		return State{}, e
+		return State{}, fmt.Errorf("legacy checkpoint unavailable")
 	}
 	at, e := time.Parse(time.RFC3339, strings.TrimSpace(string(b)))
 	if e != nil {
 		return State{}, fmt.Errorf("invalid legacy checkpoint")
 	}
 	hash := sha256.Sum256(b)
-	st := State{Version: 1, Account: c.Account, Watermark: at, ImportedFrom: hex.EncodeToString(hash[:]), Items: map[string]Outcome{}}
-	if !apply {
-		return st, nil
-	}
-	if strings.TrimSpace(key) == "" {
-		return State{}, fmt.Errorf("credential missing")
-	}
-	if e = atomicWrite(s.keyPath(source), []byte(strings.TrimSpace(key)+"\n")); e != nil {
-		return State{}, e
-	}
-	return st, s.save(source, st)
+	return State{Version: 1, Account: c.Account, Watermark: at, ImportedFrom: hex.EncodeToString(hash[:]), Items: map[string]Outcome{}}, nil
 }
+
 func validID(id string) bool {
 	return id != "" && len(id) < 512 && strings.IndexFunc(id, func(r rune) bool {
 		return unicode.IsSpace(r) || unicode.IsControl(r) || strings.ContainsRune("/\\`:\"'[]{}", r)
@@ -264,7 +238,10 @@ func (s *Service) duplicate(source, id, name, title, date string) (dupSignal, er
 	if e != nil {
 		return dupSignal{}, fmt.Errorf("source identity lookup failed")
 	}
-	if len(paths) > 0 {
+	if len(paths) > 1 {
+		return dupSignal{}, fmt.Errorf("duplicate vault source identity")
+	}
+	if len(paths) == 1 {
 		return dupSignal{Skip: true}, nil
 	}
 	// Name comparisons are case-insensitive, matching Confirm's lowercase path.
@@ -406,6 +383,16 @@ func (s *Service) Poll(ctx context.Context, source string) (st State, err error)
 	if !c.Enabled {
 		return st, fmt.Errorf("transcript source disabled")
 	}
+	if s.handoffDataDir != "" {
+		r, e := connectorhandoff.Read(s.handoffDataDir, source)
+		if e != nil || (r.Phase != connectorhandoff.Enabled && r.Phase != connectorhandoff.Verified) {
+			return st, fmt.Errorf("transcript handoff evidence required; activation flag is insufficient")
+		}
+		// No shipped legacy scheduler participates in the fence yet. Even a
+		// manually forged evidence record must not enable dual dispatch.
+		return st, fmt.Errorf("transcript handoff blocked: legacy dispatch fence not implemented")
+	}
+
 	s.locks[source].Lock()
 	defer s.locks[source].Unlock()
 	if e = os.MkdirAll(filepath.Join(s.dir, source), 0700); e != nil {
@@ -444,6 +431,15 @@ func (s *Service) Poll(ctx context.Context, source string) (st State, err error)
 	if s.idx == nil || s.idx.db == nil || s.approvals == nil {
 		return st, fmt.Errorf("index or approvals unavailable")
 	}
+	inv, e := s.approvals.ConnectorSnapshot()
+	if e != nil {
+		return st, e
+	}
+	for id, prior := range st.Items {
+		if e := s.checkOutcome(source, id, &prior, inv); e != nil {
+			return st, e
+		}
+	}
 	key, e := s.key(source)
 	if e != nil {
 		return st, e
@@ -466,6 +462,9 @@ func (s *Service) Poll(ctx context.Context, source string) (st State, err error)
 			st.Skipped++
 			continue
 		}
+		if e := s.checkOutcome(source, it.id, nil, inv); e != nil {
+			return st, e
+		}
 		dup, e := s.duplicate(source, it.id, strings.TrimSuffix(it.filename, ".md"), it.title, it.filename[:10])
 		if e != nil {
 			return st, e
@@ -477,6 +476,9 @@ func (s *Service) Poll(ctx context.Context, source string) (st State, err error)
 			p, created, e := s.approvals.ProposeTranscript(source, it.id, approvals.Proposal{Type: approvals.TypeCreateVaultNote, Agent: "ea-coordinator", Ritual: source + "-sync", Action: "Create vault note: " + it.filename, ApplyPath: it.filename, Proposed: it.content, Body: "New " + source + " transcript. Confirm to write under log/.\n\n" + it.warning + "\n" + dup.Reason})
 			if e != nil {
 				return st, e
+			}
+			if p.Status == "approved" {
+				return st, fmt.Errorf("approval changed during poll; reconcile source note before retry")
 			}
 			st.Items[it.id] = Outcome{ProposalID: p.ID, Disposition: p.Status}
 			if created {

@@ -25,31 +25,25 @@ func (s *Store) ProposeTranscript(source, id string, p Proposal) (Proposal, bool
 	}
 	s.decisionMu.Lock()
 	defer s.decisionMu.Unlock()
-	for _, status := range statuses {
-		entries, err := os.ReadDir(filepath.Join(s.dir, status))
-		if err != nil {
-			return Proposal{}, false, err
+	inv, err := s.connectorInventory()
+	if err != nil {
+		return Proposal{}, false, err
+	}
+	var match *ConnectorApproval
+	for _, old := range inv.Items {
+		if old.Source == source && old.SourceID == id {
+			copy := old
+			match = &copy
+			continue
 		}
-		for _, e := range entries {
-			if e.IsDir() || !strings.HasSuffix(e.Name(), ".md") {
-				continue
-			}
-			old, err := s.parse(filepath.Join(s.dir, status, e.Name()))
-			if err != nil {
-				return Proposal{}, false, err
-			}
-			if old.Type != TypeCreateVaultNote {
-				continue
-			}
-			old.Status = status
-			f, _ := mdfm.Split(old.Proposed)
-			if f[source+"-id"] == id || f[source+"_id"] == id {
-				return old, false, nil
-			}
-			if strings.EqualFold(old.ApplyPath, p.ApplyPath) {
-				return Proposal{}, false, fmt.Errorf("transcript filename conflicts with an existing proposal")
-			}
+		if strings.EqualFold(old.Path, p.ApplyPath) {
+			return Proposal{}, false, fmt.Errorf("transcript filename conflicts with an existing proposal")
 		}
+	}
+	if match != nil {
+		old, err := s.parse(filepath.Join(s.dir, match.Status, match.ID+".md"))
+		old.Status = match.Status
+		return old, false, err
 	}
 	// A fence longer than any backtick run prevents transcript text from ending it.
 	fence := "````"

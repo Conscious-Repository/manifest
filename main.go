@@ -147,7 +147,7 @@ func main() {
 				owners["extractor/"+ritual] = "manifest"
 			}
 		}
-		spiritsStore.WithDutyOwners(owners)
+		spiritsStore.WithDutyOwners(owners).WithConnectorHandoffs(cfg.DataDir)
 		extractionRouter = &domainextract.Router{Config: cfg.DomainExtraction, Vault: cfg.VaultPath, Legacy: spiritsStore}
 		aionSink = aion.NewExtractSink(aion.ExtractorDomain, cfg.VaultPath, cfg.SystemRoot, cfg.ExtrinsicRoot, cfg.DataDir, extractionRouter.For("aion"))
 		aionSink.Start(ctx)
@@ -838,7 +838,15 @@ func main() {
 			if vix != nil {
 				transcriptIndex = transcriptsync.NewIndex(vix.DB())
 			}
-			syncer := transcriptsync.New(cfg.DataDir, cfg.TranscriptSync, transcriptIndex, hs[0].Approvals)
+			// Connector history belongs to Excalibur's canonical inbox, regardless
+			// of which harness is first in the configured UI list.
+			var transcriptApprovals *approvals.Store
+			for _, h := range hs {
+				if h.Name == "excalibur" {
+					transcriptApprovals = h.Approvals
+				}
+			}
+			syncer := transcriptsync.New(cfg.DataDir, cfg.TranscriptSync, transcriptIndex, transcriptApprovals).WithHandoffGuard(cfg.DataDir)
 			srv.UseTranscriptSync(syncer)
 			syncer.Start(ctx)
 		}

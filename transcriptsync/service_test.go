@@ -47,7 +47,14 @@ func fixtureService(t *testing.T, source string, h http.HandlerFunc) (*Service, 
 	ritual := filepath.Join(legacy, "spirits", "ea-coordinator", "rituals", source+"-sync.md")
 	os.MkdirAll(filepath.Dir(ritual), 0700)
 	os.WriteFile(ritual, []byte("---\nenabled: false\npaused_reason: fixture handoff\n---\n"), 0600)
-	if _, e := s.Import(source, legacy, "fixture-key", true); e != nil {
+	st, e := s.Import(source, legacy, "", false)
+	if e != nil {
+		t.Fatal(e)
+	}
+	if e = s.save(source, st); e != nil {
+		t.Fatal(e)
+	}
+	if e = s.SetKey(source, "fixture-key"); e != nil {
 		t.Fatal(e)
 	}
 	if source == "granola" {

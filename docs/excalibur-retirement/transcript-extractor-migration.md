@@ -1,5 +1,11 @@
 # Transcript and extractor replacement — implementation checkpoint, 2026-09-16
 
+**Connector update:** the later [handoff substrate](connector-handoff-substrate.md)
+withdraws watermark-only applied imports. Production transcript polling remains
+blocked pending a shared legacy dispatch fence and complete reconciliation. No
+connector is ready for cutover; the historical test evidence below is not a live
+handoff receipt.
+
 The replacement code is disabled by default. Granola/Pocket and the retained
 extractors still belong to the live engine. No live state import, duty pause,
 new approval, vault write, or engine shutdown was performed by this change.
@@ -88,18 +94,14 @@ go run ./cmd/transcript-sync-import -config /path/to/offline-config.json -source
 go run ./cmd/transcript-sync-import -config /path/to/offline-config.json -source pocket
 ```
 
-For the eventual transfer, stop the old duty's automatic/manual dispatch, resolve
-queued/running work, and back up/hash its watermark plus the complete canonical
-approval inventory. While the source is disabled in configuration, repeat the
-import with `-apply -key-file /path/to/existing/key` (or its environment override).
-The importer refuses an existing imported state rather than overwriting it.
-It also requires the legacy ritual file to declare `enabled: false` and a
-nonempty `paused_reason` before an applied import writes state or a key. This
-check does not prove queued/running work has drained; reconcile that separately.
-Approval files remain in place; only checkpoint/credential ownership moves.
-Enable one source only after reconciliation. The state/credential paths are
-`<dataDir>/transcript-sync/<source>/{state.json,key}`. Old files are retained;
-the enabled source never reads the old key as a hidden fallback.
+For checkpoint preparation, use `cmd/connector-checkpoint` against frozen state,
+the canonical approval inventory and a consistent source-index backup. Its default
+preview is read-only; optional staging writes immutable private evidence under
+dataDir. The old `-apply -key-file` recipe is no longer supported: apply refuses
+before credential access or writes. A paused markdown schedule cannot exclude
+queued/manual engine dispatch. See the linked handoff substrate for the exact
+remaining fence, account-binding, historical-coverage and verification gates.
+Old state and approvals remain authoritative and retained.
 
 Each enabled extraction lane requires an explicit `hermes.duties` declaration:
 provider `claude-sub`, model `claude-sonnet-5`, tools `["none"]`, MCP `no_mcp`,

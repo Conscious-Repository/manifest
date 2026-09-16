@@ -1,6 +1,12 @@
 package spirits
 
-import "path/filepath"
+import (
+	"errors"
+	"os"
+	"path/filepath"
+
+	"manifest/connectorhandoff"
+)
 
 // Ownership describes routing intent and the legacy file independently. Neither
 // an enablement flag nor a disabled legacy schedule proves a completed handoff.
@@ -11,6 +17,31 @@ func (s *Store) projectOwnership(r *RitualRow) {
 	}
 	r.ConfiguredOwner = s.dutyOwners[r.Spirit+"/"+r.Ritual]
 	r.LegacyActionable = r.Valid && !r.Retired && r.ConfiguredOwner == ""
+	if source := s.connectorSource(r.Spirit, r.Ritual); source != "" {
+		record, err := connectorhandoff.Read(s.migrationDataDir, source)
+		if err == nil {
+			r.MigrationState = string(record.Phase)
+			r.ConfiguredOwner = record.Owner
+			r.LegacyActionable = r.LegacyActionable && s.connectorDispatchGuard(r.Spirit, r.Ritual) == nil
+			r.MigrationDetail = "Persisted connector handoff evidence; rollback owner: " + record.RollbackOwner
+			if r.LegacyEnabled && !r.LegacyActionable {
+				r.MigrationDetail += "; legacy schedule still enabled: dispatch exclusion unresolved"
+			}
+			return
+		}
+		if !errors.Is(err, os.ErrNotExist) {
+			r.MigrationState, r.MigrationDetail, r.LegacyActionable = "blocked", "Connector handoff evidence unreadable; legacy dispatch refused.", false
+			return
+		}
+		r.MigrationState = string(connectorhandoff.NotReady)
+		r.MigrationDetail = "Legacy connector remains owner; reconciled checkpoint and enforceable dispatch exclusion required."
+		if r.ConfiguredOwner != "" {
+			r.MigrationState, r.MigrationDetail = "blocked", "Successor flag configured without handoff evidence; polling remains blocked."
+		} else {
+			r.ConfiguredOwner = "excalibur"
+		}
+		return
+	}
 	if r.Retired {
 		r.MigrationState, r.MigrationDetail = "retired", r.RetirementReason
 		if r.LegacyEnabled {

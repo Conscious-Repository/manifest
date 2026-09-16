@@ -34,12 +34,13 @@ var ErrAlreadyActive = errors.New("a run for this spirit/ritual is already queue
 const heartbeatFresh = 90 * time.Second
 
 type Store struct {
-	root        string
-	harnessName string
-	dutyOwners  map[string]string
-	skillsRoot  string // <vault>/skills — explicit since the harness left the vault
-	Feed        *feed.Store
-	runs        *runMemo // parsed run summaries by file (nil = parse every call)
+	root             string
+	harnessName      string
+	dutyOwners       map[string]string
+	migrationDataDir string
+	skillsRoot       string // <vault>/skills — explicit since the harness left the vault
+	Feed             *feed.Store
+	runs             *runMemo // parsed run summaries by file (nil = parse every call)
 }
 
 // runMemo keeps each run report's parsed frontmatter until the file's size or
@@ -340,6 +341,9 @@ const MaxRequestChars = maxRequestChars
 // engine loads for this run (the command bar casts skills through sage); empty
 // for none.
 func (s *Store) SpoolRunNow(spirit, ritual, request, skill string) error {
+	if err := s.connectorDispatchGuard(spirit, ritual); err != nil {
+		return err
+	}
 	if owner := s.dutyOwners[spirit+"/"+ritual]; owner != "" {
 		return fmt.Errorf("%s/%s is owned by %s; legacy launch refused", spirit, ritual, owner)
 	}
@@ -409,7 +413,7 @@ func (s *Store) Spirits() map[string][]string {
 		for _, r := range rits {
 			if !r.IsDir() && strings.HasSuffix(r.Name(), ".md") {
 				name := strings.TrimSuffix(r.Name(), ".md")
-				if s.RetirementReason(e.Name(), name) == "" && s.dutyOwners[e.Name()+"/"+name] == "" {
+				if s.RetirementReason(e.Name(), name) == "" && s.dutyOwners[e.Name()+"/"+name] == "" && s.connectorDispatchGuard(e.Name(), name) == nil {
 					rituals = append(rituals, name)
 				}
 			}

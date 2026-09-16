@@ -1,6 +1,14 @@
 # Legacy ownership checkpoint — 2026-09-16
 
 **Migration is incomplete. No live duty changed owners in this slice.**
+
+The later [connector handoff substrate](connector-handoff-substrate.md) supersedes
+this document's import recipe and successor-substrate status. Personal legacy
+email is proven active by the supplied live run (personal account, 100-thread
+page, new proposals and confirmed appends). Its executable Manifest replacement
+is still missing; the new personal ledger checkpoint is not a poller.
+Watermark-only applied imports are now refused, and no duty is cutover-ready.
+
 This checkpoint follows the owner's September 12 decisions in
 `system/workbench/plans/2026-09-11-excalibur-deprecation.md`, ARCHITECTURE.md,
 and the disabled implementations in `dc5f470`.
@@ -16,7 +24,7 @@ Cron times below are America/Chicago.
 
 | Duty | Current owner / trigger | Successor readiness and remaining gate |
 | --- | --- | --- |
-| EA email-sync | Excalibur, enabled, daily 07:00 | Missing personal-mail successor. `gmailsync.Loop` is roster-filtered portal mail, not personal parity. |
+| EA email-sync | Excalibur, enabled, daily 07:00 | Legacy personal sync is active. Manifest has a ledger checkpoint substrate but no executable personal successor. `gmailsync.Loop` is roster-filtered portal mail, not personal parity. |
 | EA granola-sync | Excalibur, enabled, 08:00/13:00/18:00 | `transcriptsync` implemented and offline-tested, not enabled or handed off. |
 | EA pocket-sync | Excalibur, enabled, 09:00/18:00 | `transcriptsync` implemented and offline-tested, not enabled or handed off. |
 | extractor/aion | Excalibur, enabled, event/request | Default-off `domainextract` replacement; verified subscription completion and quality comparison remain blocked. |
@@ -42,15 +50,17 @@ ritual definitions under `spirits/<spirit>/rituals/` and reports under
 
 Email's engine state is an account-specific watermark plus per-thread
 `status`, `proposal_id`, `last_msg_id`, `last_internal_ms`, and `filename`.
-Its proposed/synced/muted lifecycle, known-contact/workspace filtering and accepted
-thread append behavior have no equivalent personal successor/importer in Manifest.
+Its proposed/synced/muted lifecycle now has a lossless checkpoint decoder in
+Manifest. Known-contact/workspace filtering and accepted-thread append behavior
+still have no executable personal successor.
 Replacing it with the portal loop would change its contract.
 
 Granola and Pocket retain their actual watermark files, respectively
 `2026-09-13T21:13:24Z` and `2026-09-02T21:33:36Z` at inspection. Their legacy
 per-item decisions reside in canonical approvals and vault source identities;
-the new importer starts an empty outcome map and relies on those stores for
-reconciliation. Copying the watermark alone is not proof of continuity. In
+the original importer started an empty outcome map. The later checkpoint
+reconciler now reconstructs outcomes from those stores and rejects uncertain
+results. Copying the watermark alone is not proof of continuity. In
 particular, old loops can advance past unfinished/empty transcripts; the new
 one-day overlap cannot prove it recovers every older unresolved item. No complete
 approval/source reconciliation or frozen handoff snapshot was made here.
@@ -77,8 +87,9 @@ write was performed in this slice.
 - Configured successor duties are removed from legacy launch pickers and casts.
   The existing spool refusal remains; the file editor now also refuses legacy
   re-enablement. A conflicting enabled schedule can still be paused.
-- Applying a transcript import refuses an unreadable/enabled legacy definition
-  or a pause without a reason **before writing successor state or a key**.
+- Historical behavior, now superseded by unconditional apply refusal pending a
+  shared dispatch fence: applying a transcript import refused an unreadable or
+  enabled legacy definition, or a pause without a reason **before writing successor state or a key**.
   Read-only preview remains available. This prerequisite check cannot exclude
   queued/manual work or an operator re-enabling the engine file concurrently;
   it does not replace the handoff protocol.
