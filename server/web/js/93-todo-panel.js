@@ -88,6 +88,39 @@ function ensureTodoPanelPoll() {
 // openTodoPanel — from a row/card ({id, text, ...}) or an id string.
 // opts.mode ("comment" | "ask" | "do") presets the composer; opts.focusAgent
 // lands the caret on the agent picker.
+// todoPanelPlace — the panel is a column of the Tasks view, which is hidden on
+// every other route. Opened from a conversation (a chat return route) it moves
+// into a body-level overlay so it is actually on screen, and moves back home
+// when it closes. The TASKS route never sees the overlay.
+let todoPanelHome = null; // {parent, next} — where the panel lives in the Tasks view
+function todoPanelPlace(overlay) {
+  const panel = document.getElementById("todoPanel");
+  if (!panel) return;
+  let host = document.getElementById("todoPanelOverlay");
+  if (overlay) {
+    if (!host) {
+      host = el("div", "tdo-overlay");
+      host.id = "todoPanelOverlay";
+      const scrim = el("div", "tdo-overlay-scrim");
+      scrim.onclick = closeTodoPanel;
+      host.append(scrim);
+      document.body.append(host);
+    }
+    if (panel.parentElement !== host) {
+      if (!todoPanelHome) todoPanelHome = { parent: panel.parentElement, next: panel.nextSibling };
+      host.append(panel);
+    }
+    panel.classList.add("tdo-panel-overlay");
+    host.hidden = false;
+    return;
+  }
+  panel.classList.remove("tdo-panel-overlay");
+  if (host) host.hidden = true;
+  if (todoPanelHome && panel.parentElement !== todoPanelHome.parent) {
+    todoPanelHome.parent.insertBefore(panel, todoPanelHome.next && todoPanelHome.next.parentElement === todoPanelHome.parent ? todoPanelHome.next : null);
+  }
+}
+
 function openTodoPanel(rOrId, opts) {
   const id = typeof rOrId === "string" ? rOrId : rOrId.id;
   if (!todoSelId) todoPanelOrigin = document.activeElement;
@@ -98,6 +131,7 @@ function openTodoPanel(rOrId, opts) {
   if (!todoPanelReturnRoute && location.hash !== suffix) {
     try { history.replaceState(null, "", suffix); } catch (e) {}
   }
+  todoPanelPlace(!!todoPanelReturnRoute);
   ensureTodoPanelPoll();
   renderTodoPanel(true);
   document.querySelectorAll(".tdo-row, .tdo-card").forEach((node) => node.classList.toggle("panel-sel", node.dataset.id === id));
@@ -108,6 +142,7 @@ function closeTodoPanel() {
   todoPanelData = null;
   try { history.replaceState(null, "", todoPanelReturnRoute || "#/tasks"); } catch (e) {}
   renderTodoPanel(false);
+  todoPanelPlace(false);
   document.querySelectorAll(".panel-sel").forEach((node) => node.classList.remove("panel-sel"));
   if (todoPanelOrigin && todoPanelOrigin.isConnected) todoPanelOrigin.focus();
 }
@@ -155,7 +190,9 @@ async function renderTodoPanel(refetch) {
   // --- head: title + container + close ---
   const head = el("div", "tdo-p-head");
   const titleWrap = el("div", "tdo-p-titlewrap");
-  const taskTitle = el("div", "tdo-p-title", row ? row.text : rec.Title || rec.title || todoSelId);
+  // off the Tasks route the rows cache is empty: the payload's own text keeps
+  // the title readable instead of the composite id
+  const taskTitle = el("div", "tdo-p-title", row ? row.text : d.text || rec.Title || rec.title || todoSelId);
   titleWrap.append(taskTitle);
   const metaBits = [];
   if (row && row.container && row.container.name) metaBits.push(row.container.name);

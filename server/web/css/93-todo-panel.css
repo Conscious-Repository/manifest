@@ -72,6 +72,20 @@ body.tdo-panel-open .tdo-shell > #todosRows { padding-right: var(--sp-8); }
 .tdo-row.panel-sel { background: var(--base-05); box-shadow: inset 2px 0 0 var(--accent); }
 .tdo-card.panel-sel { box-shadow: inset 2px 0 0 var(--accent); }
 
+/* opened from a conversation (48-chat "Task details"): a body-level overlay
+   over whatever route is showing, since the Tasks column is hidden there */
+.tdo-overlay { position: fixed; inset: 0; z-index: 70; display: flex; justify-content: flex-end; }
+.tdo-overlay[hidden] { display: none; }
+.tdo-overlay-scrim { position: absolute; inset: 0; background: var(--scrim); }
+.tdo-panel.tdo-panel-overlay {
+  position: relative; z-index: 1; width: min(48%, 560px); max-width: 100%; height: 100%; max-height: none;
+  overflow-y: auto; border-left: 1px solid var(--base-25); border-radius: 0; box-shadow: -8px 0 40px rgba(0, 0, 0, 0.16);
+}
+@media (max-width: 1100px) {
+  .tdo-overlay { align-items: flex-end; }
+  .tdo-panel.tdo-panel-overlay { width: 100%; height: auto; max-height: 82vh; border-left: 0; border-top: 1px solid var(--base-25); border-radius: 12px 12px 0 0; box-shadow: var(--shadow-sheet); }
+}
+
 /* <1100px: the sticky column disappears; the panel becomes a sheet */
 @media (max-width: 1100px) {
   .tdo-panel {

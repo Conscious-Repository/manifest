@@ -201,8 +201,10 @@ func (s *Server) handleTaskPanel(w http.ResponseWriter, r *http.Request) {
 	}
 	rec := s.readPlanRecord(id)
 	thread := s.listThread(id)
+	text, _ := s.openTaskText(id)
 	out := map[string]any{
 		"id":           id,
+		"text":         text, // the task's own words — the panel's title off the Tasks route
 		"record":       rec,
 		"thread":       thread,
 		"conversation": s.taskConversation(id, thread),
