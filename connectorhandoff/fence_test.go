@@ -56,7 +56,7 @@ func TestFenceContractFailsClosed(t *testing.T) {
 		})
 	}
 }
-func TestFencePrepareDoesNotWriteAndRejectsEmail(t *testing.T) {
+func TestFencePrepareDoesNotWriteAndRejectsUnknown(t *testing.T) {
 	root := t.TempDir()
 	r, err := FenceSnapshot(root, "pocket")
 	if err != nil || r.Owner != "excalibur" || r.Revision != 0 {
@@ -66,7 +66,7 @@ func TestFencePrepareDoesNotWriteAndRejectsEmail(t *testing.T) {
 	if len(entries) != 0 {
 		t.Fatal("prepare wrote files")
 	}
-	if _, _, err := AcquireFence(root, "email"); err == nil {
-		t.Fatal("email admitted")
+	if _, _, err := AcquireFence(root, "unknown"); err == nil {
+		t.Fatal("unknown source admitted")
 	}
 }

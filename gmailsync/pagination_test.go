@@ -14,8 +14,11 @@ type pageTransport func(*http.Request) (*http.Response, error)
 func (f pageTransport) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
 func TestThreadListingConsumesPages(t *testing.T) {
 	calls := 0
-	c := &Client{wait: func(context.Context, time.Duration) error { return nil }, http: &http.Client{Transport: pageTransport(func(r *http.Request) (*http.Response, error) {
+	c := &Client{mailbox: "owner@example.com", wait: func(context.Context, time.Duration) error { return nil }, http: &http.Client{Transport: pageTransport(func(r *http.Request) (*http.Response, error) {
 		calls++
+		if r.Method != "GET" || r.URL.Path != "/gmail/v1/users/owner@example.com/threads" {
+			t.Fatal("unbound list", r.URL)
+		}
 		body := `{"threads":[{"id":"first"}],"nextPageToken":"next"}`
 		if calls == 2 {
 			if r.URL.Query().Get("pageToken") != "next" {

@@ -1,0 +1,26 @@
+# Default-off: install/enable only after reviewed prepare/dispatch-owner/apply.
+# No existing service depends on or starts this unit.
+[Unit]
+Description=Manifest personal Gmail proposal worker
+After=network-online.target
+Wants=network-online.target
+ConditionPathExists=/home/benjamin/.config/manifest/personal-email/active.json
+ConditionPathExists=/home/benjamin/.config/manifest/personal-email-worker.json
+
+[Service]
+Type=simple
+User=benjamin
+Group=benjamin
+ExecStart=/home/benjamin/.local/bin/manifest-personal-email-worker -mode worker -config /home/benjamin/.config/manifest/personal-email-worker.json
+Restart=on-failure
+RestartSec=60
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/home/benjamin/.config/manifest/personal-email
+ReadWritePaths=/private/harnesses/excalibur/artifacts/approvals
+ReadWritePaths=/private/harnesses/excalibur/vessel/state/dispatch-fence/ea-coordinator/email-sync
+ReadOnlyPaths=/private/consciousrepo
+
+[Install]
+WantedBy=multi-user.target

@@ -1,5 +1,5 @@
-// Package personalemail implements only personal mailbox continuity checks.
-// It has no approval, vault, roster, candidate, or cursor writer.
+// Package personalemail provides read-only continuity and an explicitly fenced
+// personal mailbox successor. Neither path writes the vault.
 package personalemail
 
 import (

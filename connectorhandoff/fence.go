@@ -199,8 +199,8 @@ func action(owner string) string {
 
 // FenceSnapshot reads existing ownership without creating operational files.
 func FenceSnapshot(root, source string) (RecordFence, error) {
-	if source != "granola" && source != "pocket" {
-		return RecordFence{}, fmt.Errorf("unsupported transcript source")
+	if source != "granola" && source != "pocket" && source != "email" {
+		return RecordFence{}, fmt.Errorf("unsupported connector source")
 	}
 	duty := "ea-coordinator/" + source + "-sync"
 	dir := root
@@ -223,8 +223,8 @@ func FenceSnapshot(root, source string) (RecordFence, error) {
 // AcquireFence holds the same inode as legacy dispatch and owner publication.
 // The caller must retain release through all successor effects and state writes.
 func AcquireFence(root, source string) (RecordFence, func(), error) {
-	if source != "granola" && source != "pocket" {
-		return RecordFence{}, nil, fmt.Errorf("unsupported transcript source")
+	if source != "granola" && source != "pocket" && source != "email" {
+		return RecordFence{}, nil, fmt.Errorf("unsupported connector source")
 	}
 	duty := "ea-coordinator/" + source + "-sync"
 	f, err := lock(root, duty)

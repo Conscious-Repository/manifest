@@ -194,7 +194,7 @@ func connectorArtifactInScope(raw, proposed string, fm, pf map[string]string, sc
 		hints["granola"] = true
 	case "pocket-sync":
 		hints["pocket"] = true
-	case "email-sync":
+	case "email-sync", PersonalEmailRitual:
 		hints["gmail-thread"] = true
 	}
 	if len(hints) == 0 {

@@ -132,7 +132,11 @@ func (c *Client) ThreadIDsSince(ctx context.Context, after time.Time, max int) (
 		max = 100
 	}
 	q := fmt.Sprintf("after:%d -category:promotions -category:social -category:forums -in:chats", after.Unix())
-	listURL := "https://gmail.googleapis.com/gmail/v1/users/me/threads?maxResults=" +
+	mailbox := c.mailbox
+	if mailbox == "" {
+		mailbox = "me"
+	}
+	listURL := "https://gmail.googleapis.com/gmail/v1/users/" + url.PathEscape(mailbox) + "/threads?maxResults=" +
 		strconv.Itoa(max) + "&q=" + url.QueryEscape(q)
 	var ids []string
 	page := ""

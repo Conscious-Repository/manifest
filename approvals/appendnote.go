@@ -104,6 +104,9 @@ func (s *Store) applyAppendVaultNote(p Proposal) error {
 		body += "\n"
 	}
 	body += "\n" + payload + "\n"
+	if err := s.claimPersonalEmailEffect(p, lane); err != nil {
+		return err
+	}
 	if lane {
 		// Move first, then grow in place: the note is never doubled, and a
 		// failed write leaves the ORIGINAL bytes under the new name (moved back
@@ -151,6 +154,11 @@ func AppendFinalPath(p Proposal) string {
 // ordinary human cards with a diff. Returns (applied, refused) counts.
 func (s *Store) AutoApplyAppends(notify func(paths []string)) (int, int) {
 	s.decisionMu.Lock()
+	release, err := s.decisionFence()
+	if err != nil {
+		s.decisionMu.Unlock()
+		return 0, 0
+	}
 	applied, refused := 0, 0
 	var paths []string
 	for _, p := range s.List("pending") {
@@ -171,6 +179,7 @@ func (s *Store) AutoApplyAppends(notify func(paths []string)) (int, int) {
 		applied++
 		paths = append(paths, AppendFinalPath(p))
 	}
+	release()
 	s.decisionMu.Unlock()
 	if len(paths) > 0 && notify != nil {
 		notify(paths)

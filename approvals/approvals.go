@@ -265,6 +265,14 @@ func (s *Store) Counts() map[string]int {
 
 // Propose writes a new pending proposal (dedupe by id — same action+body won't double up).
 func (s *Store) Propose(p Proposal) (Proposal, error) {
+	release, err := s.decisionFence()
+	if err != nil {
+		return Proposal{}, err
+	}
+	defer release()
+	return s.propose(p)
+}
+func (s *Store) propose(p Proposal) (Proposal, error) {
 	if strings.TrimSpace(p.Action) == "" {
 		return Proposal{}, errors.New("proposal action is required")
 	}
@@ -406,6 +414,11 @@ func (s *Store) confirm(id string, e ConfirmEdits) error {
 	}
 	s.decisionMu.Lock()
 	defer s.decisionMu.Unlock()
+	release, err := s.decisionFence()
+	if err != nil {
+		return err
+	}
+	defer release()
 	// Another surface may have decided while we were waiting. Re-read before
 	// applying anything. Operation callbacks above own their durable decision
 	// lock and must never run while holding this file-store lock.
@@ -675,6 +688,9 @@ func (s *Store) applyCreateVaultNote(p Proposal) error {
 	if _, err := os.Stat(target); err == nil {
 		return fmt.Errorf("apply refused: %q already exists — not overwriting", rel)
 	}
+	if err := s.claimPersonalEmailEffect(p, lane); err != nil {
+		return err
+	}
 	body := p.Proposed
 	if !strings.HasSuffix(body, "\n") {
 		body += "\n"
@@ -788,6 +804,11 @@ func (s *Store) decidedElsewhere(id string) bool {
 }
 
 func (s *Store) move(id, to, reason string) error {
+	release, err := s.decisionFence()
+	if err != nil {
+		return err
+	}
+	defer release()
 	src := filepath.Join(s.dir, "pending", id+".md")
 	p, err := s.parse(src)
 	if err != nil {
