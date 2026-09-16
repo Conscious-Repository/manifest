@@ -136,8 +136,18 @@ func strict(raw []byte, out any) error {
 	return decoder.Decode(out)
 }
 func ValidateReply(i Input, reply string) ([]approvals.Proposal, error) {
+	if i.Validate() != nil {
+		return nil, fmt.Errorf("extraction candidate contract refused")
+	}
+	return validateReplyEvidence(i, reply)
+}
+
+// validateReplyEvidence is pure shape/evidence validation. The offline reducer
+// supplies an independently verified complete context, which can exceed the
+// production prompt limit. It must never be used to authorize execution.
+func validateReplyEvidence(i Input, reply string) ([]approvals.Proposal, error) {
 	fail := func() ([]approvals.Proposal, error) { return nil, fmt.Errorf("extraction candidate contract refused") }
-	if i.Validate() != nil || len(reply) > 64000 || len(secrets.Scan(reply)) > 0 {
+	if len(reply) > 64000 || len(secrets.Scan(reply)) > 0 {
 		return fail()
 	}
 	var response Response
