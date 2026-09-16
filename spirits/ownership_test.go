@@ -15,8 +15,8 @@ func TestOwnershipProjectionAndControls(t *testing.T) {
 	}{
 		{"connector", "excalibur", "ea-coordinator", "email-sync", "", "true", "blocked", false},
 		{"disabled-successor", "excalibur", "ea-coordinator", "pocket-sync", "", "true", "legacy-retiring", true},
-		{"dual-dispatch", "excalibur", "extractor", "aion", "manifest", "true", "blocked", false},
-		{"flag-is-not-proof", "excalibur", "extractor", "aion", "manifest", "false", "blocked", false},
+		{"dual-dispatch", "excalibur", "extractor", "aion", "manifest", "true", "pause-pending", false},
+		{"flag-is-not-proof", "excalibur", "extractor", "aion", "manifest", "false", "pause-pending", false},
 		{"retired", "excalibur", "sage", "skill-cast", "", "false", "retired", false},
 		{"retirement-drift", "excalibur", "sage", "skill-cast", "", "true", "retirement-conflict", false},
 		{"other-harness", "team", "extractor", "aion", "", "true", "", true},

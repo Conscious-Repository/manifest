@@ -16,4 +16,4 @@
 #   sudo systemctl daemon-reload && sudo systemctl disable engine-room.target && sudo systemctl enable private-ready.path
 [Unit]
 Description=engine room - everything that runs once /private is unlocked
-Wants=manifest.service manifest-sync.service excalibur-engine.service zeck-runner.service
+Wants=manifest.service manifest-sync.service zeck-runner.service

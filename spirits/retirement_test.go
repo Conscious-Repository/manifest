@@ -1,6 +1,8 @@
 package spirits
 
 import (
+	"encoding/json"
+	"manifest/excaliburretire"
 	"manifest/mdfm"
 	"os"
 	"path/filepath"
@@ -57,5 +59,38 @@ func TestMigratedDutyCannotUseLegacySpool(t *testing.T) {
 		if err := store.SpoolRunNow(pair[0], pair[1], "fixture", ""); err == nil {
 			t.Fatal("legacy spool accepted migrated duty")
 		}
+	}
+}
+
+func TestEngineRetirementKeepsHistoryUnavailable(t *testing.T) {
+	root, data := t.TempDir(), t.TempDir()
+	st := NewStore(root).WithHarnessName("excalibur").WithConnectorHandoffs(data)
+	dir := filepath.Join(data, "excalibur-decommission")
+	if err := os.MkdirAll(dir, 0700); err != nil {
+		t.Fatal(err)
+	}
+	p := excaliburretire.Plan{Version: 1}
+	b := p.Bytes()
+	if err := os.WriteFile(filepath.Join(dir, p.Hash()+".json"), b, 0600); err != nil {
+		t.Fatal(err)
+	}
+	r, _ := json.Marshal(excaliburretire.Receipt{Version: 1, PlanHash: p.Hash(), Engine: "retired; unavailable"})
+	if err := os.WriteFile(filepath.Join(dir, "retired.json"), r, 0600); err != nil {
+		t.Fatal(err)
+	}
+	if !st.EngineRetired() {
+		t.Fatal("retired state missing")
+	}
+	if alive, _ := st.EngineAlive(); alive {
+		t.Fatal("retired engine available")
+	}
+	if st.SpoolChatMessage("sage", "session", "message", "test") == nil || st.SpoolRunNow("sage", "anything", "", "") == nil {
+		t.Fatal("retired execution allowed")
+	}
+	if st.DeleteSpirit("extractor") == nil || st.DeleteChatSession("session") == nil || st.DeleteRitual("extractor", "aion") == nil {
+		t.Fatal("retired history deletion allowed")
+	}
+	if _, e := os.Stat(filepath.Join(root, "vessel")); !os.IsNotExist(e) {
+		t.Fatal("runtime state created")
 	}
 }

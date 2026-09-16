@@ -2,17 +2,25 @@
 
 The metis deployment as repo artifacts (big-change Phase 3a + auto-deploy).
 
-- `manifest.service` · `manifest-sync.service` · `excalibur-engine.service` —
-  the systemd units; `engine-room.target` + `private-ready.path` + `private-unlock` self-start
+Excalibur is deprecated. The [decommission procedure](../docs/excalibur-retirement/decommission.md)
+retires engine availability with a hash-bound receipt while keeping AION, OODA
+email and real-estate extraction visibly paused. Semantic parity is a future
+capability gap, not a retirement prerequisite. The engine unit remains an archive;
+`units-deploy` cannot replace its retirement mask, `engine-deploy` refuses, and
+neither the room target nor autodeploy starts the primary engine. Installed units
+are changed only by the separate operational commands.
+
+- `manifest.service` · `manifest-sync.service` —
+  the active systemd units; `engine-room.target` + `private-ready.path` + `private-unlock` self-start
   the room after reboot + `private-unlock`.
 - `manifest-autodeploy.{sh,service,timer}` — **push = deploy**: every minute
   metis pulls origin/main (ff-only), rebuilds what moved (dashboard, sync
-  daemon, engine), restarts. The tailnet dashboard
+  daemon and other harness workers), restarts. The tailnet dashboard
   (https://metis.tail8f89de.ts.net) never lags the repo by more than ~90s.
 - `com.benjamin.manifest-sync.plist` — the laptop sync daemon (launchd).
 - `com.benjamin.excalibur.plist.laptop-fallback` — the retired laptop engine
   job, kept for dev/fallback re-install.
-- `make deploy` / `engine-deploy` / `units-deploy` — immediate operator runs
+- `make deploy` / `units-deploy` — immediate operator runs
   (unit-file changes always go through `units-deploy`; the timer only
   rebuilds binaries).
 
@@ -31,7 +39,8 @@ then restart the launch agent. Watch registration cannot block interval sync.
 `hermes-gateway.service` is the exact installed system unit, with the exact
 absolute target of `engine-room.target.wants/hermes-gateway.service` recorded
 beside it. `units-deploy` includes both representations. The target's declared
-Wants are manifest, manifest-sync, excalibur-engine, and zeck-runner; installed
+Wants at that historical checkpoint were manifest, manifest-sync, excalibur-engine,
+and zeck-runner; installed
 wants-directory links additionally include hermes-gateway and olga. This phase
 does not change that effective membership or manage olga.
 
@@ -48,8 +57,8 @@ has not been attributed to it by this implementation. D9's governance gap is
 accepted: liveness signals do not prove policy compliance.
 
 The successor has two schedulers: Manifest pollers and the supervised Hermes
-ticker. No third scheduler is added. Excalibur retains every current duty until
-its own approved cutover phase. Hermes cron currently merges enabled MCP
+ticker. No third scheduler is added. Email, Granola and Pocket are Manifest-owned;
+the remaining extractor capabilities are paused through the decommission procedure. Hermes cron currently merges enabled MCP
 servers into per-job toolsets and falls back to the full default toolset on
 resolution failure; migrated duties must not use it. The one-shot path also
 loads configured fallback models, starts MCP discovery, and does not pass an

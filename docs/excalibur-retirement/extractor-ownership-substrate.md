@@ -1,7 +1,9 @@
 # Extractor ownership substrate — 2026-09-16
 
-This is the first bounded phase, **not an extractor cutover**. All three legacy
-extractors remain active. No provider execution, live semantic comparison,
+This is a historical substrate checkpoint, **not an extractor cutover**.
+The current [decommission end state](decommission.md) pauses all three extractor
+capabilities without claiming migration. The active-engine statements below
+record this earlier checkpoint. No provider execution, live semantic comparison,
 approval decision, vault write, configuration change or deployment occurred.
 
 ## Verified boundary and gaps
@@ -118,7 +120,8 @@ cannot run under that new revision. Never reset state or silently replay history
 On this pass, read-only probes for all three live duties reported
 `legacy-retiring`; all four services (`manifest`, `manifest-transcripts`,
 `manifest-personal-email`, `excalibur-engine`) were active. No live semantic
-checkpoint was available or invented. The live engine therefore remains needed.
+checkpoint was available or invented. That checkpoint did not retire the engine; the later decommission procedure
+permits retirement with these capabilities explicitly paused.
 
 ## Validation completed
 

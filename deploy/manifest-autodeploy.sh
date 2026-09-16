@@ -5,7 +5,8 @@
 #   - manifest repo: fetch; if origin/main moved → pull --ff-only, rebuild the
 #     dashboard + the sync daemon, restart manifest.service.
 #   - harness repo: if excalibur/engine/ changed since the last engine build →
-#     rebuild the engine, restart excalibur-engine.service.
+#     rebuild the shared binary for other harness workers only. Excalibur
+#     primary is deprecated and is never automatically restarted.
 # ff-only means a diverged repo (local commits on the box) stops auto-deploy
 # loudly in the journal rather than merging anything on its own.
 set -euo pipefail
@@ -40,9 +41,8 @@ if [ -d /private/harnesses/excalibur/engine ]; then
   LAST=$(cat "$STAMPS/engine.built" 2>/dev/null || echo unbuilt)
   if [ "$ENG" != "$LAST" ] && [ "$ENG" != "none" ]; then
     (cd excalibur/engine && go build -o /home/benjamin/.local/bin/excalibur-engine ./cmd/excalibur)
-    # restart the primary engine + every per-harness worker instance
+    # Restart only other per-harness worker instances.
     # (excalibur-engine@<name>) — they all share the one rebuilt binary
-    sudo systemctl restart excalibur-engine
     for u in $(systemctl list-units 'excalibur-engine@*' --no-legend --plain 2>/dev/null | awk '{print $1}'); do
       sudo systemctl restart "$u"
     done

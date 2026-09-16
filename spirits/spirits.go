@@ -395,6 +395,9 @@ func (s *Store) SpoolRunNow(spirit, ritual, request, skill string) error {
 
 // EngineAlive reports whether the engine heartbeat is fresh, and its mtime.
 func (s *Store) EngineAlive() (bool, time.Time) {
+	if s.engineUnavailable() {
+		return false, time.Time{}
+	}
 	fi, err := os.Stat(filepath.Join(s.root, "vessel", "state", "engine.heartbeat"))
 	if err != nil {
 		return false, time.Time{}

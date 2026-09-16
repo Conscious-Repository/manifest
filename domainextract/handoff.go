@@ -53,6 +53,9 @@ func Readiness(dataDir, harness, ritual string, enabled bool) (string, string) {
 	if err != nil {
 		return "blocked", "Extractor ownership history unreadable; dispatch refused."
 	}
+	if f.Owner == "blocked" {
+		return "paused", "Extractor capability paused/unavailable; preserved legacy history is not replayed. No successor migration or semantic parity claimed; application holds remain."
+	}
 	if f.Owner == connectorhandoff.Legacy && !enabled {
 		return "legacy-retiring", "Legacy owner; successor disabled. Shared engine dispatch fencing, historical reconciliation and owner-reviewed live semantic evidence remain required; replay=false."
 	}

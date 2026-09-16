@@ -33,11 +33,12 @@ func (s *Server) handleSpiritsStatus(w http.ResponseWriter, r *http.Request) {
 	}
 	alive, at := s.spirits.EngineAlive()
 	resp := map[string]any{
-		"enabled":     true,
-		"engineAlive": alive, // legacy top-level = the primary harness
-		"spirits":     s.spirits.Spirits(),
-		"feedInbox":   s.feedInboxCount(time.Now()), // same compute as /api/feed — counts never drift
-		"harnesses":   s.harnessHeartbeats(),        // federation: per-harness liveness
+		"enabled":       true,
+		"engineRetired": s.spirits.EngineRetired(),
+		"engineAlive":   alive, // legacy top-level = the primary harness
+		"spirits":       s.spirits.Spirits(),
+		"feedInbox":     s.feedInboxCount(time.Now()), // same compute as /api/feed — counts never drift
+		"harnesses":     s.harnessHeartbeats(),        // federation: per-harness liveness
 	}
 	if !at.IsZero() {
 		resp["heartbeat"] = at.Format(time.RFC3339)

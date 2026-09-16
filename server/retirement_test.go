@@ -125,7 +125,7 @@ func TestRetirementAllowsNonRetiredLaunches(t *testing.T) {
 		{"excalibur", "ea-coordinator", "email-sync"},
 		{"excalibur", "ea-coordinator", "granola-sync"},
 		{"excalibur", "ea-coordinator", "pocket-sync"},
-		{"excalibur", "extractor", "ooda-email"},
+		{"other", "extractor", "ooda-email"},
 		{"other", "extractor", "re-intake"},
 	} {
 		t.Run(strings.Join(tc[:], "/"), func(t *testing.T) {
@@ -144,5 +144,22 @@ func TestRetirementAllowsNonRetiredLaunches(t *testing.T) {
 				t.Fatalf("spool: %v, %v", entries, err)
 			}
 		})
+	}
+}
+
+func TestPausedExtractorLaunchesRefused(t *testing.T) {
+	for _, ritual := range []string{"aion", "ooda-email", "real-estate"} {
+		root := t.TempDir()
+		st := spirits.NewStore(root).WithHarnessName("excalibur")
+		s := &Server{}
+		s.UseHarnesses([]Harness{{Name: "excalibur", Spirits: st}})
+		w := httptest.NewRecorder()
+		s.handleSpiritsRunNow(w, httptest.NewRequest(http.MethodPost, "/api/spirits/run-now", strings.NewReader(fmt.Sprintf(`{"spirit":"extractor","ritual":%q}`, ritual))))
+		if w.Code != http.StatusConflict || !strings.Contains(w.Body.String(), "paused/unavailable") {
+			t.Fatalf("pause not enforced: %s", w.Body.String())
+		}
+		if _, e := os.Stat(filepath.Join(root, "vessel")); !os.IsNotExist(e) {
+			t.Fatal("refusal created runtime state")
+		}
 	}
 }

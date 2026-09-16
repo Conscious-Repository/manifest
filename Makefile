@@ -16,16 +16,15 @@ deploy:
 	  && go build -o ~/.local/bin/manifest-sync ./cmd/manifest-sync \
 	  && sudo systemctl restart manifest && systemctl is-active manifest'
 
-# engine → metis: the harnesses repo syncs via manifest-sync; this waits for
-# the current engine source to land, builds, restarts.
+# Excalibur is deprecated. Engine availability restoration is explicit and
+# must preserve blocked extractor fences; see docs/excalibur-retirement/decommission.md.
 engine-deploy:
-	ssh $(METIS) 'set -e; cd $(HARNESS_DIR) && git pull --ff-only; \
-	  cd $(HARNESS_DIR)/excalibur/engine && go build -o ~/.local/bin/excalibur-engine ./cmd/excalibur \
-	  && sudo systemctl restart excalibur-engine && systemctl is-active excalibur-engine'
+	@echo 'Excalibur engine deployment retired; use the reviewed restore procedure.' >&2
+	@exit 1
 
 # unit files → metis (after editing deploy/*.service|*.target|*.path)
 units-deploy:
-	scp deploy/manifest.service deploy/manifest-sync.service deploy/excalibur-engine.service \
+	scp deploy/manifest.service deploy/manifest-sync.service \
 	    deploy/engine-room.target deploy/private-ready.path deploy/hermes-gateway.service $(METIS):/tmp/
-	ssh $(METIS) 'sudo mv /tmp/manifest.service /tmp/manifest-sync.service /tmp/excalibur-engine.service \
+	ssh $(METIS) 'sudo mv /tmp/manifest.service /tmp/manifest-sync.service \
 	    /tmp/engine-room.target /tmp/private-ready.path /tmp/hermes-gateway.service /etc/systemd/system/ && sudo mkdir -p /etc/systemd/system/engine-room.target.wants && sudo ln -sfn /etc/systemd/system/hermes-gateway.service /etc/systemd/system/engine-room.target.wants/hermes-gateway.service && sudo systemctl daemon-reload'

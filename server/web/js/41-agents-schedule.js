@@ -460,7 +460,7 @@ function ritualRow(r) {
   // through hermesJobRow with the alfred chip
   const runtime = legacyEngineChip("ritual-runtime", r.harness);
   if (r.migrationState) {
-    runtime.textContent = r.retired ? "retired · history" : r.migrationState === "legacy-retiring" ? "legacy · retiring" : r.configuredOwner + " · " + r.migrationState;
+    runtime.textContent = r.capabilityPaused ? "paused · capability unavailable" : r.engineRetired ? "retired · engine unavailable" : r.retired ? "retired · history" : r.migrationState === "legacy-retiring" ? "legacy · retiring" : r.configuredOwner + " · " + r.migrationState;
     runtime.title = (r.harness || primaryHarnessName()) + " harness tree · " + r.path + " · " + r.migrationDetail;
   } else if (r.harness && r.harness !== "excalibur") {
     runtime.textContent = r.harness;
@@ -490,7 +490,7 @@ function ritualRow(r) {
   const cad = el("span", "ritual-cadence");
   if (paused) {
     cad.append(el("span", "cad-human", "paused" + (r.cadenceHuman && r.cadence ? " · " + r.cadenceHuman : "")));
-    cad.append(el("span", "cad-raw", r.cadence || (r.retired ? "retired" : internalNote(r))));
+    cad.append(el("span", "cad-raw", r.cadence || (r.capabilityPaused ? "paused" : r.retired ? "retired" : internalNote(r))));
   } else if (!r.cadence) {
     cad.append(el("span", "cad-human", "on demand"));
     cad.append(el("span", "cad-raw", internalNote(r)));
@@ -546,7 +546,7 @@ function ritualRow(r) {
   const acts = el("span", "ritual-acts");
   const run = el("button", "sprt-quiet", "run now");
   run.disabled = !!r.retired || r.legacyActionable === false;
-  run.textContent = r.retired ? "retired" : r.legacyActionable === false ? "legacy blocked" : "run now";
+  run.textContent = r.capabilityPaused ? "paused" : r.retired ? "retired" : r.legacyActionable === false ? "legacy blocked" : "run now";
   run.title = r.retirementReason || (r.legacyActionable === false && r.migrationDetail) || "spool a run — the engine picks it up within ~5s";
   run.onclick = (e) => { e.stopPropagation(); spiritSpool(r.spirit, r.ritual, "", { stay: true }); };
   acts.append(run);
@@ -558,7 +558,7 @@ function ritualRow(r) {
     acts.append(tog);
   }
   row.append(acts);
-  if (r.migrationDetail && !r.retired) row.append(el("div", "ritual-note", r.migrationDetail));
+  if (r.migrationDetail && (!r.retired || r.capabilityPaused)) row.append(el("div", "ritual-note", r.migrationDetail));
   if (!r.valid && r.error) row.append(el("div", "ritual-error", r.error));
   else if (paused && r.pausedReason) row.append(el("div", "ritual-note", r.pausedReason));
   row.onclick = () => { location.hash = "#/agents/ritual/" + encodeURIComponent(r.spirit) + "/" + encodeURIComponent(r.ritual); };
@@ -1031,7 +1031,7 @@ function paintRitualEditor(host) {
     } catch (e) { showToast("Couldn't delete: " + (e.message || e), null, "error"); }
   });
   if (ritEd.retirement) {
-    pause.disabled = true; run.disabled = true; del.disabled = true; pause.textContent = "retired";
+    pause.disabled = true; run.disabled = true; del.disabled = true; pause.textContent = ritEd.retirement.capabilityPaused ? "paused" : "retired";
     pause.title = run.title = ritEd.retirement.retirementReason;
     host.append(el("div", "ritual-note", ritEd.retirement.retirementReason));
   }

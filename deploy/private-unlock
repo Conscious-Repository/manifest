@@ -12,4 +12,4 @@ set -e
 mountpoint -q /private || { mkdir -p /private; mount /dev/mapper/private /private; }
 echo "/private unlocked: $(df -h /private | tail -1 | awk '{print $4}') free"
 systemctl restart engine-room.target
-echo "engine room: $(systemctl is-active manifest manifest-sync excalibur-engine zeck-runner | paste -sd' ')"
+echo "engine room: $(systemctl is-active manifest manifest-sync zeck-runner | paste -sd' ')"

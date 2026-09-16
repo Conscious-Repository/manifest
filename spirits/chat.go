@@ -131,6 +131,9 @@ func (s *Store) ChatSession(id string) (ChatSessionSummary, string, bool) {
 // per-session override (must be on the spirit's chat.md models whitelist —
 // the engine enforces, fail closed).
 func (s *Store) CreateChatSession(spirit, title, model string) (string, error) {
+	if s.engineUnavailable() {
+		return "", fmt.Errorf("Excalibur engine retired/unavailable")
+	}
 	if !validID(spirit) {
 		return "", fmt.Errorf("bad spirit name")
 	}
@@ -170,6 +173,9 @@ func (s *Store) CreateChatSession(spirit, title, model string) (string, error) {
 // Ordering per session rides the unixnano filename; the engine serializes
 // turns per session and leaves messages spooled while a turn runs.
 func (s *Store) SpoolChatMessage(spirit, session, text, source string) error {
+	if s.engineUnavailable() {
+		return fmt.Errorf("Excalibur engine retired/unavailable")
+	}
 	if !validID(spirit) || !chatSessionIDRe.MatchString(session) {
 		return fmt.Errorf("bad spirit/session")
 	}
@@ -259,6 +265,9 @@ func (s *Store) ChatEvents(id string, after int) []json.RawMessage {
 // RenameChatSession retitles a session (frontmatter only; refused while the
 // engine is mid-turn — it would clobber the rewrite).
 func (s *Store) RenameChatSession(id, title string) error {
+	if s.engineUnavailable() {
+		return fmt.Errorf("retired history is read-only")
+	}
 	sum, body, ok := s.ChatSession(id)
 	if !ok {
 		return fmt.Errorf("no such session")
@@ -289,6 +298,9 @@ func (s *Store) RenameChatSession(id, title string) error {
 // DeleteChatSession removes the session file + its event stream (refused
 // while thinking).
 func (s *Store) DeleteChatSession(id string) error {
+	if s.engineUnavailable() {
+		return fmt.Errorf("retired history is read-only")
+	}
 	sum, _, ok := s.ChatSession(id)
 	if !ok {
 		return fmt.Errorf("no such session")

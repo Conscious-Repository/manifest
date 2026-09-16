@@ -3,11 +3,12 @@
 **Current status:** Granola and Pocket transferred to Manifest in
 [the ready-connector cutover](ready-connectors-cutover.md); email subsequently
 transferred as recorded in the [personal email runbook](personal-email-successor.md).
-The three retained extractors still belong to the live engine. Their enablement now requires the
-[extractor ownership substrate](extractor-ownership-substrate.md); that note
-records exact remaining engine, semantic and application gates. No extractor
-cutover or final engine shutdown occurred. The implementation narrative and
-canary observations below describe the earlier checkpoint.
+The three retained extractor capabilities are explicitly paused/unavailable under
+[the decommission end state](decommission.md), with preserved history and no
+migration or parity claim. The installed engine is retired only by the separate
+hash-bound apply command. The implementation narrative and canary observations
+below describe earlier checkpoints; semantic and application gaps remain after
+engine decommission.
 
 ## Delivered
 

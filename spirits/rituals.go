@@ -27,6 +27,8 @@ import (
 
 // RitualRow is one row of the RITUALS board.
 type RitualRow struct {
+	EngineRetired    bool              `json:"engineRetired"`
+	CapabilityPaused bool              `json:"capabilityPaused"`
 	Harness          string            `json:"harness"`
 	ConfiguredOwner  string            `json:"configuredOwner"`
 	LegacyEnabled    bool              `json:"legacyEnabled"`
@@ -213,6 +215,9 @@ func (s *Store) ReadFile(rel string) (content string, allowed bool, err error) {
 // lint errors block the write (LintResult.OK=false); warnings are returned but
 // the write proceeds.
 func (s *Store) WriteFile(rel, content string) (res LintResult, allowed bool, err error) {
+	if s.engineUnavailable() {
+		return LintResult{OK: false, Errors: []string{"retired engine history is read-only"}}, true, nil
+	}
 	clean, ok := allowedEditPath(rel)
 	if !ok {
 		return LintResult{}, false, nil
@@ -887,6 +892,9 @@ func (s *Store) Conduits() []string {
 // rescan prune unschedules it within a tick; the harness repo's git history
 // is the undo.
 func (s *Store) DeleteRitual(spirit, name string) error {
+	if s.engineUnavailable() || s.RetirementReason(spirit, name) != "" {
+		return fmt.Errorf("paused or retired history is read-only")
+	}
 	if !validSlug(spirit) || !validSlug(name) {
 		return fmt.Errorf("invalid spirit/ritual name")
 	}
@@ -904,6 +912,9 @@ func (s *Store) DeleteRitual(spirit, name string) error {
 // rituals, and its memories. Refuses while any of its rituals is queued or
 // running. Deliberately destructive; git history is the undo.
 func (s *Store) DeleteSpirit(name string) error {
+	if s.engineUnavailable() || name == "extractor" && s.RetirementReason(name, "aion") != "" {
+		return fmt.Errorf("paused or retired history is read-only")
+	}
 	if !validSlug(name) {
 		return fmt.Errorf("invalid spirit name")
 	}

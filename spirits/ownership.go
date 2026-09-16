@@ -18,6 +18,7 @@ func (s *Store) projectOwnership(r *RitualRow) {
 		r.Harness = filepath.Base(filepath.Clean(s.root))
 	}
 	r.ConfiguredOwner = s.dutyOwners[r.Spirit+"/"+r.Ritual]
+	r.EngineRetired = s.EngineRetired()
 	r.LegacyActionable = r.Valid && !r.Retired && r.ConfiguredOwner == ""
 	if s.emailDuty(r.Spirit, r.Ritual) {
 		s.projectEmailOwnership(r)
@@ -28,10 +29,20 @@ func (s *Store) projectOwnership(r *RitualRow) {
 		return
 	}
 	if r.Harness == "excalibur" && r.Spirit == "extractor" && (r.Ritual == "aion" || r.Ritual == "real-estate" || r.Ritual == "ooda-email") {
+		r.CapabilityPaused = true
+		r.LegacyActionable = false
 		r.MigrationState, r.MigrationDetail = domainextract.Readiness(s.migrationDataDir, s.root, r.Ritual, r.ConfiguredOwner != "")
 		r.LegacyActionable = r.LegacyActionable && s.connectorDispatchGuard(r.Spirit, r.Ritual) == nil
 		if f, err := connectorhandoff.DutyFenceSnapshot(s.root, r.Spirit+"/"+r.Ritual); err == nil {
 			r.ConfiguredOwner = f.Owner
+			r.FenceProtected = f.Revision > 0 && f.Owner == "blocked"
+			if r.FenceProtected && !r.LegacyEnabled {
+				r.MigrationState = "paused"
+				r.MigrationDetail = "Capability paused/unavailable; legacy state and queues preserved without replay. No successor migration or parity claimed. Semantic and application safety gaps remain."
+			} else if f.Owner == "excalibur" {
+				r.MigrationState = "pause-pending"
+				r.MigrationDetail = "Manifest legacy dispatch is unavailable by policy. Explicit legacy schedule pause and blocked ownership fence still required before engine retirement. History and queues preserved; no migration claimed."
+			}
 		}
 		return
 	}
