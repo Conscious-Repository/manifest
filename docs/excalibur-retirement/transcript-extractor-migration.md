@@ -1,10 +1,9 @@
 # Transcript and extractor replacement — implementation checkpoint, 2026-09-16
 
-**Connector update:** the later [handoff substrate](connector-handoff-substrate.md)
-withdraws watermark-only applied imports. Production transcript polling remains
-blocked pending a shared legacy dispatch fence and complete reconciliation. No
-connector is ready for cutover; the historical test evidence below is not a live
-handoff receipt.
+**Current status:** Granola and Pocket were transferred to Manifest in
+[the ready-connector cutover](ready-connectors-cutover.md), initially in read-only
+continuity mode. Email remains Excalibur-owned. Watermark-only applied imports
+remain disabled. The implementation narrative below is historical.
 
 The replacement code is disabled by default. Granola/Pocket and the retained
 extractors still belong to the live engine. No live state import, duty pause,

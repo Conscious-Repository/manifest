@@ -1,7 +1,8 @@
 # Connector handoff substrate — 2026-09-16
 
-**No duty is ready for live cutover. Email, Granola and Pocket remain owned by
-Excalibur.** This is an offline state/reconciliation implementation, not a completed
+**Historical checkpoint, superseded for Granola and Pocket by the
+[ready-connector cutover](ready-connectors-cutover.md). Email remains Excalibur-owned.**
+At the time of this substrate change, no duty was ready for live cutover. This is an offline state/reconciliation implementation, not a completed
 migration. No real connector request, cursor import, credential read/copy, approval,
 vault write, production configuration change or live runtime operation was made.
 The harness and vault repositories were read only. No push or deployment belongs

@@ -41,3 +41,24 @@ func (s *Service) checkOutcome(source, id string, prior *Outcome, inv approvals.
 	}
 	return nil
 }
+
+// A historical uncertainty is terminal only with the exact durable owner receipt.
+func (s *Service) checkReconciledOutcome(source, id string, prior *Outcome, inv approvals.ConnectorInventory, owner *approvals.OwnerReconciliation) error {
+	if prior != nil && prior.Disposition == approvals.ReconciledUncertain {
+		if prior.Replay || owner == nil || owner.Source != source || owner.SourceID != id || owner.Replay || owner.Disposition != prior.Disposition || approvals.ValidateOwnerReconciliation(*owner, inv) != nil {
+			return fmt.Errorf("invalid no-replay reconciliation")
+		}
+		var paths []string
+		var err error
+		if source == "granola" {
+			paths, err = s.idx.PathsByGranolaID(id)
+		} else {
+			paths, err = s.idx.PathsByPocketID(id)
+		}
+		if err != nil || len(paths) != 0 || len(owner.Artifacts) != 1 || owner.Artifacts[0].ID != prior.ProposalID {
+			return fmt.Errorf("reconciled uncertainty changed; owner review required")
+		}
+		return nil
+	}
+	return s.checkOutcome(source, id, prior, inv)
+}

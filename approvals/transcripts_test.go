@@ -54,3 +54,25 @@ func TestTranscriptConfirmEditsPreserveFencedBody(t *testing.T) {
 		t.Fatalf("approved transcript differs from vault: %+v", approved)
 	}
 }
+
+func TestTranscriptProposalIgnoresEmailIdentityConflictButReservesItsPath(t *testing.T) {
+	root := t.TempDir()
+	s := NewStore(root)
+	for _, id := range []string{"mail-one", "mail-two"} {
+		raw := "---\nid: " + id + "\ntype: create-vault-note\napply-path: 2026-09-10 reserved.md\ngmail-thread-id: same-mail\n---\n```proposed\n---\ngmail-thread-id: same-mail\n---\nbody\n```\n"
+		if err := os.WriteFile(filepath.Join(root, "approvals/rejected", id+".md"), []byte(raw), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	p := Proposal{ID: "transcript", Type: TypeCreateVaultNote, Action: "Transcript", ApplyPath: "2026-09-10 reserved.md", Proposed: "---\ngranola-id: unique\n---\nbody"}
+	if _, _, err := s.ProposeTranscript("granola", "unique", p); err == nil {
+		t.Fatal("cross-source filename conflict ignored")
+	}
+	p.ApplyPath = "2026-09-10 transcript.md"
+	if _, created, err := s.ProposeTranscript("granola", "unique", p); err != nil || !created {
+		t.Fatal(created, err)
+	}
+	if _, err := ReadConnectorInventory(root); err == nil {
+		t.Fatal("global inventory weakened")
+	}
+}

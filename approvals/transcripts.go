@@ -25,7 +25,7 @@ func (s *Store) ProposeTranscript(source, id string, p Proposal) (Proposal, bool
 	}
 	s.decisionMu.Lock()
 	defer s.decisionMu.Unlock()
-	inv, err := s.connectorInventory()
+	inv, err := s.connectorInventoryForSource(source)
 	if err != nil {
 		return Proposal{}, false, err
 	}
@@ -38,6 +38,29 @@ func (s *Store) ProposeTranscript(source, id string, p Proposal) (Proposal, bool
 		}
 		if strings.EqualFold(old.Path, p.ApplyPath) {
 			return Proposal{}, false, fmt.Errorf("transcript filename conflicts with an existing proposal")
+		}
+	}
+	// Keep filename exclusion global while identity reconciliation stays scoped.
+	for _, status := range statuses {
+		entries, err := os.ReadDir(filepath.Join(s.dir, status))
+		if err != nil {
+			return Proposal{}, false, err
+		}
+		for _, ent := range entries {
+			if !strings.HasSuffix(ent.Name(), ".md") {
+				continue
+			}
+			if !ent.Type().IsRegular() {
+				return Proposal{}, false, fmt.Errorf("non-regular approval")
+			}
+			b, err := os.ReadFile(filepath.Join(s.dir, status, ent.Name()))
+			if err != nil {
+				return Proposal{}, false, err
+			}
+			fm, _ := mdfm.Split(string(b))
+			if strings.EqualFold(strings.TrimSpace(fm["apply-path"]), p.ApplyPath) && (match == nil || status != match.Status || ent.Name() != match.ID+".md") {
+				return Proposal{}, false, fmt.Errorf("transcript filename conflicts with an existing proposal")
+			}
 		}
 	}
 	if match != nil {
@@ -61,4 +84,11 @@ func (s *Store) ProposeTranscript(source, id string, p Proposal) (Proposal, bool
 		d.Close()
 	}
 	return result, err == nil, err
+}
+
+// TranscriptSnapshot serializes scoped inventory and owner evidence with decisions.
+func (s *Store) TranscriptSnapshot(source, dataDir string) (ConnectorInventory, *OwnerReconciliation, error) {
+	s.decisionMu.Lock()
+	defer s.decisionMu.Unlock()
+	return ReadReconciledConnectorInventory(filepath.Dir(s.dir), source, dataDir)
 }

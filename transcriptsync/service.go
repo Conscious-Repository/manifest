@@ -20,16 +20,17 @@ import (
 
 	"golang.org/x/sys/unix"
 	"manifest/approvals"
-	"manifest/connectorhandoff"
 )
 
 type SourceConfig struct {
-	Enabled bool   `json:"enabled"`
-	Account string `json:"account"`
+	ContinuityOnly bool   `json:"continuityOnly,omitempty"`
+	Enabled        bool   `json:"enabled"`
+	Account        string `json:"account"`
 }
 type Config struct {
-	Granola SourceConfig `json:"granola"`
-	Pocket  SourceConfig `json:"pocket"`
+	LegacyRoot string       `json:"legacyRoot"`
+	Granola    SourceConfig `json:"granola"`
+	Pocket     SourceConfig `json:"pocket"`
 }
 type Outcome struct {
 	Replay      bool   `json:"replay"`
@@ -384,14 +385,15 @@ func (s *Service) Poll(ctx context.Context, source string) (st State, err error)
 	if !c.Enabled {
 		return st, fmt.Errorf("transcript source disabled")
 	}
+	if c.ContinuityOnly {
+		return st, fmt.Errorf("source is in read-only continuity mode")
+	}
 	if s.handoffDataDir != "" {
-		r, e := connectorhandoff.Read(s.handoffDataDir, source)
-		if e != nil || (r.Phase != connectorhandoff.Enabled && r.Phase != connectorhandoff.Verified) {
-			return st, fmt.Errorf("transcript handoff evidence required; activation flag is insufficient")
+		release, err := s.enterSuccessor(source)
+		if err != nil {
+			return st, err
 		}
-		// No shipped legacy scheduler participates in the fence yet. Even a
-		// manually forged evidence record must not enable dual dispatch.
-		return st, fmt.Errorf("transcript handoff blocked: legacy dispatch fence not implemented")
+		defer release()
 	}
 
 	s.locks[source].Lock()
@@ -432,12 +434,12 @@ func (s *Service) Poll(ctx context.Context, source string) (st State, err error)
 	if s.idx == nil || s.idx.db == nil || s.approvals == nil {
 		return st, fmt.Errorf("index or approvals unavailable")
 	}
-	inv, e := s.approvals.ConnectorSnapshot()
+	inv, owner, e := s.approvals.TranscriptSnapshot(source, s.handoffDataDir)
 	if e != nil {
 		return st, e
 	}
 	for id, prior := range st.Items {
-		if e := s.checkOutcome(source, id, &prior, inv); e != nil {
+		if e := s.checkReconciledOutcome(source, id, &prior, inv, owner); e != nil {
 			return st, e
 		}
 	}
@@ -463,7 +465,7 @@ func (s *Service) Poll(ctx context.Context, source string) (st State, err error)
 			st.Skipped++
 			continue
 		}
-		if e := s.checkOutcome(source, it.id, nil, inv); e != nil {
+		if e := s.checkReconciledOutcome(source, it.id, nil, inv, owner); e != nil {
 			return st, e
 		}
 		dup, e := s.duplicate(source, it.id, strings.TrimSuffix(it.filename, ".md"), it.title, it.filename[:10])
@@ -542,7 +544,11 @@ func (s *Service) Start(ctx context.Context) {
 				now := s.now()
 				if e == nil && due(source, now, st.LastAttempt) {
 					run, cancel := context.WithTimeout(ctx, 15*time.Minute)
-					s.Poll(run, source)
+					if cfg, _ := s.config(source); cfg.ContinuityOnly {
+						s.observe(run, source)
+					} else {
+						s.Poll(run, source)
+					}
 					cancel()
 				}
 				select {

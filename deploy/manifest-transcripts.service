@@ -1,0 +1,26 @@
+# Initial cutover runtime: read-only continuity on existing transcript cadence.
+# No proposal/vault writes; full proposal polling stays in the dashboard runtime.
+[Unit]
+Description=Manifest Granola and Pocket read-only continuity
+After=network-online.target
+Wants=network-online.target
+ConditionPathExists=/home/benjamin/.config/manifest/transcript-worker.json
+
+[Service]
+Type=simple
+User=benjamin
+Group=benjamin
+ExecStart=/home/benjamin/.local/bin/manifest-transcript-worker -config /home/benjamin/.config/manifest/transcript-worker.json
+Restart=on-failure
+RestartSec=30
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/home/benjamin/.config/manifest
+ReadWritePaths=/private/harnesses/excalibur/vessel/state/dispatch-fence/ea-coordinator/granola-sync
+ReadWritePaths=/private/harnesses/excalibur/vessel/state/dispatch-fence/ea-coordinator/pocket-sync
+ReadOnlyPaths=/private/consciousrepo
+ReadOnlyPaths=/private/harnesses/excalibur/artifacts
+
+[Install]
+WantedBy=multi-user.target
