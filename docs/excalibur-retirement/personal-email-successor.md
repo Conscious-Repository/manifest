@@ -100,16 +100,37 @@ These changes must be deployed to the dashboard before enabling the worker.
 
 The worker covers the **primary and every explicitly configured extra mailbox**.
 Preparation requires exact coverage of the existing extra token inventory and
-legacy state files, including paused accounts. Each mailbox has a separate durable
+configured settings, including paused accounts. Each active extra requires its
+matching legacy state file. Each mailbox has a separate durable
 cursor, receipt and lifecycle map inside the same atomic activation. Polling
 honors each account's sync and extraction settings. Missing coverage refuses the
 whole duty transfer; nothing silently pauses or disconnects another account.
 
-A read-only inventory during this work found one extra legacy state file with
-41 threads. That is not independently verified account attribution or permission
-to reconcile those effects. The primary receipt's quarantine also applies to
-those identities in extra-account state, even when that state has a clean
-association. They remain permanent `legacy-reconciled-uncertain` records.
+Disconnected legacy extra state is preserved separately in the durable activation's
+`orphans` receipts with disposition `legacy-orphan-quarantined`, `replay=false`,
+its original absolute path, exact file hash and decoded thread-row hashes. These
+receipts have no account binding, approval matching, active cursor or proposal
+queue. The quarantine hash binds all orphan receipts alongside the unchanged
+primary and active-extra continuity receipts. Apply rechecks the inventory and
+hashes; changing, adding or removing a source file invalidates the prepared plan.
+Polling preserves these receipts without opening an orphan mailbox.
+
+Only files without a matching live extra token **or configured settings** can
+receive this classification. Settings without a token, unknown/non-matching live
+extras, missing active state, colliding account slugs, malformed state/settings,
+and ambiguous filenames refuse preparation. A slug is never decoded into an
+account identity. Primary-only cutover requires exactly zero live extra bindings,
+zero configured extras, and explicit orphan quarantine for every extra state file.
+Legacy files remain in place and unchanged; credentials are never copied into
+receipts. Existing historical conflicts remain permanently quarantined.
+
+The supplied September 16 handoff records a connected primary `ben@aion.bio`,
+48 anchor-verified and 50 quarantined primary identities with replay disabled,
+an empty extra-token directory and zero configured extra accounts. It identifies
+`/private/harnesses/excalibur/vessel/state/email/state-ben-ooda-group.json`
+(41 threads) as disconnected legacy state. Those observations permit the narrow
+orphan classification; they do not establish thread/proposal identity or authorize
+replaying its history. This coding change does not transfer live ownership.
 
 ## Explicit prepare / transfer / apply
 
@@ -136,7 +157,8 @@ account/settings. A representative shape is:
 `sync`, `extract` and `workspace` must match the existing settings for every
 account. Primary `sync` defaults to true when omitted; explicitly set it false
 for a paused primary account. Extra `sync` is explicit. Accounts must be lowercase. No tokens belong in
-this file. Runtime state binds the exact primary token path, account, config,
+this file. For the verified primary-only case, use `"extraAccounts": []`; do not
+invent an account entry for orphan history. Runtime state binds the exact primary token path, account, config,
 all legacy-state/approval hashes, quarantine receipts and ownership revision. Changing
 routing, paths or backfill requires a reviewed new activation, not an in-place
 config edit. Only `enabled` may change after apply.
@@ -220,3 +242,9 @@ preflight again reported 98 primary identities and 50 quarantined rows, with
 41 approval-only identities, seven append lineages and both conflicting
 associations intact. No live Gmail requests, ownership publication, service
 changes, historical approval edits, or vault writes were performed.
+
+Orphan coverage tests exercise primary-only acceptance, durable receipt retention
+through apply/poll, receipt deletion detection, source/inventory drift, live-extra
+mismatch and settings-only refusal, ambiguous state and slug collisions. Checks
+use synthetic fixtures and leave live credentials, approvals, vault and ownership
+unchanged.

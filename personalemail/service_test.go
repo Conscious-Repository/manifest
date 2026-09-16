@@ -69,6 +69,7 @@ func setup(t *testing.T) (*Service, *mailbox) {
 	c := Config{Account: "owner@example.com", LegacyRoot: root, DataDir: data, Index: filepath.Join(data, "index.db"), BackfillDays: 30, Extract: true, Workspace: "aion"}
 	s := New(c, &contacts{paths: map[string][]string{}}, ap)
 	s.extraBindings = func() ([]gmailauth.MailboxBinding, error) { return nil, nil }
+	s.configuredAccounts = func() ([]string, error) { return nil, nil }
 	s.binding = func(string) (string, bool, bool, string, error) {
 		return "/existing/primary-token", true, true, "aion", nil
 	}
@@ -374,6 +375,148 @@ func TestExtraMailboxCoverageRoutingAndQuarantine(t *testing.T) {
 			s.Config.ExtraAccounts = nil
 			if s.Poll(context.Background()) == nil {
 				t.Fatal("dropped extra coverage accepted")
+			}
+		})
+	}
+}
+
+func TestOrphanQuarantinePreservedAcrossActivationAndPoll(t *testing.T) {
+	s, m := setup(t)
+	path := filepath.Join(s.Config.LegacyRoot, "vessel/state/email/state-ben-ooda-group.json")
+	raw := []byte(`{"watermark":"2026-09-01T00:00:00Z","threads":{"historical":{"status":"proposed","proposal_id":"original"}}}`)
+	put(t, path, raw)
+	p, st, err := s.prepare(0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(st.Orphans) != 1 || len(st.ExtraAccounts) != 0 || len(st.Threads) != 0 {
+		t.Fatal(st)
+	}
+	orphan := st.Orphans[0]
+	if orphan.Path != path || orphan.LegacyHash != approvals.EvidenceHash(string(raw)) || orphan.Disposition != connectorhandoff.LegacyOrphanQuarantined || orphan.Replay || !connectorhandoff.ValidHash(orphan.ThreadHashes["historical"]) {
+		t.Fatal(orphan)
+	}
+	if _, err := os.Stat(s.path()); !os.IsNotExist(err) {
+		t.Fatal("prepare wrote state")
+	}
+	fence(t, s, 1, "excalibur", "manifest", p.Hash())
+	if _, err := s.Apply(p.Hash(), 0); err != nil {
+		t.Fatal(err)
+	}
+	s.Config.Enabled = true
+	if err := s.Poll(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	after, err := s.read()
+	if err != nil {
+		t.Fatal(err)
+	}
+	beforeReceipt, _ := json.Marshal(st.Orphans)
+	afterReceipt, _ := json.Marshal(after.Orphans)
+	if string(beforeReceipt) != string(afterReceipt) || m.calls != 0 || len(s.Approvals.List("pending")) != 0 {
+		t.Fatal("orphan changed or produced work")
+	}
+	unchanged, _ := os.ReadFile(path)
+	if string(unchanged) != string(raw) {
+		t.Fatal("orphan source changed")
+	}
+	after.Orphans = nil
+	if err := s.save(after); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.read(); err == nil {
+		t.Fatal("orphan receipt deletion accepted")
+	}
+}
+
+func TestOrphanCoverageRefusesConnectedConfiguredAndAmbiguous(t *testing.T) {
+	for _, mode := range []string{"live-match", "live-other", "settings-match", "settings-other", "inventory-error", "ambiguous-name", "ambiguous-state", "duplicate-state-key", "symlink", "missing-active-state", "slug-collision"} {
+		t.Run(mode, func(t *testing.T) {
+			s, _ := setup(t)
+			path := filepath.Join(s.Config.LegacyRoot, "vessel/state/email", gmailauth.ExtraStateFilename("extra@example.com"))
+			raw := []byte(`{"watermark":"2026-09-01T00:00:00Z","threads":{}}`)
+			switch mode {
+			case "live-match", "live-other":
+				account := "extra@example.com"
+				if mode == "live-other" {
+					account = "other@example.com"
+				}
+				s.extraBindings = func() ([]gmailauth.MailboxBinding, error) {
+					return []gmailauth.MailboxBinding{{Account: account, Sync: true}}, nil
+				}
+			case "settings-match", "settings-other":
+				account := "extra@example.com"
+				if mode == "settings-other" {
+					account = "other@example.com"
+				}
+				s.configuredAccounts = func() ([]string, error) { return []string{account}, nil }
+			case "inventory-error":
+				s.configuredAccounts = func() ([]string, error) { return nil, fmt.Errorf("unavailable") }
+			case "ambiguous-name":
+				path = filepath.Join(filepath.Dir(path), "state-UNKNOWN.json")
+			case "ambiguous-state":
+				raw = []byte(`{"account":"other@example.com","watermark":"2026-09-01T00:00:00Z","threads":{}}`)
+			case "duplicate-state-key":
+				raw = []byte(`{"watermark":"2026-09-01T00:00:00Z","threads":{},"threads":{}}`)
+			case "missing-active-state":
+				s.Config.ExtraAccounts = []MailboxConfig{{Account: "other@example.com", Sync: true}}
+				s.extraBindings = func() ([]gmailauth.MailboxBinding, error) {
+					return []gmailauth.MailboxBinding{{Account: "other@example.com", Sync: true}}, nil
+				}
+			case "slug-collision":
+				s.Config.ExtraAccounts = []MailboxConfig{{Account: "a-b@example.com"}, {Account: "a.b@example.com"}}
+				s.extraBindings = func() ([]gmailauth.MailboxBinding, error) {
+					return []gmailauth.MailboxBinding{{Account: "a-b@example.com"}, {Account: "a.b@example.com"}}, nil
+				}
+			}
+			put(t, path, raw)
+			if mode == "symlink" {
+				target := filepath.Join(t.TempDir(), "state.json")
+				put(t, target, raw)
+				if err := os.Remove(path); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.Symlink(target, path); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if _, err := s.Prepare(); err == nil {
+				t.Fatal("unsafe orphan exclusion accepted")
+			}
+		})
+	}
+}
+
+func TestOrphanEvidenceDriftRefusesApply(t *testing.T) {
+	for _, mode := range []string{"changed", "removed", "added", "connected", "configured"} {
+		t.Run(mode, func(t *testing.T) {
+			s, _ := setup(t)
+			path := filepath.Join(s.Config.LegacyRoot, "vessel/state/email/state-old-example-com.json")
+			raw := []byte(`{"watermark":"2026-09-01T00:00:00Z","threads":{}}`)
+			put(t, path, raw)
+			p, err := s.Prepare()
+			if err != nil {
+				t.Fatal(err)
+			}
+			fence(t, s, 1, "excalibur", "manifest", p.Hash())
+			switch mode {
+			case "changed":
+				put(t, path, append(raw, '\n'))
+			case "removed":
+				if err := os.Remove(path); err != nil {
+					t.Fatal(err)
+				}
+			case "added":
+				put(t, filepath.Join(filepath.Dir(path), "state-another-example-com.json"), raw)
+			case "connected":
+				s.extraBindings = func() ([]gmailauth.MailboxBinding, error) {
+					return []gmailauth.MailboxBinding{{Account: "old@example.com"}}, nil
+				}
+			case "configured":
+				s.configuredAccounts = func() ([]string, error) { return []string{"old@example.com"}, nil }
+			}
+			if _, err := s.Apply(p.Hash(), 0); err == nil {
+				t.Fatal("orphan evidence drift accepted")
 			}
 		})
 	}

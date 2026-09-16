@@ -48,16 +48,17 @@ type MailboxState struct {
 	Threads   map[string]Thread                    `json:"threads"`
 }
 type State struct {
-	ExtraAccounts map[string]MailboxState              `json:"extraAccounts,omitempty"`
-	Activation    Plan                                 `json:"activation"`
-	Version       int                                  `json:"version"`
-	PlanHash      string                               `json:"planHash"`
-	Revision      uint64                               `json:"revision"`
-	ConfigHash    string                               `json:"configHash"`
-	BindingHash   string                               `json:"bindingHash"`
-	Watermark     time.Time                            `json:"watermark"`
-	Receipt       connectorhandoff.EmailIdentityReport `json:"receipt"`
-	Threads       map[string]Thread                    `json:"threads"`
+	Orphans       []connectorhandoff.EmailOrphanReceipt `json:"orphans,omitempty"`
+	ExtraAccounts map[string]MailboxState               `json:"extraAccounts,omitempty"`
+	Activation    Plan                                  `json:"activation"`
+	Version       int                                   `json:"version"`
+	PlanHash      string                                `json:"planHash"`
+	Revision      uint64                                `json:"revision"`
+	ConfigHash    string                                `json:"configHash"`
+	BindingHash   string                                `json:"bindingHash"`
+	Watermark     time.Time                             `json:"watermark"`
+	Receipt       connectorhandoff.EmailIdentityReport  `json:"receipt"`
+	Threads       map[string]Thread                     `json:"threads"`
 }
 type Mailbox interface {
 	ThreadIDsSince(context.Context, time.Time, int) ([]string, error)
@@ -69,13 +70,14 @@ type Contacts interface {
 	Paths(string) ([]string, error)
 }
 type Service struct {
-	Config        Config
-	Contacts      Contacts
-	Approvals     *approvals.Store
-	Open          func(context.Context, string) (Mailbox, error)
-	extraBindings func() ([]gmailauth.MailboxBinding, error)
-	persist       func(State) error
-	binding       func(string) (string, bool, bool, string, error)
+	Config             Config
+	Contacts           Contacts
+	Approvals          *approvals.Store
+	Open               func(context.Context, string) (Mailbox, error)
+	configuredAccounts func() ([]string, error)
+	extraBindings      func() ([]gmailauth.MailboxBinding, error)
+	persist            func(State) error
+	binding            func(string) (string, bool, bool, string, error)
 }
 
 func New(c Config, idx Contacts, ap *approvals.Store) *Service {
@@ -85,7 +87,7 @@ func New(c Config, idx Contacts, ap *approvals.Store) *Service {
 			return nil, err
 		}
 		return gmailsync.NewMailboxClient(src, account), nil
-	}, binding: gmailauth.PrimaryBinding, extraBindings: gmailauth.ExtraBindings}
+	}, binding: gmailauth.PrimaryBinding, extraBindings: gmailauth.ExtraBindings, configuredAccounts: gmailauth.ConfiguredAccounts}
 }
 func (c Config) hash() string {
 	c.Enabled = false
@@ -126,10 +128,34 @@ func (s *Service) validate() (string, error) {
 		}
 		configured[c.Account] = c
 	}
+	accounts, err := s.configuredAccounts()
+	if err != nil {
+		return "", err
+	}
+	for _, account := range accounts {
+		if account != c.Account {
+			if _, ok := configured[account]; !ok {
+				return "", fmt.Errorf("configured mailbox lacks successor coverage")
+			}
+		}
+	}
+	seenStates := map[string]bool{gmailauth.ExtraStateFilename(c.Account): true}
+	for account := range configured {
+		name := gmailauth.ExtraStateFilename(account)
+		if seenStates[name] {
+			return "", fmt.Errorf("ambiguous mailbox state identity")
+		}
+		seenStates[name] = true
+	}
 	if len(bindings) != len(configured) {
 		return "", fmt.Errorf("every extra mailbox requires explicit successor configuration")
 	}
+	seenBindings := map[string]bool{}
 	for _, b := range bindings {
+		if seenBindings[b.Account] {
+			return "", fmt.Errorf("duplicate extra mailbox binding")
+		}
+		seenBindings[b.Account] = true
 		c, ok := configured[b.Account]
 		if !ok || c.Sync != b.Sync || c.Extract != b.Extract || c.Workspace != b.Workspace {
 			return "", fmt.Errorf("extra mailbox settings mismatch")
@@ -151,6 +177,11 @@ func (s *Service) read() (State, error) {
 	}
 	if st.Version != 1 || st.Threads == nil || st.ConfigHash != s.Config.hash() {
 		return st, fmt.Errorf("invalid successor state/config")
+	}
+	for _, orphan := range st.Orphans {
+		if orphan.Disposition != connectorhandoff.LegacyOrphanQuarantined || orphan.Replay || !filepath.IsAbs(orphan.Path) || !connectorhandoff.ValidHash(orphan.LegacyHash) {
+			return st, fmt.Errorf("invalid orphan quarantine")
+		}
 	}
 	receiptHash := quarantineHash(st)
 	if st.Activation.Hash() != st.PlanHash || st.Activation.Revision+1 != st.Revision || st.Activation.ConfigHash != st.ConfigHash || st.Activation.BindingHash != st.BindingHash || st.Activation.QuarantineHash != receiptHash {

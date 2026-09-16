@@ -1,11 +1,14 @@
 package gmailauth
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"golang.org/x/oauth2"
@@ -58,8 +61,81 @@ type MailboxBinding struct {
 	Workspace     string
 }
 
+// ConfiguredAccounts inventories settings even when their tokens are absent.
+// Missing settings are empty; unreadable or malformed settings fail closed.
+func ConfiguredAccounts() ([]string, error) {
+	sf, err := readBindingSettings()
+	if err != nil {
+		return nil, err
+	}
+	var accounts []string
+	for account := range sf.Accounts {
+		if account == "" || account != strings.ToLower(strings.TrimSpace(account)) || !strings.Contains(account, "@") {
+			return nil, fmt.Errorf("ambiguous mailbox settings identity")
+		}
+		accounts = append(accounts, account)
+	}
+	sort.Strings(accounts)
+	return accounts, nil
+}
+
+func readBindingSettings() (settingsFile, error) {
+	var sf settingsFile
+	b, err := os.ReadFile(settingsPath())
+	if os.IsNotExist(err) {
+		return sf, nil
+	}
+	if err != nil {
+		return sf, fmt.Errorf("mailbox settings unavailable")
+	}
+	d := json.NewDecoder(bytes.NewReader(b))
+	d.DisallowUnknownFields()
+	invalid := func() (settingsFile, error) { return settingsFile{}, fmt.Errorf("mailbox settings invalid") }
+	// Read identity keys explicitly: duplicate or case-folded keys must not hide
+	// configured accounts through encoding/json's last-wins behavior.
+	if tok, err := d.Token(); err != nil || tok != json.Delim('{') {
+		return invalid()
+	}
+	if tok, err := d.Token(); err != nil || tok != "accounts" {
+		return invalid()
+	}
+	if tok, err := d.Token(); err != nil || tok != json.Delim('{') {
+		return invalid()
+	}
+	sf.Accounts = map[string]AccountSettings{}
+	for d.More() {
+		tok, err := d.Token()
+		account, ok := tok.(string)
+		if err != nil || !ok {
+			return invalid()
+		}
+		if _, exists := sf.Accounts[account]; exists {
+			return invalid()
+		}
+		var settings *AccountSettings
+		if d.Decode(&settings) != nil || settings == nil {
+			return invalid()
+		}
+		sf.Accounts[account] = *settings
+	}
+	if tok, err := d.Token(); err != nil || tok != json.Delim('}') {
+		return invalid()
+	}
+	if tok, err := d.Token(); err != nil || tok != json.Delim('}') {
+		return invalid()
+	}
+	var trailing any
+	if d.Decode(&trailing) != io.EOF {
+		return invalid()
+	}
+	return sf, nil
+}
+
 func ExtraBindings() ([]MailboxBinding, error) {
-	sf := loadSettings()
+	sf, err := readBindingSettings()
+	if err != nil {
+		return nil, err
+	}
 	entries, err := os.ReadDir(accountsDir())
 	if os.IsNotExist(err) {
 		return nil, nil

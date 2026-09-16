@@ -5,11 +5,15 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
+	"slices"
 
 	"manifest/approvals"
 	"manifest/connectorhandoff"
 	"manifest/gmailauth"
 )
+
+var extraStateName = regexp.MustCompile(`^state-[a-z0-9]+(?:-[a-z0-9]+)*\.json$`)
 
 type Plan struct {
 	Version        int    `json:"version"`
@@ -40,13 +44,32 @@ func (s *Service) prepare(revision uint64) (Plan, State, error) {
 	for _, c := range s.Config.ExtraAccounts {
 		expected[filepath.Join(s.Config.LegacyRoot, "vessel/state/email", gmailauth.ExtraStateFilename(c.Account))] = true
 	}
-	if len(extras) != len(expected) {
-		return p, st, fmt.Errorf("extra legacy state coverage mismatch")
-	}
+	var orphans []connectorhandoff.EmailOrphanReceipt
 	for _, path := range extras {
-		if !expected[path] {
-			return p, st, fmt.Errorf("unconfigured extra legacy state")
+		if expected[path] {
+			delete(expected, path)
+			continue
 		}
+		// The slug is only a filename convention, never an account attribution.
+		if !extraStateName.MatchString(filepath.Base(path)) || filepath.Base(path) == gmailauth.ExtraStateFilename(s.Config.Account) {
+			return p, st, fmt.Errorf("ambiguous extra legacy state identity")
+		}
+		info, err := os.Lstat(path)
+		if err != nil || !info.Mode().IsRegular() {
+			return p, st, fmt.Errorf("invalid orphan state file")
+		}
+		raw, err := os.ReadFile(path)
+		if err != nil {
+			return p, st, err
+		}
+		orphan, err := connectorhandoff.QuarantineEmailOrphan(path, raw)
+		if err != nil {
+			return p, st, err
+		}
+		orphans = append(orphans, orphan)
+	}
+	if len(expected) != 0 {
+		return p, st, fmt.Errorf("extra legacy state coverage mismatch")
 	}
 	raw, err := os.ReadFile(filepath.Join(s.Config.LegacyRoot, "vessel/state/email/state.json"))
 	if err != nil {
@@ -68,6 +91,7 @@ func (s *Service) prepare(revision uint64) (Plan, State, error) {
 		return p, st, err
 	}
 	st.Threads = primary.Threads
+	st.Orphans = orphans
 	st.ExtraAccounts = map[string]MailboxState{}
 	for _, c := range s.Config.ExtraAccounts {
 		path := filepath.Join(s.Config.LegacyRoot, "vessel/state/email", gmailauth.ExtraStateFilename(c.Account))
@@ -109,6 +133,20 @@ func (s *Service) prepare(revision uint64) (Plan, State, error) {
 	againInv, err := approvals.ReadEmailContinuityInventory(filepath.Join(s.Config.LegacyRoot, "artifacts"))
 	if err != nil || againInv.Hash != p.ApprovalHash {
 		return p, st, fmt.Errorf("approval evidence changed during prepare")
+	}
+	for _, orphan := range st.Orphans {
+		raw, err := os.ReadFile(orphan.Path)
+		if err != nil || approvals.EvidenceHash(string(raw)) != orphan.LegacyHash {
+			return p, st, fmt.Errorf("orphan legacy state changed")
+		}
+	}
+	againExtras, err := filepath.Glob(filepath.Join(s.Config.LegacyRoot, "vessel/state/email/state-*.json"))
+	if err != nil || !slices.Equal(extras, againExtras) {
+		return p, st, fmt.Errorf("extra legacy inventory changed")
+	}
+	againBinding, err := s.validate()
+	if err != nil || againBinding != binding {
+		return p, st, fmt.Errorf("mailbox bindings changed during prepare")
 	}
 	return p, st, nil
 }
@@ -158,6 +196,13 @@ func quarantineHash(st State) string {
 		receipts[account] = m.Receipt
 	}
 	b, _ := json.Marshal(receipts)
+	// Preserve activation hashes for existing receipts without orphans.
+	if len(st.Orphans) > 0 {
+		b, _ = json.Marshal(struct {
+			Mailboxes map[string]connectorhandoff.EmailIdentityReport `json:"mailboxes"`
+			Orphans   []connectorhandoff.EmailOrphanReceipt           `json:"orphans"`
+		}{receipts, st.Orphans})
+	}
 	return approvals.EvidenceHash(string(b))
 }
 func importMailbox(raw []byte, account string, inv approvals.ConnectorInventory) (MailboxState, error) {
