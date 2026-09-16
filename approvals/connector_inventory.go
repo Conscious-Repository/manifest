@@ -39,6 +39,7 @@ func ReadConnectorInventory(artifacts string) (ConnectorInventory, error) {
 // ReadConnectorInventoryForSource reads only approvals attributable to source.
 // email uses gmail-thread identities. Unreadable artifacts and unattributed
 // creates/appends fail closed because their source cannot safely be excluded.
+// Known non-connector rituals without connector hints are excluded.
 // Like the global reader, this never creates or changes approval history.
 func ReadConnectorInventoryForSource(artifacts, source string) (ConnectorInventory, error) {
 	if source == "email" {
@@ -183,6 +184,12 @@ func connectorArtifactInScope(raw, proposed string, fm, pf map[string]string, sc
 		hints["gmail-thread"] = true
 	}
 	if len(hints) == 0 {
+		// Only explicitly known non-connector rituals establish exclusion.
+		// Connector hints above take precedence, including invalid aliases.
+		switch fm["ritual"] {
+		case "delegate", "waiting-on":
+			return false, nil
+		}
 		if fm["type"] == TypeCreateVaultNote || fm["type"] == TypeAppendVaultNote || fm["id"] == "" || fm["type"] == "" {
 			return false, fmt.Errorf("approval source attribution unavailable [REDACTED]")
 		}

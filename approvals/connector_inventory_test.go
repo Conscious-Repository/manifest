@@ -103,6 +103,9 @@ func TestConnectorInventorySourceScope(t *testing.T) {
 func TestConnectorInventorySourceAttributionFailsClosed(t *testing.T) {
 	for _, tc := range []struct{ name, metadata, proposed string }{
 		{"unattributed", "", ""},
+		{"unknown-ritual", "ritual: unknown-sync\n", ""},
+		{"delegate-conflicting-aliases", "ritual: delegate\n", "granola-id: one\ngranola_id: two\n"},
+		{"delegate-empty-alias", "ritual: delegate\n", "granola-id: \n"},
 		{"missing-id", "ritual: granola-sync\n", ""},
 		{"mixed-identities", "", "granola-id: one\ngmail-thread-id: two\n"},
 		{"mixed-ritual", "ritual: granola-sync\n", "gmail-thread-id: two\n"},
@@ -121,6 +124,57 @@ func TestConnectorInventorySourceAttributionFailsClosed(t *testing.T) {
 			}
 			if _, err := ReadConnectorInventoryForSource(root, "granola"); err == nil || strings.Contains(err.Error(), "private") {
 				t.Fatalf("attribution accepted or leaked private evidence: %v", err)
+			}
+		})
+	}
+}
+
+func TestConnectorInventoryKnownNonConnectorRituals(t *testing.T) {
+	for _, source := range []string{"granola", "pocket", "email"} {
+		t.Run(source, func(t *testing.T) {
+			root := t.TempDir()
+			NewStore(root)
+			identity := source
+			if source == "email" {
+				identity = "gmail-thread"
+			}
+			write := func(status, id, typ, metadata, proposed string) {
+				t.Helper()
+				raw := "---\nid: " + id + "\ntype: " + typ + "\n" + metadata + "---\n```proposed\n---\n" + proposed + "---\nprivate body\n```\n"
+				if err := os.WriteFile(filepath.Join(root, "approvals", status, id+".md"), []byte(raw), 0600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			write("pending", "target", TypeCreateVaultNote, "ritual: "+source+"-sync\n", identity+"-id: one\n")
+			before, err := ReadConnectorInventoryForSource(root, source)
+			if err != nil || len(before.Items) != 1 {
+				t.Fatalf("clean target: %+v %v", before, err)
+			}
+			for _, ritual := range []string{"delegate", "waiting-on"} {
+				for _, typ := range []string{TypeCreateVaultNote, TypeAppendVaultNote} {
+					write("rejected", ritual+"-"+typ, typ, "ritual: "+ritual+"\n", "")
+				}
+			}
+			inv, err := ReadConnectorInventoryForSource(root, source)
+			if err != nil || len(inv.Items) != 1 || inv.Items[0] != before.Items[0] || inv.Hash != before.Hash {
+				t.Fatalf("non-connector history affected scope: %+v %v", inv, err)
+			}
+			global, err := ReadConnectorInventory(root)
+			if err != nil || len(global.Items) != 3 {
+				t.Fatalf("global audit lost unattributed creates: %+v %v", global, err)
+			}
+			for _, item := range global.Items {
+				if item.ID != "target" && (item.Source != "" || item.SourceID != "" || item.Status != "rejected") {
+					t.Fatalf("global audit changed unattributed create: %+v", item)
+				}
+			}
+			for _, metadata := range []string{"", "ritual: unknown-sync\n", "ritual: " + source + "-sync\n"} {
+				for _, typ := range []string{TypeCreateVaultNote, TypeAppendVaultNote} {
+					write("rejected", "ambiguous", typ, metadata, "")
+					if _, err := ReadConnectorInventoryForSource(root, source); err == nil {
+						t.Fatalf("accepted missing identity: type=%s metadata=%q", typ, metadata)
+					}
+				}
 			}
 		})
 	}
