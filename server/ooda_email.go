@@ -11,6 +11,7 @@ package server
 // flat again. TestPendingEmailNotesAreScopedToSourceAndAdmin pins it.
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"path"
@@ -102,8 +103,8 @@ func (a *oodaAPI) gmailStatus(w http.ResponseWriter, r *http.Request) {
 	acc, connected := s.oodaGmail.Status(id.Email)
 	writeJSON(w, map[string]any{
 		"connected":   connected && !acc.NeedsReauth,
-		"needsReauth": acc.NeedsReauth,
-		"checkedAt":   acc.CheckedAt,
+		"needsReauth": acc.NeedsReauth, "lastSync": acc.LastSync, "syncError": acc.SyncError,
+		"checkedAt": acc.CheckedAt,
 	})
 }
 
@@ -269,6 +270,12 @@ func (s *Server) SpoolOodaEmailExtract(cand gmailsync.Candidate, hash string) bo
 	if s.spirits == nil || s.realestate == nil {
 		return false
 	}
+	if hash == "" {
+		return false
+	}
+	if _, ok := s.oodaEmailRun(hash); ok {
+		return true
+	} // accepted runs are never blindly replayed
 	req := s.oodaEmailRequest(cand, hash)
 	if err := s.spirits.SpoolRunNow("extractor", "ooda-email", req, ""); err != nil {
 		if err != spirits.ErrAlreadyActive {
@@ -322,4 +329,58 @@ func (s *Server) oodaEmailRequest(cand gmailsync.Candidate, hash string) string 
 	}
 	b.WriteString(note)
 	return b.String()
+}
+
+// Match the durable engine receipt, not acceptance of a spool file.
+func (s *Server) oodaEmailRun(hash string) (spirits.RunSummary, bool) {
+	if s.spirits != nil && hash != "" {
+		for _, r := range s.spirits.Runs() {
+			if r.Spirit == "extractor" && r.Ritual == "ooda-email" && strings.Contains(r.Request, "sha256:"+hash) {
+				return r, true
+			}
+		}
+	}
+	return spirits.RunSummary{}, false
+}
+
+// Recover confirmed mail whose handoff was lost before the engine wrote a
+// receipt. Pending/dismissed mail is never selected. Failure receipts remain
+// visible for review rather than automatically replaying partial writes.
+func (s *Server) ReconcileOodaEmailExtracts() {
+	if s.oodaEmail == nil || s.spirits == nil || s.artifacts == nil {
+		return
+	}
+	alive, _ := s.spirits.EngineAlive()
+	if !alive {
+		return
+	}
+	seen := map[string]bool{}
+	for _, c := range s.oodaEmail.List(gmailsync.StatusConfirmed) {
+		hash := c.ArtifactHash
+		if hash == "" || seen[hash] || !s.artifacts.Owns("ooda", hash) {
+			continue
+		}
+		seen[hash] = true
+		if _, ok := s.oodaEmailRun(hash); ok {
+			continue
+		}
+		if s.spirits.IsActive("extractor", "ooda-email") {
+			return
+		}
+		s.SpoolOodaEmailExtract(c, hash)
+		return // serialize the source conversations, including the handoff gap
+	}
+}
+
+func (s *Server) StartOodaEmailRecovery(ctx context.Context) {
+	t := time.NewTicker(time.Minute)
+	defer t.Stop()
+	for {
+		s.ReconcileOodaEmailExtracts()
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+		}
+	}
 }

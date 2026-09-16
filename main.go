@@ -1143,6 +1143,7 @@ func main() {
 			}
 			if emailCands != nil {
 				srv.UseOodaEmail(emailCands, gtok)
+				go srv.StartOodaEmailRecovery(context.Background())
 				loop := &gmailsync.Loop{
 					Tokens: gtok, Candidates: emailCands,
 					OAuthConfig: auth.OAuthConfig,

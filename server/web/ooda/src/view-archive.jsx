@@ -37,7 +37,7 @@ function ViewArchive() {
       kind: noteHashes.has(e.hash) ? "email" : "file",
       date: (e.at || "").slice(0, 10),
       title: e.name,
-      detail: [e.by, e.thread].filter(Boolean).join(" · "),
+      detail: [e.by, e.thread, (a.emailExtraction || {})[e.hash]].filter(Boolean).join(" · "),
       href: "/api/chat/attach/" + e.hash,
     });
   }

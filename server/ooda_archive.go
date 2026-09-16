@@ -23,7 +23,20 @@ func (a *oodaAPI) archive(w http.ResponseWriter, r *http.Request) {
 		out["artifacts"] = s.artifacts.List("ooda")
 	}
 	if s.oodaEmail != nil {
-		out["emailNotes"] = s.oodaEmail.List("confirmed")
+		notes := s.oodaEmail.List("confirmed")
+		out["emailNotes"] = notes
+		states := map[string]string{}
+		for _, note := range notes {
+			hash := note.ArtifactHash
+			if hash == "" {
+				continue
+			}
+			states[hash] = "awaiting extraction receipt"
+			if run, ok := s.oodaEmailRun(hash); ok {
+				states[hash] = "extraction: " + run.Outcome
+			}
+		}
+		out["emailExtraction"] = states
 	}
 	// extraction outcomes: decided proposals sourced from an ooda artifact.
 	// Approved AND rejected both belong in the log — the archive is history,

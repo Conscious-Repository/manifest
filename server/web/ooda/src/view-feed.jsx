@@ -21,7 +21,10 @@ function useOodaFeed() {
 
 function GmailBanner({ gmail }) {
   if (!gmail) return null;
-  if (gmail.connected) return null;
+  if (gmail.connected) return <div className="ooda-sub ooda-sec-note">
+    {gmail.syncError ? "Email sync needs attention; unread mail will be retried." : gmail.lastSync ? "Email synced " + new Date(gmail.lastSync).toLocaleString() : "Gmail connected · waiting for the first sync"}
+    {" · confirm a thread below to extract task and decision suggestions"}
+  </div>;
   return (
     <div className="ooda-gmail-banner">
       <span>
@@ -73,7 +76,7 @@ function PendingEmail({ cand, admin, onDecide }) {
       {err ? <div className="ooda-err">{err}</div> : null}
       <div className="ooda-card-actions">
         <button className="ooda-send" disabled={!!busy} onClick={() => decide("confirm")}>
-          {busy === "confirm" ? "saving…" : "confirm — archive it"}
+          {busy === "confirm" ? "saving…" : "confirm & extract"}
         </button>
         <button className="ooda-quiet" disabled={!!busy} onClick={() => decide("dismiss")}>
           {busy === "dismiss" ? "…" : "dismiss — never ask about this thread again"}
@@ -261,7 +264,7 @@ function ViewFeed() {
       <Section title={feed.admin ? "PENDING EMAIL — ALL MEMBERS" : "PENDING EMAIL — YOUR MAILBOX"} count={pending.length}>
         <div className="ooda-sub ooda-sec-note">
           one card per conversation — confirm files the thread note as an OODA
-          artifact (ARCHIVE tab) and mines it for tasks &amp; money proposals;
+          artifact (ARCHIVE tab) and proposes tasks, decisions, and money items for a separate review;
           dismiss mutes the conversation for good
         </div>
         {pending.length ? pending.map((c) => (

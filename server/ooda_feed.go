@@ -69,7 +69,7 @@ func (a *oodaAPI) feed(w http.ResponseWriter, r *http.Request) {
 	if s.oodaGmail != nil {
 		acc, connected := s.oodaGmail.Status(id.Email)
 		out["gmail"] = map[string]any{
-			"connected": connected && !acc.NeedsReauth, "needsReauth": acc.NeedsReauth,
+			"connected": connected && !acc.NeedsReauth, "needsReauth": acc.NeedsReauth, "lastSync": acc.LastSync, "syncError": acc.SyncError,
 		}
 	}
 	if s.oodaEmail != nil {

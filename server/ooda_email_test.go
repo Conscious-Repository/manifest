@@ -12,7 +12,10 @@ package server
 
 import (
 	"encoding/json"
+	"manifest/spirits"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -266,5 +269,61 @@ func TestEmailFeedGroupsAndDecidesTheWholeConversation(t *testing.T) {
 	}
 	if got := len(f.cands.List(gmailsync.StatusDismissed)); got != 2 {
 		t.Fatalf("fallback-fingerprint dismiss should mute both copies, got %d dismissed", got)
+	}
+}
+
+func TestOodaConfirmedEmailRecoveryRequiresReceipt(t *testing.T) {
+	f := oodaPortalFixtureFull(t)
+	admin, _ := f.auth.SessionCookie("ben@ooda.group", "Benjamin", false, time.Now())
+	approved := seedCandidate(t, f, "ben@ooda.group", "confirmed-thread", "Confirmed fixture")
+	seedCandidate(t, f, "brian@ooda.group", "pending-thread", "Unconfirmed fixture")
+	rec := oodaDo(t, f.h, admin, "POST", "/api/ooda/email/"+approved.ID, `{"action":"confirm"}`)
+	if rec.Code != 200 {
+		t.Fatal(rec.Body.String())
+	}
+	confirmed := f.cands.List(gmailsync.StatusConfirmed)[0]
+	root := t.TempDir()
+	for _, dir := range []string{"vessel/state", "artifacts/runs"} {
+		if err := os.MkdirAll(filepath.Join(root, dir), 0755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(root, "vessel/state/engine.heartbeat"), []byte("live"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	f.srv.spirits = spirits.NewStore(root)
+	f.srv.ReconcileOodaEmailExtracts()
+	files, _ := filepath.Glob(filepath.Join(root, "vessel/spool/*.json"))
+	if len(files) != 1 {
+		t.Fatalf("spools: %v", files)
+	}
+	body, _ := os.ReadFile(files[0])
+	if !strings.Contains(string(body), confirmed.ArtifactHash) {
+		t.Fatal("wrong source")
+	}
+	f.srv.ReconcileOodaEmailExtracts()
+	again, _ := filepath.Glob(filepath.Join(root, "vessel/spool/*.json"))
+	if len(again) != 1 {
+		t.Fatal("duplicate while queued")
+	}
+	if err := os.Remove(files[0]); err != nil {
+		t.Fatal(err)
+	}
+	// A receipt, even a failure, prevents blindly repeating partial writes.
+	report := "---\nrun: fixture\nspirit: extractor\nritual: ooda-email\noutcome: error\nrequest: source sha256:" + confirmed.ArtifactHash + "\n---\nfixture\n"
+	if err := os.WriteFile(filepath.Join(root, "artifacts/runs/fixture.md"), []byte(report), 0600); err != nil {
+		t.Fatal(err)
+	}
+	f.srv.ReconcileOodaEmailExtracts()
+	files, _ = filepath.Glob(filepath.Join(root, "vessel/spool/*.json"))
+	if len(files) != 0 {
+		t.Fatal("replayed existing receipt")
+	}
+	if len(f.cands.List(gmailsync.StatusPending)) != 1 {
+		t.Fatal("unconfirmed email changed")
+	}
+	archive := oodaDo(t, f.h, admin, "GET", "/api/ooda/archive", "")
+	if !strings.Contains(archive.Body.String(), "extraction: error") {
+		t.Fatal("missing failed extraction state")
 	}
 }
