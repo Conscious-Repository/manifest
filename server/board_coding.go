@@ -182,6 +182,17 @@ func (s *Server) boardTranscriptOverlay(se termSession, tr, full *termTranscript
 	}
 }
 
+// boardRunProducedItems reports whether the CLI's event stream shows any work
+// item (a message, a command, a file change) — the line between "the run
+// died mid-way" and "the run never started".
+func boardRunProducedItems(dir string) bool {
+	b, err := os.ReadFile(filepath.Join(dir, "events.jsonl"))
+	if err != nil {
+		return false
+	}
+	return strings.Contains(string(b), `"type":"item.`)
+}
+
 // boardRunFailure reads the CLI's own event stream (events.jsonl, tee'd from
 // `codex exec --json`) and the exit marker for a run that ended without a
 // result: the error the CLI reported, or its exit code. Nil for a run that
@@ -389,7 +400,24 @@ func (s *Server) codingRecovery(dir, session string) string {
 	if se, ok := s.terminal.find(session); ok && se.Cwd != "" {
 		cwd = se.Cwd
 	}
+	// The CLI's own account of the failure leads. A run that never produced a
+	// single item did nothing to the checkout, so the reopen-and-finish
+	// instructions and the checkout-wide diff would only mislead — say what
+	// stopped it and what fixes it instead.
+	failure := boardRunFailure(dir)
+	if failure != nil && !boardRunProducedItems(dir) {
+		body := "Codex did not start on this task: " + failure.Error + "\n\nNothing was done; the checkout is untouched.\n\n"
+		if strings.Contains(strings.ToLower(failure.Error), "refresh token") || strings.Contains(strings.ToLower(failure.Error), "sign in") {
+			body += "Its login on this box has lapsed (the refresh token was consumed by another codex process). Run `codex login` on metis, then assign the task again.\n"
+		} else {
+			body += "Fix the cause, then assign the task again.\n"
+		}
+		return body
+	}
 	body := "The coding session stopped without a valid durable result. Completion is unverified; local work may still need validation, commit and push.\n\n"
+	if failure != nil {
+		body = "The coding session stopped before writing a result: " + failure.Error + "\n\nCompletion is unverified; local work may still need validation, commit and push.\n\n"
+	}
 	body += "Reopen the coding session and ask it to finish the work order at " + filepath.Join(dir, "brief.md") +
 		". Inspect existing changes, preserve unrelated work, follow the work order's validation and commit/push requirements, then atomically write result.json as instructed. A valid late result will update this run.\n\n"
 	body += "Checkout: " + cwd + "\n\n"

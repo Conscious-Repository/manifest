@@ -3,6 +3,7 @@ package server
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -79,5 +80,44 @@ func TestBoardTranscriptOverlay(t *testing.T) {
 	}
 	if full.Run == nil || full.Run.State != "failed" || full.Run.Error != "boom" {
 		t.Fatalf("failure evidence: %+v", full.Run)
+	}
+}
+
+// A run the CLI never started reads as exactly that, with the CLI's reason
+// and the fix, not as unverified work plus a checkout-wide diff.
+func TestCodingRecoveryNamesTheCause(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "events.jsonl"), []byte(`{"type":"thread.started","thread_id":"x"}
+{"type":"turn.started"}
+{"type":"error","message":"Your access token could not be refreshed because your refresh token was already used. Please log out and sign in again."}
+{"type":"turn.failed","error":{"message":"Your access token could not be refreshed because your refresh token was already used. Please log out and sign in again."}}
+`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "exit"), []byte("1"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	s := &Server{terminal: &termCfg{regPath: filepath.Join(t.TempDir(), "terminals.json"), codingRepo: t.TempDir()}}
+	body := s.codingRecovery(dir, "nope")
+	for _, want := range []string{"did not start", "refresh token was already used", "codex login", "untouched"} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("recovery lacks %q:\n%s", want, body)
+		}
+	}
+	for _, not := range []string{"Uncommitted work", "Reopen the coding session"} {
+		if strings.Contains(body, not) {
+			t.Fatalf("recovery for a run that never started still says %q:\n%s", not, body)
+		}
+	}
+	// a run that did work and then died keeps the reopen path, led by the cause
+	worked := t.TempDir()
+	if err := os.WriteFile(filepath.Join(worked, "events.jsonl"), []byte(`{"type":"item.completed","item":{"type":"agent_message","text":"working"}}
+{"type":"turn.failed","error":{"message":"stream disconnected"}}
+`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	body = s.codingRecovery(worked, "nope")
+	if !strings.Contains(body, "stream disconnected") || !strings.Contains(body, "Reopen the coding session") {
+		t.Fatalf("mid-way failure:\n%s", body)
 	}
 }
