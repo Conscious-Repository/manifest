@@ -14,11 +14,14 @@ import (
 )
 
 type EmailThread struct {
-	Status         string `json:"status"`
-	ProposalID     string `json:"proposal_id,omitempty"`
-	LastMsgID      string `json:"last_msg_id,omitempty"`
-	LastInternalMS int64  `json:"last_internal_ms,omitempty"`
-	Filename       string `json:"filename,omitempty"`
+	Disposition    string   `json:"disposition,omitempty"`
+	Replay         bool     `json:"replay"`
+	ProposalIDs    []string `json:"proposal_ids,omitempty"`
+	Status         string   `json:"status"`
+	ProposalID     string   `json:"proposal_id,omitempty"`
+	LastMsgID      string   `json:"last_msg_id,omitempty"`
+	LastInternalMS int64    `json:"last_internal_ms,omitempty"`
+	Filename       string   `json:"filename,omitempty"`
 }
 type EmailCheckpoint struct {
 	Version      int                     `json:"version"`
@@ -34,7 +37,18 @@ type EmailCheckpoint struct {
 // binding, not inferred from a slug/token. This never enables a mailbox or turns
 // missing decisions into retryable work. An unresolved append holds the handoff.
 func PrepareEmail(raw []byte, account string, inv approvals.ConnectorInventory) (EmailCheckpoint, error) {
+	return PrepareEmailWithReconciliation(raw, account, inv, nil)
+}
+
+// PrepareEmailWithReconciliation retains rejected lineage and suppresses replay.
+// owner must come from the validated durable inventory reader.
+func PrepareEmailWithReconciliation(raw []byte, account string, inv approvals.ConnectorInventory, owner *approvals.OwnerReconciliation) (EmailCheckpoint, error) {
 	var out EmailCheckpoint
+	if owner != nil {
+		if err := approvals.ValidateOwnerReconciliation(*owner, inv); err != nil {
+			return out, err
+		}
+	}
 	if account == "" || !ValidHash(inv.Hash) {
 		return out, fmt.Errorf("account binding and canonical inventory required")
 	}
@@ -42,8 +56,14 @@ func PrepareEmail(raw []byte, account string, inv approvals.ConnectorInventory) 
 		return out, err
 	}
 	var legacy struct {
-		Watermark string                  `json:"watermark"`
-		Threads   map[string]*EmailThread `json:"threads"`
+		Watermark string `json:"watermark"`
+		Threads   map[string]*struct {
+			Status         string `json:"status"`
+			ProposalID     string `json:"proposal_id,omitempty"`
+			LastMsgID      string `json:"last_msg_id,omitempty"`
+			LastInternalMS int64  `json:"last_internal_ms,omitempty"`
+			Filename       string `json:"filename,omitempty"`
+		} `json:"threads"`
 	}
 	dec := json.NewDecoder(bytes.NewReader(raw))
 	dec.DisallowUnknownFields()
@@ -55,7 +75,7 @@ func PrepareEmail(raw []byte, account string, inv approvals.ConnectorInventory) 
 		return out, fmt.Errorf("invalid email watermark")
 	}
 	hash := sha256.Sum256(raw)
-	out = EmailCheckpoint{Version: 1, Account: account, LegacyHash: hex.EncodeToString(hash[:]), ApprovalHash: inv.Hash, Watermark: at, Threads: legacy.Threads, Uncertain: []string{}}
+	out = EmailCheckpoint{Version: 1, Account: account, LegacyHash: hex.EncodeToString(hash[:]), ApprovalHash: inv.Hash, Watermark: at, Threads: map[string]*EmailThread{}, Uncertain: []string{}}
 	byID := map[string]approvals.ConnectorApproval{}
 	for _, p := range inv.Items {
 		if p.Source != "gmail-thread" {
@@ -66,7 +86,12 @@ func PrepareEmail(raw []byte, account string, inv approvals.ConnectorInventory) 
 			out.Uncertain = append(out.Uncertain, p.ID)
 		}
 	}
-	for id, th := range legacy.Threads {
+	for id, old := range legacy.Threads {
+		if old == nil {
+			return EmailCheckpoint{}, fmt.Errorf("invalid email thread")
+		}
+		th := &EmailThread{Status: old.Status, ProposalID: old.ProposalID, LastMsgID: old.LastMsgID, LastInternalMS: old.LastInternalMS, Filename: old.Filename}
+		out.Threads[id] = th
 		if id == "" || th == nil || th.LastInternalMS < 0 {
 			return EmailCheckpoint{}, fmt.Errorf("invalid email thread [REDACTED]")
 		}
@@ -82,11 +107,26 @@ func PrepareEmail(raw []byte, account string, inv approvals.ConnectorInventory) 
 		if th.Status == "proposed" && !ok {
 			return EmailCheckpoint{}, fmt.Errorf("proposed email lacks canonical approval [REDACTED]")
 		}
+		if owner != nil && id == owner.SourceID {
+			if owner.Source != "email" || owner.Disposition != approvals.ReconciledRejected || owner.Replay || !ok || p.Status != "rejected" || th.Status == "synced" {
+				return EmailCheckpoint{}, fmt.Errorf("rejected owner lineage conflicts with email state")
+			}
+			th.Status = "muted"
+			th.Disposition = owner.Disposition
+			th.Replay = false
+			for _, artifact := range owner.Artifacts {
+				th.ProposalIDs = append(th.ProposalIDs, artifact.ID)
+			}
+			continue
+		}
 		// Preserve proposed/synced/muted verbatim. A crash between the vault effect
 		// and state save must be reviewed, never silently promoted or replayed.
 		if th.Status == "synced" || th.Status == "proposed" && p.Status != "pending" || th.Status == "muted" && (!ok || p.Status != "rejected") {
 			out.Uncertain = append(out.Uncertain, id)
 		}
+	}
+	if owner != nil && out.Threads[owner.SourceID] == nil {
+		return EmailCheckpoint{}, fmt.Errorf("owner rejected thread missing from legacy ledger")
 	}
 	sort.Strings(out.Uncertain)
 	return out, nil

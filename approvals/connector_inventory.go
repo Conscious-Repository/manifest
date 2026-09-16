@@ -64,6 +64,9 @@ func (s *Store) connectorInventory() (ConnectorInventory, error) {
 	return s.connectorInventoryForSource("")
 }
 func (s *Store) connectorInventoryForSource(scope string) (ConnectorInventory, error) {
+	return s.connectorInventoryWithReconciliation(scope, false)
+}
+func (s *Store) connectorInventoryWithReconciliation(scope string, owner bool) (ConnectorInventory, error) {
 	result := ConnectorInventory{Items: []ConnectorApproval{}}
 	h := sha256.New()
 	ids, sources := map[string]bool{}, map[string]bool{}
@@ -134,7 +137,7 @@ func (s *Store) connectorInventoryForSource(scope string) (ConnectorInventory, e
 				}
 				key := source + "/" + sid
 				if typ == TypeCreateVaultNote {
-					if sources[key] {
+					if sources[key] && !(owner && source == "gmail-thread" && sid == "19fdd282744d15a0" && status == "rejected" && (id == "2a71f54cd7b3" || id == "d75af2b821e6")) {
 						return result, fmt.Errorf("duplicate connector source identity [REDACTED]")
 					}
 					sources[key] = true

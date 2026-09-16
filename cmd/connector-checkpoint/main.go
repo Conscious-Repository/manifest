@@ -12,6 +12,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"reflect"
 
 	"manifest/approvals"
 	"manifest/connectorhandoff"
@@ -21,6 +22,8 @@ import (
 
 type options struct {
 	Source, Root, Account, EmailState, Index, DataDir, ExpectState, ExpectApprovals string
+	OwnerReconciliation                                                             bool
+	ExpectReconciliation                                                            string
 	Stage, Apply, Report                                                            bool
 }
 
@@ -37,6 +40,8 @@ func main() {
 	flag.BoolVar(&o.Report, "report", false, "emit read-only reconciliation evidence; never stage or activate")
 	flag.BoolVar(&o.Stage, "stage", false, "save immutable checkpoint only; no active cursor or ownership change")
 	flag.BoolVar(&o.Apply, "apply", false, "request handoff (blocked until shared dispatch fence exists)")
+	flag.BoolVar(&o.OwnerReconciliation, "owner-reconciliation", false, "preview the exact owner-authorized historical decision; -apply writes only its dataDir record")
+	flag.StringVar(&o.ExpectReconciliation, "expect-reconciliation-hash", "", "required owner decision hash from dry run for apply")
 	flag.Parse()
 	if err := run(o, os.Stdout); err != nil {
 		fmt.Fprintln(os.Stderr, err)
@@ -50,6 +55,9 @@ func run(o options, out io.Writer) error {
 	if o.Root == "" || o.Account == "" {
 		return fmt.Errorf("legacy root and explicit account binding required")
 	}
+	if o.OwnerReconciliation {
+		return ownerReconciliation(o, out)
+	}
 	if o.Report {
 		return reconciliationReport(o, out)
 	}
@@ -61,9 +69,9 @@ func run(o options, out io.Writer) error {
 	}
 	var checkpoint any
 	var stateHash, approvalHash string
-	var count, uncertain int
+	var count, uncertain, reconciledUncertain int
 	if o.Source == "email" {
-		inv, err := approvals.ReadConnectorInventoryForSource(filepath.Join(o.Root, "artifacts"), "email")
+		inv, owner, err := approvals.ReadReconciledConnectorInventory(filepath.Join(o.Root, "artifacts"), "email", o.DataDir)
 		if err != nil {
 			return err
 		}
@@ -71,12 +79,12 @@ func run(o options, out io.Writer) error {
 		if err != nil {
 			return fmt.Errorf("explicit email state unreadable [REDACTED]")
 		}
-		cp, err := connectorhandoff.PrepareEmail(b, o.Account, inv)
+		cp, err := connectorhandoff.PrepareEmailWithReconciliation(b, o.Account, inv, owner)
 		if err != nil {
 			return err
 		}
-		again, err := approvals.ReadConnectorInventoryForSource(filepath.Join(o.Root, "artifacts"), "email")
-		if err != nil || again.Hash != inv.Hash {
+		again, latestOwner, err := approvals.ReadReconciledConnectorInventory(filepath.Join(o.Root, "artifacts"), "email", o.DataDir)
+		if err != nil || again.Hash != inv.Hash || !reflect.DeepEqual(owner, latestOwner) {
 			return fmt.Errorf("approval snapshot changed")
 		}
 		latest, err := os.ReadFile(o.EmailState)
@@ -120,6 +128,11 @@ func run(o options, out io.Writer) error {
 			ApprovalHash string               `json:"approvalHash"`
 		}{st, hash}
 		stateHash, approvalHash, count = st.ImportedFrom, hash, len(st.Items)
+		for _, item := range st.Items {
+			if item.Disposition == approvals.ReconciledUncertain {
+				reconciledUncertain++
+			}
+		}
 	}
 	if o.ExpectState != "" && o.ExpectState != stateHash || o.ExpectApprovals != "" && o.ExpectApprovals != approvalHash {
 		return fmt.Errorf("checkpoint comparison failed; source state or canonical approvals changed")
@@ -136,5 +149,5 @@ func run(o options, out io.Writer) error {
 	if uncertain != 0 {
 		phase = connectorhandoff.Blocked
 	} // snapshot needs review; does not pause runtime
-	return json.NewEncoder(out).Encode(map[string]any{"source": o.Source, "phase": phase, "stateHash": stateHash, "approvalHash": approvalHash, "items": count, "uncertain": uncertain, "stagedHash": stagedHash, "account": "[REDACTED]", "ownership": "excalibur", "activation": "blocked: shared dispatch fence, verified account binding, complete historical source reconciliation and live continuity evidence required"})
+	return json.NewEncoder(out).Encode(map[string]any{"source": o.Source, "phase": phase, "stateHash": stateHash, "approvalHash": approvalHash, "items": count, "uncertain": uncertain, "reconciledUncertain": reconciledUncertain, "stagedHash": stagedHash, "account": "[REDACTED]", "ownership": "excalibur", "activation": "blocked: shared dispatch fence, verified account binding, complete historical source reconciliation and live continuity evidence required"})
 }

@@ -38,10 +38,9 @@ Reports have no timestamps and remain identical for identical observations.
 Record decisions in a separate, durable owner-authored reconciliation record,
 referencing report state/inventory hashes, source category and identity hash,
 all proposal ID/artifact/content hashes, the decision, rationale, owner, and date.
-Keep the original approval files and decisions byte-for-byte. This command does
-not consume reconciliation records: a recorded decision alone cannot bypass the
-existing strict gate. Any future decision-aware gate requires separate reviewed
-implementation and explicit authorization.
+Keep the original approval files and decisions byte-for-byte. The global report and strict inventory preserve these historical issues.
+The checkpoint path consumes only the three explicit decisions described below;
+all other decisions still require separate implementation and authorization.
 
 | Class | Required owner action |
 | --- | --- |
@@ -63,3 +62,60 @@ The report deliberately leaves the activation inventory unchanged. It detects
 changes between observations, but cannot prove that a live tree stayed frozen
 between reads. Supply frozen inputs for reproducible evidence. No report output
 or owner decision silently deletes, deduplicates, rewrites, or retries history.
+
+## Owner reconciliation applied on 2026-09-16
+
+`-owner-reconciliation` previews the three exact owner-authorized cases: Granola
+`not_vJw8dIUwVUiWDT` and Pocket `72886f85-9810-488e-a70a-b32ef2fd9dd6` remain
+`legacy-reconciled-uncertain`; Gmail `19fdd282744d15a0` becomes
+`legacy-reconciled-rejected`. Every record has explicit `replay: false` and
+retains all artifact IDs, original decisions, apply paths and SHA-256 hashes of
+complete artifact contents. No transcript content or credentials are copied.
+
+```sh
+# Repeat for source granola, pocket and email. Inspect the returned record/hash.
+go run ./cmd/connector-checkpoint -owner-reconciliation -source granola \
+  -legacy-root /path/to/frozen-excalibur -account legacy-primary-unverified \
+  -data-dir /path/to/manifest-data
+
+# Apply only the immutable decision record, using the exact dry-run hash.
+go run ./cmd/connector-checkpoint -owner-reconciliation -apply -source granola \
+  -legacy-root /path/to/frozen-excalibur -account legacy-primary-unverified \
+  -data-dir /path/to/manifest-data -expect-reconciliation-hash HASH
+
+# Preview successor state, then repeat with -stage and both returned hashes.
+go run ./cmd/connector-checkpoint -source granola \
+  -legacy-root /path/to/frozen-excalibur -account legacy-primary-unverified \
+  -data-dir /path/to/manifest-data -index-snapshot /path/to/backup.sqlite
+```
+
+For email, replace `-index-snapshot` with `-email-state /path/to/state.json`.
+Staging uses `-expect-state-hash HASH -expect-approval-hash HASH -stage`.
+The account label above explicitly remains unverified; these snapshots do not
+establish account binding or authorize activation.
+
+Records live at `connector-handoff/reconciliation/{source}.json` under dataDir;
+staged successor state lives under `connector-handoff/checkpoints/{source}/`.
+Publication uses a synced temporary file, atomic no-replace hard link and directory
+sync. Reapplying identical record evidence is idempotent; changed evidence is
+refused. Record readers require exact canonical bytes, rejecting omitted replay,
+unknown/duplicate fields, altered decisions and artifact hash drift. These records
+are local owner authorization, not cryptographic signatures; dataDir must retain
+its normal trusted-owner filesystem protection.
+
+The ordinary/global inventory remains strict. The reconciliation-aware reader
+permits only the exact rejected Gmail pair and validates the complete group before
+returning either artifact. Additional siblings, changed statuses, paths or IDs
+fail closed. Both rejected IDs remain in the staged muted thread. The two missing
+transcript effects remain visibly uncertain (`reconciledUncertain` in the summary),
+never existing notes; discovery of a matching source note requires renewed review.
+Unknown mismatches remain blockers. No live connector cursor, runtime successor
+state, vault file, approval artifact or ownership record is changed. Runtime
+activation gates remain in force; staged checkpoints are preparation evidence.
+
+The initial application published all three decision records and staged Granola
+(78 items, one reconciled-uncertain) and Pocket (13 items, one
+reconciled-uncertain). Gmail checkpoint preparation still refused one additional
+legacy source/proposal identity mismatch outside the authorized cases. Its record
+is durable, but no email checkpoint was staged and no exception was added for
+that mismatch. Resolve it through a separate owner decision before cutover.

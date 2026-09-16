@@ -3,6 +3,7 @@ package transcriptsync
 import (
 	"fmt"
 	"path/filepath"
+	"reflect"
 
 	"manifest/approvals"
 )
@@ -16,7 +17,7 @@ func (s *Service) ReconcileCheckpoint(source, legacyRoot string) (State, string,
 	if err != nil {
 		return st, "", err
 	}
-	inv, err := approvals.ReadConnectorInventoryForSource(filepath.Join(legacyRoot, "artifacts"), source)
+	inv, owner, err := approvals.ReadReconciledConnectorInventory(filepath.Join(legacyRoot, "artifacts"), source, filepath.Dir(s.dir))
 	if err != nil {
 		return st, "", err
 	}
@@ -59,6 +60,13 @@ func (s *Service) ReconcileCheckpoint(source, legacyRoot string) (State, string,
 			return st, inv.Hash, fmt.Errorf("invalid approval source identity")
 		}
 		hasNote := notes[p.SourceID] != ""
+		if owner != nil && p.SourceID == owner.SourceID {
+			if hasNote {
+				return st, inv.Hash, fmt.Errorf("reconciled uncertain source now has a note; new owner review required")
+			}
+			st.Items[p.SourceID] = Outcome{ProposalID: p.ID, Disposition: owner.Disposition, Replay: false}
+			continue
+		}
 		if (p.Status == "approved") != hasNote {
 			return st, inv.Hash, fmt.Errorf("uncertain approval/vault outcome; owner reconciliation required [REDACTED]")
 		}
@@ -69,8 +77,8 @@ func (s *Service) ReconcileCheckpoint(source, legacyRoot string) (State, string,
 			st.Items[id] = Outcome{Disposition: "existing-note"}
 		}
 	}
-	again, err := approvals.ReadConnectorInventoryForSource(filepath.Join(legacyRoot, "artifacts"), source)
-	if err != nil || again.Hash != inv.Hash {
+	again, latestOwner, err := approvals.ReadReconciledConnectorInventory(filepath.Join(legacyRoot, "artifacts"), source, filepath.Dir(s.dir))
+	if err != nil || again.Hash != inv.Hash || !reflect.DeepEqual(owner, latestOwner) {
 		return State{}, "", fmt.Errorf("canonical approvals changed during checkpoint")
 	}
 	latest, err := s.Import(source, legacyRoot, "", false)

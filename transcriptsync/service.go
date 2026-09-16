@@ -32,6 +32,7 @@ type Config struct {
 	Pocket  SourceConfig `json:"pocket"`
 }
 type Outcome struct {
+	Replay      bool   `json:"replay"`
 	ProposalID  string `json:"proposalId,omitempty"`
 	Disposition string `json:"disposition"`
 }
