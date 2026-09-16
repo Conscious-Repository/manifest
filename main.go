@@ -833,7 +833,7 @@ func main() {
 			hs = append(hs, server.Harness{Name: ref.Name, Surface: ref.Surface, Spirits: sp, Approvals: ap})
 		}
 		srv.UseHarnesses(hs) // sets the primary spirits+approvals fields too
-		if len(hs) > 0 && (cfg.TranscriptSync.Granola.Enabled || cfg.TranscriptSync.Pocket.Enabled) {
+		if len(hs) > 0 {
 			var transcriptIndex *transcriptsync.Index
 			if vix != nil {
 				transcriptIndex = transcriptsync.NewIndex(vix.DB())
@@ -848,6 +848,11 @@ func main() {
 			}
 			syncer := transcriptsync.New(cfg.DataDir, cfg.TranscriptSync, transcriptIndex, transcriptApprovals).WithHandoffGuard(cfg.DataDir)
 			srv.UseTranscriptSync(syncer)
+			for _, h := range hs {
+				if h.Name == "excalibur" {
+					h.Spirits.WithConnectorHandoffs(cfg.DataDir).WithTranscriptSync(syncer)
+				}
+			}
 			syncer.Start(ctx)
 		}
 		if adapter, err := manifestmcp.New(cfg.VaultPath, cfg.DataDir, cfg.SystemRoot); err != nil {

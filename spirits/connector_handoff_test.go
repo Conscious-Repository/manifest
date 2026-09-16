@@ -26,7 +26,7 @@ func TestPersistentConnectorOwnershipSurvivesDisabledFlag(t *testing.T) {
 	}
 	row := RitualRow{Spirit: "ea-coordinator", Ritual: "granola-sync", Valid: true}
 	store.projectOwnership(&row)
-	if row.MigrationState != "verified" || row.LegacyActionable || row.ConfiguredOwner != "manifest" {
+	if row.MigrationState != "blocked" || row.LegacyActionable || row.ConfiguredOwner != "manifest" {
 		t.Fatal(row)
 	}
 	result, allowed, err := store.WriteFile("spirits/ea-coordinator/rituals/granola-sync.md", "---\nenabled: true\n---\n")

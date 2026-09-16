@@ -58,6 +58,11 @@ type RitualRow struct {
 	Retired          bool   `json:"retired"`
 	RetirementReason string `json:"retirementReason,omitempty"`
 	PausedReason     string `json:"pausedReason,omitempty"`
+
+	// Transcript health is historical observation, independent of enablement.
+	SuccessorHealth      string    `json:"successorHealth,omitempty"`
+	SuccessorLastAttempt time.Time `json:"successorLastAttempt,omitzero"`
+	SuccessorLastSuccess time.Time `json:"successorLastSuccess,omitzero"`
 }
 
 // Rituals builds the board: every ritual across all spirits, joined with the

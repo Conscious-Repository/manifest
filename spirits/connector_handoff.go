@@ -14,7 +14,7 @@ func (s *Store) connectorSource(spirit, ritual string) string {
 	if name == "" {
 		name = filepath.Base(filepath.Clean(s.root))
 	}
-	if name != "excalibur" || spirit != "ea-coordinator" || s.migrationDataDir == "" {
+	if name != "excalibur" || spirit != "ea-coordinator" {
 		return ""
 	}
 	switch ritual {
@@ -32,13 +32,13 @@ func (s *Store) emailDuty(spirit, ritual string) bool {
 }
 
 func (s *Store) connectorDispatchGuard(spirit, ritual string) error {
-	if s.emailDuty(spirit, ritual) {
-		f, err := connectorhandoff.FenceSnapshot(s.root, "email")
+	if s.connectorSource(spirit, ritual) != "" {
+		f, err := connectorhandoff.DutyFenceSnapshot(s.root, spirit+"/"+ritual)
 		if err != nil {
 			return err
 		}
 		if f.Owner != connectorhandoff.Legacy {
-			return fmt.Errorf("email legacy dispatch fenced")
+			return fmt.Errorf("connector legacy dispatch fenced")
 		}
 	}
 
@@ -52,7 +52,7 @@ func (s *Store) connectorDispatchGuard(spirit, ritual string) error {
 		}
 	}
 	source := s.connectorSource(spirit, ritual)
-	if source == "" {
+	if source == "" || s.migrationDataDir == "" {
 		return nil
 	}
 	return connectorhandoff.LegacyAllowed(s.migrationDataDir, source)

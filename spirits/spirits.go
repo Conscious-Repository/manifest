@@ -22,6 +22,7 @@ import (
 
 	"manifest/feed"
 	"manifest/mdfm"
+	"manifest/transcriptsync"
 )
 
 // ErrAlreadyActive is returned by SpoolRunNow when the same spirit/ritual is
@@ -38,6 +39,7 @@ type Store struct {
 	harnessName      string
 	dutyOwners       map[string]string
 	migrationDataDir string
+	transcriptSync   *transcriptsync.Service
 	skillsRoot       string // <vault>/skills — explicit since the harness left the vault
 	Feed             *feed.Store
 	runs             *runMemo // parsed run summaries by file (nil = parse every call)
