@@ -34,3 +34,23 @@ func TestTranscriptLegacyIdentityAndFence(t *testing.T) {
 		t.Fatal("unreadable inventory accepted")
 	}
 }
+
+func TestTranscriptConfirmEditsPreserveFencedBody(t *testing.T) {
+	s, vault := createNoteHarness(t)
+	content := "---\ngranola-id: fence-fixture\n---\n[[Jane]]\n\n## Transcript\n\nBefore\n````\nAfter\n"
+	p, _, err := s.ProposeTranscript("granola", "fence-fixture", Proposal{Type: TypeCreateVaultNote, Action: "Transcript", ApplyPath: "2026-09-12 fence.md", Proposed: content, Body: "Review transcript."})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = s.ConfirmCreateNote(p.ID, ConfirmEdits{EditAttendees: true, Attendees: []string{"Ada"}, EditCategories: true, Categories: []string{"sync"}}); err != nil {
+		t.Fatal(err)
+	}
+	approved := s.List("approved")
+	written, err := os.ReadFile(filepath.Join(vault, "log", "2026-09-12 fence.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(approved) != 1 || strings.TrimSpace(approved[0].Proposed) != strings.TrimSpace(string(written)) {
+		t.Fatalf("approved transcript differs from vault: %+v", approved)
+	}
+}

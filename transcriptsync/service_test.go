@@ -164,3 +164,99 @@ func TestScheduleChicagoAndDST(t *testing.T) {
 		}
 	}
 }
+
+func TestPollConflictingDuplicateIdentity(t *testing.T) {
+	for _, source := range []string{"granola", "pocket"} {
+		t.Run(source, func(t *testing.T) {
+			calls := 0
+			s, ap := fixtureService(t, source, func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path == "/notes" {
+					w.Write([]byte(`{"notes":[{"id":"same","title":"Meeting","created_at":"2026-09-12T12:00:00Z"},{"id":"same","title":"Meeting","created_at":"2026-09-12T12:00:00Z"}],"hasMore":false}`))
+					return
+				}
+				if r.URL.Path == "/public/recordings" {
+					w.Write([]byte(`{"success":true,"data":[{"id":"same","title":"Meeting","state":"completed","recording_at":"2026-09-12T12:00:00Z"},{"id":"same","title":"Meeting","state":"completed","recording_at":"2026-09-12T12:00:00Z"}],"pagination":{"has_more":false}}`))
+					return
+				}
+				calls++
+				text := "Original transcript"
+				if calls > 1 {
+					text = "Conflicting transcript"
+				}
+				if source == "granola" {
+					json.NewEncoder(w).Encode(map[string]any{"id": "same", "transcript": []any{map[string]any{"text": text}}})
+				} else {
+					json.NewEncoder(w).Encode(map[string]any{"success": true, "data": map[string]any{"id": "same", "transcript": map[string]any{"segments": []any{map[string]string{"text": text}}}}})
+				}
+			})
+			old, _ := s.read(source)
+			st, err := s.Poll(context.Background(), source)
+			if err == nil || len(ap.List("pending")) != 0 || !st.Watermark.Equal(old.Watermark) {
+				t.Fatalf("conflicting duplicate silently accepted: %+v %v", st, err)
+			}
+		})
+	}
+}
+
+func TestPollInputEdgesAndRetry(t *testing.T) {
+	for _, mode := range []string{"empty", "missing-title", "duplicate", "malformed", "disabled"} {
+		t.Run(mode, func(t *testing.T) {
+			calls := 0
+			s, ap := fixtureService(t, "granola", func(w http.ResponseWriter, r *http.Request) {
+				calls++
+				if mode == "malformed" {
+					w.Write([]byte(`{"notes":`))
+					return
+				}
+				if r.URL.Path == "/notes" {
+					item := map[string]string{"id": "edge", "created_at": "2026-09-12T12:00:00Z"}
+					items := []any{item}
+					if mode == "duplicate" {
+						items = append(items, item)
+					}
+					json.NewEncoder(w).Encode(map[string]any{"notes": items, "hasMore": false})
+					return
+				}
+				text := "Body retained"
+				if mode == "empty" {
+					text = " \n "
+				}
+				json.NewEncoder(w).Encode(map[string]any{"id": "edge", "transcript": []any{map[string]any{"text": text, "speaker": map[string]string{"name": "Jane"}}}})
+			})
+			if mode == "disabled" {
+				s.cfg.Granola.Enabled = false
+			}
+			before, _ := s.read("granola")
+			st, err := s.Poll(context.Background(), "granola")
+			switch mode {
+			case "disabled":
+				if err == nil || calls != 0 {
+					t.Fatal("disabled poll called source", calls, err)
+				}
+			case "malformed":
+				if err == nil || !st.Watermark.Equal(before.Watermark) {
+					t.Fatal(st, err)
+				}
+			case "empty":
+				if err != nil || st.Waiting != 1 || !st.Watermark.Equal(before.Watermark) {
+					t.Fatal(st, err)
+				}
+			default:
+				if err != nil || st.Filed != 1 {
+					t.Fatal(st, err)
+				}
+				pending := ap.List("pending")
+				if len(pending) != 1 || pending[0].ApplyPath != "2026-09-12 untitled.md" || !strings.Contains(pending[0].Proposed, "[[Jane]]") || !strings.Contains(pending[0].Proposed, "Body retained") {
+					t.Fatal(pending)
+				}
+				if st, err = s.Poll(context.Background(), "granola"); err != nil || st.Filed != 0 || len(ap.List("pending")) != 1 {
+					t.Fatal(st, err)
+				}
+				return
+			}
+			if len(ap.List("pending")) != 0 {
+				t.Fatal("invalid/disabled input filed proposal")
+			}
+		})
+	}
+}

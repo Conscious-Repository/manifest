@@ -118,3 +118,42 @@ func TestPreservesModelBeforeAccepting(t *testing.T) {
 		t.Fatal("changed existing model")
 	}
 }
+
+func TestReadInputRejectsDisguisedExcludedSources(t *testing.T) {
+	vault := t.TempDir()
+	input := inputFixture()
+	input.Context["system/realestate/backlog.md"] = "Private real estate record"
+	input.Context["extrinsic/private.md"] = "Excluded source"
+	writeInput(t, vault, input)
+	for _, name := range []string{"./system/realestate/backlog.md", "./extrinsic/private.md", "log/../system/realestate/backlog.md"} {
+		if got, err := ReadInput(vault, "aion", []Document{{Name: name}}); err == nil {
+			t.Errorf("excluded source accepted: %+v", got.Documents)
+		}
+	}
+}
+
+func TestDisabledExtractionAndInvalidInputs(t *testing.T) {
+	s := New(context.Background(), t.TempDir(), t.TempDir(), "", Config{}, nil, approvals.NewStore(t.TempDir()))
+	if _, err := s.Submit(inputFixture()); err == nil {
+		t.Fatal("disabled service accepted work")
+	}
+	if _, err := os.Stat(s.dir); !os.IsNotExist(err) {
+		t.Fatal("disabled service created job state", err)
+	}
+	for _, mode := range []string{"empty", "duplicate", "missing-name", "domain"} {
+		input := inputFixture()
+		switch mode {
+		case "empty":
+			input.Documents[0].Text = " \n"
+		case "duplicate":
+			input.Documents = append(input.Documents, input.Documents[0])
+		case "missing-name":
+			input.Documents[0].Name = ""
+		case "domain":
+			input.Ritual = "unknown"
+		}
+		if _, err := input.Prompt(); err == nil {
+			t.Fatal("invalid input accepted", mode)
+		}
+	}
+}

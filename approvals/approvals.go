@@ -543,12 +543,27 @@ func replaceCategories(content string, cats []string) string {
 // rebuildProposedBody swaps the content inside a proposal body's ````proposed
 // fence for the edited note, preserving the human-facing message above it.
 func rebuildProposedBody(body, proposed string) string {
-	i := strings.Index(body, "````proposed")
-	if i < 0 {
+	// Match the whole opening line, including variable-length fences emitted
+	// by transcript sync. A substring match leaves stray backticks in the body.
+	i := 0
+	found := false
+	for _, line := range strings.Split(body, "\n") {
+		n := len(line) - len(strings.TrimLeft(line, "`"))
+		if n >= 3 && strings.TrimSpace(line[n:]) == "proposed" {
+			found = true
+			break
+		}
+		i += len(line) + 1
+	}
+	if !found {
 		return body
 	}
 	head := strings.TrimRight(body[:i], "\n")
-	fence := "````proposed\n" + strings.TrimRight(proposed, "\n") + "\n````"
+	marker := "````"
+	for strings.Contains(proposed, marker) {
+		marker += "`"
+	}
+	fence := marker + "proposed\n" + strings.TrimRight(proposed, "\n") + "\n" + marker
 	if head == "" {
 		return fence
 	}

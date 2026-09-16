@@ -344,7 +344,7 @@ func ReadInput(vault, ritual string, documents []Document) (Input, error) {
 	}
 	if ritual != "ooda-email" {
 		for n, d := range i.Documents {
-			if !strings.HasSuffix(d.Name, ".md") || strings.Contains(d.Name, "..") || strings.HasPrefix(d.Name, "system/") || strings.HasPrefix(d.Name, "extrinsic/") || filepath.IsAbs(d.Name) {
+			if filepath.ToSlash(filepath.Clean(d.Name)) != d.Name || !strings.HasSuffix(d.Name, ".md") || strings.Contains(d.Name, "..") || strings.HasPrefix(d.Name, "system/") || strings.HasPrefix(d.Name, "extrinsic/") || filepath.IsAbs(d.Name) {
 				return i, fmt.Errorf("explicit transcript log path required")
 			}
 			b, e := root.ReadFile(d.Name)

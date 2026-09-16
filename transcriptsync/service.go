@@ -364,6 +364,21 @@ func (s *Service) candidates(ctx context.Context, source, key string, st State) 
 			out = append(out, n)
 		}
 	}
+	// Validate the complete batch before publication: first-wins would silently
+	// discard conflicting copies of a source ID returned across pages/details.
+	seen := make(map[string]candidate, len(out))
+	unique := out[:0]
+	for _, it := range out {
+		if old, ok := seen[it.id]; ok {
+			if old.title != it.title || old.filename != it.filename || old.content != it.content || old.warning != it.warning || old.ready != it.ready || !old.at.Equal(it.at) {
+				return nil, fmt.Errorf("conflicting duplicate transcript identity")
+			}
+			continue
+		}
+		seen[it.id] = it
+		unique = append(unique, it)
+	}
+	out = unique
 	sort.Slice(out, func(i, j int) bool { return out[i].at.Before(out[j].at) })
 	return out, nil
 }
