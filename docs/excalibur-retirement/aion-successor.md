@@ -1,100 +1,131 @@
-# AION successor readiness: capacity refusal
+# AION Sparks no-write transport
 
-This is the first AION successor seam, **not activation or completed migration**.
-`cmd/aion-successor` is read-only, has no inference transport, and always exits 1.
-It does not load Manifest runtime configuration, start services, publish approvals,
-change fences/rituals, or replay jobs. Excalibur remains retired and the three
-extractor projections remain paused. No live vault read or inference was performed
-for this implementation.
+The successor now has an optional fixed-local OpenAI-compatible canary transport.
+Excalibur remains retired; AION, OODA-email and real-estate projections remain
+paused and `comparison-unrun`. This command does not load application runtime
+configuration, publish proposals/approvals, write vault, change fences, transfer
+ownership or replay jobs. No real live canary was run for this implementation.
 
-The explicit [config](aion-successor-config.json) pins owner-approved `lab-sparks`,
-`deepseek-v4.1-flash`, the existing fixed endpoint, no tools/MCP/fallback, and
-unavailable cost telemetry. `lab-sparks` names the deployment; the older Hermes
-adapter uses `deepseek-local`. This checker does not silently alias or route
-between them. The production extraction guard still accepts its historical
-subscription authority only; it is not used by this command.
+The existing `aion-successor-config.json` pins `lab-sparks`,
+`deepseek-v4.1-flash`, `http://192.168.87.11:8000/v1`, no tools, no MCP and no
+fallback. Historical Claude/subscription 56,000-byte input and 64,000-byte helper
+limits remain unchanged. Only this separately capacity-checked transport bypasses
+them. No proxy, redirects, credentials, streaming, retries or alternate provider
+are used. Overall timeout is 120 seconds; response headers are bounded to 30
+seconds and response bodies to 1 MiB. Unexpected response fields fail closed.
 
-Capacity is **unknown**, represented by zero, not unlimited. Inspection found no
-verified deployed context-window, tokenizer/chat-template accounting, output
-reservation or endpoint request-byte budget. A caller-entered nonzero capacity
-cannot self-certify these facts and still refuses. A declared byte limit below
-the measured envelope gets `complete-input-exceeds-declared-capacity`; otherwise
-the reason is `provider-capacity-unverified`.
+## Evidence before invocation
 
-The earlier September 16 audit measured AION context alone at 197,659 raw bytes
-(not remeasured live here). Existing `Input.Validate` caps serialized input at
-56,000 bytes; `hermes.runSuccessor` caps prompts at 64,000 bytes and the Python
-helper reads a maximum 100,001-byte invocation packet, with 4,096 output tokens.
-These application limits are not verified provider capacity. None was raised.
-A no-write model canary **cannot safely run through this seam now**.
+An explicitly saved `/v1/models` response must contain exactly one matching model,
+owned by vLLM, with positive `max_model_len`. The observed 1,048,576-token window
+is discovery evidence, **not proof that a 1 MiB input fits**. The loader hashes
+all discovery bytes. The fixed provider configuration binds their interpretation;
+it cannot authenticate where an externally supplied file came from.
 
-## Exact next diagnostic command
-
-Prepare an owner-selected immutable copy containing all three canonical files
-(`system/aion/{backlog,people,heuristics}.md`) and 1–4 selected source notes.
-Missing required files refuse; empty files remain present with their exact hashes.
-The manifest retains every record, categories, and namespace facts. AION's current
-schema has no recursive namespace or absent-target rule; the empty namespace
-list is preserved, not presented as proof about unenumerated files.
-
-From the repository root, with `FIXTURE_ROOT` an absolute copied directory,
-`VAULT_ROOT` the absolute real vault boundary, and `SOURCE_NOTE` a copied relative
-Markdown path:
+First measure a copied fixture (all three canonical context files plus 1–4 source
+notes), using absolute root paths and a saved discovery response:
 
 ```sh
 go run ./cmd/aion-successor \
   -config docs/excalibur-retirement/aion-successor-config.json \
-  -fixture-root "$FIXTURE_ROOT" -copied-fixture \
-  -vault-root "$VAULT_ROOT" -source "$SOURCE_NOTE"
+  -fixture-root "$FIXTURE_ROOT" -copied-fixture -vault-root "$VAULT_ROOT" \
+  -source "$SOURCE_NOTE" -models "$MODELS_JSON" -reserved-output 4096
 ```
 
-Repeat `-source` for additional notes. The vault boundary is never opened in copy
-mode. Repeat with `-expected-input-sha256 <inputSha256 from report>` to reject
-changes from the measured snapshot. Optional separately authorized live reading
-replaces `-fixture-root ... -copied-fixture` with `-live-read -no-write`; it still
-only measures and refuses. **Do not interpret exit 1 as a model attempt.**
-`go run` also prints its wrapper exit status; build a binary for automation.
+Without `-models`, historical measurement-only refusal remains available.
+Measurement with models reports input, capability and exact request digests plus
+request bytes, and `tokenizer-template-accounting-required`. It performs no HTTP.
+The request includes extraction instructions, complete source/context input and
+its manifest, JSON escaping, chat envelope and completion reservation. The library
+`AionInput.SparksRequest` returns those exact private bytes for external accounting;
+the CLI intentionally prints only their digest and size.
 
-The command emits redacted JSON to stdout and fixed refusal codes to stderr; it
-opens no output file. Caller-managed redirection must remain outside vault and
-operational state. Source/context symlinks, invalid UTF-8, duplicate or unsafe
-source paths, and files above 8 MiB refuse. Double reads and an optional previous
-hash detect observed drift, not concurrent-edit ABA or global filesystem snapshot
-consistency. Immutable copies remain the preferred evidence boundary.
+Obtain an **independently owner-reviewed bounded tokenizer/template probe** of
+that exact request at the deployed revision. Store this accounting JSON privately:
 
-`serializedBytes` measures the exact JSON containing the complete manifest and
-source/context envelope, including escaping; `legacyInputBytes` measures the old
-Input form. Neither includes a future prompt or HTTP/chat envelope. No request is
-constructed: request/result hashes are absent and usage is `not-invoked`, never
-fabricated zero usage. Input, manifest, sources and provider configuration have
-separate digests. `CheckCopiedReply` is a pure offline strict candidate validator;
-its digest binds input, provider config and reply bytes. It emits only a count and
-digest, never candidates for publication or a provider execution receipt. Shape
-validation does not establish semantic parity, participant coverage or provenance.
+```json
+{
+  "requestSha256": "<measurement request digest>",
+  "capabilitySha256": "<measurement capability digest>",
+  "tokenizerSha256": "<deployed tokenizer artifact digest>",
+  "templateSha256": "<deployed chat template artifact digest>",
+  "probeSha256": "<retained bounded probe evidence digest>",
+  "serializedTokens": 0,
+  "promptTokens": 0,
+  "tokenMargin": 256,
+  "byteMargin": 1024,
+  "verifiedRequestBytes": 0,
+  "reservedOutput": 4096
+}
+```
 
-## Required before canary and activation
+Zero values are placeholders and refuse. `serializedTokens` measures the entire
+serialized JSON request with the identified tokenizer; `promptTokens` measures
+the actual rendered chat template. Both plus output reserve and token margin
+must fit the discovered window. `verifiedRequestBytes` is the probe-verified
+serialized HTTP request byte bound, not a context-window declaration. Admission
+uses the smaller of that bound minus byte margin and one byte per remaining
+context token. This byte ceiling is an additional conservative constraint and
+never substitutes for either measured token count. Token margin must be at least
+128; byte margin at least 1024. Larger inputs require new exact-request evidence.
 
-First obtain owner-reviewed evidence of this exact deployed model/endpoint's
-actual capacity and tokenizer/chat-template accounting, including output reserve.
-Implement and test a bounded transport whose **exact serialized request**, full
-input, endpoint/model, raw response, usage, finish state and sanitized error
-receipt are bound together. Reconcile the adapter limits with that verified
-capacity; reject drift and overflow before network I/O. No fallback or truncation.
-Only then run an explicitly authorized no-write canary and retain its immutable
-private request/result artifacts; a refusal report is not that receipt.
+The command checks evidence bindings and an independently supplied SHA-256 of the
+accounting file; it does **not** run a tokenizer, verify a probe's contents, or
+cryptographically authenticate the reviewer. A fabricated attestation is not
+capacity evidence. Retain tokenizer/template artifacts, discovery provenance,
+probe inputs/results, revision, reviewer identity and time outside this tool.
+Unknown accounting remains refused; do not fill counts from byte estimates.
 
-Before AION activation, an owner review receipt must independently pin the code
-revision, config/capacity evidence, complete input/manifest/source hashes, exact
-request/result/usage/error evidence and selected-source identity. Review must
-cover every participant, deduplication, closures, heuristic new/reinforce decisions,
-zero-output cases and unresolved candidates. Include review identity/time and an
-explicit disposition. Mechanical validity alone is insufficient. The existing
-history/fence/live-semantic handoff evidence, replay disposition and application
-safety requirements still apply; this tool cannot create the operational receipt,
-transfer ownership, resolve candidates or approve proposals.
+## Explicit canary command
+
+After the above evidence has been reviewed, a real canary can be run using:
+
+```sh
+go run ./cmd/aion-successor \
+  -config docs/excalibur-retirement/aion-successor-config.json \
+  -live-read -no-write -vault-root "$VAULT_ROOT" -source "$SOURCE_NOTE" \
+  -expected-input-sha256 "$INPUT_SHA256" \
+  -models "$MODELS_JSON" -reserved-output 4096 \
+  -accounting "$ACCOUNTING_JSON" -accounting-sha256 "$ACCOUNTING_SHA256" \
+  -canary -receipt "$PRIVATE_RECEIPT_DIR/aion-canary.json"
+```
+
+The existing receipt directory must have mode 0700, with no symlink components,
+and lie outside vault and input. The new receipt has mode 0600 and must not exist.
+Use a dedicated evidence directory, never application state. Copied fixture mode
+can replace `-live-read` with `-fixture-root ... -copied-fixture`; invocation still
+requires `-no-write`. Source/context symlinks refuse. Double reads and input pins
+detect observed drift, not concurrent-edit ABA; immutable copies are preferred.
+
+Receipts bind input/config/capability/accounting, exact request and raw response
+hashes, validated usage, finish state, candidate count and sanitized error code.
+They contain no private prompt, source paths, response prose or credentials.
+The receipt digest covers every other field. Interrupted runs may leave an empty
+reserved receipt; that is not invocation evidence. HTTP errors retain only a body
+hash and fixed error code. Partial/oversized bodies are refused without presenting
+a partial hash as a complete response. Model mismatch, tools, non-JSON, detected
+secrets, invalid candidate evidence, incomplete finish, or inconsistent usage
+refuse. Usage must match the measured rendered prompt count exactly. Candidate
+validation happens only in memory; nothing is published. A successful canary
+still reports `comparison-unrun`, not semantic equivalence or activation.
+
+## Remaining activation work
+
+A real canary is now executable **only with the verified evidence above**. The
+reported model window alone is insufficient; no reviewed tokenizer/template
+accounting is supplied by this change.
+
+Before activation obtain an owner-reviewed canary receipt that pins code revision,
+config/capacity/probe evidence, complete input/manifest/source identity, exact
+request/response hashes, usage and errors. Review every participant, deduplication,
+closures, heuristic new/reinforce decisions, zero-output cases and unresolved
+candidates, with reviewer identity/time and explicit disposition. Retain private
+raw evidence separately if needed for semantic comparison. Complete historical
+reconciliation, legacy-history/fence/live-semantic handoff evidence, explicit
+replay disposition and application safety review. This tool grants no authority.
 
 OODA-email still needs complete RE context capacity, immutable email artifact
 identity and money/allocation/reference review. Real-estate still needs complete
 property/contractor/contract namespaces, matching/closure and absence evidence.
-Both also need their own no-write canary, historical reconciliation, owner review
-and application/handoff safety work. AION progress does not activate either lane.
+Each needs its own transport admission, no-write canary, historical reconciliation,
+owner review and application/handoff safety work. AION does not activate them.
