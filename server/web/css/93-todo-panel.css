@@ -14,7 +14,7 @@ body.tdo-panel-open .tdo-shell > #todosRows { padding-right: var(--sp-8); }
 .tdo-p-titlewrap { flex: 1; min-width: 0; }
 .tdo-p-title { font-size: var(--fs-lg); font-weight: 600; color: var(--base-100); line-height: 1.35; }
 .tdo-p-meta { font-family: var(--mono); font-size: var(--fs-2xs); color: var(--base-40); margin-top: var(--sp-1); }
-.tdo-p-deleg { margin-top: -8px; }
+.tdo-p-deleg { margin-top: -8px; display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2) var(--sp-5); }
 
 .tdo-p-sec { display: flex; flex-direction: column; gap: var(--sp-3); }
 .tdo-p-sec-label { font-size: var(--fs-2xs); color: var(--base-40); display: flex; align-items: baseline; }
