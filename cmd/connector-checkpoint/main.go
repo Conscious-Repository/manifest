@@ -21,7 +21,7 @@ import (
 
 type options struct {
 	Source, Root, Account, EmailState, Index, DataDir, ExpectState, ExpectApprovals string
-	Stage, Apply                                                                    bool
+	Stage, Apply, Report                                                            bool
 }
 
 func main() {
@@ -34,6 +34,7 @@ func main() {
 	flag.StringVar(&o.DataDir, "data-dir", "", "destination for optional immutable staging")
 	flag.StringVar(&o.ExpectState, "expect-state-hash", "", "refuse state drift against prior preview")
 	flag.StringVar(&o.ExpectApprovals, "expect-approval-hash", "", "refuse canonical inbox drift against prior preview")
+	flag.BoolVar(&o.Report, "report", false, "emit read-only reconciliation evidence; never stage or activate")
 	flag.BoolVar(&o.Stage, "stage", false, "save immutable checkpoint only; no active cursor or ownership change")
 	flag.BoolVar(&o.Apply, "apply", false, "request handoff (blocked until shared dispatch fence exists)")
 	flag.Parse()
@@ -48,6 +49,9 @@ func run(o options, out io.Writer) error {
 	}
 	if o.Root == "" || o.Account == "" {
 		return fmt.Errorf("legacy root and explicit account binding required")
+	}
+	if o.Report {
+		return reconciliationReport(o, out)
 	}
 	if o.Apply {
 		if err := connectorhandoff.CheckLegacyPause(o.Root, o.Source); err != nil {
