@@ -886,3 +886,18 @@
   .consume-head .consume-search { min-width: 0; width: 100%; font-size: var(--fs-xl); min-height: var(--touch-sm); }
 
 }
+
+@media (max-width: 1100px) {
+  .sched-board .ritual-row { grid-template-columns: minmax(0,1.5fr) minmax(0,1fr); }
+  .sched-board .sched-identity { grid-column: 1 / -1; }
+  .sched-board .sched-timing { grid-column: 1; }
+  .sched-board .sched-result { grid-column: 2; align-items: flex-end; }
+  .sched-board .ritual-acts { grid-column: 1 / -1; grid-row: auto; justify-self: start; }
+}
+@media (max-width: 860px) {
+  .sched-board .ritual-runtime, .sched-board .ritual-cadence, .sched-details .ritual-ceiling { display: flex; }
+  .sched-details .outcome-strip { display: inline-flex; }
+  .sched-board .ritual-name { display: flex; flex-direction: row; align-items: center; }
+  .sched-board .sched-identity .sprt-spirit { min-height: var(--control-min); }
+  .sched-board .sched-details > summary { min-height: var(--control-touch); display: list-item; align-content: center; }
+}

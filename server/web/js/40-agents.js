@@ -441,7 +441,9 @@ function reIntakeStatusRow(p) {
   row.setAttribute("role", "status");
   row.append(el("span", "sched-status-name", "re-intake"));
   row.append(el("span", "run-outcome oc-" + s.tone, s.status));
-  row.append(el("span", "sched-status-bits", s.bits.join(" · ")));
+  const disclosure=el("details","sched-status-detail");
+  disclosure.append(el("summary","","Routing details"),el("span", "sched-status-bits", s.bits.join(" · ")));
+  row.append(disclosure);
   const more = el("a", "sprt-quiet sched-status-more", "details →");
   more.href = "#/settings/agents/re-intake";
   more.title = "the full lane policy receipt on Settings › Agents (read-only)";

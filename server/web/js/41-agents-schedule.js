@@ -207,10 +207,10 @@ function renderSpiritRituals(rows) {
   if (hermesInfo === null) host.append(el("div", "sched-degraded", "alfred: /api/agents/hermes did not answer — Hermes jobs not shown"));
   else if (cron && cron.outcome === "unknown") host.append(el("div", "sched-degraded", "alfred: jobs unknown — " + (cron.why || "jobs.json unreadable")));
   else if (cron && cron.source === "cli") host.append(el("div", "sched-degraded", "alfred: jobs.json missing — read from `hermes cron list`"));
-  schedGroup(host, "yours", "YOURS", groups.yours, {
+  schedGroup(host, "yours", "SCHEDULED", groups.yours, {
     empty: "Nothing on a clock — give a ritual a cadence from its editor.",
   });
-  schedGroup(host, "internal", "INTERNAL", groups.internal, {
+  schedGroup(host, "internal", "ON DEMAND", groups.internal, {
     note: "no cadence — spooled by the transcript sinks or the / bar",
     empty: "No sink-driven rituals.",
   });
@@ -228,11 +228,11 @@ function renderNextUp(rows) {
   host.innerHTML = "";
   const soon = rows.filter((r) => r.valid && r.enabled !== false && r.nextFire)
     .map((r) => ({ r, t: new Date(r.nextFire).getTime() })).filter((x) => !isNaN(x.t))
-    .sort((a, b) => a.t - b.t).slice(0, 3);
+    .sort((a, b) => a.t - b.t).slice(0, 1);
   if (!soon.length) return;
   host.append(el("span", "sched-nextup-label", "next up"));
   soon.forEach(({ r }) => {
-    const item = el("span", "sched-nextup-item");
+    const item = el("button", "sprt-quiet sched-nextup-item");
     // a Hermes fire reads "alfred/<job>" so the runtime is never ambiguous
     item.append(el("span", "sched-nextup-when", nextUpWhen(r.nextFire)), document.createTextNode(" " + (r.hermes ? "alfred/" : "") + r.ritual));
     item.title = r.spirit + "/" + r.ritual + " · " + relPhrase(r.nextFire);
@@ -250,7 +250,8 @@ function nextUpWhen(iso) {
 // schedGroup — an .aion-sec-label heading with a caret and the count over a
 // .ritual-board body; Internal and Paused start collapsed (plan §4.3).
 function schedGroup(host, key, title, list, opts) {
-  const head = el("div", "aion-sec-label sched-group");
+  const head = el("button", "aion-sec-label sched-group");
+  head.type="button";head.setAttribute("aria-expanded",String(schedOpen[key]));
   const caret = el("span", "sec-caret", schedOpen[key] ? "▾" : "▸");
   head.append(caret, el("span", "aion-sec-title", title), el("span", "aion-sec-count", String(list.length)));
   if (opts.note) head.append(el("span", "sched-group-note", opts.note));
@@ -259,11 +260,35 @@ function schedGroup(host, key, title, list, opts) {
   head.onclick = () => {
     schedOpen[key] = !schedOpen[key];
     body.hidden = !schedOpen[key];
+    head.setAttribute("aria-expanded",String(schedOpen[key]));
     caret.textContent = schedOpen[key] ? "▾" : "▸";
   };
   if (!list.length) body.append(emptyRow(opts.empty));
   else list.forEach((r) => body.append(r.hermes ? hermesJobRow(r.hermes) : ritualRow(r)));
   host.append(head, body);
+}
+
+// One readable schedule row; diagnostics remain available on demand.
+const schedDetailOpen = new Set();
+function schedComposeRow(row,key) {
+  const take=selector=>row.querySelector(selector);
+  const name=take('.ritual-name'),runtime=take('.ritual-runtime');
+  const identity=el('div','sched-identity');name.prepend(runtime);identity.append(name);
+  const schedule=el('div','sched-timing');schedule.append(take('.ritual-cadence'),take('.ritual-next'));
+  const status=el('div','sched-result');status.append(take('.ritual-outcome'),take('.ritual-health'));
+  const details=el('details','sched-details'),summary=el('summary','','Details');
+  details.open=schedDetailOpen.has(key);details.append(summary);
+  const diagnostics=el('div','sched-diagnostics');
+  for(const [label,node] of [['Recent runs',take('.outcome-strip')],['Model / budget',take('.ritual-ceiling')]]){
+    const field=el('div','sched-detail-field');field.append(el('span','micro-label',label),node);diagnostics.append(field);
+  }
+  const raw=[...identity.querySelectorAll('.cad-raw'),...schedule.querySelectorAll('.cad-raw')];
+  if(raw.length){const field=el('div','sched-detail-field');field.append(el('span','micro-label','Configuration'),...raw);diagnostics.append(field);}
+  details.append(diagnostics);details.onclick=e=>e.stopPropagation();
+  details.addEventListener('toggle',()=>details.open?schedDetailOpen.add(key):schedDetailOpen.delete(key));
+  const acts=take('.ritual-acts');
+  row.prepend(identity,schedule,status,acts,details);
+  return row;
 }
 
 // ---- Hermes rows (Phase 4) ----
@@ -389,7 +414,7 @@ function hermesJobRow(j) {
   } else if (j.lastStatus === "error" && j.lastError) {
     row.append(el("div", "ritual-error", j.lastError));
   }
-  return row;
+  return schedComposeRow(row,"hermes:"+j.id);
 }
 // hermesJobAction — POST /api/agents/hermes/job/<id>/<action>: the server
 // runs `hermes cron <action> <id>` and echoes the command; the board repaints
@@ -479,7 +504,7 @@ function ritualRow(r) {
   // health — a chip only when there is something to say; scheduled rows say ok
   const hc = el("span", "ritual-health");
   if (health.state !== "ok") {
-    const chip = el("span", "run-outcome oc-" + health.state, health.state);
+    const chip = el("span", "run-outcome oc-" + health.state, health.state === "silent" ? "no output" : health.state);
     chip.title = health.why;
     hc.append(chip);
   } else if (r.cadence) {
@@ -511,7 +536,7 @@ function ritualRow(r) {
   if (!r.valid && r.error) row.append(el("div", "ritual-error", r.error));
   else if (paused && r.pausedReason) row.append(el("div", "ritual-note", r.pausedReason));
   row.onclick = () => { location.hash = "#/agents/ritual/" + encodeURIComponent(r.spirit) + "/" + encodeURIComponent(r.ritual); };
-  return row;
+  return schedComposeRow(row,r.spirit+"/"+r.ritual);
 }
 
 // outcomeStrip — five 8px dots, oldest → newest, hollow where no run exists

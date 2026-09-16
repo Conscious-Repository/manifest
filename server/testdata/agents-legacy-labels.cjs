@@ -11,18 +11,22 @@ const path = require('node:path');
 
 function el(tag, cls, text) {
   return { tag, cls: cls || '', textContent: text == null ? '' : text, children: [], title: '',
-    append(...children) { this.children.push(...children); }, classList: { add() {} } };
+    append(...children) { for(const c of children){if(c&&typeof c==='object'){if(c.parent)c.parent.children=c.parent.children.filter(x=>x!==c);c.parent=this;}this.children.push(c);} },
+    prepend(...children) {this.append(...children);this.children=[...children,...this.children.filter(x=>!children.includes(x))];},
+    querySelector(selector){return this.querySelectorAll(selector)[0]||null;},
+    querySelectorAll(selector){const found=[];for(const c of this.children){if(!c||typeof c!=='object')continue;if((c.cls||'').split(' ').includes(selector.slice(1)))found.push(c);found.push(...c.querySelectorAll(selector));}return found;},
+    addEventListener(){}, classList: { add() {} } };
 }
 const js = (f) => fs.readFileSync(path.join(__dirname, '../web/js', f), 'utf8');
 const context = vm.createContext({ el, document: { createTextNode: (s) => s, getElementById: () => null }, fmtWhen: () => 'fixture time', els: {} });
 vm.runInContext(js('41-agents-schedule.js'), context);
 vm.runInContext(js('42-agents-runs.js'), context);
-vm.runInContext('ritualRuns = () => []; outcomeStrip = () => el("span", "strip"); spiritStatusCache = null;', context);
+vm.runInContext('ritualRuns = () => []; outcomeStrip = () => el("span", "outcome-strip"); spiritStatusCache = null;', context);
 
 // the runs payload names the primary tree; the chip reads it, never a literal
 vm.runInContext('spiritRuns = { data: [], queued: [], primary: "excalibur" };', context);
 const ritual = context.ritualRow({ spirit: 'warden', ritual: 'audit', valid: true, enabled: true, cadence: '0 8 * * 1', ceilingUsd: 1 });
-const chip = ritual.children[0];
+const chip = ritual.querySelector('.ritual-runtime');
 assert.match(chip.cls, /harness-chip/);
 assert.match(chip.cls, /\blegacy\b/);
 assert.match(chip.cls, /ritual-runtime/);
@@ -32,7 +36,7 @@ assert.match(chip.title, /successor/);
 
 // a renamed primary relabels its tooltip; no payload at all still says what the runtime is
 vm.runInContext('spiritRuns = { data: [], queued: [], primary: "" }; spiritPrimaryHarness = "renamed";', context);
-assert.match(context.ritualRow({ spirit: 'a', ritual: 'b', valid: true, enabled: true, ceilingUsd: 1 }).children[0].title, /^renamed harness tree/);
+assert.match(context.ritualRow({ spirit: 'a', ritual: 'b', valid: true, enabled: true, ceilingUsd: 1 }).querySelector(".ritual-runtime").title, /^renamed harness tree/);
 vm.runInContext('spiritPrimaryHarness = "";', context);
 assert.equal(context.legacyEngineChip().textContent, 'legacy engine');
 assert.doesNotMatch(context.legacyEngineChip().title, /excalibur|renamed/);

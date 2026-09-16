@@ -17,7 +17,11 @@ class Node {
     this._text = text == null ? '' : String(text); this.title = ''; this.href = ''; this.open = false; this.hidden = false;
     this.classList = { add: (c) => { this.className = (this.className + ' ' + c).trim(); }, contains: (c) => this.className.split(/\s+/).includes(c) };
   }
-  append(...kids) { kids.forEach((k) => this.children.push(typeof k === 'string' ? new Node('#text', '', k) : k)); }
+  append(...kids) { for(let k of kids){if(typeof k==='string')k=new Node('#text','',k);if(k.parent)k.parent.children=k.parent.children.filter(x=>x!==k);k.parent=this;this.children.push(k);} }
+  prepend(...kids) {this.append(...kids);this.children=[...kids,...this.children.filter(x=>!kids.includes(x))];}
+  querySelector(selector){return this.querySelectorAll(selector)[0]||null;}
+  querySelectorAll(selector){return this.children.flatMap(c=>c.find(x=>x.has(selector.slice(1))));}
+  addEventListener() {}
   setAttribute(k, v) { this.attrs[k] = String(v); }
   getAttribute(k) { return this.attrs[k]; }
   get textContent() { return this._text + this.children.map((c) => c.textContent).join(''); }
@@ -35,7 +39,7 @@ const context = vm.createContext({
 vm.runInContext(js('40-agents.js').slice(js('40-agents.js').indexOf('// Shared read-only lane summary')), context);
 vm.runInContext(js('41-agents-schedule.js'), context);
 vm.runInContext(js('60-settings.js'), context);
-vm.runInContext('ritualRuns = () => []; outcomeStrip = () => el("span", "strip"); spiritStatusCache = null; spiritModels = {};', context);
+vm.runInContext('ritualRuns = () => []; outcomeStrip = () => el("span", "outcome-strip"); spiritStatusCache = null; spiritModels = {};', context);
 
 const shadow = { primary: 'local DeepSeek', model: 'deepseek-v4.1-flash', status: 'shadow', productionRoute: 'disabled', productionOwner: 'Excalibur',
   pilotStatus: 'unused; one document maximum', canaryStatus: 'unknown', cost_policy: 'local-zero-marginal', cost_telemetry: 'unavailable',
@@ -52,7 +56,7 @@ assert.equal(row.children[0].textContent, 're-intake');
 const chip = row.children[1];
 assert.equal(chip.textContent, 'shadow');
 assert.match(chip.className, /run-outcome oc-unknown/);
-assert.equal(row.children[2].textContent, 'route disabled · pilot unused · canary unknown · lane Excalibur');
+assert.equal(row.find(x=>x.has('sched-status-bits'))[0].textContent, 'route disabled · pilot unused · canary unknown · lane Excalibur');
 const more = row.children[3];
 assert.equal(more.tag, 'a');
 assert.equal(more.textContent, 'details →');
@@ -67,16 +71,16 @@ row = context.reIntakeStatusRow({ ...shadow, status: 'blocked', productionEnable
 assert.equal(row.className, 'sched-status attn');
 assert.equal(row.children[1].textContent, 'blocked');
 assert.match(row.children[1].className, /oc-error/);
-assert.equal(row.children[2].textContent, 'route blocked · pilot stopped · canary unknown · lane Manifest · last error missing usage evidence');
+assert.equal(row.find(x=>x.has('sched-status-bits'))[0].textContent, 'route blocked · pilot stopped · canary unknown · lane Manifest · last error missing usage evidence');
 // the pilot: the open route reads as the owner-upload handoff, warn-toned
 row = context.reIntakeStatusRow({ ...shadow, status: 'pilot; owner review required', productionRoute: 'owner upload → candidate → pending approval', canaryStatus: 'passed (synthetic only)', lastError: 'none reported (synthetic canary only)' });
 assert.equal(row.children[1].textContent, 'pilot');
 assert.match(row.children[1].className, /oc-late/);
-assert.equal(row.children[2].textContent, 'route owner upload → candidate → pending approval · pilot unused · canary passed (synthetic only) · lane Excalibur');
+assert.equal(row.find(x=>x.has('sched-status-bits'))[0].textContent, 'route owner upload → candidate → pending approval · pilot unused · canary passed (synthetic only) · lane Excalibur');
 // no projection at all still fails closed, visibly
 row = context.reIntakeStatusRow(null);
 assert.equal(row.children[1].textContent, 'policy evidence unavailable');
-assert.equal(row.children[2].textContent, 'fail-closed · not routed');
+assert.equal(row.find(x=>x.has('sched-status-bits'))[0].textContent, 'fail-closed · not routed');
 assert.match(row.className, /attn/);
 
 // ---- the SCHEDULE board: the status row, then the degrade notes, then the groups; no sentence paragraph ----
@@ -91,7 +95,7 @@ for (const n of board.find((x) => x.has('sched-degraded'))) {
 }
 assert.equal(board.children[1].textContent, 'successor refusal: no duty routed');
 const heads = board.find((x) => x.has('sched-group')).map((x) => x.find((y) => y.has('aion-sec-title'))[0].textContent);
-assert.deepEqual(heads, ['YOURS', 'INTERNAL', 'PAUSED']);
+assert.deepEqual(heads, ['SCHEDULED', 'ON DEMAND', 'PAUSED']);
 assert.equal(board.children.indexOf(board.find((x) => x.has('sched-group'))[0]), 2, 'the first schedule group is the third child');
 assert.doesNotMatch(js('41-agents-schedule.js'), /"sched-degraded", reIntakePrimarySummary\(/);
 assert.doesNotMatch(js('42-agents-runs.js'), /"run-why", reIntakePrimarySummary\(/);
@@ -147,7 +151,7 @@ assert.equal(context.excaliburCard(null, []).find((x) => x.tag === 'details').le
 const hz = { gateway: null, runner: { enabled: false }, reIntakePrimary: shadow, cron: {}, profiles: [] };
 let alfred = context.alfredCard(hz);
 assert.equal(alfred.find((x) => x.has('sched-status')).length, 1);
-let receipt = alfred.find((x) => x.tag === 'details')[0];
+let receipt = alfred.find((x) => x.tag === 'details' && x.has('harness-fold'))[0];
 assert.equal(receipt.open, false);
 let lines = receipt.children[1].find((x) => x.has('harness-receipt-line')).map((x) => x.textContent);
 assert.deepEqual(lines, full.split(' · '));
@@ -156,7 +160,7 @@ assert.ok(lines.includes('last error: unknown'));
 assert.doesNotMatch(alfred.children.filter((c) => c.tag !== 'details').map((c) => c.textContent).join('\n'), /provider binding/);
 vm.runInContext('settingsArg = "re-intake";', context);
 alfred = context.alfredCard(hz);
-assert.equal(alfred.find((x) => x.tag === 'details')[0].open, true, 'the board link opens the receipt');
+assert.equal(alfred.find((x) => x.tag === 'details' && x.has('harness-fold'))[0].open, true, 'the board link opens the receipt');
 vm.runInContext('settingsArg = "";', context);
 
 // the successor card leads the board; the legacy card follows it

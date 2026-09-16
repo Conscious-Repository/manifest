@@ -40,11 +40,11 @@
 
 /* ---- SPIRITS: RITUALS board + markdown editor ---- */
 .ritual-board { display: flex; flex-direction: column; gap: var(--sp-1); }
-/* the schedule row: runtime · name · cadence · next · last · history · health · ceiling · actions */
-.ritual-row { display: grid; grid-template-columns: auto 1.3fr 1.5fr 1.1fr auto auto auto 0.6fr auto; align-items: baseline; gap: var(--sp-5); padding: var(--sp-2) var(--sp-4); border-top: 1px solid var(--line-soft); cursor: pointer; }
+/* Schedule overview with expandable diagnostics. */
+.ritual-row { display: grid; grid-template-columns: minmax(0,2.4fr) minmax(0,1.3fr) minmax(0,1fr) auto; align-items: start; gap: var(--sp-4) var(--sp-9); padding: var(--sp-6) var(--sp-4); border-top: 1px solid var(--line-soft); cursor: pointer; }
 .ritual-row:hover { background: var(--base-05); }
 .ritual-row.invalid { border-color: var(--status-danger-border); background: var(--status-danger-bg); }
-.ritual-name { font-family: var(--mono); font-size: var(--fs-sm); color: var(--base-100); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ritual-name { display: flex; flex-wrap: wrap; gap: var(--sp-2) var(--sp-4); font-family: var(--sans); font-size: var(--fs-lg); color: var(--base-100); min-width: 0; overflow-wrap: anywhere; }
 .sprt-spirit { cursor: pointer; }
 .sprt-spirit:hover { color: var(--accent); }
 .ritual-cadence { display: flex; flex-direction: column; gap: var(--sp-1); }
@@ -246,11 +246,11 @@
 .sched-nextup { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--sp-5); margin: 0 0 var(--sp-5); font-size: var(--fs-md); color: var(--base-100); }
 .sched-nextup:empty { display: none; }
 .sched-nextup-label { font-family: var(--mono); font-size: var(--fs-2xs); text-transform: uppercase; letter-spacing: 0.4px; color: var(--base-40); }
-.sched-nextup-item { cursor: pointer; white-space: nowrap; }
+.sched-nextup-item { cursor: pointer; white-space: normal; text-align: left; font-size: var(--fs-sm); overflow-wrap: anywhere; }
 .sched-nextup-item:hover { color: var(--accent); }
 .sched-nextup-item + .sched-nextup-item::before { content: "·"; color: var(--base-40); margin-right: var(--sp-5); }
 .sched-nextup-when { font-family: var(--mono); font-size: var(--fs-sm); }
-.sched-group { cursor: pointer; margin-top: var(--sp-7); user-select: none; }
+.sched-group { cursor: pointer; margin-top: var(--sp-9); user-select: none; background: none; border: 0; border-bottom: 1px solid var(--line); width: 100%; text-align: left; color: var(--text); padding: var(--sp-5) 0; }
 .sched-group:first-child { margin-top: 0; }
 .sched-group-note { margin-left: auto; font-size: var(--fs-xs); color: var(--muted); white-space: nowrap; }
 .sched-group-body { display: flex; flex-direction: column; gap: var(--sp-1); }
@@ -317,3 +317,26 @@
 .ritual-name a:hover { color: var(--accent); }
 #spiritIndex > .toggle { width: 100%; margin-top: 0; }
 #spiritIndex .spirit-index { margin-top: var(--sp-4); }
+
+/* Schedule follows the shared quiet list/detail hierarchy. */
+.sched-identity, .sched-timing, .sched-result { min-width: 0; display: flex; flex-direction: column; gap: var(--sp-4); }
+.sched-identity .ritual-runtime { align-self: flex-start; }
+.sched-identity .sprt-spirit { font: var(--fs-xs)/1.5 var(--mono); color: var(--muted); }
+.sched-identity .ritual-name-sep { display: none; }
+.sched-identity .ritual-job-name { flex-basis: 100%; font: var(--fs-lg)/1.5 var(--sans); }
+.sched-timing .ritual-next { font: var(--fs-xs)/1.5 var(--mono); color: var(--muted); }
+.sched-timing .next-rel { display: block; }
+.sched-result .ritual-health { white-space: normal; }
+.sched-result .sched-ok { display: none; }
+.sched-details { grid-column: 1 / -1; min-width: 0; color: var(--muted); font: var(--fs-xs)/1.5 var(--mono); }
+.sched-details > summary { cursor: pointer; width: fit-content; padding: var(--sp-2) 0; }
+.sched-diagnostics { display: flex; flex-wrap: wrap; gap: var(--sp-7) var(--sp-9); padding: var(--sp-6) 0; }
+.sched-detail-field { display: flex; flex-direction: column; gap: var(--sp-3); min-width: 0; overflow-wrap: anywhere; }
+.sched-detail-field .ritual-ceiling { align-items: flex-start; text-align: left; }
+.sched-detail-field .cad-raw { white-space: normal; }
+.sched-board .ritual-acts { gap: var(--sp-6); }
+.sched-board .ritual-acts button { min-height: var(--control-height); }
+
+.sched-status-detail { min-width: 0; flex: 1; }
+.sched-status-detail > summary { cursor: pointer; width: fit-content; padding: var(--sp-2) 0; }
+.sched-status-detail .sched-status-bits { display: block; padding: var(--sp-4) 0; }
