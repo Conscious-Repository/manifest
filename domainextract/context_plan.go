@@ -84,6 +84,10 @@ func openPlanFile(name string, directory bool) (*os.File, error) {
 // early budget stop. It only reads explicitly supplied copied snapshot bytes.
 // Missing required files/directories and any symlink refuse, never mean empty.
 func ReadContextManifest(fixture, ritual string) (ContextManifest, error) {
+	return readContextManifest(fixture, ritual, 0)
+}
+
+func readContextManifest(fixture, ritual string, maxRecordBytes int64) (ContextManifest, error) {
 	m := ContextManifest{Ritual: ritual, context: map[string]string{}}
 	if !validRitual(ritual) {
 		return m, errors.New("unsupportedRitual")
@@ -108,10 +112,17 @@ func ReadContextManifest(fixture, ritual string) (ContextManifest, error) {
 		if e != nil {
 			return e
 		}
-		b, e := io.ReadAll(f)
+		var reader io.Reader = f
+		if maxRecordBytes > 0 {
+			reader = io.LimitReader(f, maxRecordBytes+1)
+		}
+		b, e := io.ReadAll(reader)
 		f.Close()
 		if e != nil {
 			return errors.New("planningReadUnavailable")
+		}
+		if maxRecordBytes > 0 && int64(len(b)) > maxRecordBytes {
+			return errors.New("contextRecordTooLarge")
 		}
 		fm, _ := mdfm.Split(string(b))
 		cats := mdfm.List(fm["categories"])

@@ -1,0 +1,12 @@
+{
+  "provider": "lab-sparks",
+  "model": "deepseek-v4.1-flash",
+  "endpoint": "http://192.168.87.11:8000/v1",
+  "providerBinding": "fixed-local-endpoint",
+  "tools": ["none"],
+  "mcp": "no_mcp",
+  "fallback": false,
+  "costTelemetry": "unavailable",
+  "inputCapacityBytes": 0,
+  "contextWindowTokens": 0
+}
