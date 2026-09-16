@@ -135,3 +135,10 @@ successor proposals to source/context evidence and blocks Confirm pending an
 atomic dependency CAS. OODA contract references are validated against bounded
 canonical records. This is a mechanical refusal gate, not a claim that application
 CAS, semantic validation, ownership cutover or final decommission is complete.
+
+## Offline comparison checkpoint
+
+The [refusal-only comparison checker](extractor-comparison.md) retains explicitly
+hash-bound artifact evidence and reports `comparison-unrun`. Existing native
+formats do not bind the complete structural evidence needed for a safe match.
+Its reports never establish semantic parity or change migration readiness.
