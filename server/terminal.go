@@ -400,14 +400,16 @@ func (s *Server) handleTermSessions(w http.ResponseWriter, r *http.Request) {
 		var run *terminalRunEvidence
 		var activityOffset int64
 		if se.Kind == "codex" || se.Kind == "claude" {
+			var tr termTranscript
 			if path := s.terminal.transcriptPath(se); path != "" {
-				if tr, ok := readTranscript(se.Kind, path, 0); ok {
+				if t, ok := readTranscript(se.Kind, path, 0); ok {
+					tr = t
 					run = tr.Run
 					activityOffset = tr.Offset
 				}
 			}
 			if se.BoardBrief != "" {
-				if ev := boardRunFailure(filepath.Dir(se.BoardBrief)); ev != nil {
+				if ev := boardRunFailure(filepath.Dir(se.BoardBrief)); ev != nil && !boardFailureSuperseded(ev, tr) {
 					run = ev // the rail must not say "finished" over an abandoned run
 				}
 			}

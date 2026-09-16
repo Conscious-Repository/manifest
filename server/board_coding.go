@@ -177,9 +177,37 @@ func (s *Server) boardTranscriptOverlay(se termSession, tr, full *termTranscript
 			}
 		}
 	}
-	if ev := boardRunFailure(filepath.Dir(se.BoardBrief)); ev != nil {
+	if ev := boardRunFailure(filepath.Dir(se.BoardBrief)); ev != nil && !boardFailureSuperseded(ev, *full) {
 		tr.Run, full.Run = ev, ev
 	}
+}
+
+// boardFailureSuperseded reports whether the thread moved on after the CLI's
+// failure: an assistant turn or run evidence newer than it means the owner
+// reopened the session and it is working again, so the launch failure is
+// history, not the thread's state. (The launch's event file never changes
+// after the CLI exits — a resumed session writes only its rollout.)
+func boardFailureSuperseded(failure *terminalRunEvidence, tr termTranscript) bool {
+	at, err := time.Parse(time.RFC3339, failure.At)
+	if err != nil {
+		return false
+	}
+	newer := func(ts string) bool {
+		t, err := time.Parse(time.RFC3339Nano, ts)
+		if err != nil {
+			t, err = time.Parse(time.RFC3339, ts)
+		}
+		return err == nil && t.After(at.Add(time.Second))
+	}
+	if tr.Run != nil && newer(tr.Run.At) {
+		return true
+	}
+	for _, t := range tr.Turns {
+		if t.Who == "assistant" && newer(t.TS) {
+			return true
+		}
+	}
+	return false
 }
 
 // boardRunProducedItems reports whether the CLI's event stream shows any work

@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 // A board run the CLI abandoned reads as failed with the CLI's own message;
@@ -80,6 +81,19 @@ func TestBoardTranscriptOverlay(t *testing.T) {
 	}
 	if full.Run == nil || full.Run.State != "failed" || full.Run.Error != "boom" {
 		t.Fatalf("failure evidence: %+v", full.Run)
+	}
+	// the owner reopened the session and the agent answered after the failure:
+	// the launch failure is history, the thread is not "failed"
+	later := time.Now().UTC().Add(time.Hour).Format(time.RFC3339Nano)
+	tr2 := termTranscript{Turns: []termTurn{{Who: "user", Text: "try now?", TS: later}, {Who: "assistant", TS: later}}}
+	full2 := tr2
+	s.boardTranscriptOverlay(termSession{BoardBrief: brief}, &tr2, &full2)
+	if full2.Run != nil {
+		t.Fatalf("superseded failure still reported: %+v", full2.Run)
+	}
+	stale := termTranscript{Turns: []termTurn{{Who: "assistant", TS: "2020-01-01T00:00:00Z"}}}
+	if ev := boardRunFailure(dir); ev == nil || boardFailureSuperseded(ev, stale) {
+		t.Fatal("an older assistant turn must not clear the failure")
 	}
 }
 
