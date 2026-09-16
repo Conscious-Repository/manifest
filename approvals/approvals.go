@@ -73,6 +73,9 @@ const TypeManifestOperation = "manifest-operation"
 
 var statuses = []string{"pending", "approved", "rejected"}
 
+// ErrNotFound means the requested approval record does not exist.
+var ErrNotFound = errors.New("approval not found")
+
 // vaultNoteRe is the ONLY apply-path shape a create-vault-note may write:
 // a vault-root dated note "YYYY-MM-DD <title>.md" with no subfolder.
 var vaultNoteRe = regexp.MustCompile(`^\d{4}-\d{2}-\d{2} [^/\\]+\.md$`)
@@ -803,6 +806,9 @@ func (s *Store) move(id, to, reason string) error {
 
 func (s *Store) parse(path string) (Proposal, error) {
 	b, err := os.ReadFile(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return Proposal{}, ErrNotFound
+	}
 	if err != nil {
 		return Proposal{}, err
 	}

@@ -7,6 +7,7 @@ import (
 	"embed"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"io/fs"
 	"log"
 	"mime"
@@ -1513,5 +1514,9 @@ func writeJSONZip(w http.ResponseWriter, r *http.Request, v any) {
 }
 
 func httpError(w http.ResponseWriter, err error) {
+	if errors.Is(err, approvals.ErrNotFound) {
+		http.Error(w, approvals.ErrNotFound.Error(), http.StatusNotFound)
+		return
+	}
 	http.Error(w, err.Error(), http.StatusBadRequest)
 }
