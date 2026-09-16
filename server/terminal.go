@@ -406,6 +406,11 @@ func (s *Server) handleTermSessions(w http.ResponseWriter, r *http.Request) {
 					activityOffset = tr.Offset
 				}
 			}
+			if se.BoardBrief != "" {
+				if ev := boardRunFailure(filepath.Dir(se.BoardBrief)); ev != nil {
+					run = ev // the rail must not say "finished" over an abandoned run
+				}
+			}
 		}
 		out = append(out, row{se, activityOffset, l, s.terminalConversation(se), run, ob.AgentState, ob.Connectivity, ob.Process})
 	}

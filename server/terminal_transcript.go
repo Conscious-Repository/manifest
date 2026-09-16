@@ -36,6 +36,9 @@ type termTurn struct {
 	TS     string      `json:"ts,omitempty"`
 	Text   string      `json:"text,omitempty"`
 	Blocks []termBlock `json:"blocks,omitempty"`
+	// WorkOrder marks a board run's launch prompt whose Text has been replaced
+	// by the work order it pointed at (boardTranscriptOverlay)
+	WorkOrder bool `json:"workOrder,omitempty"`
 }
 
 // termBlock: t = say (markdown text) | think (thinking text) | step (a tool
@@ -61,6 +64,9 @@ type terminalRunEvidence struct {
 	State    string `json:"state"`
 	At       string `json:"at"`
 	Evidence string `json:"evidence"`
+	// Error is the runtime's own message when State is failed (a board run
+	// the CLI abandoned before its rollout could say so)
+	Error string `json:"error,omitempty"`
 }
 
 // termTranscript is the projection of one session file (or its tail).

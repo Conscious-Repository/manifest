@@ -164,6 +164,76 @@ func (se termSession) boardLaunch() string {
 	return termTmpExport + `umask 077; set -o pipefail; export PATH="$HOME/.local/bin:$HOME/.bun/bin:/opt/homebrew/bin:$PATH"; ` + command + "; board_exit=$?; printf '%s' \"$board_exit\" > " + shQuote(exitPath+".tmp") + "; mv " + shQuote(exitPath+".tmp") + " " + shQuote(exitPath)
 }
 
+// boardTranscriptOverlay shapes a board run's chat thread: the pointer prompt
+// the CLI was launched with reads as the work order it points at, and a run
+// the CLI abandoned before its rollout could say so (an auth failure, a
+// crash) carries that failure as run evidence instead of looking finished.
+func (s *Server) boardTranscriptOverlay(se termSession, tr, full *termTranscript) {
+	for i := range tr.Turns {
+		t := &tr.Turns[i]
+		if t.Who == "user" && strings.HasPrefix(t.Text, "Read the complete work order at ") {
+			if b, err := os.ReadFile(se.BoardBrief); err == nil && strings.TrimSpace(string(b)) != "" {
+				t.Text, t.WorkOrder = string(b), true
+			}
+		}
+	}
+	if ev := boardRunFailure(filepath.Dir(se.BoardBrief)); ev != nil {
+		tr.Run, full.Run = ev, ev
+	}
+}
+
+// boardRunFailure reads the CLI's own event stream (events.jsonl, tee'd from
+// `codex exec --json`) and the exit marker for a run that ended without a
+// result: the error the CLI reported, or its exit code. Nil for a run that
+// completed, is still running, or wrote a result.
+func boardRunFailure(dir string) *terminalRunEvidence {
+	if _, err := os.Stat(filepath.Join(dir, "result.json")); err == nil {
+		return nil
+	}
+	at := ""
+	if fi, err := os.Stat(filepath.Join(dir, "events.jsonl")); err == nil {
+		at = fi.ModTime().UTC().Format(time.RFC3339)
+	}
+	msg, completed := "", false
+	if b, err := os.ReadFile(filepath.Join(dir, "events.jsonl")); err == nil {
+		for _, line := range strings.Split(string(b), "\n") {
+			var ev struct {
+				Type    string `json:"type"`
+				Message string `json:"message"`
+				Error   struct {
+					Message string `json:"message"`
+				} `json:"error"`
+			}
+			if json.Unmarshal([]byte(line), &ev) != nil {
+				continue
+			}
+			switch ev.Type {
+			case "turn.completed":
+				completed, msg = true, ""
+			case "error", "turn.failed":
+				completed = false
+				if m := strings.TrimSpace(orStr(ev.Message, ev.Error.Message)); m != "" {
+					msg = m
+				}
+			}
+		}
+	}
+	if completed {
+		return nil
+	}
+	if msg == "" {
+		code, err := os.ReadFile(filepath.Join(dir, "exit"))
+		if err != nil || strings.TrimSpace(string(code)) == "0" {
+			return nil // still running, or ended cleanly without a result
+		}
+		msg = "the CLI exited with status " + strings.TrimSpace(string(code)) + " before writing a result"
+		if fi, e := os.Stat(filepath.Join(dir, "exit")); e == nil {
+			at = fi.ModTime().UTC().Format(time.RFC3339)
+		}
+	}
+	return &terminalRunEvidence{ID: filepath.Base(dir), State: "failed", At: at, Evidence: "events.jsonl", Error: msg}
+}
+
 type codingResult struct {
 	Status      string `json:"status"`
 	Summary     string `json:"summary"`

@@ -429,7 +429,8 @@ function delegationChip(d, asSpan, taskId) {
   const runtimeBadge = typeof terminalRunBadge === "function" ? terminalRunBadge(d) : null;
   const hasResult = !!(d.artifactRef || d.artifactPath || d.runId);
   const planState = (d.state || "").startsWith("plan");
-  chip.title = d.state === "proposed" ? "a proposal is waiting in the FEED inbox"
+  chip.title = d.chatId ? "follow the run in its chat thread"
+    : d.state === "proposed" ? "a proposal is waiting in the FEED inbox"
     : d.state === "plan-ready" ? "the plan is in — review it in the panel, then fire"
     : planState ? "the agent is drafting a plan"
     : d.artifactRef || d.artifactPath ? "read the result"
@@ -437,6 +438,7 @@ function delegationChip(d, asSpan, taskId) {
   chip.onclick = (e) => {
     e.stopPropagation();
     if (taskId && typeof openTodoPanel === "function") { openTodoPanel(taskId); return; }
+    if (d.chatId) { location.hash = "#/chat/a/" + encodeURIComponent(d.chatAgent || d.harness) + "/" + encodeURIComponent(d.chatId); return; }
     if (d.state === "proposed") { location.hash = "#/feed"; return; }
     if (hasResult) { openResult(d); return; }
     location.hash = "#/agents";

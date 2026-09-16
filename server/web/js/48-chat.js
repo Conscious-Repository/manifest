@@ -936,6 +936,7 @@ function chatEntryState(entry){
    else label='Connected · checking state';
   }
   if(execution==='unknown'&&session.run?.state==='completed'&&session.run.evidence){execution='completed';label='Run finished';}
+  else if(execution==='unknown'&&session.run?.state==='failed'){execution='failed';label='Run failed';}
  }else{
   const deliveries=session.deliveries||[],latest=deliveries.at(-1);
   if(session.status==='thinking'){execution='running';label='Working';}
@@ -3057,8 +3058,9 @@ function chatTermPaintTurns() {
     let rows=body.querySelector('.chat-native-rows'),extra=body.querySelector('.chat-native-extra');
     if(!rows){body.replaceChildren();rows=el('div','chat-native-rows');extra=el('div','chat-native-extra');body.append(rows,extra);}
     chatTermPaintLines(rows,o.turns);
-    const signature=JSON.stringify([o.planningOperations||[],o.proposals||[]]);
-    if(extra.dataset.signature!==signature){extra.replaceChildren();for(const operation of o.planningOperations||[])extra.append(manifestOperationCard(operation));appendTaskApprovals(extra,o);extra.dataset.signature=signature;}
+    const failed=o.se?.run?.state==='failed'&&o.se.run.error?String(o.se.run.error):'';
+    const signature=JSON.stringify([o.planningOperations||[],o.proposals||[],failed]);
+    if(extra.dataset.signature!==signature){extra.replaceChildren();for(const operation of o.planningOperations||[])extra.append(manifestOperationCard(operation));appendTaskApprovals(extra,o);if(failed)extra.append(el("div","chat-term-line chat-term-sys chat-term-fail","Run failed — "+failed));extra.dataset.signature=signature;}
     body.querySelector('.chat-transcript-empty')?.remove();
   }
   if (!(o.planningTimeline||o.turns).length) {
@@ -3137,6 +3139,18 @@ function chatTermTurnEl(t) {
 function chatTermCmdLine(t) {
   const line = el("div", "chat-term-line chat-term-cmd");
   line.append(el("span", "chat-term-glyph", chatTermPromptGlyph));
+  if (t.workOrder) {
+    // a board run's launch prompt, shown as the work order it handed over:
+    // the task on the summary line, the full order behind a fold
+    line.classList.add("chat-term-workorder");
+    const task = (/^TASK: (.*)$/m.exec(t.text || "") || [])[1] || "";
+    const fold = document.createElement("details"); fold.className = "chat-term-workorder-fold";
+    const sum = document.createElement("summary"); sum.textContent = "Work order" + (task ? " — " + task : ""); fold.append(sum);
+    fold.append(el("pre", "chat-term-workorder-body", t.text || ""));
+    line.append(fold);
+    if (t.ts) line.append(el("span", "chat-term-meta", fmtWhen(t.ts)));
+    return line;
+  }
   const {text,files}=chatSplitUserMessage(chatQuestionReplyDisplay(t.text) || "");
   if(files.length)line.append(chatAttachmentChips(files)); // previews lead, the way the message was composed
   line.append(el("span", "chat-term-cmd-text", text));

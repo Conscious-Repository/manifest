@@ -193,6 +193,13 @@ async function renderTodoPanel(refetch) {
   if (d.delegation && typeof delegationChip === "function") {
     const dg = el("div", "tdo-p-deleg");
     dg.append(delegationChip(d.delegation, false, panelID));
+    if (d.delegation.chatId) {
+      // the coding run's own chat thread: watch it work, steer it, read the result in place
+      const follow = el("button", "tdo-p-linky", "follow in chat ↗");
+      follow.title = "the " + d.delegation.harness + " session running this task";
+      follow.onclick = () => { location.hash = "#/chat/a/" + encodeURIComponent(d.delegation.chatAgent || d.delegation.harness) + "/" + encodeURIComponent(d.delegation.chatId); };
+      dg.append(follow);
+    }
     workAnchor.append(dg);
   }
 

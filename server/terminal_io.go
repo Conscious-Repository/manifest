@@ -44,6 +44,9 @@ func (s *Server) handleTermTranscript(w http.ResponseWriter, r *http.Request) {
 	if o := se.Origin; o != nil && o.Mode == "continue" && (o.Backend == "" || o.Backend == "portal") {
 		tr.Turns, _ = s.projectConversationNativeTurns(se, agentConversation("hermes", o.Agent, o.ID, "private", "").Key, tr.Turns)
 	}
+	if se.BoardBrief != "" {
+		s.boardTranscriptOverlay(se, &tr, &full)
+	}
 	planningTimeline, _ := s.terminalPlanningTimeline(r.Context(), se)
 	writeJSON(w, map[string]any{
 		"questions": s.terminalQuestions(se, full),

@@ -93,6 +93,11 @@ func (s *Server) taskChatLink(id string, thread []threads.Comment, assignee stri
 	if found != nil {
 		return found
 	}
+	// a coding run, in flight or finished: the session that ran it is the
+	// conversation to open — the owner follows codex there (2026-09-16 ask)
+	if d, ok := s.delegationIndexAt(time.Now())[id]; ok && d.ChatID != "" {
+		return &taskChatLink{Agent: d.ChatAgent, Label: agentDisplayName("agent:" + d.ChatAgent), ID: d.ChatID}
+	}
 	if slug := chatSlugFor(assignee); slug != "" && s.agentHarness(assignee) != "" {
 		return &taskChatLink{Agent: slug, Label: agentDisplayName(assignee)}
 	}

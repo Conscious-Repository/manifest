@@ -19,6 +19,7 @@ import (
 	"errors"
 	"log"
 	"net/http"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"time"
@@ -49,6 +50,10 @@ type delegationView struct {
 	Harness string `json:"harness"`
 	Agent   string `json:"agent,omitempty"` // the agent token an in-flight do-bot turn runs as (presence)
 	RunID   string `json:"runId,omitempty"`
+	// the chat thread a coding run (claude/codex) is followed in — the board
+	// session that ran it, so the task board lands the owner in the live run
+	ChatAgent string `json:"chatAgent,omitempty"`
+	ChatID    string `json:"chatId,omitempty"`
 	// the result, ready to open: exactly one of these is ever set (§8 two media)
 	ArtifactRef  string `json:"artifactRef,omitempty"`  // harness-relative → /api/spirits/file
 	ArtifactPath string `json:"artifactPath,omitempty"` // vault-relative → the note view
@@ -108,6 +113,7 @@ func (s *Server) delegationIndex() map[string]delegationView {
 		return base, phase
 	}
 	refIndex := s.artifactRefIndex() // registered deliverables, one registry read
+	boardChats := s.boardSessionsByRun()
 	for _, h := range s.eachHarness() {
 		if h.Spirits != nil {
 			lib := harnessLibrary(h) // one library read per harness, at most
@@ -205,6 +211,11 @@ func (s *Server) delegationIndex() map[string]delegationView {
 					}
 				}
 				d := delegationView{State: st, Phase: ph, Harness: h.Name, RunID: r.ID}
+				if isCodingAgent(h.Name) {
+					if sid := boardChats[r.ID]; sid != "" {
+						d.ChatAgent, d.ChatID = h.Name, sid
+					}
+				}
 				if pm := personaTokenRe.FindStringSubmatch(phaseSrc); pm != nil {
 					d.Persona = pm[1]
 				}
@@ -242,6 +253,22 @@ func (s *Server) delegationIndex() map[string]delegationView {
 		}
 	}
 	s.overlayHermesRunning(out) // in-flight do-bot turns have no spool/run to scan
+	return out
+}
+
+// boardSessionsByRun maps a coding run (its work-dir name, which is also its
+// report id) to the terminal session that ran it — the chat thread the owner
+// follows the run in.
+func (s *Server) boardSessionsByRun() map[string]string {
+	out := map[string]string{}
+	if s.terminal == nil {
+		return out
+	}
+	for _, se := range s.terminal.load() {
+		if se.BoardBrief != "" {
+			out[filepath.Base(filepath.Dir(se.BoardBrief))] = se.ID
+		}
+	}
 	return out
 }
 
