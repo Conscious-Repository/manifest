@@ -37,7 +37,7 @@ func LoadSparksCapability(c AionSuccessorConfig, raw []byte) (SparksCapability, 
 		} `json:"data"`
 	}
 	var checked json.RawMessage
-	if len(raw) > 1<<20 || strict(raw, &checked) != nil || json.Unmarshal(raw, &models) != nil {
+	if len(raw) > 1<<20 || !utf8.Valid(raw) || len(secrets.Scan(string(raw))) > 0 || strict(raw, &checked) != nil || json.Unmarshal(raw, &models) != nil {
 		return cap, errors.New("invalid-model-discovery")
 	}
 	matches := 0

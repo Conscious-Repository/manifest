@@ -129,3 +129,73 @@ identity and money/allocation/reference review. Real-estate still needs complete
 property/contractor/contract namespaces, matching/closure and absence evidence.
 Each needs its own transport admission, no-write canary, historical reconciliation,
 owner review and application/handoff safety work. AION does not activate them.
+
+## Bounded accounting inspection
+
+The accounting probe is a separate refusal receipt, **not** a canary accounting
+attestation. Run it against an explicitly supplied immutable copy and saved model
+discovery. All paths below must already exist except the new receipt file; the
+receipt directory must be private (0700), outside both input and vault:
+
+```sh
+go run ./cmd/aion-successor \
+  -config docs/excalibur-retirement/aion-successor-config.json \
+  -fixture-root "$FIXTURE_ROOT" -copied-fixture -vault-root "$VAULT_ROOT" \
+  -source "$SOURCE_NOTE" -models "$MODELS_JSON" -reserved-output 4096 \
+  -accounting-probe -probe-live-read -no-write \
+  -receipt "$PRIVATE_RECEIPT_DIR/aion-accounting-probe.json"
+```
+
+Omit `-probe-live-read -no-write` for offline request binding only (no HTTP).
+Explicit `-live-read -no-write -vault-root ...` can replace copied fixture flags;
+no vault or runtime config is discovered. Use `-expected-input-sha256` to pin a
+previous snapshot. The library also accepts exact serialized request bytes and
+rejects any difference from the request reconstructed from that input/config.
+The command emits the same redacted receipt to stdout and a new 0600 file, then
+exits nonzero with `tokenizer-template-accounting-required`. A receipt with this
+state is evidence of inspection, never successful capacity admission.
+
+Live inspection performs only GET `/v1/models` and GET `/openapi.json` at the
+fixed Sparks origin. It sends no source text, credentials or request body, and
+never calls `/tokenize` or chat completions. There is no proxy, redirect, retry,
+alternate endpoint or fallback. Total deadline is 10 seconds, response header
+deadline 5 seconds, headers at most 16 KiB and each body at most 1 MiB. Duplicate
+JSON keys, invalid UTF-8, detected secrets, malformed capacities and changed
+model/capacity refuse. Saved discovery and current discovery have separate hashes:
+volatile permission IDs can change, but selected model/owner/window must match.
+Only allowlisted fields are copied into the receipt; raw metadata is not retained.
+
+Read-only inspection on 2026-09-16 observed `deepseek-v4.1-flash` owned by vLLM,
+with `max_model_len=1048576`. The deployed OpenAPI document (234849 bytes,
+SHA-256 `703145d7ed4ba7fff54f0412b4e630687838ff0c5489f2d135cb3cbf8cc08172`)
+advertised completion and chat inputs for POST `/tokenize`, but its HTTP 200 JSON
+response schema was empty (`{}`). It did not advertise `/tokenizer_info`.
+The [vLLM provider contract](https://docs.vllm.ai/en/latest/serving/openai_compatible_server.html)
+distinguishes tokenization from chat completion and describes tokenizer metadata;
+upstream documentation alone cannot attest this deployed revision or template.
+No AION input was supplied for the live inspection; no exact-input token count or
+private AION accounting evidence is claimed by that observation.
+
+The exact remaining blocker is a reviewed deployed tokenizer/template contract
+that binds both complete serialized-request tokenization and actual completion
+chat rendering to the model/revision, plus authoritative request-byte admission
+evidence. This server's advertised response does not establish those facts. The
+probe therefore records `tokenizer-response-contract-undocumented`; even a future
+nonempty schema remains `tokenizer-template-contract-unsupported` until a reviewed
+adapter exists. No guessed response/count fields or raw-token-to-chat equivalence
+are supported. An endpoint being advertised is not proof it executes correctly.
+
+The receipt binds input, config, capability, exact request bytes/hash, live model
+metadata, OpenAPI evidence and its own digest (computed with `probeSha256` empty).
+It reserves at least 4096 output tokens, a 256-token margin and a 1024-byte margin.
+Measured serialized/prompt tokens and verified byte bound remain zero (unknown),
+and tokenizer/template hashes remain absent. Request byte length is measured
+exactly but is **not** a verified provider limit. These zero fields cannot be used
+as the existing `SparksAccounting` attestation. Mocked tests prove refusal and
+binding, not an authoritative positive accounting path.
+
+Next obtain the independently reviewed accounting evidence described above,
+then an explicitly authorized no-write canary receipt with exact usage matching.
+The production canary remains uninvoked; projections remain paused. All semantic,
+historical reconciliation, reviewer, replay, fence and activation/handoff receipt
+requirements in “Remaining activation work” still apply.

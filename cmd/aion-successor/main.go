@@ -32,12 +32,20 @@ func run(args []string, out io.Writer) error {
 	accounting := f.String("accounting", "", "owner-reviewed exact-request token accounting JSON")
 	accountingPin := f.String("accounting-sha256", "", "independently reviewed accounting file digest")
 	reserve := f.Int("reserved-output", 4096, "reserved completion tokens")
+	probe := f.Bool("accounting-probe", false, "bounded metadata-only accounting probe")
+	probeLive := f.Bool("probe-live-read", false, "explicit fixed-provider metadata GETs; requires no-write")
 	canary := f.Bool("canary", false, "invoke only fixed Sparks endpoint")
 	receipt := f.String("receipt", "", "new private receipt outside vault/input")
 	var names sources
 	f.Var(&names, "source", "selected relative note path; repeat up to four times")
 	if f.Parse(args) != nil || f.NArg() != 0 {
 		return errors.New("invalid-flags")
+	}
+	if *probeLive && (!*probe || !*noWrite) {
+		return errors.New("probe-live-read-requires-probe-and-no-write")
+	}
+	if *probe && (*canary || *accounting != "" || *accountingPin != "" || *models == "" || *receipt == "") {
+		return errors.New("probe-requires-models-private-receipt-and-no-canary")
 	}
 	clean := func(p string) bool { return filepath.IsAbs(p) && filepath.Clean(p) == p && p != "/" }
 	if !clean(*vault) {
@@ -100,6 +108,27 @@ func run(args []string, out io.Writer) error {
 		request, e := s.SparksRequest(c, *reserve)
 		if e != nil {
 			return e
+		}
+		if *probe {
+			file, err := domainextract.OpenSparksReceipt(*receipt, *vault, *root)
+			if err != nil {
+				return err
+			}
+			defer file.Close()
+			if err = s.Revalidate(*root); err != nil {
+				return err
+			}
+			evidence := s.ProbeSparksAccounting(context.Background(), c, cap, request, *reserve, *probeLive)
+			if err = json.NewEncoder(file).Encode(evidence); err != nil {
+				return errors.New("receipt-write-failed")
+			}
+			if err = file.Sync(); err != nil {
+				return errors.New("receipt-write-failed")
+			}
+			if err = json.NewEncoder(out).Encode(evidence); err != nil {
+				return errors.New("report-output-unavailable")
+			}
+			return errors.New(evidence.State)
 		}
 		if !*canary {
 			return json.NewEncoder(out).Encode(domainextract.SparksMeasurement(s.Readiness(c), cap, request))
