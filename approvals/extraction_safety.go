@@ -35,7 +35,16 @@ func (s *Store) checkExtractionSnapshot(p Proposal) error {
 		return nil
 	}
 	blocked := func(reason string) error {
-		return fmt.Errorf("extraction uncertain/stale: %s; pending, replay=false", reason)
+		status := "journal unavailable (not configured)"
+		if s.extractionDataDir != "" {
+			receipt, err := s.journalExtractionRefusal(p, reason)
+			if err != nil {
+				status = "journal unavailable: " + err.Error()
+			} else {
+				status = receipt
+			}
+		}
+		return fmt.Errorf("extraction uncertain/stale: %s; %s; pending, replay=false", reason, status)
 	}
 	switch p.Type {
 	case TypeAionBacklog, TypeAionResolve, TypeAionHeuristic, TypeReBacklog, TypeReResolve, TypeReContract:
@@ -76,7 +85,7 @@ func (s *Store) checkExtractionSnapshot(p Proposal) error {
 	// may mutate several files. A preflight is not an atomic compare-and-swap.
 	// Until the writer can commit the complete read/write set, refuse even a
 	// matching snapshot. In particular, never turn this check into a retry.
-	return blocked("atomic dependency CAS and artifact revalidation not implemented (no complete dependency manifest or durable write/audit/decision transaction)")
+	return blocked("atomic dependency CAS and artifact revalidation not implemented (complete dependency manifest and write/audit/decision transaction unavailable; external editors do not honor application locks)")
 }
 
 // ValidateExtractionContractReferences accepts only exact canonical slugs and

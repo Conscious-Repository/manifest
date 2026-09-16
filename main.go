@@ -826,7 +826,10 @@ func main() {
 			}
 			ap := approvals.NewStore(filepath.Join(ref.Path, "artifacts")).
 				WithVaultRoot(cfg.VaultPath).WithVaultWriter(vw).WithAionCapability("aion-approved").WithReCapability("realestate-approved").
-				WithVaultNoteCapability("vault-note-approved")
+				WithVaultNoteCapability("vault-note-approved").WithExtractionJournal(cfg.DataDir)
+			if err := ap.RecoverExtractionJournal(); err != nil {
+				log.Printf("extraction journal recovery requires review: %v; snapshot applies remain held", err)
+			}
 			if goalsWritable {
 				ap = ap.WithGoalsCapability("goals-approved")
 			}

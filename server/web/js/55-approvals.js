@@ -242,7 +242,7 @@ function approvalCardEl(a) {
   }
   if (a.extractionSnapshot) {
     blocked = true;
-    blockMsg = "Extraction is on hold: atomic dependency checks and recoverable writes are not implemented. Semantic comparison, live validation and retirement are still pending. Reject or leave pending; replay is disabled.";
+    blockMsg = "Extraction is on hold. A refusal/recovery journal substrate is available; it does not commit transactions. Interrupted records require uncertain recovery review. Complete dependency checks and write/audit/approval settlement remain blocked. Semantic review and final decommission are separate pending gates. Reject or leave pending; replay is disabled.";
   }
   if (blocked && blockMsg) card.append(el("div", "appr-blocked", "⚠ " + blockMsg));
 

@@ -86,6 +86,7 @@ var vaultNoteRe = regexp.MustCompile(`^\d{4}-\d{2}-\d{2} [^/\\]+\.md$`)
 // vaultRoot is where "create-vault-note" proposals write. "" disables the
 // respective applies.
 type Store struct {
+	extractionDataDir string     // private refusal/recovery journal; never a commit lane
 	decisionMu        sync.Mutex // serialize pending → decided within this owner process
 	operationDecision func(string, string) error
 	dir               string
