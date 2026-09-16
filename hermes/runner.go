@@ -89,6 +89,11 @@ type Runner struct {
 
 // NewRunner resolves defaults. A missing Bin defaults to "hermes" on $PATH.
 func NewRunner(cfg Config) *Runner {
+	duties := defaultExtractionDuties()
+	for duty, authority := range cfg.Duties {
+		duties[duty] = authority
+	}
+	cfg.Duties = duties
 	if cfg.Bin == "" {
 		cfg.Bin = "hermes"
 	}
@@ -228,8 +233,8 @@ func (r *Runner) Run(ctx context.Context, req Request) (Result, error) {
 		if err != nil {
 			return Result{}, err
 		}
-		if a.Provider == "claude-sub" {
-			return r.runClaudeSuccessor(ctx, req, a)
+		if extractionDutyAllowed(req.MigratedDuty, a) {
+			return r.runExtractionSuccessor(ctx, req, a)
 		}
 		return r.runSuccessor(ctx, req, a)
 	}

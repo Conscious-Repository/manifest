@@ -1,5 +1,10 @@
 # Transcript and extractor replacement — implementation checkpoint, 2026-09-16
 
+Current operational successor: [Hermes extractor cutover](hermes-extractor-cutover.md).
+The paused/subscription status below records the earlier retirement checkpoint.
+Hermes now provides the approval-gated runtime; service/fence verification completes
+the operational migration without claiming semantic parity.
+
 **Current status:** Granola and Pocket transferred to Manifest in
 [the ready-connector cutover](ready-connectors-cutover.md); email subsequently
 transferred as recorded in the [personal email runbook](personal-email-successor.md).

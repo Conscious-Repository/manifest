@@ -130,15 +130,15 @@ func TestCanarySourceCallGraphIsolation(t *testing.T) {
 // Re-audited for policy-aware receipt 36: the early successor branch only
 // creates a temporary usage file and runs isolated Python; authority and usage
 // checks are pure, fallback still refuses, and no production writer is reachable.
-// Re-audited 2026-09-16: claudeDutyAllowed rejects the fixed re-intake duty
-// before inspecting subscription authority. The canary retains the exact local
+// Re-audited 2026-09-16: extractionDutyAllowed rejects the fixed re-intake duty
+// before inspecting Hermes extraction authority. The canary retains the exact local
 // provider, so Runner.Run still returns through runSuccessor only.
 var reviewedSuccessorSources = map[string]string{
 	"../../hermes/claude_successor.py": "55f426b17ec69b530a92a7d8b13dd19c047dc8a14dfd77761b46c601e4878720",
-	"../../hermes/claude_successor.go": "43b67c71795aad78d553dfcb18c7c7250e88d75ab0658791ff6480741d31e62f",
-	"../../hermes/runner.go":           "d30e9e237838dbdfe30e6d9403c2f8707f8d8f5785eb8d98c9d01d4e16a2c1d2",
-	"../../hermes/successor.go":        "27164fb50d86de4558218552054211252607249982fd2b951c4688627cc982a4",
+	"../../hermes/claude_successor.go": "f2c67d84ad8694042e9501f395ec6f166872867663aabb25a2c7f3f73afd0a91",
+	"../../hermes/runner.go":           "c4db245b5012e639cae924ee2c64decc4327312d562d411ab2d65ec98ddd7d6f",
+	"../../hermes/successor.go":        "b154048dfe670b02c46d4d2302d17ac9bc8d58ca499c0445e8d7bbd818d0e8af",
 	"../../hermes/successor.py":        "a7737229609b18c627c720f466858045b7aa06b4e03ed29ce1c0774d8385ae5c",
-	"../../hermes/authority.go":        "6ab63dfbbaea01e289ecbb1eba3bf52dbc2cc8751915056dda5a014d1acaede5",
+	"../../hermes/authority.go":        "fef7b7a179b9f62bb53e910381c4ea3bca198a3743432a8f7541abe334585b32",
 	"../../hermes/fallback.go":         "361d54087bd0eb76a98ee1014717e86632c7f037ab5dab4643528f91142f98e6",
 }

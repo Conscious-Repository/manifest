@@ -1,5 +1,10 @@
 # Excalibur decommission
 
+Current operational successor: [Hermes extractor cutover](hermes-extractor-cutover.md).
+The paused/subscription status below records the earlier retirement checkpoint.
+Hermes now provides the approval-gated runtime; service/fence verification completes
+the operational migration without claiming semantic parity.
+
 Excalibur is deprecated as an active engine. **Retired means engine unavailable**,
 not extraction complete. Manifest owns the existing email, Granola and Pocket
 lanes. `extractor/aion`, `extractor/ooda-email` and `extractor/real-estate` are

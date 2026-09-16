@@ -146,3 +146,29 @@ func TestReceiptContractRejectsUnreviewedOrReplayEvidence(t *testing.T) {
 		})
 	}
 }
+
+// Migration relies on the existing revision/hash checked dispatch fence, without
+// inventing live semantic evidence. Candidate validation and approval are later.
+func TestOperationalOwnershipWithoutSemanticReceipt(t *testing.T) {
+	data := t.TempDir()
+	root := prepareHandoff(t, data, "aion", 1)
+	os.RemoveAll(filepath.Join(data, "domain-extraction", "handoffs"))
+	if state, _ := Readiness(data, root, "aion", true); state != "successor-enabled" {
+		t.Fatal(state)
+	}
+	s := New(context.Background(), data, t.TempDir(), root, Config{Aion: true}, nil, nil)
+	_, release, err := s.acquire("aion")
+	if err != nil {
+		t.Fatal(err)
+	}
+	release()
+	for _, f := range []connectorhandoff.RecordFence{
+		{Duty: "extractor/aion", Owner: "blocked", Revision: 1, Evidence: strings.Repeat("a", 64)},
+		{Duty: "extractor/aion", Owner: "excalibur", Revision: 1, Evidence: strings.Repeat("a", 64)},
+		{Duty: "extractor/aion", Owner: "manifest", Revision: 0, Evidence: strings.Repeat("a", 64)},
+	} {
+		if extractionOwnership(f) == nil {
+			t.Fatal("accepted non-owner", f)
+		}
+	}
+}

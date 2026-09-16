@@ -32,7 +32,7 @@ func (s *Store) RetirementReason(spirit, ritual string) string {
 		name = filepath.Base(filepath.Clean(s.root))
 	}
 	if name == "excalibur" && s.engineUnavailable() {
-		return "Excalibur engine retired/unavailable; history is read-only. Extractor capabilities remain paused, not migrated."
+		return "Excalibur engine retired/unavailable; legacy execution and history edits are unavailable. Manifest successors use independent dispatch ownership."
 	}
 	return RetirementReason(name, spirit, ritual)
 }

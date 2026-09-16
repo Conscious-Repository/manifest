@@ -354,7 +354,7 @@ func (s *Service) report(j Job) error {
 	if !j.Finished.IsZero() {
 		finished = j.Finished.Format(time.RFC3339)
 	}
-	report := (&mdfm.Writer{}).Set("run", "manifest-"+j.ID[:20]).Set("spirit", "extractor").Set("ritual", j.Input.Ritual).Set("executor", "manifest").Set("finished", finished).Set("portal", "claude-sub").Set("request", strings.Join(names, ", ")).Set("started", j.Started.Format(time.RFC3339)).Set("outcome", outcome).Set("model", j.Model).SetRaw("items_written", fmt.Sprint(j.Published)).SetRaw("charge_spent_usd", fmt.Sprint(j.SpentUSD)).String("## Outcome\n\n" + j.Reason + "\n")
+	report := (&mdfm.Writer{}).Set("run", "manifest-"+j.ID[:20]).Set("spirit", "extractor").Set("ritual", j.Input.Ritual).Set("executor", "manifest").Set("finished", finished).Set("portal", "lab-sparks").Set("request", strings.Join(names, ", ")).Set("started", j.Started.Format(time.RFC3339)).Set("outcome", outcome).Set("model", j.Model).SetRaw("items_written", fmt.Sprint(j.Published)).SetRaw("charge_spent_usd", fmt.Sprint(j.SpentUSD)).String("## Outcome\n\n" + j.Reason + "\n")
 	return atomic(filepath.Join(s.harness, "artifacts", "runs", j.Started.Format("2006-01-02")+"-extractor-manifest-"+j.ID[:20]+".md"), []byte(report))
 }
 

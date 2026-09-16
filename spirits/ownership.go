@@ -35,8 +35,17 @@ func (s *Store) projectOwnership(r *RitualRow) {
 		r.LegacyActionable = r.LegacyActionable && s.connectorDispatchGuard(r.Spirit, r.Ritual) == nil
 		if f, err := connectorhandoff.DutyFenceSnapshot(s.root, r.Spirit+"/"+r.Ritual); err == nil {
 			r.ConfiguredOwner = f.Owner
-			r.FenceProtected = f.Revision > 0 && f.Owner == "blocked"
-			if r.FenceProtected && !r.LegacyEnabled {
+			r.FenceProtected = f.Revision > 0 && (f.Owner == "blocked" || f.Owner == "manifest")
+			r.SuccessorEnabled = f.Owner == "manifest" && r.MigrationState == "successor-enabled"
+			r.CapabilityPaused = !r.SuccessorEnabled
+			if r.SuccessorEnabled {
+				r.Retired = false
+				r.RetirementReason = ""
+				r.Enabled = r.LegacyEnabled
+				r.PausedReason = ""
+				r.Provider, r.Model, r.Toolset, r.MaxSteps = "lab-sparks", "deepseek-v4.1-flash", "none / no_mcp", "1"
+			}
+			if f.Owner == "blocked" && r.FenceProtected && !r.LegacyEnabled {
 				r.MigrationState = "paused"
 				r.MigrationDetail = "Capability paused/unavailable; legacy state and queues preserved without replay. No successor migration or parity claimed. Semantic and application safety gaps remain."
 			} else if f.Owner == "excalibur" {

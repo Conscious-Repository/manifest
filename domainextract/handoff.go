@@ -62,13 +62,13 @@ func Readiness(dataDir, harness, ritual string, enabled bool) (string, string) {
 	if f.Owner != "manifest" {
 		return "blocked", "Successor configuration does not establish ownership; shared extractor fence has not transferred to Manifest."
 	}
-	if _, err = ReadHandoff(dataDir, f); err != nil {
+	if err = extractionOwnership(f); err != nil {
 		return "blocked", err.Error()
 	}
 	if !enabled {
-		return "successor-disabled", "Manifest owns the duty with reviewed live semantic evidence, but successor dispatch is disabled; no fallback or replay."
+		return "successor-disabled", "Manifest owns the duty, but successor dispatch is disabled; no fallback or replay."
 	}
-	return "successor-enabled", "Manifest ownership and reviewed live semantic evidence recorded; proposals still require approval. Final decommission is a separate gate."
+	return "successor-enabled", "Manifest owns dispatch; Hermes proposes candidates requiring approval. Operational migration does not assert semantic parity."
 }
 
 func (s *Service) acquire(ritual string) (connectorhandoff.RecordFence, func(), error) {
@@ -77,16 +77,25 @@ func (s *Service) acquire(ritual string) (connectorhandoff.RecordFence, func(), 
 	if err != nil {
 		return f, nil, err
 	}
-	if _, err = ReadHandoff(filepath.Dir(s.dir), f); err != nil {
+	if err = extractionOwnership(f); err != nil {
 		return f, nil, err
 	}
 	f, release, err := connectorhandoff.AcquireDutyFence(s.harness, "extractor/"+ritual)
 	if err != nil {
 		return f, nil, err
 	}
-	if _, err = ReadHandoff(filepath.Dir(s.dir), f); err != nil {
+	if err = extractionOwnership(f); err != nil {
 		release()
 		return f, nil, err
 	}
 	return f, release, nil
+}
+
+// Operational ownership uses the existing hash-bound dispatch history. Semantic
+// review happens at proposal approval, not through an additional handoff receipt.
+func extractionOwnership(f connectorhandoff.RecordFence) error {
+	if !validRitualName(f.Duty) || f.Owner != "manifest" || f.Revision == 0 || !evidenceHash.MatchString(f.Evidence) {
+		return fmt.Errorf("successor ownership not established")
+	}
+	return nil
 }
