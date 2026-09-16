@@ -76,7 +76,8 @@ func (c *Client) get(ctx context.Context, u string, into any) error {
 // ThreadIDsSince lists thread ids with any activity after `after`
 // (epoch-second granularity via the `after:` search operator). The same noise
 // filters as the engine's scan: promotions/social/forums/chats excluded
-// server-side. One list call; max caps the page (each id costs one more GET).
+// server-side. All pages are consumed; max controls each page size. A listing failure
+// returns no partial result so the caller cannot advance past unseen mail.
 func (c *Client) ThreadIDsSince(ctx context.Context, after time.Time, max int) ([]string, error) {
 	if max <= 0 {
 		max = 50
@@ -87,19 +88,36 @@ func (c *Client) ThreadIDsSince(ctx context.Context, after time.Time, max int) (
 	q := fmt.Sprintf("after:%d -category:promotions -category:social -category:forums -in:chats", after.Unix())
 	listURL := "https://gmail.googleapis.com/gmail/v1/users/me/threads?maxResults=" +
 		strconv.Itoa(max) + "&q=" + url.QueryEscape(q)
-	var list struct {
-		Threads []struct {
-			ID string `json:"id"`
-		} `json:"threads"`
+	var ids []string
+	page := ""
+	seen := map[string]bool{}
+	for {
+		u := listURL
+		if page != "" {
+			u += "&pageToken=" + url.QueryEscape(page)
+		}
+		var list struct {
+			Threads []struct {
+				ID string `json:"id"`
+			} `json:"threads"`
+			Next string `json:"nextPageToken"`
+		}
+		if err := c.get(ctx, u, &list); err != nil {
+			return nil, err
+		}
+		for _, t := range list.Threads {
+			ids = append(ids, t.ID)
+		}
+		if list.Next == "" {
+			return ids, nil
+		}
+		if seen[list.Next] {
+			return nil, fmt.Errorf("gmail: repeated thread page token")
+		}
+		seen[list.Next] = true
+		page = list.Next
 	}
-	if err := c.get(ctx, listURL, &list); err != nil {
-		return nil, err
-	}
-	ids := make([]string, 0, len(list.Threads))
-	for _, t := range list.Threads {
-		ids = append(ids, t.ID)
-	}
-	return ids, nil
+
 }
 
 // NewMailboxClient pins requests to the exact connected account.

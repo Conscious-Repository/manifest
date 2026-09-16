@@ -16,6 +16,7 @@
 // <cmd> <id>` through /api/agents/hermes/job/*, and the row's tooltip shows
 // the verbatim command. Manifest never edits jobs.json.
 
+let agentEmailSync = [];
 let spiritRitualRows = []; // the crumb meta's ritual count reads this
 let spiritModels = {};     // spirit → conduit name (from /api/harnesses; display only)
 let spiritPrimaryHarness = ""; // the primary tree's name (from /api/harnesses; display only)
@@ -25,7 +26,7 @@ let hermesRunsDegraded = []; // what the fires projection could not read (usage_
 const schedOpen = { yours: true, internal: false, paused: false }; // group carets survive a repaint
 
 async function fetchSpiritRituals() {
-  try { return (await (await fetch("/api/spirits/rituals")).json()).data || []; } catch (e) { return []; }
+  try { const d = await (await fetch("/api/spirits/rituals")).json(); agentEmailSync = d.emailSync || []; return d.data || []; } catch (e) { agentEmailSync = []; return []; }
 }
 async function fetchHermes() {
   try { return await (await fetch("/api/agents/hermes")).json(); } catch (e) { return null; }
@@ -150,7 +151,8 @@ function ritualHealth(r, runs) {
       }
     }
   }
-  if (runs.length >= 3 && runs.slice(0, 3).every((x) => x.outcome === "completed" && !(x.itemsWritten > 0))) {
+  const connector = r.spirit === "ea-coordinator" && ["email-sync", "granola-sync", "pocket-sync"].includes(r.ritual);
+  if (!connector && runs.length >= 3 && runs.slice(0, 3).every((x) => x.outcome === "completed" && !(x.itemsWritten > 0))) {
     return { state: "silent", why: "the last three runs completed with nothing written" };
   }
   return { state: "ok", why: "" };
@@ -201,6 +203,11 @@ function renderSpiritRituals(rows) {
   // the re-intake lane: one status row (state chip + bits + details →), never
   // the full policy sentence — that is level two on Settings › Agents
   host.append(reIntakeStatusRow(hermesInfo && hermesInfo.reIntakePrimary));
+  agentEmailSync.forEach(info => {
+    const note = el("div", "sched-degraded", info.name + ": " + info.detail);
+    if (info.href) { const link = el("a", "", " Reconnect"); link.href = info.href; note.append(link); }
+    host.append(note);
+  });
   // what the Hermes projection could not read (D4 graceful degrade) — said once, quietly
   (hermesInfo && hermesInfo.dutyRefusals || []).forEach((r) => host.append(el("div", "sched-degraded", r.label)));
   const cron = (hermesInfo && hermesInfo.cron) || null;

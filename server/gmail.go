@@ -18,7 +18,7 @@ func (s *Server) UseGmail(g *gmailauth.Client) { s.gmail = g }
 // /api/gmail/*. Multi-account: every connected mailbox is listed; per-account
 // sync/extract/workspace routing lives in the accounts panel.
 func (s *Server) gmailPortalRow() panelRow {
-	row := panelRow{ID: "gmail", Name: "Gmail (email-sync + EA digest)", Kind: "oauth", Engine: true, Masked: "oauth"}
+	row := panelRow{ID: "gmail", Name: "Gmail · email sync", Kind: "oauth", Engine: true, Masked: "oauth"}
 	if s.gmail == nil {
 		row.State, row.Note = "sealed", "not enabled"
 		return row
@@ -33,16 +33,16 @@ func (s *Server) gmailPortalRow() panelRow {
 		row.State, row.Note = "sealed", "add ~/.config/manifest/google_credentials.json, then reconnect"
 	case st.NeedsReauth:
 		row.State = "degraded"
-		row.Err = "sign-in expired — reconnect to restore the waiting-on digest"
+		row.Err = "sign-in expired — reconnect to restore email sync"
 	case st.Connected, st.HasToken:
 		row.State = "open"
-		note := "read-only · email-sync + waiting-on digest"
+		note := "read-only · email sync"
 		if n := len(accounts); n > 1 {
 			note += " · " + fmt.Sprintf("%d accounts", n)
 		}
 		row.Note = note
 	default:
-		row.State, row.Note = "sealed", "connect a Google account (read-only) for email-sync + the waiting-on digest"
+		row.State, row.Note = "sealed", "connect a Google account (read-only) for email sync"
 	}
 	return row
 }

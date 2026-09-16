@@ -17,7 +17,7 @@ import (
 func TestRetirementLaunchPaths(t *testing.T) {
 	root := t.TempDir()
 	st := spirits.NewStore(root).WithHarnessName("excalibur")
-	pairs := [][2]string{{"concierge", "briefing"}, {"ea-coordinator", "waiting-on"}, {"sage", "skill-cast"}, {"extractor", "re-intake"}}
+	pairs := [][2]string{{"warden", "audit"}, {"concierge", "briefing"}, {"ea-coordinator", "waiting-on"}, {"sage", "skill-cast"}, {"extractor", "re-intake"}}
 	write := func(rel, body string) {
 		t.Helper()
 		p := filepath.Join(root, rel)

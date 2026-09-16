@@ -577,7 +577,9 @@ func (s *Server) handleSpiritsRituals(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, map[string]any{"data": []any{}})
 		return
 	}
-	writeJSON(w, map[string]any{"data": s.spirits.Rituals(time.Now())})
+	rows := s.spirits.Rituals(time.Now())
+	mail := s.agentEmailHealth(rows)
+	writeJSON(w, map[string]any{"data": rows, "emailSync": mail})
 }
 
 // handleSpiritsFileGet / Put — the raw markdown editor over the allow-listed

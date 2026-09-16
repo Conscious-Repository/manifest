@@ -10,7 +10,7 @@ import (
 // reversing this policy requires a reviewed code change, not runtime state.
 func RetirementReason(harness, spirit, ritual string) string {
 	switch harness + "/" + spirit + "/" + ritual {
-	case "excalibur/concierge/briefing", "excalibur/ea-coordinator/waiting-on", "excalibur/sage/skill-cast", "excalibur/extractor/re-intake":
+	case "excalibur/warden/audit", "excalibur/concierge/briefing", "excalibur/ea-coordinator/waiting-on", "excalibur/sage/skill-cast", "excalibur/extractor/re-intake":
 		return fmt.Sprintf("%s/%s is retired/paused; history preserved, no replacement. See Agents: #/agents/ritual/%s/%s", spirit, ritual, spirit, ritual)
 	}
 	return ""

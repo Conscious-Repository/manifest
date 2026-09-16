@@ -9,6 +9,7 @@ package gmailsync
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"strings"
 	"time"
@@ -53,6 +54,7 @@ func (l *Loop) Start(ctx context.Context, every time.Duration) {
 	if every <= 0 {
 		every = 10 * time.Minute
 	}
+	l.Pass(ctx) // do not postpone mail after every server restart
 	t := time.NewTicker(every)
 	defer t.Stop()
 	for {
@@ -118,6 +120,7 @@ func (l *Loop) syncAccount(ctx context.Context, cfg *oauth2.Config, email string
 		return err
 	}
 	var maxSeen time.Time
+	var passErr error
 	for _, id := range ids {
 		prior, known := l.Candidates.ThreadState(email, id)
 		if known && prior.Status == StatusDismissed {
@@ -125,7 +128,8 @@ func (l *Loop) syncAccount(ctx context.Context, cfg *oauth2.Config, email string
 		}
 		subject, msgs, err := fc.ThreadFull(ctx, id)
 		if err != nil || len(msgs) == 0 {
-			continue // one bad thread never aborts the account
+			passErr = fmt.Errorf("gmail thread %s could not be read; checkpoint retained: %v", id, err)
+			continue // process other threads, but retry this interval next pass
 		}
 		if last := msgs[len(msgs)-1].Internal; last.After(maxSeen) {
 			maxSeen = last
@@ -138,18 +142,27 @@ func (l *Loop) syncAccount(ctx context.Context, cfg *oauth2.Config, email string
 		}
 		switch {
 		case !known:
-			l.upsertFrom(email, id, subject, msgs, res, 1)
+			if err := l.upsertFrom(email, id, subject, msgs, res, 1); err != nil {
+				passErr = err
+			}
 		case prior.Status == StatusPending:
 			// re-render in place — same id, note grows until decided
-			l.upsertFrom(email, id, subject, msgs, res, prior.Seq)
+			if err := l.upsertFrom(email, id, subject, msgs, res, prior.Seq); err != nil {
+				passErr = err
+			}
 		case prior.Status == StatusConfirmed:
 			// growth beyond the confirmed watermark → NEW candidate carrying
 			// only the fresh messages (the append lane)
 			fresh := messagesAfter(msgs, prior.LastMsgID, prior.LastMsgAt)
 			if len(fresh) > 0 {
-				l.upsertFrom(email, id, subject, fresh, res, prior.Seq+1)
+				if err := l.upsertFrom(email, id, subject, fresh, res, prior.Seq+1); err != nil {
+					passErr = err
+				}
 			}
 		}
+	}
+	if passErr != nil {
+		return passErr
 	}
 	l.Candidates.AdvanceWatermark(email, maxSeen)
 	return nil
@@ -177,7 +190,7 @@ func (l *Loop) qualifies(msgs []Msg, ownEmail string, res Resolver) bool {
 	return false
 }
 
-func (l *Loop) upsertFrom(email, threadID, subject string, msgs []Msg, res Resolver, seq int) {
+func (l *Loop) upsertFrom(email, threadID, subject string, msgs []Msg, res Resolver, seq int) error {
 	cand := Candidate{
 		ID:         CandidateID(email, threadID, seq),
 		Account:    strings.ToLower(email),
@@ -196,9 +209,7 @@ func (l *Loop) upsertFrom(email, threadID, subject string, msgs []Msg, res Resol
 	if line := ParticipantsLine(msgs, res, email); line != "" {
 		cand.Participants = strings.Split(line, " · ")
 	}
-	if err := l.Candidates.Upsert(cand); err != nil {
-		log.Printf("gmailsync: upsert %s: %v", cand.ID, err)
-	}
+	return l.Candidates.Upsert(cand)
 }
 
 // messagesAfter returns the messages strictly newer than the confirmed
