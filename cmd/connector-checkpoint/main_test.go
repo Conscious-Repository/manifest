@@ -134,3 +134,64 @@ func TestTranscriptPreviewUsesReadOnlyFrozenIndex(t *testing.T) {
 		t.Fatal("WAL input silently read stale")
 	}
 }
+
+func TestPreviewScopesApprovalConflicts(t *testing.T) {
+	for _, source := range []string{"email", "granola", "pocket"} {
+		t.Run(source, func(t *testing.T) {
+			o := fixture(t)
+			o.Source = source
+			if source != "email" {
+				o.Index = filepath.Join(t.TempDir(), "index.sqlite")
+				db, err := sql.Open("sqlite", o.Index)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if _, err := db.Exec("CREATE TABLE notes(path TEXT, granola_id TEXT, pocket_id TEXT)"); err != nil {
+					t.Fatal(err)
+				}
+				if err := db.Close(); err != nil {
+					t.Fatal(err)
+				}
+				wm := filepath.Join(o.Root, "vessel", "state", source, "watermark")
+				if err := os.MkdirAll(filepath.Dir(wm), 0700); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(wm, []byte("2026-09-10T00:00:00Z\n"), 0600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			var out bytes.Buffer
+			if err := run(o, &out); err != nil {
+				t.Fatal(err)
+			}
+			baseline := out.String()
+			conflictSource := "gmail-thread"
+			if source == "email" {
+				conflictSource = "granola"
+			}
+			writeConflict := func(identity string) {
+				t.Helper()
+				for _, status := range []string{"pending", "rejected"} {
+					raw := "---\nid: conflict\ntype: create-vault-note\n---\n```proposed\n---\n" + identity + "-id: private-source\n---\nprivate body\n```\n"
+					if err := os.WriteFile(filepath.Join(o.Root, "artifacts", "approvals", status, "conflict.md"), []byte(raw), 0600); err != nil {
+						t.Fatal(err)
+					}
+				}
+			}
+			writeConflict(conflictSource)
+			out.Reset()
+			if err := run(o, &out); err != nil || out.String() != baseline {
+				t.Fatalf("unrelated conflict affected preview: %s %v", out.String(), err)
+			}
+			identity := source
+			if identity == "email" {
+				identity = "gmail-thread"
+			}
+			writeConflict(identity)
+			out.Reset()
+			if err := run(o, &out); err == nil {
+				t.Fatal("same-source conflict accepted")
+			}
+		})
+	}
+}

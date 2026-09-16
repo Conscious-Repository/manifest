@@ -40,6 +40,13 @@ func TestReconcileCheckpointPreservesDecisionsWithoutWrites(t *testing.T) {
 			if status == "duplicate-note" {
 				fixture.idx.db.Exec("INSERT INTO notes(path,granola_id) VALUES ('log/other.md','legacy-source')")
 			}
+			// Unrelated Gmail conflicts must not prevent a transcript checkpoint.
+			for _, decision := range []string{"pending", "rejected"} {
+				raw := "---\nid: gmail-conflict\ntype: create-vault-note\ngmail-thread-id: mail-one\n---\n"
+				if err := os.WriteFile(filepath.Join(root, "artifacts", "approvals", decision, "gmail-conflict.md"), []byte(raw), 0600); err != nil {
+					t.Fatal(err)
+				}
+			}
 			svc := New(data, Config{Granola: SourceConfig{Account: "fixture"}}, fixture.idx, ap)
 			st, hash, err := svc.ReconcileCheckpoint("granola", root)
 			if status == "uncertain" || status == "duplicate-note" {

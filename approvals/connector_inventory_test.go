@@ -3,6 +3,7 @@ package approvals
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -55,5 +56,72 @@ func TestConnectorInventoryReadOnlyAndConflicts(t *testing.T) {
 	os.WriteFile(filepath.Join(s.dir, "pending", old.ID+".md"), []byte(serialize(old)), 0600)
 	if _, err := ReadConnectorInventory(root); err == nil {
 		t.Fatal("two proposal IDs for one source accepted")
+	}
+}
+
+func TestConnectorInventorySourceScope(t *testing.T) {
+	root := t.TempDir()
+	NewStore(root)
+	write := func(status, id, metadata, proposed string) {
+		t.Helper()
+		raw := "---\nid: " + id + "\ntype: create-vault-note\n" + metadata + "---\n```proposed\n---\n" + proposed + "---\nprivate body\n```\n"
+		if err := os.WriteFile(filepath.Join(root, "approvals", status, id+".md"), []byte(raw), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write("pending", "granola-card", "ritual: granola-sync\n", "granola-id: granola-one\n")
+	write("pending", "pocket-card", "ritual: pocket-sync\n", "pocket_id: pocket-one\n")
+	before, err := ReadConnectorInventoryForSource(root, "granola")
+	if err != nil {
+		t.Fatal(err)
+	}
+	write("pending", "gmail-card", "gmail-thread-id: thread-one\n", "")
+	write("rejected", "gmail-card", "gmail-thread-id: thread-one\n", "")
+	for _, source := range []string{"granola", "pocket"} {
+		inv, err := ReadConnectorInventoryForSource(root, source)
+		if err != nil || len(inv.Items) != 1 || inv.Items[0].Source != source {
+			t.Fatalf("%s: %+v %v", source, inv, err)
+		}
+		if source == "granola" && inv.Hash != before.Hash {
+			t.Fatal("unrelated history changed scoped hash")
+		}
+	}
+	for _, source := range []string{"email", "gmail-thread", "invalid"} {
+		if _, err := ReadConnectorInventoryForSource(root, source); err == nil {
+			t.Fatalf("accepted conflict or invalid source: %s", source)
+		}
+	}
+	if _, err := ReadConnectorInventory(root); err == nil {
+		t.Fatal("global audit ignored Gmail conflict")
+	}
+	write("approved", "granola-card", "ritual: granola-sync\n", "granola-id: granola-one\n")
+	if _, err := ReadConnectorInventoryForSource(root, "granola"); err == nil {
+		t.Fatal("same-source conflicting decisions accepted")
+	}
+}
+
+func TestConnectorInventorySourceAttributionFailsClosed(t *testing.T) {
+	for _, tc := range []struct{ name, metadata, proposed string }{
+		{"unattributed", "", ""},
+		{"missing-id", "ritual: granola-sync\n", ""},
+		{"mixed-identities", "", "granola-id: one\ngmail-thread-id: two\n"},
+		{"mixed-ritual", "ritual: granola-sync\n", "gmail-thread-id: two\n"},
+		{"conflicting-aliases", "", "granola-id: one\ngranola_id: two\n"},
+		{"conflicting-locations", "granola-id: two\n", "granola-id: one\n"},
+		{"repeated-alias", "", "granola-id: one\ngranola-id: two\n"},
+		{"empty-alias", "", "granola-id: \n"},
+		{"malformed-id", "", "granola-id: private/value\n"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			root := t.TempDir()
+			NewStore(root)
+			raw := "---\nid: private-card\ntype: create-vault-note\n" + tc.metadata + "---\n```proposed\n---\n" + tc.proposed + "---\nprivate body\n```\n"
+			if err := os.WriteFile(filepath.Join(root, "approvals", "pending", "private-card.md"), []byte(raw), 0600); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := ReadConnectorInventoryForSource(root, "granola"); err == nil || strings.Contains(err.Error(), "private") {
+				t.Fatalf("attribution accepted or leaked private evidence: %v", err)
+			}
+		})
 	}
 }

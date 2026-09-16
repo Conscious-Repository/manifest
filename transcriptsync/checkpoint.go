@@ -16,7 +16,7 @@ func (s *Service) ReconcileCheckpoint(source, legacyRoot string) (State, string,
 	if err != nil {
 		return st, "", err
 	}
-	inv, err := approvals.ReadConnectorInventory(filepath.Join(legacyRoot, "artifacts"))
+	inv, err := approvals.ReadConnectorInventoryForSource(filepath.Join(legacyRoot, "artifacts"), source)
 	if err != nil {
 		return st, "", err
 	}
@@ -69,7 +69,7 @@ func (s *Service) ReconcileCheckpoint(source, legacyRoot string) (State, string,
 			st.Items[id] = Outcome{Disposition: "existing-note"}
 		}
 	}
-	again, err := approvals.ReadConnectorInventory(filepath.Join(legacyRoot, "artifacts"))
+	again, err := approvals.ReadConnectorInventoryForSource(filepath.Join(legacyRoot, "artifacts"), source)
 	if err != nil || again.Hash != inv.Hash {
 		return State{}, "", fmt.Errorf("canonical approvals changed during checkpoint")
 	}

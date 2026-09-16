@@ -13,7 +13,8 @@ import (
 )
 
 // ConnectorInventory is a content-free checkpoint of the complete canonical
-// inbox. Hash covers raw bytes, paths and decisions, including non-connectors.
+// inbox, or one source when read with ReadConnectorInventoryForSource.
+// Hash covers raw bytes, paths and decisions of the included artifacts.
 // It is an observation, not a lock on the external legacy writer.
 type ConnectorInventory struct {
 	Hash  string              `json:"hash"`
@@ -35,6 +36,22 @@ func ReadConnectorInventory(artifacts string) (ConnectorInventory, error) {
 	return (&Store{dir: filepath.Join(artifacts, "approvals")}).connectorInventory()
 }
 
+// ReadConnectorInventoryForSource reads only approvals attributable to source.
+// email uses gmail-thread identities. Unreadable artifacts and unattributed
+// creates/appends fail closed because their source cannot safely be excluded.
+// Like the global reader, this never creates or changes approval history.
+func ReadConnectorInventoryForSource(artifacts, source string) (ConnectorInventory, error) {
+	if source == "email" {
+		source = "gmail-thread"
+	}
+	switch source {
+	case "gmail-thread", "granola", "pocket":
+	default:
+		return ConnectorInventory{}, fmt.Errorf("invalid connector inventory source")
+	}
+	return (&Store{dir: filepath.Join(artifacts, "approvals")}).connectorInventoryForSource(source)
+}
+
 // ConnectorSnapshot serializes with this Store's decisions and transcript publications.
 // External legacy writers still require dispatch exclusion before handoff.
 func (s *Store) ConnectorSnapshot() (ConnectorInventory, error) {
@@ -43,6 +60,9 @@ func (s *Store) ConnectorSnapshot() (ConnectorInventory, error) {
 	return s.connectorInventory()
 }
 func (s *Store) connectorInventory() (ConnectorInventory, error) {
+	return s.connectorInventoryForSource("")
+}
+func (s *Store) connectorInventoryForSource(scope string) (ConnectorInventory, error) {
 	result := ConnectorInventory{Items: []ConnectorApproval{}}
 	h := sha256.New()
 	ids, sources := map[string]bool{}, map[string]bool{}
@@ -65,6 +85,17 @@ func (s *Store) connectorInventory() (ConnectorInventory, error) {
 			}
 			// Parse exactly the bytes hashed, never a second potentially changed read.
 			fm, body := mdfm.Split(string(b))
+			proposed, _ := mdfm.ExtractFencedBlock(body, "proposed")
+			pf, _ := mdfm.Split(proposed)
+			if scope != "" {
+				include, err := connectorArtifactInScope(string(b), proposed, fm, pf, scope)
+				if err != nil {
+					return result, err
+				}
+				if !include {
+					continue
+				}
+			}
 			id := fm["id"]
 			if id == "" || id+".md" != ent.Name() || ids[id] {
 				return result, fmt.Errorf("duplicate or invalid canonical approval ID [REDACTED]")
@@ -74,10 +105,11 @@ func (s *Store) connectorInventory() (ConnectorInventory, error) {
 			sum := hex.EncodeToString(digest[:])
 			row, _ := json.Marshal([]string{status, ent.Name(), sum})
 			h.Write(row)
-			proposed, _ := mdfm.ExtractFencedBlock(body, "proposed")
-			pf, _ := mdfm.Split(proposed)
 			found := false
 			for _, source := range []string{"granola", "pocket", "gmail-thread"} {
+				if scope != "" && source != scope {
+					continue
+				}
 				sid := pf[source+"-id"]
 				if old := pf[source+"_id"]; old != "" {
 					if sid != "" && sid != old {
@@ -118,4 +150,50 @@ func (s *Store) connectorInventory() (ConnectorInventory, error) {
 	}
 	result.Hash = hex.EncodeToString(h.Sum(nil))
 	return result, nil
+}
+
+// Attribution uses both canonical and legacy aliases plus ritual metadata.
+// Conflicting hints block every implicated source, never select a winner.
+func connectorArtifactInScope(raw, proposed string, fm, pf map[string]string, scope string) (bool, error) {
+	hints := map[string]bool{}
+	identities := map[string]string{}
+	invalid := false
+	for _, source := range []string{"granola", "pocket", "gmail-thread"} {
+		for _, fields := range []map[string]string{fm, pf} {
+			for _, key := range []string{source + "-id", source + "_id"} {
+				if sid, present := fields[key]; present {
+					hints[source] = true
+					if sid == "" || malformedIdentity(sid) || identities[source] != "" && identities[source] != sid {
+						invalid = true
+					}
+					identities[source] = sid
+				}
+			}
+		}
+		if repeatedAlias(raw, source) || repeatedAlias(proposed, source) {
+			invalid = true
+		}
+	}
+	switch fm["ritual"] {
+	case "granola-sync":
+		hints["granola"] = true
+	case "pocket-sync":
+		hints["pocket"] = true
+	case "email-sync":
+		hints["gmail-thread"] = true
+	}
+	if len(hints) == 0 {
+		if fm["type"] == TypeCreateVaultNote || fm["type"] == TypeAppendVaultNote || fm["id"] == "" || fm["type"] == "" {
+			return false, fmt.Errorf("approval source attribution unavailable [REDACTED]")
+		}
+		return false, nil
+	}
+	if !hints[scope] {
+		return false, nil
+	}
+	if invalid || len(hints) != 1 || identities[scope] == "" {
+		return false, fmt.Errorf("ambiguous or missing connector source identity [REDACTED]")
+	}
+	pf[scope+"-id"] = identities[scope]
+	return true, nil
 }

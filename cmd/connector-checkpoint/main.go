@@ -63,7 +63,7 @@ func run(o options, out io.Writer) error {
 	var stateHash, approvalHash string
 	var count, uncertain int
 	if o.Source == "email" {
-		inv, err := approvals.ReadConnectorInventory(filepath.Join(o.Root, "artifacts"))
+		inv, err := approvals.ReadConnectorInventoryForSource(filepath.Join(o.Root, "artifacts"), "email")
 		if err != nil {
 			return err
 		}
@@ -75,7 +75,7 @@ func run(o options, out io.Writer) error {
 		if err != nil {
 			return err
 		}
-		again, err := approvals.ReadConnectorInventory(filepath.Join(o.Root, "artifacts"))
+		again, err := approvals.ReadConnectorInventoryForSource(filepath.Join(o.Root, "artifacts"), "email")
 		if err != nil || again.Hash != inv.Hash {
 			return fmt.Errorf("approval snapshot changed")
 		}

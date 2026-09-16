@@ -58,6 +58,9 @@ func PrepareEmail(raw []byte, account string, inv approvals.ConnectorInventory) 
 	out = EmailCheckpoint{Version: 1, Account: account, LegacyHash: hex.EncodeToString(hash[:]), ApprovalHash: inv.Hash, Watermark: at, Threads: legacy.Threads, Uncertain: []string{}}
 	byID := map[string]approvals.ConnectorApproval{}
 	for _, p := range inv.Items {
+		if p.Source != "gmail-thread" {
+			continue
+		}
 		byID[p.ID] = p
 		if p.Source == "gmail-thread" && p.Type == approvals.TypeAppendVaultNote && p.Status != "approved" {
 			out.Uncertain = append(out.Uncertain, p.ID)
