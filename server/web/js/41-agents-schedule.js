@@ -23,7 +23,7 @@ let spiritPrimaryHarness = ""; // the primary tree's name (from /api/harnesses; 
 let hermesInfo = null;     // last /api/agents/hermes — the jobs list + degrade notes (display only)
 let hermesRuns = [];       // last /api/agents/hermes/runs rows — the strip + health on Hermes rows
 let hermesRunsDegraded = []; // what the fires projection could not read (usage_audit.jsonl gone…)
-const schedOpen = { yours: true, internal: false, paused: false }; // group carets survive a repaint
+const schedOpen = { yours: true, internal: true, paused: false }; // group carets survive a repaint
 
 async function fetchSpiritRituals() {
   try { const d = await (await fetch("/api/spirits/rituals")).json(); agentEmailSync = d.emailSync || []; return d.data || []; } catch (e) { agentEmailSync = []; return []; }
@@ -107,6 +107,7 @@ async function loadSpiritRituals() {
 // internal no cadence — spooled by a transcript sink or the / bar
 // yours    on a clock (every enabled Hermes job counts — a person scheduled it)
 function schedGroupOf(r) {
+  if (manifestSuccessor(r)) return r.cadence ? "yours" : "internal";
   if (r.enabled === false) return "paused";
   if (r.hermes) return "yours";
   if (!r.cadence) return "internal";
@@ -138,9 +139,9 @@ function ritualRuns(r) {
 // Both late and silent are --warn, never --danger.
 function ritualHealth(r, runs) {
   if (["ownership-conflict", "retirement-conflict", "handoff-unverified"].includes(r.migrationState)) return { state: "unknown", why: r.migrationDetail };
-  if (r.retired) return { state: "paused", why: r.retirementReason };
   // Engine observations and run history describe the predecessor, not successor liveness.
-  if (manifestSuccessor(r)) return { state: "unknown", why: "Successor enabled; legacy engine history does not establish successor health." };
+  if (manifestSuccessor(r)) return { state: r.successorHealth || "unknown", why: r.migrationDetail || "Successor enabled; legacy engine history does not establish successor health." };
+  if (r.retired) return { state: "paused", why: r.retirementReason };
   const observed = r.observation;
   if (observed && ["late", "failed", "paused", "stopped", "unknown", "unconfigured"].includes(observed.health)) return { state: observed.health, why: observed.why || observed.lastError || "" };
   if (!r.valid) return { state: "invalid", why: r.error || "invalid frontmatter" };
@@ -265,7 +266,7 @@ function nextUpWhen(iso) {
 }
 
 // schedGroup — an .aion-sec-label heading with a caret and the count over a
-// .ritual-board body; Internal and Paused start collapsed (plan §4.3).
+// .ritual-board body; active groups start open, Paused starts collapsed.
 function schedGroup(host, key, title, list, opts) {
   const head = el("button", "aion-sec-label sched-group");
   head.type="button";head.setAttribute("aria-expanded",String(schedOpen[key]));
@@ -458,7 +459,8 @@ async function hermesJobAction(j, action) {
 // chip (→ the run) · last-5 strip · health chip · ceiling/model · actions.
 // Row click edits the ritual; the spirit name inside the cell opens its page.
 function ritualRow(r) {
-  const paused = r.enabled === false;
+  const successor = manifestSuccessor(r);
+  const paused = !successor && r.enabled === false;
   const runs = ritualRuns(r);
   const health = ritualHealth(r, runs);
   const row = el("div", "ritual-row" + (r.valid ? "" : " invalid") + (paused ? " paused" : ""));
@@ -466,7 +468,7 @@ function ritualRow(r) {
   // through hermesJobRow with the alfred chip
   const runtime = legacyEngineChip("ritual-runtime", r.harness);
   if (manifestSuccessor(r)) {
-    runtime.textContent = "Hermes · Manifest";
+    runtime.textContent = r.spirit === "ea-coordinator" && ["email-sync", "granola-sync", "pocket-sync"].includes(r.ritual) ? "Manifest · sync" : "Hermes · Manifest";
     runtime.className = "harness-chip alfred ritual-runtime";
     runtime.title = r.migrationDetail;
   } else if (r.migrationState) {
@@ -522,7 +524,10 @@ function ritualRow(r) {
   row.append(next);
   // last outcome chip → the run (on RUNS)
   const oc = el("span", "ritual-outcome");
-  if (!r.valid) {
+  if (successor) {
+    oc.append(el("span", "run-outcome", r.successorLastSuccess ? "last success " + fmtWhen(r.successorLastSuccess) : "successor: " + (r.successorHealth || "unknown")));
+    oc.title = r.successorLastSuccess || "No successor last-success reported";
+  } else if (!r.valid) {
     const chip = el("span", "run-outcome oc-invalid", "invalid");
     chip.title = r.error || "invalid frontmatter";
     oc.append(chip);
@@ -556,8 +561,8 @@ function ritualRow(r) {
   // actions — run now (the spool), pause / resume (enabled: line surgery)
   const acts = el("span", "ritual-acts");
   const run = el("button", "sprt-quiet", "run now");
-  run.disabled = !!r.retired || r.legacyActionable === false;
-  run.textContent = r.capabilityPaused ? "paused" : r.retired ? "retired" : r.legacyActionable === false ? "legacy blocked" : "run now";
+  run.disabled = successor || !!r.retired || r.legacyActionable === false;
+  run.textContent = successor ? "legacy blocked" : r.capabilityPaused ? "paused" : r.retired ? "retired" : r.legacyActionable === false ? "legacy blocked" : "run now";
   run.title = r.retirementReason || (r.legacyActionable === false && r.migrationDetail) || "spool a run — the engine picks it up within ~5s";
   run.onclick = (e) => { e.stopPropagation(); spiritSpool(r.spirit, r.ritual, "", { stay: true }); };
   acts.append(run);
@@ -570,7 +575,7 @@ function ritualRow(r) {
     acts.append(tog);
   }
   row.append(acts);
-  if (r.migrationDetail && (!r.retired || r.capabilityPaused)) row.append(el("div", "ritual-note", r.migrationDetail));
+  if (r.migrationDetail && (successor || !r.retired || r.capabilityPaused)) row.append(el("div", "ritual-note", r.migrationDetail));
   if (!r.valid && r.error) row.append(el("div", "ritual-error", r.error));
   else if (paused && r.pausedReason) row.append(el("div", "ritual-note", r.pausedReason));
   row.onclick = () => { location.hash = "#/agents/ritual/" + encodeURIComponent(r.spirit) + "/" + encodeURIComponent(r.ritual); };

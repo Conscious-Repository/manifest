@@ -143,3 +143,59 @@ vm.runInContext('spiritModels = {extractor: "old-provider"}', context);
 const pinned = ownershipRow({spirit:'extractor', successorEnabled:true, configuredOwner:'manifest', model:'deepseek-v4.1-flash', provider:'lab-sparks', legacyEnabled:true, legacyActionable:false, enabled:false, cadence:'0 9 * * *'});
 assert.equal(pinned.querySelector('.ceil-model').textContent, 'deepseek-v4.1-flash');
 assert.equal(pinned.querySelector('.ritual-acts').children[1].textContent, 'pause');
+
+// Connector successors remain current even when predecessor files are disabled
+// and retired. Recorded success must not hide an error on a later attempt.
+for (const ritual of ['granola-sync', 'pocket-sync', 'email-sync']) {
+  const data = {spirit:'ea-coordinator', ritual, enabled:false, retired:true, valid:true,
+    configuredOwner:'manifest', successorEnabled:true, legacyActionable:false,
+    legacyEnabled:false, successorHealth:'error', successorLastSuccess:'2026-09-16T10:00:00Z',
+    migrationDetail:'Legacy dispatch fenced; recorded attempts do not establish semantic parity.',
+    observation:{health:'paused'}, lastOutcome:'completed'};
+  assert.equal(context.schedGroupOf(data), 'internal');
+  assert.equal(context.schedGroupOf({...data, cadence:'0 9 * * *'}), 'yours');
+  assert.equal(context.schedGroupOf({...data, successorEnabled:false}), 'paused');
+  const row = context.ritualRow(data);
+  assert.ok(!row.cls.includes('paused'));
+  assert.equal(row.querySelector('.ritual-runtime').textContent, 'Manifest · sync');
+  assert.equal(context.ritualHealth(data, []).state, 'error');
+  assert.equal(context.ritualHealth({...data, successorHealth:'last-success'}, []).state, 'last-success');
+  assert.equal(context.ritualHealth({...data, successorHealth:undefined}, []).state, 'unknown');
+  assert.match(rowText(row.querySelector('.ritual-outcome')), /last success fixture time/);
+  assert.equal(row.querySelector('.ritual-outcome').title, data.successorLastSuccess);
+  assert.equal(row.querySelector('.ritual-acts').children.length, 1);
+  assert.equal(row.querySelector('.ritual-acts').children[0].textContent, 'legacy blocked');
+  assert.equal(row.querySelector('.ritual-acts').children[0].disabled, true);
+}
+assert.equal(vm.runInContext('schedOpen.internal', context), true);
+const activeJob = context.hermesRowOf({id:'current-job', name:'Current cron', enabled:true});
+assert.equal(context.schedGroupOf(activeJob), 'yours');
+assert.equal(context.schedGroupOf(context.hermesRowOf({id:'paused-job', enabled:false})), 'paused');
+
+// Exercise the actual directory renderer with historical API rows and current
+// profiles, including a profile whose name also occurs in legacy history.
+vm.runInContext(js('43-agents-page.js'), context);
+const index = el('div');
+index.classList.remove = () => {};
+context.document.getElementById = id => id === 'spiritIndex' ? index : null;
+context.collapsibleSection = (host, title, count) => {
+  host.append(el('button', 'toggle'));
+  const directory = el('div', 'directory');
+  directory.count = count;
+  host.append(directory);
+  return directory;
+};
+vm.runInContext(`
+  loadProfileIndex = () => {};
+  spiritRitualRows = ['concierge','ea-coordinator','extractor','sage','warden'].map(spirit => ({spirit}));
+  spiritStatusCache = {spirits:{concierge:{}, 'ea-coordinator':{}, extractor:{}, sage:{}, warden:{}}};
+  profileIndex = [{name:'default',active:true},{name:'kairos'},{name:'zeck'},{name:'warden'}];
+  hermesInfo = {cron:{list:[{id:'current-job',enabled:true}]}};
+  renderSpiritIndex();
+`, context);
+const directory = index.querySelector('.directory');
+assert.equal(directory.count, '4');
+assert.deepEqual(directory.querySelectorAll('.spirit-index-name').map(n => n.textContent), ['alfred · default','kairos','zeck','warden']);
+assert.equal(directory.querySelector('.spirit-index-count').textContent, '1');
+assert.equal(vm.runInContext('spiritRitualRows.length', context), 5);
+console.log('agents current directory and connector successors passed');

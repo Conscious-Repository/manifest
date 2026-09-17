@@ -15,24 +15,13 @@ function renderSpiritIndex() {
   const host = document.getElementById("spiritIndex");
   if (!host) return;
   host.innerHTML = "";
-  const counts = {};
-  (spiritRitualRows || []).forEach((r) => { counts[r.spirit] = (counts[r.spirit] || 0) + 1; });
-  const names = [...new Set([
-    ...Object.keys(counts),
-    ...Object.keys((spiritStatusCache && spiritStatusCache.spirits) || {}),
-  ])].sort();
+  // Rituals and engine status are historical predecessor records, not a
+  // current-agent roster. /api/profiles is authoritative for the directory.
   host.classList.remove("spirit-index");
-  const directory = collapsibleSection(host, "agent directory", String(names.length + profileIndex.length), spiritDirectoryOpen);
+  const directory = collapsibleSection(host, "agent directory", String(profileIndex.length), spiritDirectoryOpen);
   directory.classList.add("spirit-index");
   const toggle = host.querySelector(".toggle");
   toggle.addEventListener("click", () => { spiritDirectoryOpen = !directory.hidden; });
-  names.forEach((name) => {
-    const b = el("button", "spirit-index-item");
-    b.append(el("span", "spirit-index-name", name));
-    b.append(el("span", "spirit-index-count", String(counts[name] || 0)));
-    b.onclick = () => { location.hash = "#/agents/" + encodeURIComponent(name); };
-    directory.append(b);
-  });
   // then alfred + every Hermes profile (Phase 5) — the roster spans runtimes;
   // the count is the profile's cron jobs when known (default = the board's)
   const hermesJobs = (typeof hermesJobList === "function") ? hermesJobList().length : 0;
