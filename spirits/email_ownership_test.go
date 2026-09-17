@@ -95,10 +95,13 @@ func TestEmailOwnershipEvidence(t *testing.T) {
 			}
 			put(filepath.Join(data, "personal-email-worker.json"), c)
 			store := NewStore(root).WithHarnessName("excalibur").WithConnectorHandoffs(data)
-			row := RitualRow{Spirit: "ea-coordinator", Ritual: "email-sync", Valid: true, LegacyEnabled: tc.schedule}
+			row := RitualRow{Spirit: "ea-coordinator", Ritual: "email-sync", Valid: true, LegacyEnabled: tc.schedule, Retired: true, RetirementReason: "old engine retired", PausedReason: "old schedule paused"}
 			store.projectOwnership(&row)
 			if row.ConfiguredOwner != tc.owner || row.MigrationState != tc.state || row.LegacyActionable || row.FenceProtected != tc.protected || row.SuccessorEnabled != (tc.state == "successor-enabled") || row.LegacyEnabled != tc.schedule {
 				t.Fatalf("%+v", row)
+			}
+			if row.SuccessorEnabled && (!row.Enabled || row.Retired || row.CapabilityPaused || row.PausedReason != "" || row.RetirementReason != "") {
+				t.Fatalf("successor inherited predecessor retirement: %+v", row)
 			}
 			if tc.protected {
 				for _, guarded := range []*Store{store, NewStore(root).WithHarnessName("excalibur")} {

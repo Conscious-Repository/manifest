@@ -26,16 +26,17 @@ type harnessSpiritView struct {
 }
 
 type harnessSettingRow struct {
-	Observation spirits.RitualPlane `json:"observation"`
-	Name        string              `json:"name"`
-	Path        string              `json:"path"`
-	Primary     bool                `json:"primary"`
-	EngineAlive bool                `json:"engineAlive"`
-	Heartbeat   string              `json:"heartbeat,omitempty"`
-	Queued      int                 `json:"queued"`
-	Spirits     []harnessSpiritView `json:"spirits"`
-	EngineHint  string              `json:"engineHint,omitempty"` // shown when no engine
-	Portals     []string            `json:"portals"`              // switchable conduits (grimoire)
+	Observation   spirits.RitualPlane `json:"observation"`
+	Name          string              `json:"name"`
+	Path          string              `json:"path"`
+	Primary       bool                `json:"primary"`
+	EngineRetired bool                `json:"engineRetired"`
+	EngineAlive   bool                `json:"engineAlive"`
+	Heartbeat     string              `json:"heartbeat,omitempty"`
+	Queued        int                 `json:"queued"`
+	Spirits       []harnessSpiritView `json:"spirits"`
+	EngineHint    string              `json:"engineHint,omitempty"` // shown when no engine
+	Portals       []string            `json:"portals"`              // switchable conduits (grimoire)
 }
 
 var cornerPortalLineRe = regexp.MustCompile(`(?m)^(portal::\s*)(\S+)`)
@@ -52,13 +53,16 @@ func (s *Server) handleHarnesses(w http.ResponseWriter, r *http.Request) {
 		row := harnessSettingRow{
 			Observation: h.Spirits.RitualObservations(time.Now()),
 			Name:        h.Name, Path: h.Spirits.Root(), Primary: h.Name == primary,
-			EngineAlive: alive, Queued: len(h.Spirits.Queued()),
+			EngineRetired: h.Spirits.EngineRetired(),
+			EngineAlive:   alive, Queued: len(h.Spirits.Queued()),
 			Portals: harnessPortals(h.Spirits.Root()),
 		}
 		if !at.IsZero() {
 			row.Heartbeat = at.Format(time.RFC3339)
 		}
-		if !alive {
+		if row.EngineRetired {
+			row.EngineHint = "Engine retired; history preserved read-only. Current duties run under Manifest/Hermes."
+		} else if !alive {
 			row.EngineHint = "no live engine — delegations here queue until one runs. Start one on the server: sudo systemctl enable --now excalibur-engine@" + h.Name
 		}
 		row.Spirits = harnessSpirits(h.Spirits.Root())

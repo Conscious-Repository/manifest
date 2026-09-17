@@ -41,7 +41,7 @@ vm.runInContext(js('41-agents-schedule.js'), context);
 vm.runInContext(js('60-settings.js'), context);
 vm.runInContext('ritualRuns = () => []; outcomeStrip = () => el("span", "outcome-strip"); spiritStatusCache = null; spiritModels = {};', context);
 
-const shadow = { primary: 'local DeepSeek', model: 'deepseek-v4.1-flash', status: 'shadow', productionRoute: 'disabled', productionOwner: 'Excalibur',
+const shadow = { primary: 'local DeepSeek', model: 'deepseek-v4.1-flash', status: 'shadow', productionRoute: 'disabled', productionOwner: 'none (retired)',
   pilotStatus: 'unused; one document maximum', canaryStatus: 'unknown', cost_policy: 'local-zero-marginal', cost_telemetry: 'unavailable',
   provider_binding: 'fixed-local-endpoint', configuredAuthority: 'valid declaration', fallback: 'owner-invoked Claude Code/Codex only; unsupported/unverified; never automatic',
   lastAttempt: 'unknown', lastError: 'unknown' };
@@ -56,7 +56,7 @@ assert.equal(row.children[0].textContent, 're-intake');
 const chip = row.children[1];
 assert.equal(chip.textContent, 'shadow');
 assert.match(chip.className, /run-outcome oc-unknown/);
-assert.equal(row.find(x=>x.has('sched-status-bits'))[0].textContent, 'route disabled · pilot unused · canary unknown · lane Excalibur');
+assert.equal(row.find(x=>x.has('sched-status-bits'))[0].textContent, 'route disabled · pilot unused · canary unknown · lane none');
 const more = row.children[3];
 assert.equal(more.tag, 'a');
 assert.equal(more.textContent, 'details →');
@@ -76,7 +76,7 @@ assert.equal(row.find(x=>x.has('sched-status-bits'))[0].textContent, 'route bloc
 row = context.reIntakeStatusRow({ ...shadow, status: 'pilot; owner review required', productionRoute: 'owner upload → candidate → pending approval', canaryStatus: 'passed (synthetic only)', lastError: 'none reported (synthetic canary only)' });
 assert.equal(row.children[1].textContent, 'pilot');
 assert.match(row.children[1].className, /oc-late/);
-assert.equal(row.find(x=>x.has('sched-status-bits'))[0].textContent, 'route owner upload → candidate → pending approval · pilot unused · canary passed (synthetic only) · lane Excalibur');
+assert.equal(row.find(x=>x.has('sched-status-bits'))[0].textContent, 'route owner upload → candidate → pending approval · pilot unused · canary passed (synthetic only) · lane none');
 // no projection at all still fails closed, visibly
 row = context.reIntakeStatusRow(null);
 assert.equal(row.children[1].textContent, 'policy evidence unavailable');
@@ -123,10 +123,10 @@ assert.equal(summary.children[1].textContent, '2 rituals · evidence · conduits
 // level one: what stays visible when the fold is closed
 const levelOne = card.children.filter((c) => c !== fold).map((c) => c.textContent).join('\n') + '\n' + summary.textContent;
 assert.match(levelOne, /Excalibur engine/);
-assert.match(levelOne, /legacy · retiring/);
+assert.match(levelOne, /historical runtime/);
 assert.match(levelOne, /engine live/);
 assert.match(levelOne, /\/home\/benjamin\/excalibur/);
-assert.match(levelOne, /legacy engine · runs its existing rituals until each duty moves to Alfred \(Hermes\)/);
+assert.match(levelOne, /history preserved · current duties run under Manifest\/Hermes/);
 assert.match(levelOne, /observation late/);
 assert.match(levelOne, /2 rituals \(1 late, 1 paused\) · 2 agents · 1 conduit/);
 for (const hidden of ['ritual-status.json', 'warden/audit', 're-extractor/intake', 'artifacts/runs/', 'DeepSeek', 'overdue by 2d', 'switch it on the agent page']) {
@@ -137,13 +137,17 @@ assert.match(tally.children[0].className, /run-outcome oc-late/);
 // level two: the evidence, verbatim
 const body = fold.children[1].textContent;
 for (const kept of ['excalibur harness tree', 'read-only history (artifacts/runs/)', 'engine evidence: ritual-status.json', 'warden/audit', 'late · last attempt fixture time · overdue by 2d',
-  're-extractor/intake', 'paused · last attempt unknown · retired; history read-only', '2 agents on the legacy engine (spirits/)', 'warden', 'scout', 'deepseek', 'DeepSeek (sk-… · open)']) {
+  're-extractor/intake', 'paused · last attempt unknown · retired; history read-only', '2 agents in historical configuration (spirits/)', 'warden', 'scout', 'deepseek', 'DeepSeek (sk-… · open)']) {
   assert.ok(body.includes(kept), 'fold keeps: ' + kept);
 }
 // an engine that is down still says so at level one
 const down = context.excaliburCard({ ...h, engineAlive: false }, []);
 assert.match(down.children.filter((c) => c.tag !== 'details').map((c) => c.textContent).join('\n'), /no live engine — delegations queue/);
 assert.match(down.find((x) => x.has('harness-engine'))[0].textContent, /^down/);
+const retiredCard = context.excaliburCard({ ...h, engineAlive:false, engineRetired:true }, []);
+assert.match(retiredCard.find(x => x.has('harness-engine'))[0].textContent, /^retired$/);
+assert.doesNotMatch(retiredCard.textContent, /delegations queue|still owns|keep running|runs its existing/);
+assert.equal(retiredCard.find(x => x.tag === 'button').length, 0);
 // no harness configured: no fold, the empty row
 assert.equal(context.excaliburCard(null, []).find((x) => x.tag === 'details').length, 0);
 

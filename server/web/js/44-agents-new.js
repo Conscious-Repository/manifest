@@ -22,7 +22,7 @@ async function renderAgentWizard() {
     j("/api/spirits/catalog"), j("/api/spirits/status"), j("/api/profiles"),
   ]);
   wiz = {
-    step: 1, name: "", purpose: "", runtime: "spirit",
+    step: 1, name: "", purpose: "", runtime: "profile",
     ritualName: "", cad: cadDefault("daily"), spellbooks: [], instructions: "",
     cloneFrom: "", description: "",
     catalog: catalog || { portals: [], spellbooks: [] },
@@ -153,10 +153,6 @@ function wizRuntime(body, host) {
     b.onclick = () => { wiz.runtime = key; paintWizard(host); };
     return b;
   };
-  opts.append(option("spirit", "excalibur spirit (legacy engine)",
-    "Creates spirits/" + wiz.name + "/ in the excalibur tree: identity (your purpose line), cornerstone (conduit claude-sub, writes artifacts/runs only, the spellbooks you pick), memories, and a first ritual on the cadence you choose. The legacy engine runs it; reports land in RUNS and findings in the feed.",
-    wiz.engineOn ? "the legacy engine is retiring — Alfred (Hermes) is the successor runtime; a ritual created here will need migrating with the rest"
-      : "the excalibur engine is not configured on this box — the files are written, nothing will run them"));
   opts.append(option("profile", "Hermes profile",
     "Runs `hermes profile create " + wiz.name + "`: a separate Hermes home with its own config, skills, SOUL.md and cron. Nothing is scheduled by this; you target it with `hermes -p " + wiz.name + "` (or its alias) and add cron jobs from the profile page.",
     wiz.profilesDegraded ? "profile list unavailable: " + wiz.profilesDegraded : ""));

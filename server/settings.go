@@ -600,7 +600,7 @@ func (s *Server) reIntakePrimaryProjection(directory string) map[string]any {
 		"ownerBoundary": s.reIntakeConfig.OwnerBoundary, "owner": "owner",
 		"handoff":         "candidate → pending approval; owner confirmation required",
 		"pilotStatus":     reintake.PilotStatus(s.reIntakeDataDir),
-		"productionRoute": "disabled", "productionOwner": "Excalibur", "canaryStatus": "unknown",
+		"productionRoute": "disabled", "productionOwner": "none (retired)", "canaryStatus": "unknown",
 		"fallback":            "owner-invoked Claude Code/Codex only; unsupported/unverified; never automatic",
 		"configuredAuthority": "missing or invalid", "lastAttempt": "unknown", "lastError": "unknown",
 	}

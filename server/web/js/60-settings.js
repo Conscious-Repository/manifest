@@ -369,28 +369,25 @@ function cardLine(card, key, value) {
   return row;
 }
 
-// 1. Excalibur engine — the LEGACY runtime (retiring under
-// plans/2026-09-11-excalibur-deprecation.md; it still runs its existing
-// rituals while they migrate to Hermes): liveness, path, spirits, model per
-// spirit, conduits. Named by what it is, never as the successor.
+// Historical Excalibur configuration and read-only run evidence.
 function excaliburCard(h, portalRows) {
   const card = el("div", "harness-card");
   const head = el("div", "harness-head");
   head.append(el("span", "harness-name", "Excalibur engine"));
-  const legacy = el("span", "harness-chip legacy", "legacy · retiring");
-  legacy.title = "the legacy runtime — still owns its existing rituals during the migration; Alfred (Hermes) is the successor. Nothing here is the successor's authority.";
+  const legacy = el("span", "harness-chip legacy", "historical runtime");
+  legacy.title = "Historical harness evidence. Current duties and ownership appear in Agents.";
   head.append(legacy);
   if (!h) {
     head.append(el("span", "harness-engine off", "not configured"));
     card.append(head, emptyRow("no harness in config.json (harnesses[] / excaliburPath)"));
     return card;
   }
-  head.append(el("span", "harness-chip", h.name), engineChip(h.engineAlive, h.heartbeat, h.queued));
+  head.append(el("span", "harness-chip", h.name), h.engineRetired ? el("span", "harness-engine off", "retired") : engineChip(h.engineAlive, h.heartbeat, h.queued));
   card.append(head);
   card.append(el("div", "harness-path", h.path));
   // level one: what it is, in one line, and the counts / health tally. The
   // inventory, the evidence path and the migration note are level two below.
-  card.append(el("div", "portal-note", "legacy engine · runs its existing rituals until each duty moves to Alfred (Hermes)"));
+  card.append(el("div", "portal-note", "history preserved · current duties run under Manifest/Hermes"));
   const observation = h.observation || {};
   const rituals = observation.rituals || [];
   const spirits = h.spirits || [];
@@ -405,7 +402,7 @@ function excaliburCard(h, portalRows) {
     + " · " + spirits.length + " agent" + (spirits.length === 1 ? "" : "s")
     + " · " + conduits.length + " conduit" + (conduits.length === 1 ? "" : "s")));
   card.append(summary);
-  if (!h.engineAlive) {
+  if (!h.engineAlive && !h.engineRetired) {
     // disabled beats hidden (§3.1): the affordance exists, the title says whose
     // action it is. The sudo string stays out of the card.
     const start = el("button", "pill light", "start");
@@ -417,7 +414,7 @@ function excaliburCard(h, portalRows) {
   }
   // ＋ agent opens the wizard (agents plan §4.3, Phase 6): a spirit arrives
   // with its first ritual, never as an empty folder
-  if (h.primary !== false && typeof newAgent === "function") {
+  if (!h.engineRetired && h.primary !== false && typeof newAgent === "function") {
     const add = el("button", "sprt-ghost harness-add", "＋ agent");
     add.title = "the new-agent wizard — name → runtime → first ritual → review";
     add.onclick = () => newAgent();
@@ -427,12 +424,12 @@ function excaliburCard(h, portalRows) {
   // path, every ritual's last attempt, the agents and the conduits. Read-only
   // history — retired rituals stay listed here with their evidence intact.
   const fold = harnessFold(card, "details", rituals.length + " rituals · evidence · conduits");
-  fold.append(el("div", "portal-note", "legacy engine · " + h.name + " harness tree — existing rituals keep running here until each duty moves to Hermes; retired rituals stay paused with their run reports preserved as read-only history (artifacts/runs/)"));
-  fold.append(el("div", "portal-note", "read-only / edit on metis and restart · engine evidence: " + (observation.evidence || "ritual-status.json")));
+  fold.append(el("div", "portal-note", "legacy engine · " + h.name + " harness tree — historical configuration and read-only history (artifacts/runs/); current ownership appears in Agents"));
+  fold.append(el("div", "portal-note", "read-only historical engine evidence: " + (observation.evidence || "ritual-status.json")));
   rituals.forEach((r) => {
     cardLine(fold, r.spirit + "/" + r.ritual, r.health + " · last attempt " + (r.lastAttempt ? fmtWhen(r.lastAttempt) : "unknown") + (r.lastError ? " · " + r.lastError : "") + (r.why ? " · " + r.why : ""));
   });
-  fold.append(el("div", "portal-note", spirits.length + " agent" + (spirits.length === 1 ? "" : "s") + " on the legacy engine (spirits/) · model per agent (switch it on the agent page)"));
+  fold.append(el("div", "portal-note", spirits.length + " agent" + (spirits.length === 1 ? "" : "s") + " in historical configuration (spirits/) · recorded model per agent"));
   spirits.forEach((sp) => {
     const row = el("div", "harness-spirit");
     row.append(el("span", "harness-spirit-name", sp.name), el("span", "harness-spirit-model", sp.portal || "—"));
@@ -719,7 +716,7 @@ async function renderSettingsHosts(pane) {
     ["rsshubBase", cs.rsshubBase || "http://127.0.0.1:1200 (default)"],
   ]);
   group("HERMES", [["enabled", hm.enabled ? "true" : "false"], ["bin", hm.bin], ["timeoutSeconds", hm.timeoutSeconds || "default"], ["HERMES_HOME", d.hermesHome]]);
-  group("runtime ownership", [["manifest", "config.json · pollers, approvals, vaultwriter"], ["successor reasoning", "Manifest-owned Hermes extractors · isolated lab-sparks/deepseek-v4.1-flash · one step · approval-gated · enablement and ownership fences required · cost telemetry unavailable; semantic parity not asserted"], ["hermes", (d.hermesHome || "~/.hermes") + " · config.yaml, gateway_state.json, cron/jobs.json, cron/ticker_heartbeat, cron/ticker_last_success"], ["excalibur (legacy engine · retiring)", "harness roots above · spirits/, chargebook.md, vessel/state/ritual-status.json (engine evidence), artifacts/runs/ (run history, read-only)"]], "read-only / edit on metis and restart; Excalibur markdown is hot-read by its engine");
+  group("runtime ownership", [["manifest", "config.json · pollers, approvals, vaultwriter"], ["successor reasoning", "Manifest-owned Hermes extractors · isolated lab-sparks/deepseek-v4.1-flash · one step · approval-gated · enablement and ownership fences required · cost telemetry unavailable; semantic parity not asserted"], ["hermes", (d.hermesHome || "~/.hermes") + " · config.yaml, gateway_state.json, cron/jobs.json, cron/ticker_heartbeat, cron/ticker_last_success"], ["excalibur (historical harness)", "harness roots above · spirits/, chargebook.md, vessel/state/ritual-status.json (engine evidence), artifacts/runs/ (run history, read-only)"]], "historical harness evidence is read-only; current runtime configuration requires restart");
   pane.append(el("div", "portal-note", "two-scheduler rule: Manifest pollers + supervised Hermes ticker is the approved successor topology; extractor ownership follows Manifest dispatch fences; legacy file enablement does not authorize legacy dispatch. no third scheduler."));
   group("ENVIRONMENT", env.map((e) => [e.name, e.set ? (e.value || "set") : "unset"]), "the process environment on metis — presence only; values never leave the box");
 }

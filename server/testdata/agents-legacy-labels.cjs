@@ -77,9 +77,9 @@ assert.equal(context.weekSpendLine().text, '$2.00 legacy engine · $0.00 alfred 
 // Settings › Agents: the two cards say which runtime is legacy and which succeeds;
 // Hosts & paths marks the excalibur roots as legacy/engine evidence, still read-only.
 const settings = js('60-settings.js');
-assert.match(settings, /"harness-chip legacy", "legacy · retiring"/);
+assert.match(settings, /"harness-chip legacy", "historical runtime"/);
 assert.match(settings, /"harness-chip alfred", "successor runtime"/);
-assert.match(settings, /excalibur \(legacy engine · retiring\)/);
+assert.match(settings, /excalibur \(historical harness\)/);
 assert.match(settings, /artifacts\/runs\/ \(run history, read-only\)/);
 assert.match(settings, /HOSTS & PATHS — config\.json as loaded, read-only/);
 // the schedule row never hard-codes the harness name as its runtime again
@@ -126,7 +126,7 @@ for (const ritual of ['aion', 'real-estate', 'ooda-email', 'future-duty']) {
   assert.doesNotMatch(rowText(successor), /retired|paused/);
   assert.match(rowText(successor), /no cadence configured/);
   assert.equal(context.ritualHealth(data, [{outcome:'error'}]).state, 'unknown');
-  assert.equal(successor.querySelector('.ritual-acts').children[0].disabled, true);
+  assert.equal(successor.querySelector('.ritual-acts').children.length, 0);
   for (const extra of [{successorEnabled:false}, {configuredOwner:'blocked'}]) {
     assert.doesNotMatch(ownershipRow({...data, ...extra}).querySelector('.ritual-runtime').textContent, /Hermes/);
   }
@@ -142,18 +142,18 @@ console.log('agents Manifest successor projection passed');
 vm.runInContext('spiritModels = {extractor: "old-provider"}', context);
 const pinned = ownershipRow({spirit:'extractor', successorEnabled:true, configuredOwner:'manifest', model:'deepseek-v4.1-flash', provider:'lab-sparks', legacyEnabled:true, legacyActionable:false, enabled:false, cadence:'0 9 * * *'});
 assert.equal(pinned.querySelector('.ceil-model').textContent, 'deepseek-v4.1-flash');
-assert.equal(pinned.querySelector('.ritual-acts').children[1].textContent, 'pause');
+assert.equal(pinned.querySelector('.ritual-acts').children.length, 0);
 
 // Connector successors remain current even when predecessor files are disabled
 // and retired. Recorded success must not hide an error on a later attempt.
 for (const ritual of ['granola-sync', 'pocket-sync', 'email-sync']) {
   const data = {spirit:'ea-coordinator', ritual, enabled:false, retired:true, valid:true,
     configuredOwner:'manifest', successorEnabled:true, legacyActionable:false,
-    legacyEnabled:false, successorHealth:'error', successorLastSuccess:'2026-09-16T10:00:00Z',
+    legacyEnabled:false, cadence:'0 7 * * *', nextFire:'2026-09-18T07:00:00Z', model:'old-provider', successorHealth:'error', successorLastSuccess:'2026-09-16T10:00:00Z',
     migrationDetail:'Legacy dispatch fenced; recorded attempts do not establish semantic parity.',
     observation:{health:'paused'}, lastOutcome:'completed'};
-  assert.equal(context.schedGroupOf(data), 'internal');
-  assert.equal(context.schedGroupOf({...data, cadence:'0 9 * * *'}), 'yours');
+  assert.equal(context.schedGroupOf(data), 'yours');
+  assert.equal(context.schedGroupOf({...data, cadence:''}), 'internal');
   assert.equal(context.schedGroupOf({...data, successorEnabled:false}), 'paused');
   const row = context.ritualRow(data);
   assert.ok(!row.cls.includes('paused'));
@@ -163,9 +163,16 @@ for (const ritual of ['granola-sync', 'pocket-sync', 'email-sync']) {
   assert.equal(context.ritualHealth({...data, successorHealth:undefined}, []).state, 'unknown');
   assert.match(rowText(row.querySelector('.ritual-outcome')), /last success fixture time/);
   assert.equal(row.querySelector('.ritual-outcome').title, data.successorLastSuccess);
-  assert.equal(row.querySelector('.ritual-acts').children.length, 1);
-  assert.equal(row.querySelector('.ritual-acts').children[0].textContent, 'legacy blocked');
-  assert.equal(row.querySelector('.ritual-acts').children[0].disabled, true);
+  assert.equal(row.querySelector('.ritual-acts').children.length, 0);
+  assert.doesNotMatch(rowText(row), /legacy blocked|successor: unknown|old-provider|0 7 \* \* \*/);
+  assert.match(rowText(row), /managed sync/);
+  assert.equal(row.querySelector('.ritual-next').textContent, '—');
+  const successful = context.ritualRow({...data, successorHealth:'last-success'});
+  assert.match(rowText(successful), /last success fixture time/);
+  assert.doesNotMatch(rowText(successful), /health unknown|successor: unknown/);
+  const unknown = context.ritualRow({...data, successorHealth:undefined, successorLastSuccess:undefined});
+  assert.match(rowText(unknown), /health unknown/);
+  assert.ok(row.querySelector('.sched-details').querySelector('.successor-history'), 'history is behind Details');
 }
 assert.equal(vm.runInContext('schedOpen.internal', context), true);
 const activeJob = context.hermesRowOf({id:'current-job', name:'Current cron', enabled:true});
@@ -199,3 +206,7 @@ assert.deepEqual(directory.querySelectorAll('.spirit-index-name').map(n => n.tex
 assert.equal(directory.querySelector('.spirit-index-count').textContent, '1');
 assert.equal(vm.runInContext('spiritRitualRows.length', context), 5);
 console.log('agents current directory and connector successors passed');
+
+// New agents default to the supported runtime; historical spirits are not offered.
+assert.match(js('44-agents-new.js'), /runtime: "profile"/);
+assert.doesNotMatch(js('44-agents-new.js'), /opts.append\(option\("spirit"/);

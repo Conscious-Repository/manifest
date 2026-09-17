@@ -13,6 +13,14 @@ import (
 // Ownership describes routing intent and the legacy file independently. Neither
 // an enablement flag nor a disabled legacy schedule proves a completed handoff.
 func (s *Store) projectOwnership(r *RitualRow) {
+	// Current enablement belongs to the validated successor. Preserve the
+	// predecessor's schedule separately; it cannot pause or retire its successor.
+	defer func() {
+		if r.ConfiguredOwner == "manifest" && r.SuccessorEnabled {
+			r.Enabled, r.Retired, r.CapabilityPaused = true, false, false
+			r.RetirementReason, r.PausedReason = "", ""
+		}
+	}()
 	r.Harness = s.harnessName
 	if r.Harness == "" {
 		r.Harness = filepath.Base(filepath.Clean(s.root))

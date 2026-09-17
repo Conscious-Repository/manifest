@@ -120,13 +120,16 @@ func TestTranscriptOwnershipEvidence(t *testing.T) {
 					}
 					store.WithTranscriptSync(transcriptsync.New(stateData, cfg, nil, nil).WithHandoffGuard(guardData))
 				}
-				row := RitualRow{Spirit: "ea-coordinator", Ritual: source + "-sync", Valid: true, LegacyEnabled: tc.schedule}
+				row := RitualRow{Spirit: "ea-coordinator", Ritual: source + "-sync", Valid: true, LegacyEnabled: tc.schedule, Retired: true, RetirementReason: "old engine retired", PausedReason: "old schedule paused"}
 				store.projectOwnership(&row)
 				if row.MigrationState != tc.state || row.SuccessorHealth != tc.health || row.FenceProtected != tc.protected || row.SuccessorEnabled != tc.successor || row.LegacyEnabled != tc.schedule || row.LegacyActionable {
 					t.Fatalf("%+v", row)
 				}
 				if tc.protected && row.ConfiguredOwner != "manifest" {
 					t.Fatal("duty fence owner lost", row)
+				}
+				if row.SuccessorEnabled && (!row.Enabled || row.Retired || row.CapabilityPaused || row.PausedReason != "" || row.RetirementReason != "") {
+					t.Fatalf("successor inherited predecessor retirement: %+v", row)
 				}
 				if tc.health != "" && (row.SuccessorLastAttempt != st.LastAttempt || row.SuccessorLastSuccess != st.LastSuccess) {
 					t.Fatal("lost health timestamps", row)

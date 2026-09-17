@@ -400,7 +400,7 @@ function reIntakePrimarySummary(p) {
   return "re-intake · primary: " + p.primary + " / " + p.model +
     " · " + (p.status || "shadow / not routed") +
     " · productionEnabled: " + !!p.productionEnabled + " · production route " + (p.productionRoute || "disabled") +
-    " · owner: " + (p.owner || "owner") + " · lane: " + (p.productionOwner || "Excalibur") +
+    " · owner: " + (p.owner || "owner") + " · lane: " + (p.productionOwner || "none (retired)") +
     " · access: " + (p.ownerBoundary || "undeclared") +
     " · source: " + (p.sourceRoute || "POST /api/realestate/intake?name=...") +
     " · " + (p.handoff || "candidate → pending approval; owner confirmation required") +
@@ -426,7 +426,7 @@ function reIntakeStatusBits(p) {
     (route === "disabled" ? "route disabled" : blocked ? "route blocked" : "route " + route),
     "pilot " + clause(p.pilotStatus, "unknown"),
     "canary " + clause(p.canaryStatus, "unknown"),
-    "lane " + clause(p.productionOwner, "Excalibur").replace(/\s*\(.*$/, ""),
+    "lane " + clause(p.productionOwner, "none (retired)").replace(/\s*\(.*$/, ""),
   ];
   if (refused) bits.push("last error " + err);
   return { status, tone: blocked || refused ? "error" : /pilot/.test(status) ? "late" : "unknown", bits, attention: blocked || refused };

@@ -70,16 +70,13 @@ function primaryHarnessName() {
   const hs = (typeof spiritStatusCache !== "undefined" && spiritStatusCache && spiritStatusCache.harnesses) || [];
   return hs.length ? hs[0].name || "" : "";
 }
-// legacyEngineChip — the runtime chip for work the primary harness tree's
-// engine schedules and runs. The chip names what that runtime IS today: the
-// legacy engine, still owning its existing duties while they migrate to
-// Hermes (plans/2026-09-11-excalibur-deprecation.md) — never the successor.
+// legacyEngineChip identifies the runtime that produced historical work.
 // The tree's real name rides the tooltip so history stays attributable.
 // Alfred rows and team trees (kairos, zeck) carry their own chips.
 function legacyEngineChip(extraClass, harness) {
   const name = harness || primaryHarnessName();
   const chip = el("span", "harness-chip legacy" + (extraClass ? " " + extraClass : ""), "legacy engine");
-  chip.title = (name ? name + " harness tree · " : "") + "the legacy engine — it still runs its existing rituals while they migrate to Alfred (Hermes), the successor runtime; reports stay in the tree as read-only history";
+  chip.title = (name ? name + " harness tree · " : "") + "historical engine provenance; current successor ownership is shown on the schedule; reports stay in the tree as read-only history";
   return chip;
 }
 // loadSchedule — entering #/agents: rituals + runs together (the strip, the
@@ -302,6 +299,8 @@ function schedComposeRow(row,key) {
   }
   const raw=[...identity.querySelectorAll('.cad-raw'),...schedule.querySelectorAll('.cad-raw')];
   if(raw.length){const field=el('div','sched-detail-field');field.append(el('span','micro-label','Configuration'),...raw);diagnostics.append(field);}
+  const history=take(".successor-history");
+  if(history) diagnostics.append(history);
   details.append(diagnostics);details.onclick=e=>e.stopPropagation();
   details.addEventListener('toggle',()=>details.open?schedDetailOpen.add(key):schedDetailOpen.delete(key));
   const acts=take('.ritual-acts');
@@ -460,6 +459,7 @@ async function hermesJobAction(j, action) {
 // Row click edits the ritual; the spirit name inside the cell opens its page.
 function ritualRow(r) {
   const successor = manifestSuccessor(r);
+  const sync = successor && r.spirit === "ea-coordinator" && ["email-sync", "granola-sync", "pocket-sync"].includes(r.ritual);
   const paused = !successor && r.enabled === false;
   const runs = ritualRuns(r);
   const health = ritualHealth(r, runs);
@@ -490,17 +490,20 @@ function ritualRow(r) {
   job.href = "#/agents/ritual/" + encodeURIComponent(r.spirit) + "/" + encodeURIComponent(r.ritual);
   job.onclick = (e) => e.stopPropagation();
   name.append(sp, el("span", "ritual-name-sep", " · "), job);
-  name.append(el("span", "cad-raw", "pin " + (r.provider || "unknown") + " / " + (r.model === "discover" ? "discover — unpinned" : r.model || "unknown") + " · " + (r.toolset || "tools unknown") + " · " + (r.maxSteps || "unknown") + " steps · $" + r.ceilingUsd));
+  if (!sync) name.append(el("span", "cad-raw", "pin " + (r.provider || "unknown") + " / " + (r.model === "discover" ? "discover — unpinned" : r.model || "unknown") + " · " + (r.toolset || "tools unknown") + " · " + (r.maxSteps || "unknown") + " steps · $" + r.ceilingUsd));
   if (r.spirit === "extractor" && ["aion", "real-estate", "ooda-email"].includes(r.ritual)) {
     const context = el("span", "cad-raw", "context: unmeasured · semantic-review-required");
     context.title = "Offline copied-fixture planning only: context-too-large means serialized input exceeds the budget; partition-planned means a complete single input fits; partition-unavailable means contextPartitionUnavailable and missing merge semantics. No multi-partition reducer exists. A plan does not establish semantic quality, enable the successor, or prove migration.";
     name.append(context);
   }
-  if (r.observation && r.observation.lastRun) name.append(el("span", "cad-raw", "last " + fmtWhen(r.observation.lastRun)));
+  if (!successor && r.observation && r.observation.lastRun) name.append(el("span", "cad-raw", "last " + fmtWhen(r.observation.lastRun)));
   row.append(name);
   // cadence — human phrase over the raw cron (both visible)
   const cad = el("span", "ritual-cadence");
-  if (paused) {
+  if (sync) {
+    cad.append(el("span", "cad-human", "managed sync"));
+    cad.append(el("span", "cad-raw", "Manifest worker schedule"));
+  } else if (paused) {
     cad.append(el("span", "cad-human", "paused" + (r.cadenceHuman && r.cadence ? " · " + r.cadenceHuman : "")));
     cad.append(el("span", "cad-raw", r.cadence || (r.capabilityPaused ? "paused" : r.retired ? "retired" : internalNote(r))));
   } else if (!r.cadence) {
@@ -515,7 +518,7 @@ function ritualRow(r) {
   // fmtWhen is for PAST stamps (today → time, else date only): a fire due
   // tomorrow morning read as a bare "Sep 5" with no hour.
   const next = el("span", "ritual-next");
-  if (r.valid && r.nextFire) {
+  if (!sync && r.valid && r.nextFire) {
     next.append(document.createTextNode(nextUpWhen(r.nextFire) + " "));
     next.append(el("span", "next-rel", relPhrase(r.nextFire)));
   } else {
@@ -525,7 +528,7 @@ function ritualRow(r) {
   // last outcome chip → the run (on RUNS)
   const oc = el("span", "ritual-outcome");
   if (successor) {
-    oc.append(el("span", "run-outcome", r.successorLastSuccess ? "last success " + fmtWhen(r.successorLastSuccess) : "successor: " + (r.successorHealth || "unknown")));
+    oc.append(el("span", "run-outcome", r.successorLastSuccess ? "last success " + fmtWhen(r.successorLastSuccess) : (r.successorHealth && r.successorHealth !== "unknown" ? r.successorHealth : "health unknown")));
     oc.title = r.successorLastSuccess || "No successor last-success reported";
   } else if (!r.valid) {
     const chip = el("span", "run-outcome oc-invalid", "invalid");
@@ -544,7 +547,7 @@ function ritualRow(r) {
   // health — a chip only when there is something to say; scheduled rows say ok
   const hc = el("span", "ritual-health");
   if (health.state !== "ok") {
-    const chip = el("span", "run-outcome oc-" + health.state, health.state === "silent" ? "no output" : health.state);
+    const chip = el("span", "run-outcome oc-" + health.state, health.state === "silent" ? "no output" : successor && health.state === "unknown" ? "health unknown" : health.state);
     chip.title = health.why;
     hc.append(chip);
   } else if (r.cadence) {
@@ -553,20 +556,20 @@ function ritualRow(r) {
   row.append(hc);
   // ceiling / model
   const ceil = el("span", "ritual-ceiling" + (r.ceilingDefault ? " muted" : ""));
-  ceil.append(el("span", "ceil-usd", "$" + Number(r.ceilingUsd).toFixed(2)));
+  if (!sync) ceil.append(el("span", "ceil-usd", "$" + Number(r.ceilingUsd).toFixed(2)));
   const rowModel = r.model || r.provider || spiritModels[r.spirit];
-  if (rowModel) ceil.append(el("span", "ceil-model", rowModel));
+  if (!sync && rowModel) ceil.append(el("span", "ceil-model", rowModel));
   ceil.title = (r.ceilingDefault ? "chargebook default" : "ritual charge_usd") + (rowModel ? " · model " + rowModel : "");
   row.append(ceil);
   // actions — run now (the spool), pause / resume (enabled: line surgery)
   const acts = el("span", "ritual-acts");
   const run = el("button", "sprt-quiet", "run now");
   run.disabled = successor || !!r.retired || r.legacyActionable === false;
-  run.textContent = successor ? "legacy blocked" : r.capabilityPaused ? "paused" : r.retired ? "retired" : r.legacyActionable === false ? "legacy blocked" : "run now";
+  run.textContent = r.capabilityPaused ? "paused" : r.retired ? "retired" : r.legacyActionable === false ? "legacy blocked" : "run now";
   run.title = r.retirementReason || (r.legacyActionable === false && r.migrationDetail) || "spool a run — the engine picks it up within ~5s";
   run.onclick = (e) => { e.stopPropagation(); spiritSpool(r.spirit, r.ritual, "", { stay: true }); };
-  acts.append(run);
-  if (!r.retired && (r.legacyActionable !== false || r.legacyEnabled) && (r.cadence || paused)) {
+  if (!successor) acts.append(run);
+  if (!successor && !r.retired && (r.legacyActionable !== false || r.legacyEnabled) && (r.cadence || paused)) {
     const legacyPaused = r.legacyEnabled === undefined ? paused : !r.legacyEnabled;
     const tog = el("button", "sprt-quiet", legacyPaused ? "resume" : "pause");
     tog.title = legacyPaused ? "delete the enabled: false line — the engine reschedules it"
@@ -575,7 +578,9 @@ function ritualRow(r) {
     acts.append(tog);
   }
   row.append(acts);
-  if (r.migrationDetail && (successor || !r.retired || r.capabilityPaused)) row.append(el("div", "ritual-note", r.migrationDetail));
+  if (r.migrationDetail && successor) {
+    row.append(el("div", "ritual-note successor-history", "History preserved. " + r.migrationDetail));
+  } else if (r.migrationDetail && (!r.retired || r.capabilityPaused)) row.append(el("div", "ritual-note", r.migrationDetail));
   if (!r.valid && r.error) row.append(el("div", "ritual-error", r.error));
   else if (paused && r.pausedReason) row.append(el("div", "ritual-note", r.pausedReason));
   row.onclick = () => { location.hash = "#/agents/ritual/" + encodeURIComponent(r.spirit) + "/" + encodeURIComponent(r.ritual); };
