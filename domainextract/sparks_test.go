@@ -178,17 +178,24 @@ func TestSparksDiscoveryAccountingAndReceipt(t *testing.T) {
 	dir := t.TempDir()
 	os.Chmod(dir, 0700)
 	path := filepath.Join(dir, "receipt.json")
-	if e := WriteSparksReceipt(path, vault, vault, SparksReceipt{State: "comparison-unrun"}); e != nil {
+	f, e := OpenSparksReceipt(path, vault, vault)
+	if e != nil {
+		t.Fatal(e)
+	}
+	if e = json.NewEncoder(f).Encode(SparksReceipt{State: "comparison-unrun"}); e != nil {
+		t.Fatal(e)
+	}
+	if e = f.Close(); e != nil {
 		t.Fatal(e)
 	}
 	st, _ := os.Stat(path)
 	if st.Mode().Perm() != 0600 {
 		t.Fatal(st.Mode())
 	}
-	if e := WriteSparksReceipt(path, vault, vault, SparksReceipt{}); e == nil {
+	if _, e := OpenSparksReceipt(path, vault, vault); e == nil {
 		t.Fatal("overwrote")
 	}
-	if e := WriteSparksReceipt(filepath.Join(vault, "receipt"), vault, vault, SparksReceipt{}); e == nil {
+	if _, e := OpenSparksReceipt(filepath.Join(vault, "receipt"), vault, vault); e == nil {
 		t.Fatal("vault write")
 	}
 }

@@ -81,7 +81,7 @@ func TestExtractorFenceRefusesLegacyWithoutEnableFlag(t *testing.T) {
 		}
 		row := RitualRow{Spirit: "extractor", Ritual: ritual, Valid: true, LegacyEnabled: true}
 		st.projectOwnership(&row)
-		if row.ConfiguredOwner != "manifest" || row.LegacyActionable || row.MigrationState != "successor-disabled" {
+		if row.ConfiguredOwner != "manifest" || row.LegacyActionable || row.MigrationState != "successor-disabled" || !row.LegacyEnabled || !row.FenceProtected || row.Provider != "lab-sparks" || row.Model != "deepseek-v4.1-flash" || !strings.Contains(row.MigrationDetail, "Legacy file enabled; legacy dispatch fenced") {
 			t.Fatal(row)
 		}
 		data := t.TempDir()

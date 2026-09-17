@@ -27,4 +27,6 @@ context.fetchSpiritRuns().then((d) => {
 for (const file of ['41-agents-schedule.js', '42-agents-runs.js', '60-settings.js']) {
   assert.match(fs.readFileSync(path.join(__dirname, '../web/js', file), 'utf8'), /dutyRefusals/);
 }
-assert.match(fs.readFileSync(path.join(__dirname, '../web/js/60-settings.js'), 'utf8'), /no duty routed; live usage contract unverified/);
+assert.match(fs.readFileSync(path.join(__dirname, '../web/js/60-settings.js'), 'utf8'), /Manifest-owned Hermes extractors/);
+
+assert.doesNotMatch(fs.readFileSync(path.join(__dirname, "../web/js/60-settings.js"), "utf8"), /no duty routed|no duty moved/);

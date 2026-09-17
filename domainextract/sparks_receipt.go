@@ -1,7 +1,6 @@
 package domainextract
 
 import (
-	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
@@ -38,13 +37,4 @@ func OpenSparksReceipt(path, vault, input string) (*os.File, error) {
 		return nil, fail
 	}
 	return f, nil
-}
-
-func WriteSparksReceipt(path, vault, input string, r SparksReceipt) error {
-	f, e := OpenSparksReceipt(path, vault, input)
-	if e != nil {
-		return e
-	}
-	defer f.Close()
-	return json.NewEncoder(f).Encode(r)
 }

@@ -512,7 +512,7 @@ function alfredCard(hz) {
   const receipt = harnessFold(card, "details", "re-intake policy receipt", "re-intake");
   receipt.classList.add("harness-receipt");
   reIntakePrimarySummary(hz.reIntakePrimary).split(" · ").forEach((clause) => receipt.append(el("div", "harness-receipt-line", clause)));
-  Object.entries(r.duties || {}).forEach(([name, a]) => cardLine(card, name, (a.provider || "unconfigured") + "/" + (a.model || "unconfigured") + " · " + (a.tools || []).join(", ") + " · " + (a.mcp || "MCP unconfigured") + " · " + a.timeoutSeconds + "s / " + a.maxSteps + " steps / $" + a.ceilingUsd + " · tool-free helper only; no duty routed; live usage contract unverified"));
+  Object.entries(r.duties || {}).forEach(([name, a]) => cardLine(card, name, (a.provider || "unconfigured") + "/" + (a.model || "unconfigured") + " · " + (a.tools || []).join(", ") + " · " + (a.mcp || "MCP unconfigured") + " · " + a.timeoutSeconds + "s / " + a.maxSteps + " steps / $" + a.ceilingUsd + " · declared authority; routing requires enablement and ownership fences; semantic parity not asserted"));
   (hz.dutyRefusals || []).forEach((r) => cardLine(card, "successor refusal", r.label));
   const cron = hz.cron || {};
   cardLine(card, "ticker health", cron.health || "unknown");
@@ -719,8 +719,8 @@ async function renderSettingsHosts(pane) {
     ["rsshubBase", cs.rsshubBase || "http://127.0.0.1:1200 (default)"],
   ]);
   group("HERMES", [["enabled", hm.enabled ? "true" : "false"], ["bin", hm.bin], ["timeoutSeconds", hm.timeoutSeconds || "default"], ["HERMES_HOME", d.hermesHome]]);
-  group("runtime ownership", [["manifest", "config.json · pollers, approvals, vaultwriter"], ["successor reasoning", "Manifest-owned tool-free helper; no Hermes profile/state; no duty routed; live usage contract unverified"], ["hermes", (d.hermesHome || "~/.hermes") + " · config.yaml, gateway_state.json, cron/jobs.json, cron/ticker_heartbeat, cron/ticker_last_success"], ["excalibur (legacy engine · retiring)", "harness roots above · spirits/, chargebook.md, vessel/state/ritual-status.json (engine evidence), artifacts/runs/ (run history, read-only)"]], "read-only / edit on metis and restart; Excalibur markdown is hot-read by its engine");
-  pane.append(el("div", "portal-note", "two-scheduler rule: Manifest pollers + supervised Hermes ticker is the approved successor topology; Excalibur still owns its existing duties during transition. no third scheduler. no duty moved."));
+  group("runtime ownership", [["manifest", "config.json · pollers, approvals, vaultwriter"], ["successor reasoning", "Manifest-owned Hermes extractors · isolated lab-sparks/deepseek-v4.1-flash · one step · approval-gated · enablement and ownership fences required · cost telemetry unavailable; semantic parity not asserted"], ["hermes", (d.hermesHome || "~/.hermes") + " · config.yaml, gateway_state.json, cron/jobs.json, cron/ticker_heartbeat, cron/ticker_last_success"], ["excalibur (legacy engine · retiring)", "harness roots above · spirits/, chargebook.md, vessel/state/ritual-status.json (engine evidence), artifacts/runs/ (run history, read-only)"]], "read-only / edit on metis and restart; Excalibur markdown is hot-read by its engine");
+  pane.append(el("div", "portal-note", "two-scheduler rule: Manifest pollers + supervised Hermes ticker is the approved successor topology; extractor ownership follows Manifest dispatch fences; legacy file enablement does not authorize legacy dispatch. no third scheduler."));
   group("ENVIRONMENT", env.map((e) => [e.name, e.set ? (e.value || "set") : "unset"]), "the process environment on metis — presence only; values never leave the box");
 }
 

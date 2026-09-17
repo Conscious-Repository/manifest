@@ -138,3 +138,8 @@ for (const [spirit, ritual] of [['concierge','briefing'], ['ea-coordinator','wai
   assert.equal(context.ritualHealth(data, []).state, 'paused');
 }
 console.log('agents Manifest successor projection passed');
+
+vm.runInContext('spiritModels = {extractor: "old-provider"}', context);
+const pinned = ownershipRow({spirit:'extractor', successorEnabled:true, configuredOwner:'manifest', model:'deepseek-v4.1-flash', provider:'lab-sparks', legacyEnabled:true, legacyActionable:false, enabled:false, cadence:'0 9 * * *'});
+assert.equal(pinned.querySelector('.ceil-model').textContent, 'deepseek-v4.1-flash');
+assert.equal(pinned.querySelector('.ritual-acts').children[1].textContent, 'pause');

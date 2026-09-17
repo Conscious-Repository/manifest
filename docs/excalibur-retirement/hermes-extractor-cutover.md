@@ -6,11 +6,23 @@ Manifest service, enabled rituals, shared ownership fences and HTTP health pass
 verification. This does not assert semantic parity: every semantic proposal still
 passes the existing candidate/source validation and human approval contract.
 
-The runner invokes `/home/benjamin/.local/bin/hermes` by argv with `chat -Q`,
+The runner starts the installed Hermes virtualenv Python directly (the runtime
+behind `/home/benjamin/.local/bin/hermes`), with an embedded isolation launcher.
+It constructs process-local argv with `chat -Q`,
 `-m sparks --provider lab-sparks --safe-mode -t none --max-turns 1`. Each call has
 a private `HERMES_HOME` and working directory, no inherited credentials, MCP,
 rules, tools or fallback chain, a maximum 120-second timeout and bounded output.
-The private config pins the alias and endpoint. Because the installed chat path
+Landlock and seccomp are mandatory: only scratch is writable, caller home and
+state are unreadable, and subprocess execution is denied. Missing OS support or
+runtime dependencies refuse with no fallback. Runtime Python packages are read-only;
+user plugins, MCP configuration and runtime dotfiles are not admitted.
+
+Prompts travel through a bounded pipe and become argv inside Python, avoiding the
+OS single-argument limit. The exact extractor route accepts at most 524,288 UTF-8
+bytes, rejects overflow without truncation or partition, and pins a 1,048,576-token
+context with compression disabled and 4096 output tokens. The byte cap conservatively
+reserves half the context for runtime instructions and output. Other successor
+routes retain their existing limits. The private config pins the alias and endpoint. Because the installed chat path
 does not expand the alias before submission, Hermes' native provider `extra_body`
 setting pins the wire model to `deepseek-v4.1-flash` and `tool_choice` to `none`.
 No custom HTTP transport or tokenizer metadata is involved. Only two known CLI

@@ -5,7 +5,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -16,12 +15,12 @@ func TestExtractionCLI(t *testing.T) {
 	t.Cleanup(func() { extractionCommand = old })
 	prompt := "fixture $(touch /tmp/not-executed); `literal`"
 	extractionCommand = func(ctx context.Context, args ...string) *exec.Cmd {
-		want := []string{"chat", "-Q", "-q", prompt, "-m", "sparks", "--provider", "lab-sparks", "--safe-mode", "-t", "none", "--max-turns", "1", "--source", "tool", "--cli"}
-		if !reflect.DeepEqual(args, want) {
-			t.Fatalf("argv = %q", args)
+		if len(args) != 0 {
+			t.Fatalf("prompt must not travel in process argv: %q", args)
 		}
 		// A fixture process inspects the actual environment and private config.
-		return exec.CommandContext(ctx, "/usr/bin/python3", "-c", `import os,json
+		return exec.CommandContext(ctx, "/usr/bin/python3", "-c", `import os,json,sys
+assert sys.stdin.read()=="fixture $(touch /tmp/not-executed); `+"`literal`"+`"
 assert os.getcwd()==os.environ['HERMES_HOME']==os.environ['HOME']
 c=json.load(open(os.path.join(os.environ['HERMES_HOME'],'config.yaml')))
 assert c['model']['aliases']['sparks']=='lab-sparks/deepseek-v4.1-flash'
@@ -134,7 +133,7 @@ func TestExtractionAuthorityBounds(t *testing.T) {
 			t.Fatal("accepted invalid authority")
 		}
 	}
-	if extractionBinary != "/home/benjamin/.local/bin/hermes" {
+	if extractionBinary != "/home/benjamin/.hermes/hermes-agent/venv/bin/python" {
 		t.Fatal(extractionBinary)
 	}
 	if _, err := os.Stat(extractionBinary); os.IsNotExist(err) {
@@ -157,5 +156,119 @@ func TestExtractionCannotReachOtherExecutor(t *testing.T) {
 		if _, err := r.dutyAuthority(Request{MigratedDuty: duty}); err == nil {
 			t.Fatal("accepted another executor", duty)
 		}
+	}
+}
+
+// Exercise the production OS boundary and full prompt transport with an inert
+// Hermes module. No real runtime imports or model calls occur in this test.
+func TestExtractionContainedLargePrompt(t *testing.T) {
+	old := extractionCommand
+	t.Cleanup(func() { extractionCommand = old })
+	runtime := t.TempDir()
+	outside := t.TempDir()
+	for _, name := range []string{"vault", "approvals", "secret", "plugins", "mcp"} {
+		if err := os.WriteFile(filepath.Join(outside, name), []byte("private"), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, name := range []string{"agent", "hermes_cli", "tools", "providers", "gateway", "cron", "assets", "locales", "hermes_agent.egg-info", "venv/lib"} {
+		if err := os.MkdirAll(filepath.Join(runtime, name), 0700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	code := `import os, sys, json, subprocess
+
+def main():
+    args = sys.argv[1:]
+    assert args[:3] == ['chat', '-Q', '-q']
+    assert args[4:] == ['-m', 'sparks', '--provider', 'lab-sparks', '--safe-mode', '-t', 'none', '--max-turns', '1', '--source', 'tool', '--cli']
+    assert args[3] == 'x' * 524288
+    assert os.getcwd() == os.environ['HOME'] == os.environ['HERMES_HOME']
+    assert 'ANTHROPIC_API_KEY' not in os.environ
+    c = json.load(open('config.yaml'))
+    assert c['model']['context_length'] == 1048576
+    assert c['custom_providers'][0]['models']['sparks']['context_length'] == 1048576
+    assert c['compression']['enabled'] is False
+    assert c['fallback_providers'] == [] and c['mcp_servers'] == {}
+    outside = OUTSIDE
+    for name in ('vault', 'approvals', 'secret', 'plugins', 'mcp'):
+        path = os.path.join(outside, name)
+        for mode in ('r', 'w'):
+            try:
+                open(path, mode)
+            except PermissionError:
+                pass
+            else:
+                raise AssertionError('uncontained filesystem')
+        try:
+            os.chmod(path, 0o777)
+        except PermissionError:
+            pass
+        else:
+            raise AssertionError('metadata escape')
+    try:
+        subprocess.run(['/bin/sh', '-c', 'touch ' + outside + '/shell'], check=True)
+    except PermissionError:
+        pass
+    else:
+        raise AssertionError('shell execution')
+    open('scratch-test', 'w').write('allowed')
+    print('{"candidates":[]}')
+`
+	code = strings.ReplaceAll(code, "OUTSIDE", "'"+outside+"'")
+	if err := os.WriteFile(filepath.Join(runtime, "hermes_cli", "main.py"), []byte(code), 0600); err != nil {
+		t.Fatal(err)
+	}
+	script := strings.ReplaceAll(extractionScript, "/home/benjamin/.hermes/hermes-agent", runtime)
+	calls := 0
+	extractionCommand = func(ctx context.Context, args ...string) *exec.Cmd {
+		calls++
+		return exec.CommandContext(ctx, "/usr/bin/python3", "-I", "-S", "-c", script)
+	}
+	t.Setenv("ANTHROPIC_API_KEY", "must-not-pass")
+	r := NewRunner(Config{Enabled: true})
+	res, err := r.Run(context.Background(), Request{MigratedDuty: "extractor/aion", Prompt: strings.Repeat("x", extractionPromptLimit)})
+	if err != nil || !res.DutyVerified() {
+		t.Fatal(res, err)
+	}
+	for _, prompt := range []string{strings.Repeat("x", extractionPromptLimit+1), "bad\x00prompt", "bad\xffprompt"} {
+		if _, err := r.Run(context.Background(), Request{MigratedDuty: "extractor/aion", Prompt: prompt}); err == nil {
+			t.Fatal("accepted invalid input")
+		}
+	}
+	if calls != 1 {
+		t.Fatal("overflow launched process", calls)
+	}
+	for _, name := range []string{"vault", "approvals", "secret", "plugins", "mcp"} {
+		b, err := os.ReadFile(filepath.Join(outside, name))
+		if err != nil || string(b) != "private" {
+			t.Fatal("side effect", name, err)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(outside, "shell")); !os.IsNotExist(err) {
+		t.Fatal("shell side effect", err)
+	}
+	// Missing isolation support must refuse before importing even the fake runtime.
+	script = strings.ReplaceAll(script, "if libc.syscall(444, 0, 0, 1) < 3", "if True")
+	if res, err := r.Run(context.Background(), Request{MigratedDuty: "extractor/aion", Prompt: "fixture"}); err == nil || res.DutyVerified() {
+		t.Fatal("isolation failure accepted", res, err)
+	}
+}
+
+func TestExtractionAuthorityProjection(t *testing.T) {
+	r := NewRunner(Config{Enabled: true})
+	duties := r.DutyAuthorities()
+	if len(duties) != 3 {
+		t.Fatal(duties)
+	}
+	for duty, a := range duties {
+		if !extractionDutyAllowed(duty, a) {
+			t.Fatal(duty, a)
+		}
+		a.Tools[0] = "shell"
+		*a.CeilingUSD = 100
+	}
+	if err := r.ValidateExtractionDuty("aion"); err != nil {
+		t.Fatal("projection mutated authority", err)
 	}
 }

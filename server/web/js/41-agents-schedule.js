@@ -549,8 +549,9 @@ function ritualRow(r) {
   // ceiling / model
   const ceil = el("span", "ritual-ceiling" + (r.ceilingDefault ? " muted" : ""));
   ceil.append(el("span", "ceil-usd", "$" + Number(r.ceilingUsd).toFixed(2)));
-  if (spiritModels[r.spirit]) ceil.append(el("span", "ceil-model", spiritModels[r.spirit]));
-  ceil.title = (r.ceilingDefault ? "chargebook default" : "ritual charge_usd") + (spiritModels[r.spirit] ? " · conduit " + spiritModels[r.spirit] : "");
+  const rowModel = r.model || r.provider || spiritModels[r.spirit];
+  if (rowModel) ceil.append(el("span", "ceil-model", rowModel));
+  ceil.title = (r.ceilingDefault ? "chargebook default" : "ritual charge_usd") + (rowModel ? " · model " + rowModel : "");
   row.append(ceil);
   // actions — run now (the spool), pause / resume (enabled: line surgery)
   const acts = el("span", "ritual-acts");
@@ -561,10 +562,11 @@ function ritualRow(r) {
   run.onclick = (e) => { e.stopPropagation(); spiritSpool(r.spirit, r.ritual, "", { stay: true }); };
   acts.append(run);
   if (!r.retired && (r.legacyActionable !== false || r.legacyEnabled) && (r.cadence || paused)) {
-    const tog = el("button", "sprt-quiet", paused ? "resume" : "pause");
-    tog.title = paused ? "delete the enabled: false line — the engine reschedules it"
+    const legacyPaused = r.legacyEnabled === undefined ? paused : !r.legacyEnabled;
+    const tog = el("button", "sprt-quiet", legacyPaused ? "resume" : "pause");
+    tog.title = legacyPaused ? "delete the enabled: false line — the engine reschedules it"
       : "write enabled: false — the engine unschedules it; run now stays a manual override";
-    tog.onclick = (e) => { e.stopPropagation(); setRitualEnabled(r, paused); };
+    tog.onclick = (e) => { e.stopPropagation(); setRitualEnabled(r, legacyPaused); };
     acts.append(tog);
   }
   row.append(acts);

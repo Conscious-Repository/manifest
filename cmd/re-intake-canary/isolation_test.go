@@ -133,9 +133,10 @@ func TestCanarySourceCallGraphIsolation(t *testing.T) {
 // Re-audited 2026-09-16: extractionDutyAllowed rejects the fixed re-intake duty
 // before inspecting Hermes extraction authority. The canary retains the exact local
 // provider, so Runner.Run still returns through runSuccessor only.
+// Re-audited: the extraction-only branch now embeds extraction.py; re-intake
+// still cannot enter it. The unreachable Claude Python launcher was removed.
 var reviewedSuccessorSources = map[string]string{
-	"../../hermes/claude_successor.py": "55f426b17ec69b530a92a7d8b13dd19c047dc8a14dfd77761b46c601e4878720",
-	"../../hermes/claude_successor.go": "f2c67d84ad8694042e9501f395ec6f166872867663aabb25a2c7f3f73afd0a91",
+	"../../hermes/claude_successor.go": "4609acc4cac9c725ebc6f4e6dd8883ac68506cad126ba7b5d5ed3869104269d7",
 	"../../hermes/runner.go":           "c4db245b5012e639cae924ee2c64decc4327312d562d411ab2d65ec98ddd7d6f",
 	"../../hermes/successor.go":        "b154048dfe670b02c46d4d2302d17ac9bc8d58ca499c0445e8d7bbd818d0e8af",
 	"../../hermes/successor.py":        "a7737229609b18c627c720f466858045b7aa06b4e03ed29ce1c0774d8385ae5c",

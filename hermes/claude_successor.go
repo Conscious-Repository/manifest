@@ -2,6 +2,7 @@ package hermes
 
 import (
 	"context"
+	_ "embed"
 	"encoding/json"
 	"io"
 	"os"
@@ -9,20 +10,29 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+	"unicode/utf8"
 )
 
-const extractionBinary = "/home/benjamin/.local/bin/hermes"
+// Use the installed wrapper's exact Python runtime, without invoking its shell.
+const extractionBinary = "/home/benjamin/.hermes/hermes-agent/venv/bin/python"
+
+// Half the pinned context in bytes conservatively reserves room for runtime
+// instructions and 4096 output tokens, without truncation or token-ratio guesses.
+const extractionPromptLimit = 512 * 1024
+
+//go:embed extraction.py
+var extractionScript string
 
 // Pin the sparks alias and its wire model using Hermes provider configuration.
 // The installed chat path does not expand model.aliases before API submission;
 // extra_body is Hermes' own provider setting that pins the canonical wire model.
 // Keep this invocation's config
 // private and fixed: no inherited fallback, MCP servers, skills or credentials.
-const extractionConfig = `{"model":{"aliases":{"sparks":"lab-sparks/deepseek-v4.1-flash"}},"custom_providers":[{"name":"lab-sparks","base_url":"http://192.168.87.11:8000/v1","api_key":"local","model":"deepseek-v4.1-flash","api_mode":"chat_completions","models":["sparks","deepseek-v4.1-flash"],"discover_models":false,"extra_body":{"model":"deepseek-v4.1-flash","tool_choice":"none"}}],"fallback_providers":[],"fallback_model":null,"mcp_servers":{}}`
+const extractionConfig = `{"compression":{"enabled":false},"model":{"context_length":1048576,"aliases":{"sparks":"lab-sparks/deepseek-v4.1-flash"}},"custom_providers":[{"name":"lab-sparks","base_url":"http://192.168.87.11:8000/v1","api_key":"local","model":"deepseek-v4.1-flash","api_mode":"chat_completions","models":{"sparks":{"context_length":1048576},"deepseek-v4.1-flash":{"context_length":1048576}},"discover_models":false,"extra_body":{"model":"deepseek-v4.1-flash","tool_choice":"none"}}],"fallback_providers":[],"fallback_model":null,"mcp_servers":{}}`
 
 // Package-private process seam; production always invokes the fixed CLI by argv.
 var extractionCommand = func(ctx context.Context, args ...string) *exec.Cmd {
-	return exec.CommandContext(ctx, extractionBinary, args...)
+	return exec.CommandContext(ctx, extractionBinary, append([]string{"-I", "-S", "-c", extractionScript}, args...)...)
 }
 
 func extractionDutyAllowed(duty string, a DutyAuthority) bool {
@@ -54,7 +64,7 @@ func defaultExtractionDuties() map[string]DutyAuthority {
 // proposals through the existing approval store. Local compute has no marginal
 // API charge; zero cost here is policy, not a claim of measured CLI telemetry.
 func (r *Runner) runExtractionSuccessor(ctx context.Context, req Request, a DutyAuthority) (Result, error) {
-	if !r.cfg.Enabled || !extractionDutyAllowed(req.MigratedDuty, a) || req.Profile != "" || req.Skills != "" || len(req.Prompt) > 64000 || strings.TrimSpace(req.Prompt) == "" {
+	if !r.cfg.Enabled || !extractionDutyAllowed(req.MigratedDuty, a) || req.Profile != "" || req.Skills != "" || len(req.Prompt) > extractionPromptLimit || !utf8.ValidString(req.Prompt) || strings.ContainsRune(req.Prompt, 0) || strings.TrimSpace(req.Prompt) == "" {
 		return Result{}, refuse("invalid Hermes extraction duty")
 	}
 	scratch, err := os.MkdirTemp("", "manifest-extraction-*")
@@ -71,11 +81,12 @@ func (r *Runner) runExtractionSuccessor(ctx context.Context, req Request, a Duty
 	}
 	ctx, cancel := context.WithTimeout(ctx, time.Duration(timeout)*time.Second)
 	defer cancel()
-	// -z does not forward max-turns in the installed runtime. Quiet chat prints
-	// only the response on stdout; session information goes to stderr.
-	cmd := extractionCommand(ctx, "chat", "-Q", "-q", req.Prompt, "-m", "sparks", "--provider", "lab-sparks", "--safe-mode", "-t", "none", "--max-turns", "1", "--source", "tool", "--cli")
+	// Prompt bytes travel by pipe; the contained launcher builds Hermes argv
+	// in-process so Linux MAX_ARG_STRLEN cannot reject accepted large prompts.
+	cmd := extractionCommand(ctx)
+	cmd.Stdin = strings.NewReader(req.Prompt)
 	cmd.Dir = scratch
-	cmd.Env = []string{"HOME=" + scratch, "HERMES_HOME=" + scratch, "TMPDIR=" + scratch, "PATH=/usr/bin:/bin", "LANG=C.UTF-8", "HERMES_MAX_TOKENS=4096", "PYTHONDONTWRITEBYTECODE=1", "NO_COLOR=1", "TERM=dumb"}
+	cmd.Env = []string{"HOME=" + scratch, "HERMES_HOME=" + scratch, "TMPDIR=" + scratch, "PATH=/usr/bin:/bin", "LANG=C.UTF-8", "HERMES_MAX_TOKENS=4096", "HERMES_SAFE_MODE=1", "HERMES_IGNORE_USER_CONFIG=1", "HERMES_IGNORE_RULES=1", "PYTHONDONTWRITEBYTECODE=1", "NO_COLOR=1", "TERM=dumb"}
 	cmd.WaitDelay = time.Second
 	var output limitedOutput
 	cmd.Stdout = &output
@@ -128,4 +139,22 @@ func (r *Runner) ValidateExtractionDuty(ritual string) error {
 		return refuse("extraction requires lab-sparks/deepseek-v4.1-flash")
 	}
 	return nil
+}
+
+// DutyAuthorities projects the resolved contracts, including extractor defaults.
+// These declarations describe routing bounds, not runtime liveness or parity.
+func (r *Runner) DutyAuthorities() map[string]DutyAuthority {
+	if r == nil {
+		return nil
+	}
+	out := make(map[string]DutyAuthority, len(r.cfg.Duties))
+	for name, a := range r.cfg.Duties {
+		a.Tools = append([]string(nil), a.Tools...)
+		if a.CeilingUSD != nil {
+			ceiling := *a.CeilingUSD
+			a.CeilingUSD = &ceiling
+		}
+		out[name] = a
+	}
+	return out
 }

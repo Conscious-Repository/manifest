@@ -1,21 +1,20 @@
-"""Read-only subscription launcher for bounded migrated extraction duties.
-The app prepares an isolated auth/config directory. Landlock admits runtime reads
-and that scratch directory only; seccomp denies metadata and namespace escapes.
-No engine imports, plugins, user hooks or project settings are loaded.
-"""
+"""Fail-closed filesystem boundary for the fixed Hermes extractor runtime."""
 import ctypes
 import errno
 import os
 import platform
 import sys
+import sysconfig
 
 
 def main():
     if sys.platform != 'linux' or platform.machine() not in ('x86_64', 'aarch64'):
         raise RuntimeError('isolation')
-    binary, scratch, budget, model = sys.argv[1:5]
-    if model != 'claude-sonnet-5' or not 0 < float(budget) <= 4:
-        raise RuntimeError('authority')
+    sys.dont_write_bytecode = True
+    scratch = os.environ['HERMES_HOME']
+    runtime = '/home/benjamin/.hermes/hermes-agent'
+    if os.getcwd() != scratch or os.environ['HOME'] != scratch:
+        raise RuntimeError('isolation')
     libc = ctypes.CDLL(None, use_errno=True)
     sec = ctypes.CDLL('libseccomp.so.2', use_errno=True)
     if libc.syscall(444, 0, 0, 1) < 3 or libc.prctl(38, 1, 0, 0, 0):
@@ -36,8 +35,8 @@ def main():
                 raise RuntimeError('isolation')
         finally:
             os.close(fd)
-    read = (1 << 0) | (1 << 2) | (1 << 3)
-    for path in ('/usr', '/lib', '/lib64', '/etc', '/proc/self', '/sys/devices/system/cpu'):
+    read = (1 << 2) | (1 << 3)
+    for path in ('/usr', '/lib', '/lib64', '/sys/devices/system/cpu'):
         if os.path.exists(path):
             allow(path, read)
     for path in ('/proc/cpuinfo', '/proc/meminfo'):
@@ -46,8 +45,27 @@ def main():
     for path in ('/dev/null', '/dev/urandom', '/dev/random'):
         if os.path.exists(path):
             allow(path, (1 << 1) | (1 << 2))
-    allow(binary, (1 << 0) | (1 << 2))
-    allow(scratch, all_rights)
+    # No caller home, Hermes state, plugins, MCP configuration, or runtime
+    # dotfiles. Only installed Python code/dependencies and public assets.
+    for path in ('/etc/ld.so.cache', '/etc/localtime', '/etc/ssl/certs'):
+        if os.path.exists(path):
+            allow(path, read if os.path.isdir(path) else 1 << 2)
+    allow(runtime, 1 << 3)  # directory listing only, no blanket file reads
+    allow(sysconfig.get_path("stdlib"), read)
+    for name in os.listdir(runtime):
+        if name.endswith('.py') and not os.path.islink(os.path.join(runtime, name)):
+            allow(os.path.join(runtime, name), 1 << 2)
+    for name in ('agent', 'hermes_cli', 'tools', 'providers', 'gateway', 'cron',
+                 'assets', 'locales', 'hermes_agent.egg-info', 'venv/lib'):
+        allow(os.path.join(runtime, name), read)
+    # The built-in custom provider is runtime code for lab-sparks, not a
+    # caller-installed plugin. No other plugin source is admitted.
+    custom = os.path.join(runtime, 'plugins/model-providers/custom')
+    if os.path.isdir(custom):
+        allow(custom, read)
+    # No executable grants anywhere, including scratch: shell/subprocess exec
+    # is forbidden. Hermes runs in this already-started isolated interpreter.
+    allow(scratch, all_rights & ~(1 << 0))
     if libc.syscall(446, ruleset, 0):
         raise RuntimeError('isolation')
     os.close(ruleset)
@@ -61,7 +79,8 @@ def main():
     if not ctx:
         raise RuntimeError('isolation')
     try:
-        for name in ('ptrace','process_vm_writev','mount','setns','unshare',
+        for name in ('ptrace','process_vm_readv','process_vm_writev','mount','setns','unshare',
+                     'execve','execveat',
                      'io_uring_setup','chmod','fchmod','fchmodat','fchmodat2',
                      'chown','lchown','fchown','fchownat','utime','utimes',
                      'futimesat','utimensat','setxattr','lsetxattr','fsetxattr',
@@ -73,16 +92,23 @@ def main():
             raise RuntimeError('isolation')
     finally:
         sec.seccomp_release(ctx)
-    os.chdir(scratch)
-    os.execv(binary, [binary, '-p', '--output-format', 'stream-json', '--verbose',
-        '--model', model, '--tools', '', '--strict-mcp-config', '--mcp-config', '{"mcpServers":{}}',
-        '--safe-mode', '--setting-sources', '', '--no-session-persistence',
-        '--max-turns', '1', '--max-budget-usd', budget,
-        '--system-prompt', 'Extract candidates from supplied data only. No tools or external effects. Return only the requested JSON.'])
+    # A conservative byte budget also bounds tokens without a guessed ratio:
+    # 512 KiB leaves half of the pinned 1,048,576 context for runtime/output.
+    prompt = sys.stdin.buffer.read(524289)
+    if not prompt or len(prompt) > 524288:
+        raise RuntimeError('input')
+    prompt = prompt.decode('utf-8', errors='strict')
+    sys.path.insert(0, runtime + '/venv/lib/python%d.%d/site-packages' % sys.version_info[:2])
+    sys.path.insert(0, runtime)
+    sys.argv = ['hermes', 'chat', '-Q', '-q', prompt, '-m', 'sparks',
+                '--provider', 'lab-sparks', '--safe-mode', '-t', 'none',
+                '--max-turns', '1', '--source', 'tool', '--cli']
+    from hermes_cli.main import main as hermes_main
+    hermes_main()
 
 
 try:
     main()
-except BaseException:
+except Exception:
     sys.stderr.write('isolation')
     sys.exit(1)

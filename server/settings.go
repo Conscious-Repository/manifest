@@ -422,7 +422,7 @@ func (s *Server) handleAgentsHermes(w http.ResponseWriter, r *http.Request) {
 		"home":              home,
 		"dutyRefusals":      s.dutyRefusals(time.Now()),
 		"reIntakePrimary":   s.reIntakePrimaryProjection("/home/benjamin/workbench-staging/excalibur-retirement"),
-		"authorityBoundary": "read-only / edit on metis and restart; tool-free successor helper implemented (Linux Landlock + seccomp, one step, local DeepSeek only); no duty routed; live usage contract unverified",
+		"authorityBoundary": "read-only / edit on metis and restart; Hermes extractor duties use isolated lab-sparks/deepseek-v4.1-flash (Linux Landlock + seccomp, one step, approval-gated); routing requires enablement and Manifest ownership fences; cost telemetry unavailable; semantic parity not asserted",
 		"runner":            map[string]any{"enabled": s.hermes != nil, "bin": s.hermesBin()},
 	}
 	if s.hosts != nil {
@@ -431,6 +431,9 @@ func (s *Server) handleAgentsHermes(w http.ResponseWriter, r *http.Request) {
 			"bin":     s.hermesBin(), "timeoutSeconds": s.hosts.Hermes.TimeoutSeconds,
 			"model": s.hosts.Hermes.Model, "toolsets": s.hosts.Hermes.Toolsets, "duties": s.hosts.Hermes.Duties,
 		}
+	}
+	if s.hermes != nil {
+		out["runner"].(map[string]any)["duties"] = s.hermes.runner.DutyAuthorities()
 	}
 	// gateway
 	if b, err := os.ReadFile(filepath.Join(home, "gateway_state.json")); err == nil {
