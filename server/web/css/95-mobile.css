@@ -49,6 +49,40 @@
 
   /* ---- chrome ---- */
   .app-shell { height: 100dvh; min-height: 100dvh; }   /* not 100vh — iOS toolbars */
+  /* iOS Safari zooms the page into any focused field set under 16px and
+     never zooms back out (2026-09-17: the Reject reason box left the whole
+     app zoomed). Every text control on the phone band reads at 16px at
+     least — the composer, chips and pickers already did by design; this
+     is the floor for the rest. */
+  textarea, select, input:where(:not([type="checkbox"], [type="radio"], [type="range"], [type="file"], [type="color"])) { font-size: max(16px, 1em) !important; }
+
+  /* ---- the phone system (2026-09-17 audit): what FEED, CONTACTS and CHAT
+     already did, applied to every surface ----
+     · the top bar names the page, so the in-page title drops and the head's
+       actions take the row;
+     · the top bar's meta line never pans — one ellipsised line;
+     · mono meta reads a point larger (10→11, 11→12) — the desktop tokens
+       are tuned for a 27" screen at arm's length;
+     · a pill in content wraps its text instead of running off the screen;
+     · the shared small controls meet the touch floor. */
+  .agent-head > .agent-title { display: none; }
+  .agent-head { padding-top: 0; }
+  .agent-head > .agent-actions { width: 100%; min-width: 0; }
+  .crumb-bar .crumb-meta { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  :root { --fs-2xs: 11px; --fs-xs: 12px; }
+  .pill { max-width: 100%; height: auto; min-height: 28px; white-space: normal; overflow-wrap: anywhere; text-align: center; }
+  .sprt-quiet, .attendee-add-btn, .aion-done-toggle, .re-intake-toggle, .appr-expand, .tdo-quiet { min-height: var(--touch-sm); }
+  .attendee-chip { min-height: 32px; }
+  .attendee-remove { min-width: 28px; min-height: 28px; display: inline-flex; align-items: center; justify-content: center; }
+  .view-tab { min-height: var(--touch); padding-inline: var(--sp-3); }
+  /* section toggles and inline name links read as rows, not 15px text */
+  .pp-section-head, .aion-sec-label, .aion-done-toggle { min-height: var(--touch-sm); display: flex; align-items: center; }
+  .sprt-spirit, .ritual-job-name, .pp3-link { display: inline-flex; align-items: center; min-height: 36px; }
+  /* an approval's diff scrolls inside its own box, never the page; the
+     create-note title row wraps its date · field · .md */
+  .appr-collapse, .appr-diff { min-width: 0; max-width: 100%; }
+  .appr-title-row { flex-wrap: wrap; row-gap: var(--sp-2); }
+  .appr-title-input { flex: 1 1 160px; min-width: 0; min-height: var(--touch-sm); }
   body { overscroll-behavior-y: none; }                /* no rubber-band under sheets */
   /* stale under a two-row top bar; flex sizing makes it unnecessary here */
   .prop-shell { min-height: 0; }
@@ -212,16 +246,33 @@
   .focus-row { min-height: 52px; }
   .slot { min-height: 52px; }
 
-  /* ---- TODOS: 44px check · 16px text over domain pill · age right; no drag ---- */
-  .tdo-handle { display: none; }
-  .tdo-row {
-    display: grid; grid-template-columns: 40px minmax(0, 1fr) auto;
-    align-items: center; row-gap: var(--sp-1); min-height: 52px; padding: var(--sp-3) var(--sp-2);
-  }
-  .tdo-check { grid-row: 1 / 3; width: 40px; min-height: 44px; font-size: var(--fs-xl); }
-  .tdo-text { grid-column: 2; grid-row: 1; font-size: var(--fs-xl); }
-  .tdo-pill { grid-column: 2; grid-row: 2; justify-self: start; }
-  .tdo-right { grid-column: 3; grid-row: 1 / 3; margin-left: 0; }
+  /* ---- TASKS (2026-09-17 pass): the top bar carries the counts, so the
+     in-page meta, the keyboard hints and the duplicate add controls go
+     (the top bar's ＋ is capture); search leads, the lenses scroll as one
+     strip; a row is a 16px title beside a 44px opener, over one meta line
+     (domain · age · state · Work →) indented under the title; the board
+     stacks to one column. No drag on glass. ---- */
+  #todosMeta, .tdo-capture, .tdo-toolbar > .pill.light, .tdo-sec-hint, .tdo-handle { display: none; }
+  .tdo-toolbar { display: flex; flex-direction: column; align-items: stretch; gap: var(--sp-4); padding: var(--sp-4) 0 var(--sp-5); }
+  #todosSearch { order: -1; width: 100%; min-height: var(--touch); }
+  .tdo-lenses, .tdo-layouts { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; gap: var(--sp-3); max-width: 100%; min-width: 0; }
+  .tdo-lenses::-webkit-scrollbar, .tdo-layouts::-webkit-scrollbar { display: none; }
+  .tdo-lenses .filter-chip, .tdo-layouts .filter-chip { min-height: var(--touch-sm); white-space: nowrap; }
+  .tdo-layouts { margin-left: 0; }
+  .tdo-row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2) var(--sp-3); padding: var(--sp-3) 0; min-height: 60px; }
+  .tdo-row > .tdo-check { order: 0; flex: none; width: var(--touch); height: var(--touch); display: inline-flex; align-items: center; justify-content: center; font-size: var(--fs-xl); margin: calc(var(--sp-2) * -1) 0; }
+  .tdo-row > .tdo-task-title { order: 1; flex: 1 1 calc(100% - 2 * var(--touch) - 2 * var(--sp-3)); min-width: 0; font-size: var(--fs-xl); line-height: 1.35; }
+  .tdo-row > .tdo-open-chevron { order: 2; flex: none; width: var(--touch); height: var(--touch); display: inline-flex; align-items: center; justify-content: center; font-size: var(--fs-2xl); color: var(--base-40); background: none; border: 0; padding: 0; margin: calc(var(--sp-2) * -1) 0; }
+  .tdo-row > .tdo-pill, .tdo-row > .tdo-agent-chip, .tdo-row > .tdo-status, .tdo-row > .tdo-prio, .tdo-row > .tdo-blocked, .tdo-row > .tdo-right { order: 3; }
+  .tdo-row > .tdo-pill { margin-left: calc(var(--touch) + var(--sp-3)); }
+  .tdo-row > .tdo-right { margin-left: auto; align-items: center; gap: var(--sp-3); flex-wrap: nowrap; }
+  .tdo-right .tdo-age { min-width: 0; margin: 0; }
+  .tdo-right .tdo-tether, .tdo-right .uw-x, .tdo-right .tdo-work-action, .tdo-right .delegation-chip { visibility: visible; min-height: 36px; display: inline-flex; align-items: center; padding: 0 var(--sp-2); }
+  .tdo-right .tdo-tether:not(.on), .tdo-right .tdo-delegate { display: none; } /* tethering lives in the panel */
+  .tdo-right .uw-x, .tdo-right .tdo-tether { min-width: 36px; justify-content: center; }
+  .tdo-row.done { padding-left: var(--sp-2); }
+  .tdo-dec-row { flex-wrap: wrap; row-gap: var(--sp-2); }
+  .tdo-board { grid-template-columns: minmax(0, 1fr); }
 
   /* ---- PROPERTIES: the tab-bar (#reToggle) wraps; pane goes full-width ---- */
   .prop-shell { display: block; }
@@ -318,7 +369,12 @@
   .go-rock-line { align-items: center; min-height: 44px; }
   .go-until { flex-basis: 100%; align-self: flex-start; width: fit-content; margin-top: var(--sp-1); }
   .go-stage { align-items: center; min-height: 44px; padding-left: var(--sp-4); }
-  .go-task { align-items: center; min-height: 44px; }
+  /* a goal's task row: text takes the line, owner/age/controls wrap under it
+     (the PROPERTY page did this first; every rock window now reads the same) */
+  .go-task { align-items: center; min-height: 44px; flex-wrap: wrap; gap: var(--sp-2) var(--sp-4); padding-left: var(--sp-7); }
+  .go-task.in-stage { padding-left: var(--sp-9); }
+  .go-task-text { flex: 1 1 calc(100% - 52px); min-width: 0; overflow-wrap: anywhere; font-size: var(--fs-xl); line-height: 1.35; }
+  .go-task-ghost, .go-task-ghost.in-stage { margin-left: var(--sp-7); }
   .go-check { min-width: 36px; min-height: 44px; font-size: var(--fs-lg); }
 
   /* ---- AION: rows to touch scale; registry tables stack ---- */
@@ -399,7 +455,7 @@
   .ritual-health { grid-column: 2; grid-row: 3; align-self: center; justify-self: end; white-space: normal; }
   .ritual-health:empty { display: none; }
   .ritual-acts { display: flex; grid-column: 1; grid-row: 3; justify-self: start; flex-wrap: wrap; gap: var(--sp-4); }
-  .ritual-acts button { min-height: var(--touch-sm); padding: var(--sp-3) var(--sp-6); border: 1px solid var(--line); border-radius: var(--radius); }
+  .ritual-acts button, .sched-board .ritual-acts button { min-height: var(--touch-sm); padding: var(--sp-3) var(--sp-6); border: 1px solid var(--line); border-radius: var(--radius); }
   .ritual-error, .ritual-note { overflow-wrap: anywhere; line-height: 1.5; }
   .sprt-run-top, .sprt-live, .run-detail-head { flex-wrap: wrap; }
   .sprt-run-title, .sprt-live-text { flex: 1 1 100%; white-space: normal; overflow-wrap: anywhere; }
@@ -579,19 +635,7 @@
     margin: calc(var(--sp-5) * -1) calc(var(--sp-5) * -1) calc(var(--sp-5) * -1) 0;
   }
 
-  /* ---- TASKS rows: the trailing controls were 10–12px glyphs (⧗ › ✕);
-     each gets a 30×44 box. ⇢ delegate folds away — its 10px target was
-     untappable and the panel's DO chip is the same action. ---- */
-  .tdo-right { align-items: center; gap: 0; }
-  .tdo-right .tdo-age { margin-right: var(--sp-2); }
-  .tdo-right .uw-x, .tdo-right .tdo-tether, .tdo-right .tdo-open-chevron {
-    min-width: 30px; min-height: var(--touch); padding: 0;
-    display: inline-flex; align-items: center; justify-content: center;
-  }
-  .tdo-right .tdo-delegate { display: none; }
-  /* "⇅ drag to rank" is false here (the handle is hidden above) and pushed
-     the section label past 360px */
-  .tdo-sec-hint { display: none; }
+  /* (TASKS rows: see the TASKS block above — 2026-09-17 pass) */
 
   /* ---- TASK panel (93-todo-panel's own <1100 sheet): dvh + home indicator;
      priority chips (36×20) and the ＋ add links to touch height ---- */
@@ -675,14 +719,8 @@
 }
 
 @media (max-width: 860px) {
-  .tdo-toolbar { align-items: stretch; }
-  .tdo-lenses { width: 100%; }
-  #todosSearch { flex: 1; width: 100%; min-width: 0; }
-  .tdo-board { grid-template-columns: minmax(0, 1fr); }
-  .tdo-card-acts .pill, .tdo-work-action { min-height: var(--touch-sm); }
-  .tdo-row { display: flex; flex-wrap: wrap; gap: var(--sp-3); }
-  .tdo-row > .tdo-task-title { flex-basis: calc(100% - 60px); }
-  .tdo-right { width: 100%; justify-content: flex-end; flex-wrap: wrap; }
+  /* (TASKS toolbar/rows: the TASKS block above — 2026-09-17 pass) */
+  .tdo-card-acts .pill { min-height: var(--touch-sm); }
   .tdo-panel { width: auto; }
 }
 
@@ -712,11 +750,7 @@
 
 .mf-chat-toggle { display: none; }
 @media (max-width: 860px) {
-  /* Keep search readable instead of squeezing it between three actions. */
-  #todosSearch { flex: 1 0 100%; }
-  .tdo-row > .tdo-task-title { flex-basis: calc(100% - 46px); }
-  .tdo-row > .tdo-pill { margin-left: 46px; }
-  .tdo-row > .tdo-right { width: auto; margin-left: auto; }
+  /* (TASKS search/rows: the TASKS block above — 2026-09-17 pass) */
 
   /* Fold the directory so conversations, not navigation, own the screen. */
   .chat-shell { gap: var(--sp-4); padding: 0 var(--sp-6) env(safe-area-inset-bottom); min-height: 0; }

@@ -340,13 +340,6 @@ function rankedRow(r, idx) {
     right.append(dg);
   }
   {
-    // › opens the panel (plan · thread · assignee)
-    const open = el("button", "tdo-open-chevron", "›");
-    open.title = "open — plan, thread";
-    open.onclick = (e) => { e.stopPropagation(); openTodoPanel(r); };
-    right.append(open);
-  }
-  {
     // ✕ removes the row: personal → archived; property/aion → deleted from
     // its source file (there is no archive for those)
     const isDelete = r.source === "property" || r.source === "aion" || r.source === "realestate";
@@ -364,6 +357,13 @@ function rankedRow(r, idx) {
     right.append(x);
   }
   row.append(right);
+  // › opens the panel (plan · thread · assignee) — the row's trailing
+  // affordance, outside the meta cluster so the phone can give it its own
+  // 44px column beside the title (2026-09-17)
+  const open = el("button", "tdo-open-chevron", "›");
+  open.title = "open — plan, thread";
+  open.onclick = (e) => { e.stopPropagation(); openTodoPanel(r); };
+  row.append(open);
   return row;
 }
 
