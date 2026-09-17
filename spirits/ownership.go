@@ -41,7 +41,8 @@ func (s *Store) projectOwnership(r *RitualRow) {
 			if r.SuccessorEnabled {
 				r.Retired = false
 				r.RetirementReason = ""
-				r.Enabled = r.LegacyEnabled
+				// Board enablement follows the validated successor, not the legacy schedule.
+				r.Enabled = true
 				r.PausedReason = ""
 				r.Provider, r.Model, r.Toolset, r.MaxSteps = "lab-sparks", "deepseek-v4.1-flash", "none / no_mcp", "1"
 			}

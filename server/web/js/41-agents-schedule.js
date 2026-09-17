@@ -112,7 +112,11 @@ function schedGroupOf(r) {
   if (!r.cadence) return "internal";
   return "yours";
 }
+function manifestSuccessor(r) {
+  return r.successorEnabled === true && r.configuredOwner === "manifest";
+}
 function internalNote(r) {
+  if (manifestSuccessor(r)) return "Manifest successor enabled · no cadence configured";
   if (r.spirit === "extractor") return "run by the transcript sinks";
   if (r.spirit === "sage") return "run by the / bar";
   return "on demand — run with /";
@@ -135,6 +139,8 @@ function ritualRuns(r) {
 function ritualHealth(r, runs) {
   if (["ownership-conflict", "retirement-conflict", "handoff-unverified"].includes(r.migrationState)) return { state: "unknown", why: r.migrationDetail };
   if (r.retired) return { state: "paused", why: r.retirementReason };
+  // Engine observations and run history describe the predecessor, not successor liveness.
+  if (manifestSuccessor(r)) return { state: "unknown", why: "Successor enabled; legacy engine history does not establish successor health." };
   const observed = r.observation;
   if (observed && ["late", "failed", "paused", "stopped", "unknown", "unconfigured"].includes(observed.health)) return { state: observed.health, why: observed.why || observed.lastError || "" };
   if (!r.valid) return { state: "invalid", why: r.error || "invalid frontmatter" };
@@ -459,7 +465,11 @@ function ritualRow(r) {
   // runtime — the primary tree's engine (legacy, retiring); Hermes jobs paint
   // through hermesJobRow with the alfred chip
   const runtime = legacyEngineChip("ritual-runtime", r.harness);
-  if (r.migrationState) {
+  if (manifestSuccessor(r)) {
+    runtime.textContent = "Hermes · Manifest";
+    runtime.className = "harness-chip alfred ritual-runtime";
+    runtime.title = r.migrationDetail;
+  } else if (r.migrationState) {
     runtime.textContent = r.capabilityPaused ? "paused · capability unavailable" : r.engineRetired ? "retired · engine unavailable" : r.retired ? "retired · history" : r.migrationState === "legacy-retiring" ? "legacy · retiring" : r.configuredOwner + " · " + r.migrationState;
     runtime.title = (r.harness || primaryHarnessName()) + " harness tree · " + r.path + " · " + r.migrationDetail;
   } else if (r.harness && r.harness !== "excalibur") {

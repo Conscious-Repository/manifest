@@ -1,11 +1,14 @@
 package spirits
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
+
+	"manifest/excaliburretire"
 )
 
 func TestOwnershipProjectionAndControls(t *testing.T) {
@@ -81,11 +84,48 @@ func TestExtractorFenceRefusesLegacyWithoutEnableFlag(t *testing.T) {
 		if row.ConfiguredOwner != "manifest" || row.LegacyActionable || row.MigrationState != "successor-disabled" {
 			t.Fatal(row)
 		}
+		data := t.TempDir()
+		dir := filepath.Join(data, "excalibur-decommission")
+		if err := os.MkdirAll(dir, 0700); err != nil {
+			t.Fatal(err)
+		}
+		plan := excaliburretire.Plan{Version: 1}
+		receipt, _ := json.Marshal(excaliburretire.Receipt{Version: 1, PlanHash: plan.Hash(), Engine: "retired; unavailable"})
+		for name, body := range map[string][]byte{plan.Hash() + ".json": plan.Bytes(), "retired.json": receipt} {
+			if err := os.WriteFile(filepath.Join(dir, name), body, 0600); err != nil {
+				t.Fatal(err)
+			}
+		}
+		st.WithConnectorHandoffs(data)
 		st.WithDutyOwners(map[string]string{"extractor/" + ritual: "manifest"})
-		row = RitualRow{Spirit: "extractor", Ritual: ritual, Valid: true, LegacyEnabled: true, Retired: true, PausedReason: "legacy retired"}
+		row = RitualRow{Spirit: "extractor", Ritual: ritual, Valid: true, LegacyEnabled: false, Retired: true, PausedReason: "legacy retired"}
 		st.projectOwnership(&row)
-		if !row.Enabled || !row.SuccessorEnabled || !row.FenceProtected || row.CapabilityPaused || row.Retired || row.PausedReason != "" || row.LegacyActionable || row.Provider != "lab-sparks" || row.Model != "deepseek-v4.1-flash" {
+		if !row.EngineRetired || row.LegacyEnabled || !row.Enabled || !row.SuccessorEnabled || !row.FenceProtected || row.CapabilityPaused || row.Retired || row.PausedReason != "" || row.LegacyActionable || row.Provider != "lab-sparks" || row.Model != "deepseek-v4.1-flash" {
 			t.Fatal(row)
+		}
+		// Exercise the complete board projection with disabled legacy files.
+		duties := [][2]string{{"extractor", ritual}, {"concierge", "briefing"}, {"ea-coordinator", "waiting-on"}, {"sage", "skill-cast"}, {"warden", "audit"}, {"extractor", "re-intake"}}
+		for _, duty := range duties {
+			file := filepath.Join(root, "spirits", duty[0], "rituals", duty[1]+".md")
+			if err := os.MkdirAll(filepath.Dir(file), 0700); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(file, []byte("---\nritual: "+duty[1]+"\nenabled: false\n---\n"), 0600); err != nil {
+				t.Fatal(err)
+			}
+		}
+		rows := st.Rituals(time.Now())
+		if len(rows) != len(duties) {
+			t.Fatal(rows)
+		}
+		for _, got := range rows {
+			migrated := got.Spirit == "extractor" && got.Ritual == ritual
+			if got.Enabled != migrated || got.Retired == migrated || got.SuccessorEnabled != migrated || got.LegacyActionable || !got.EngineRetired {
+				t.Fatalf("board projection: %+v", got)
+			}
+			if migrated && (got.Cadence != "" || got.NextFire != "" || got.PausedReason != "" || got.RetirementReason != "") {
+				t.Fatalf("on-demand successor inherited legacy state: %+v", got)
+			}
 		}
 	}
 }

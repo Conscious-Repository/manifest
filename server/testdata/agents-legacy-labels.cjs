@@ -109,3 +109,32 @@ assert.equal(retired.querySelector('.ritual-acts').children.length, 1);
 assert.equal(retired.querySelector('.ritual-acts').children[0].disabled, true);
 assert.ok(context.scheduleRuntimeOrder({hermes:{}}, {}) < 0);
 assert.equal(context.scheduleRuntimeOrder({}, {}), 0);
+
+const rowText = node => typeof node === 'string' ? node : node.textContent + node.children.map(rowText).join('');
+
+// Successor ownership takes precedence over retired engine labels and observations.
+for (const ritual of ['aion', 'real-estate', 'ooda-email', 'future-duty']) {
+  const data = {spirit:'extractor', ritual, valid:true, enabled:true, ceilingUsd:1,
+    configuredOwner:'manifest', successorEnabled:true, engineRetired:true, retired:false,
+    migrationState:'successor-enabled', legacyActionable:false, legacyEnabled:false,
+    cadence:'', observation:{health:'paused', why:'paused in engine registry'}};
+  const successor = ownershipRow(data);
+  assert.equal(context.schedGroupOf(data), 'internal');
+  assert.equal(context.schedGroupOf({...data, cadence:'0 9 * * *'}), 'yours');
+  assert.equal(successor.querySelector('.ritual-runtime').textContent, 'Hermes · Manifest');
+  assert.ok(!successor.cls.includes('paused'));
+  assert.doesNotMatch(rowText(successor), /retired|paused/);
+  assert.match(rowText(successor), /no cadence configured/);
+  assert.equal(context.ritualHealth(data, [{outcome:'error'}]).state, 'unknown');
+  assert.equal(successor.querySelector('.ritual-acts').children[0].disabled, true);
+  for (const extra of [{successorEnabled:false}, {configuredOwner:'blocked'}]) {
+    assert.doesNotMatch(ownershipRow({...data, ...extra}).querySelector('.ritual-runtime').textContent, /Hermes/);
+  }
+}
+for (const [spirit, ritual] of [['concierge','briefing'], ['ea-coordinator','waiting-on'], ['sage','skill-cast'], ['warden','audit'], ['extractor','re-intake']]) {
+  const data = {spirit, ritual, enabled:false, retired:true, engineRetired:true, migrationState:'retired', legacyActionable:false};
+  assert.equal(context.schedGroupOf(data), 'paused');
+  assert.equal(ownershipRow(data).querySelector('.ritual-runtime').textContent, 'retired · engine unavailable');
+  assert.equal(context.ritualHealth(data, []).state, 'paused');
+}
+console.log('agents Manifest successor projection passed');
