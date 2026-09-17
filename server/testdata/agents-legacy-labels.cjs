@@ -210,3 +210,58 @@ console.log('agents current directory and connector successors passed');
 // New agents default to the supported runtime; historical spirits are not offered.
 assert.match(js('44-agents-new.js'), /runtime: "profile"/);
 assert.doesNotMatch(js('44-agents-new.js'), /opts.append\(option\("spirit"/);
+
+// Current schedule and header project history without changing the source rows.
+const board = el('div');
+const next = el('div');
+const currentContext = vm.createContext({
+  el: (tag, cls, text) => Object.assign(el(tag, cls, text), {setAttribute() {}}),
+  document: {getElementById: id => id === 'spiritNextUp' ? next : null},
+  els: {spiritRitualBoard: board, spiritsView: {hidden:false}},
+  emptyRow: text => el('div', '', text),
+  statusDot: () => el('span'),
+  reIntakeStatusRow: () => el('div'),
+  setCrumbMeta: text => { currentContext.crumb = text; },
+});
+vm.runInContext(js('40-agents.js'), currentContext);
+vm.runInContext(js('41-agents-schedule.js'), currentContext);
+vm.runInContext(`
+  const historical = ['briefing','waiting-on','skill-cast','audit','re-intake'].map(ritual => ({
+    spirit:'predecessor', ritual, retired:true, engineRetired:true, enabled:false,
+    retirementReason:'Excalibur engine retired/unavailable', valid:true,
+    nextFire:'2099-01-01T00:00:00Z'
+  }));
+  const migrated = ['email-sync','granola-sync','pocket-sync','aion','ooda-email','real-estate'].map(ritual => ({
+    spirit:ritual.endsWith('-sync') ? 'ea-coordinator' : 'extractor', ritual, configuredOwner:'manifest', successorEnabled:true,
+    retired:true, engineRetired:true, enabled:false, valid:true
+  }));
+  hermesInfo = {runner:{enabled:true}, cron:{list:[]}};
+  spiritStatusCache = {enabled:true, engineRetired:true, harnesses:[
+    {name:'excalibur',engineRetired:true,engineAlive:false},
+    {name:'kairos',engineAlive:true}, {name:'zeck',engineAlive:true},
+    {name:'hermes',engineAlive:false}
+  ]};
+  renderSpiritRituals(historical.concat(migrated));
+`, currentContext);
+assert.equal(board.querySelectorAll('.ritual-row').length, 6);
+assert.equal(board.querySelectorAll('.ritual-runtime').filter(n => n.textContent === 'Manifest · sync').length, 3);
+assert.equal(board.querySelectorAll('.ritual-runtime').filter(n => n.textContent === 'Hermes · Manifest').length, 3);
+assert.doesNotMatch(rowText(board), /PAUSED|legacy blocked|Excalibur engine retired|engine unavailable/);
+assert.equal(next.children.length, 0);
+assert.match(currentContext.crumb, /Manifest connected.*kairos ok.*zeck ok.*Hermes runner enabled.*6 rituals/);
+assert.doesNotMatch(currentContext.crumb, /excalibur|hermes down/i);
+assert.equal(vm.runInContext('spiritRitualRows.length', currentContext), 11);
+assert.equal(vm.runInContext('historical.every(r => r.retired && !r.enabled)', currentContext), true);
+assert.equal(currentContext.currentScheduleRow({engineRetired:true, enabled:true}), false);
+assert.equal(currentContext.currentScheduleRow({enabled:false, harness:'kairos'}), true);
+board.children = [];
+vm.runInContext(`
+  hermesInfo = {runner:{enabled:false},cron:{list:[{id:'paused-current',enabled:false}]}};
+  renderSpiritRituals(historical);
+`, currentContext);
+assert.match(rowText(board), /PAUSED/);
+assert.equal(board.querySelectorAll('.ritual-row').length, 1);
+assert.match(currentContext.crumb, /Hermes runner disabled/);
+vm.runInContext('hermesInfo = null; updateSpiritsCrumb();', currentContext);
+assert.match(currentContext.crumb, /Hermes status unknown/);
+console.log('agents current schedule and header passed');

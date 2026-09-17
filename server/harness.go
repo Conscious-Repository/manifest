@@ -145,9 +145,10 @@ func (s *Server) findRun(id string) (Harness, spirits.RunSummary, string, bool) 
 
 // harnessHeartbeat is one harness's engine liveness for the status payload.
 type harnessHeartbeat struct {
-	Name        string `json:"name"`
-	EngineAlive bool   `json:"engineAlive"`
-	Heartbeat   string `json:"heartbeat,omitempty"`
+	EngineRetired bool   `json:"engineRetired"`
+	Name          string `json:"name"`
+	EngineAlive   bool   `json:"engineAlive"`
+	Heartbeat     string `json:"heartbeat,omitempty"`
 }
 
 func (s *Server) harnessHeartbeats() []harnessHeartbeat {
@@ -157,7 +158,7 @@ func (s *Server) harnessHeartbeats() []harnessHeartbeat {
 			continue
 		}
 		alive, at := h.Spirits.EngineAlive()
-		hb := harnessHeartbeat{Name: h.Name, EngineAlive: alive}
+		hb := harnessHeartbeat{Name: h.Name, EngineAlive: alive, EngineRetired: h.Spirits.EngineRetired()}
 		if !at.IsZero() {
 			hb.Heartbeat = at.Format(time.RFC3339)
 		}

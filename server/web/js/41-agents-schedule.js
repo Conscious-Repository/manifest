@@ -113,6 +113,10 @@ function schedGroupOf(r) {
 function manifestSuccessor(r) {
   return r.successorEnabled === true && r.configuredOwner === "manifest";
 }
+// Keep API/history rows intact; only the current schedule excludes predecessors.
+function currentScheduleRow(r) {
+  return manifestSuccessor(r) || (!r.retired && !r.engineRetired);
+}
 function internalNote(r) {
   if (manifestSuccessor(r)) return "Manifest successor enabled · no cadence configured";
   if (r.spirit === "extractor") return "run by the transcript sinks";
@@ -201,7 +205,7 @@ function scheduleRuntimeOrder(a, b) {
 function renderSpiritRituals(rows) {
   spiritRitualRows = rows;
   const host = els.spiritRitualBoard; host.innerHTML = "";
-  const all = rows.concat(hermesJobList().map(hermesRowOf));
+  const all = rows.filter(currentScheduleRow).concat(hermesJobList().map(hermesRowOf));
   renderNextUp(all);
   const byName = (a, b) => (a.spirit + "/" + a.ritual).localeCompare(b.spirit + "/" + b.ritual);
   const fireAt = (r) => { const t = new Date(r.nextFire || "").getTime(); return isNaN(t) ? Infinity : t; };
@@ -229,7 +233,7 @@ function renderSpiritRituals(rows) {
     note: "no cadence — spooled by the transcript sinks or the / bar",
     empty: "No sink-driven rituals.",
   });
-  schedGroup(host, "paused", "PAUSED", groups.paused, {
+  if (groups.paused.length) schedGroup(host, "paused", "PAUSED", groups.paused, {
     empty: "Nothing paused.",
   });
   if (typeof renderSpiritIndex === "function") renderSpiritIndex(); // counts derive from these rows

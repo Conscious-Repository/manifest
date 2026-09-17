@@ -95,7 +95,7 @@ for (const n of board.find((x) => x.has('sched-degraded'))) {
 }
 assert.equal(board.children[1].textContent, 'successor refusal: no duty routed');
 const heads = board.find((x) => x.has('sched-group')).map((x) => x.find((y) => y.has('aion-sec-title'))[0].textContent);
-assert.deepEqual(heads, ['SCHEDULED', 'ON DEMAND', 'PAUSED']);
+assert.deepEqual(heads, ['SCHEDULED', 'ON DEMAND']); // no empty Paused group
 assert.equal(board.children.indexOf(board.find((x) => x.has('sched-group'))[0]), 2, 'the first schedule group is the third child');
 assert.doesNotMatch(js('41-agents-schedule.js'), /"sched-degraded", reIntakePrimarySummary\(/);
 assert.doesNotMatch(js('42-agents-runs.js'), /"run-why", reIntakePrimarySummary\(/);

@@ -94,13 +94,18 @@ function updateSpiritsCrumb() {
   if (typeof setCrumbMeta !== "function" || els.spiritsView.hidden) return;
   const st = spiritStatusCache;
   const bits = [];
-  if (st && st.enabled && (st.harnesses || []).length > 1) {
-    // federation: per-harness liveness ("excalibur ok · hermes down")
-    st.harnesses.forEach((h) => bits.push(h.name + (h.engineAlive ? " ok" : " down")));
-  } else if (st && st.enabled) bits.push(st.engineAlive ? "engine ok" : "engine down");
-  else if (st) bits.push("not configured");
-  if (typeof spiritRitualRows !== "undefined" && spiritRitualRows.length) {
-    bits.push(spiritRitualRows.length + " ritual" + (spiritRitualRows.length === 1 ? "" : "s"));
+  if (st && st.enabled) {
+    bits.push("Manifest connected");
+    // Harness heartbeats describe tree engines, not the successor runner.
+    (st.harnesses || []).filter(h => !h.engineRetired && h.name !== "hermes")
+      .forEach(h => bits.push(h.name + (h.engineAlive ? " ok" : " down")));
+  }
+  const hz = typeof hermesInfo !== "undefined" ? hermesInfo : null;
+  if (hz && hz.runner) bits.push(hz.runner.enabled ? "Hermes runner enabled" : "Hermes runner disabled");
+  else bits.push("Hermes status unknown");
+  if (typeof spiritRitualRows !== "undefined") {
+    const count = spiritRitualRows.filter(currentScheduleRow).length;
+    if (count) bits.push(count + " ritual" + (count === 1 ? "" : "s"));
   }
   if (typeof spiritWeekSpend === "function") {
     const ws = spiritWeekSpend();
