@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"manifest/approvals"
 	"manifest/domainextract"
@@ -19,17 +20,18 @@ func main() {
 	id := flag.String("job", "", "exact original job ID")
 	source := flag.String("source", "", "exact vault-relative source path")
 	auth := flag.String("owner-authorization", "", "owner instruction reference authorizing this attempt")
-	operation := flag.String("operation", "pre-provider", "pre-provider or post-runtime-fix")
+	operation := flag.String("operation", "pre-provider", "pre-provider, post-runtime-fix or rebased")
 	sourceHash := flag.String("source-sha256", "", "exact original source SHA256")
 	parent := flag.String("parent-attempt", "", "exact parent attempt ID")
+	prior := flag.String("prior-attempts", "", "comma-separated prior attempt IDs (rebased)")
 	runtime := flag.String("runtime-fix", "", "runtime fix fingerprint or commit reference")
 	flag.Parse()
-	if err := run(*config, *id, *source, *auth, *operation, *sourceHash, *parent, *runtime); err != nil {
+	if err := run(*config, *id, *source, *auth, *operation, *sourceHash, *parent, *runtime, *prior); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
 }
-func run(path, id, source, auth, operation, sourceHash, parent, runtime string) error {
+func run(path, id, source, auth, operation, sourceHash, parent, runtime, prior string) error {
 	var cfg struct {
 		DataDir   string `json:"dataDir"`
 		Vault     string `json:"vaultPath"`
@@ -67,6 +69,14 @@ func run(path, id, source, auth, operation, sourceHash, parent, runtime string) 
 		job, err = svc.RetryPreProvider(id, source, auth)
 	case "post-runtime-fix":
 		job, err = svc.RetryPostRuntimeFix(id, source, sourceHash, parent, auth, runtime)
+	case "rebased":
+		var ids []string
+		for _, p := range strings.Split(prior, ",") {
+			if p = strings.TrimSpace(p); p != "" {
+				ids = append(ids, p)
+			}
+		}
+		job, err = svc.RetryRebased(id, source, sourceHash, auth, ids)
 	default:
 		return fmt.Errorf("unknown reconciliation operation")
 	}

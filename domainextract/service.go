@@ -52,7 +52,25 @@ type Job struct {
 	SpentUSD          float64                     `json:"spentUsd"`
 	Candidates        []approvals.Proposal        `json:"candidates,omitempty"`
 	Published         int                         `json:"published"`
+	// Summary is the model's own explanation for the batch. It is retained so an
+	// empty (non-publication) outcome can record WHY nothing was proposed.
+	Summary string `json:"summary,omitempty"`
 }
+
+// replySummary extracts the model's summary from a validated extraction reply.
+// It is presentation evidence only: it never participates in candidate checks.
+func replySummary(reply string) string {
+	var r Response
+	if strict([]byte(reply), &r) != nil {
+		return ""
+	}
+	s := strings.TrimSpace(r.Summary)
+	if len(s) > 1200 {
+		s = s[:1200]
+	}
+	return s
+}
+
 type Service struct {
 	dir, vault, harness string
 	cfg                 Config
@@ -209,7 +227,7 @@ func (s *Service) run(path string) {
 		return
 	}
 	s.mu.Unlock()
-	if j.State == "completed" || j.State == "refused" || j.State == "uncertain" {
+	if j.State == "completed" || j.State == "refused" || j.State == "uncertain" || j.State == "empty" {
 		return
 	}
 	if j.Version != 1 || j.Replay || j.OwnershipRevision == 0 {
@@ -294,6 +312,7 @@ func (s *Service) run(path string) {
 			return
 		}
 		j.Candidates = candidates
+		j.Summary = replySummary(res.Reply)
 		j.State = "verified"
 		j.Reason = "execution and candidate contract verified; pending publication"
 		if s.save(j) != nil {
@@ -317,6 +336,14 @@ func (s *Service) run(path string) {
 		if s.save(j) != nil {
 			return
 		}
+	}
+	// An empty candidate set is a legitimate model judgement, not a filed batch.
+	// Reporting it as "candidates filed" would be a false green: nothing was
+	// published and the owner has nothing to review. Record it as its own
+	// non-publication state and keep the model's own explanation as evidence.
+	if len(j.Candidates) == 0 {
+		finish("empty", "no candidates proposed: "+j.Summary)
+		return
 	}
 	finish("completed", "candidates filed for owner review; no vault writes")
 }
@@ -354,6 +381,9 @@ func (s *Service) report(j Job) error {
 	}
 	if j.State == "refused" {
 		outcome = "error"
+	}
+	if j.State == "empty" {
+		outcome = "empty"
 	}
 	names := []string{}
 	for _, d := range j.Input.Documents {

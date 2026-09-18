@@ -99,6 +99,51 @@ func TestRecoverVerifiedBatchWithoutModelOrDecisionReplay(t *testing.T) {
 		}
 	}
 }
+
+// An empty candidate batch is a legitimate model judgement and must never be
+// reported as a successful publication. It records its own state, carries the
+// model's explanation, publishes nothing, and is terminal for the sweep.
+func TestEmptyCandidateBatchIsNotReportedAsFiled(t *testing.T) {
+	dir, vault := t.TempDir(), t.TempDir()
+	input := inputFixture()
+	writeInput(t, vault, input)
+	ap := approvals.NewStore(filepath.Join(dir, "artifacts"))
+	harness := prepareHandoff(t, dir, "aion", 1)
+	s := New(context.Background(), dir, vault, harness, Config{Aion: true}, nil, ap)
+	reply := `{"candidates":[],"summary":"Transcript has no commitments with owners or dates."}`
+	candidates, err := ValidateReply(input, reply)
+	if err != nil || len(candidates) != 0 {
+		t.Fatalf("empty batch must validate as zero candidates: %v", err)
+	}
+	if got := replySummary(reply); got == "" {
+		t.Fatal("summary must be retained as evidence")
+	}
+	j := Job{Version: 1, OwnershipRevision: 1, ID: input.ID(), Input: input, State: "verified", Started: time.Now(), Candidates: candidates, Summary: replySummary(reply)}
+	if err = s.save(j); err != nil {
+		t.Fatal(err)
+	}
+	s.sweep()
+	raw, _ := os.ReadFile(filepath.Join(s.dir, j.ID+".json"))
+	json.Unmarshal(raw, &j)
+	if j.State != "empty" {
+		t.Fatalf("empty batch must not be recorded as %q", j.State)
+	}
+	if j.State == "completed" || j.Published != 0 || len(ap.List("pending")) != 0 {
+		t.Fatal("empty batch must publish nothing")
+	}
+	if !strings.Contains(j.Reason, "no candidates proposed") || !strings.Contains(j.Reason, "no commitments") {
+		t.Fatalf("reason must carry the model explanation: %q", j.Reason)
+	}
+	// Terminal: a later sweep must not re-run or re-publish it.
+	before := j
+	s.sweep()
+	raw, _ = os.ReadFile(filepath.Join(s.dir, j.ID+".json"))
+	json.Unmarshal(raw, &j)
+	if j.State != before.State || j.Reason != before.Reason {
+		t.Fatal("empty outcome must be terminal for the sweep")
+	}
+}
+
 func TestInterruptedAndStaleDoNotExecute(t *testing.T) {
 	for _, state := range []string{"running", "verified"} {
 		t.Run(state, func(t *testing.T) {
