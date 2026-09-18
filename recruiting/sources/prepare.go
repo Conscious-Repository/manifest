@@ -29,6 +29,18 @@ func (OpenAlex) PrepareScope(s Scope) (Scope, error) {
 		_, err := openAlexWorkPath(ref)
 		return s, err
 	}
+	if strings.TrimSpace(s.Fields[openAlexFieldInstitution]) != "" {
+		// an institution sweep resolves its subject by fetching, which a pure
+		// check cannot do; what it CAN refuse without a fetch is the budget
+		// and the years window
+		if _, err := openAlexWorkBudget(s); err != nil {
+			return Scope{}, err
+		}
+		if years := strings.TrimSpace(s.Fields[openAlexFieldYears]); years != "" && openAlexYearsRe.FindStringSubmatch(years) == nil {
+			return Scope{}, fmt.Errorf("openalex: %s %q is not a year (2020) or a window (2018-2026)", openAlexFieldYears, years)
+		}
+		return s, nil
+	}
 	plan, err := openAlexPlanScope(s)
 	if err != nil {
 		return Scope{}, err
@@ -60,6 +72,10 @@ func (OpenAlex) PrepareScope(s Scope) (Scope, error) {
 func (GitHub) PrepareScope(s Scope) (Scope, error) {
 	if ref := strings.TrimSpace(s.Fields["repo"]); ref != "" {
 		_, _, err := SplitRepoRef(ref)
+		return s, err
+	}
+	if ref := strings.TrimSpace(s.Fields[githubFieldOrg]); ref != "" {
+		_, err := SplitOrgRef(ref)
 		return s, err
 	}
 	return queryScope(s, "github")

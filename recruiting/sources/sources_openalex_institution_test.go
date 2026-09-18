@@ -122,3 +122,14 @@ func TestOpenAlexInstitutionQueryNarrowsAndUnknownRefuses(t *testing.T) {
 		t.Fatalf("an unmatched name refuses in words: %v", err)
 	}
 }
+
+// The run substrate checks a scope before it fetches; an institution names
+// a scope without a query, and the pure check still refuses a bad window.
+func TestOpenAlexInstitutionIsAScope(t *testing.T) {
+	if _, err := (OpenAlex{}).PrepareScope(Scope{Fields: map[string]string{"institution": "Yale University"}}); err != nil {
+		t.Fatalf("an institution is a scope on its own: %v", err)
+	}
+	if _, err := (OpenAlex{}).PrepareScope(Scope{Fields: map[string]string{"institution": "Yale University", "years": "soon"}}); err == nil {
+		t.Fatal("a malformed years window is refused before any fetch")
+	}
+}

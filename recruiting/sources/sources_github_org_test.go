@@ -85,3 +85,13 @@ func TestGitHubOrgDirectoryClaimsNoEdges(t *testing.T) {
 		t.Fatal("a repo reference is not an org")
 	}
 }
+
+// The run substrate checks a scope before it fetches; an org names a scope.
+func TestGitHubOrgIsAScope(t *testing.T) {
+	if _, err := (GitHub{}).PrepareScope(Scope{Fields: map[string]string{"org": "numpy"}}); err != nil {
+		t.Fatalf("an org is a scope on its own: %v", err)
+	}
+	if _, err := (GitHub{}).PrepareScope(Scope{Fields: map[string]string{"org": "a/b"}}); err == nil {
+		t.Fatal("a repo reference is not an org")
+	}
+}
