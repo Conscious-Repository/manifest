@@ -171,7 +171,7 @@ func TestReducerStrictJSONAndNoWrite(t *testing.T) {
 		t.Fatal(r)
 	}
 }
-func TestReducerOversizedWholeContext(t *testing.T) {
+func TestReducerWholeContextWithinHermesBound(t *testing.T) {
 	root := planFixture(t, "aion")
 	for _, name := range []string{"backlog", "people", "heuristics"} {
 		putPlan(t, root, "system/aion/"+name+".md", strings.Repeat("x", 30000))
@@ -188,8 +188,8 @@ func TestReducerOversizedWholeContext(t *testing.T) {
 	if r := ValidateReducer(in); r.MechanicalState != "reducer-valid-mechanical-only" {
 		t.Fatal(r)
 	}
-	if (Input{Ritual: "aion", Documents: in.Documents, Context: m.context}).Validate() == nil {
-		t.Fatal("production limit lifted")
+	if (Input{Ritual: "aion", Documents: in.Documents, Context: m.context}).Validate() != nil {
+		t.Fatal("bounded Hermes context rejected")
 	}
 }
 

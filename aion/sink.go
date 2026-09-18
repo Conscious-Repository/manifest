@@ -5,6 +5,7 @@ import (
 	"crypto/sha1"
 	"encoding/hex"
 	"encoding/json"
+	"log"
 	"os"
 	"path/filepath"
 	"strings"
@@ -19,9 +20,9 @@ import (
 // it receives touched vault paths from the ONE kernel watcher (via the
 // vaultindex reindex callback — no second subscription), filters to
 // knowledge-zone notes whose frontmatter categories include "aion", diffs
-// them against a content-hash cursor, and spools a targeted ritual for the
-// extractor spirit's aion ritual. The engine does the thinking (§7); a missed spool
-// is recoverable — queued paths persist and a ticker retries.
+// them against a content-hash cursor, and submits to the domain owner.
+// Manifest/Hermes owns production execution; the spool interface is historical
+// compatibility only. Queued paths persist and a ticker retries acceptance.
 type ExtractSink struct {
 	spec          DomainSpec
 	vaultRoot     string
@@ -34,7 +35,13 @@ type ExtractSink struct {
 	c  cursor
 }
 
-// Spooler is what the sink needs from the spirits store; *spirits.Store
+// NoteDispatcher submits a single source to the current domain owner. Success
+// means durable acceptance; execution and approval remain the worker’s job.
+type NoteDispatcher interface {
+	SubmitNote(path string) error
+}
+
+// Spooler is the historical compatibility interface; *spirits.Store
 // satisfies it.
 type Spooler interface {
 	SpoolRunNow(spirit, ritual, request, skill string) error
@@ -210,6 +217,7 @@ func (s *ExtractSink) Start(ctx context.Context) {
 // Eligible unseen notes enqueue + flush; repeat edits obey the domain policy.
 func (s *ExtractSink) Notify(paths []string) {
 	changed := false
+	retry := false
 	s.mu.Lock()
 	for _, rel := range paths {
 		rel = filepath.ToSlash(rel)
@@ -223,6 +231,7 @@ func (s *ExtractSink) Notify(paths []string) {
 		if (s.spec.Once && s.c.Notes[rel].Hash != "") || s.c.Notes[rel].Hash == h {
 			continue // unchanged since last spool
 		}
+		retry = true
 		if !contains(s.c.Queued, rel) {
 			s.c.Queued = append(s.c.Queued, rel)
 			changed = true
@@ -232,13 +241,13 @@ func (s *ExtractSink) Notify(paths []string) {
 		s.saveLocked()
 	}
 	s.mu.Unlock()
-	if changed {
+	if retry {
 		s.Flush()
 	}
 }
 
-// Flush spools queued paths when the engine is alive. A busy spirit
-// (double-spool guard) or dead engine leaves the queue intact.
+// Flush submits bounded work to the current owner. Historical spoolers alone
+// require engine liveness; unsuccessful submissions leave the queue intact.
 func (s *ExtractSink) Flush() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -258,6 +267,11 @@ func (s *ExtractSink) Flush() {
 	if s.sp == nil {
 		return
 	}
+	if dispatcher, ok := s.sp.(NoteDispatcher); ok {
+		s.flushNotesLocked(dispatcher)
+		return
+	}
+	// Historical-only path. A retired/dead engine never receives a spool.
 	if alive, _ := s.sp.EngineAlive(); !alive {
 		return
 	}
@@ -292,6 +306,36 @@ func (s *ExtractSink) Flush() {
 		}
 	}
 	s.c.Queued = append([]string{}, rest...)
+	s.saveLocked()
+}
+
+// Single-note identities are independent of watcher batching and restart order.
+// Failed submissions stay queued without blocking the other bounded attempts.
+func (s *ExtractSink) flushNotesLocked(dispatcher NoteDispatcher) {
+	if len(s.c.Queued) == 0 {
+		return
+	}
+	pending := make([]string, 0, len(s.c.Queued))
+	var failed []string
+	for n, rel := range s.c.Queued {
+		if n >= maxBatchNotes {
+			pending = append(pending, rel)
+			continue
+		}
+		hash, ok := s.hashNote(rel)
+		if !ok {
+			failed = append(failed, rel)
+			continue
+		}
+		if err := dispatcher.SubmitNote(rel); err != nil {
+			log.Printf("extraction %s: submission retained for retry: %v", s.spec.Name, err)
+			failed = append(failed, rel)
+			continue
+		}
+		s.c.Notes[rel] = noteMark{Hash: hash, SpooledAt: time.Now().UTC().Format(time.RFC3339)}
+	}
+	// Rotate failed attempts so a blocked prefix cannot starve later notes.
+	s.c.Queued = append(pending, failed...)
 	s.saveLocked()
 }
 

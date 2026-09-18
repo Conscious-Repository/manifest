@@ -37,6 +37,21 @@ func TestConfirmNudgesExtractionSink(t *testing.T) {
 	srv.UseApprovals(store)
 	srv.UseAionSink(sink)
 
+	retry := func(want int) {
+		t.Helper()
+		req := httptest.NewRequest("POST", "/api/spirits/approvals/abcdefabcdef/retry-extraction", nil)
+		req.SetPathValue("id", "abcdefabcdef")
+		rec := httptest.NewRecorder()
+		srv.handleApprovalExtractionRetry(rec, req)
+		if rec.Code != want {
+			t.Fatalf("retry: %d %s", rec.Code, rec.Body.String())
+		}
+	}
+	retry(404) // pending proposals must never trigger extraction
+	if len(sink.got) != 0 {
+		t.Fatal("pending transcript dispatched")
+	}
+
 	req := httptest.NewRequest("POST", "/api/spirits/approvals/abcdefabcdef/confirm",
 		strings.NewReader(`{"editCategories":true,"categories":["sync","aion"],"title":"rj weekly"}`))
 	req.SetPathValue("id", "abcdefabcdef")
@@ -56,5 +71,10 @@ func TestConfirmNudgesExtractionSink(t *testing.T) {
 	// the sink was nudged with the post-retitle written path
 	if len(sink.got) != 1 || len(sink.got[0]) != 1 || sink.got[0][0] != "log/2026-08-07 rj weekly.md" {
 		t.Fatalf("sink nudge: %v", sink.got)
+	}
+	retry(202)
+	after, err := os.ReadFile(filepath.Join(vault, "log", "2026-08-07 rj weekly.md"))
+	if err != nil || string(after) != string(got) || len(sink.got) != 2 || sink.got[1][0] != sink.got[0][0] {
+		t.Fatal("retry rewrote source or lost approved path")
 	}
 }

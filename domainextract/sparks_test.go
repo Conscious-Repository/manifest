@@ -142,8 +142,8 @@ func TestSparksLargeInputRequiresMeasuredTokens(t *testing.T) {
 	if e != nil {
 		t.Fatal(e)
 	}
-	if s.input.Validate() == nil {
-		t.Fatal("legacy guard changed")
+	if s.input.Validate() != nil {
+		t.Fatal("bounded Hermes context rejected")
 	}
 	cap, a := sparksEvidence(t, s)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.Write([]byte(responseSparks())) }))

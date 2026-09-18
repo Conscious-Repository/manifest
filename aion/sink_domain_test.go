@@ -1,6 +1,7 @@
 package aion
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -118,3 +119,55 @@ func TestReSinkBaselinesHistoricOodaCorpus(t *testing.T) {
 }
 
 func contains2(s, sub string) bool { return strings.Contains(s, sub) }
+
+type successorDispatcher struct {
+	domainSpooler
+	paths []string
+	fail  string
+}
+
+func (d *successorDispatcher) SubmitNote(path string) error {
+	if path == d.fail {
+		return fmt.Errorf("unavailable")
+	}
+	d.paths = append(d.paths, path)
+	return nil
+}
+func TestSuccessorFiltersAndIndependentRetries(t *testing.T) {
+	vault, data := t.TempDir(), t.TempDir()
+	d := &successorDispatcher{fail: "log/blocked.md"}
+	sink := NewExtractSink(ExtractorDomain, vault, "system", "extrinsic", data, d)
+	writeNote(t, vault, "log/blocked.md", "aion")
+	writeNote(t, vault, "log/approved.md", "sync,aion")
+	writeNote(t, vault, "log/sync.md", "sync")
+	sink.Notify([]string{"log/blocked.md", "log/approved.md", "log/sync.md"})
+	if sink.QueuedCount() != 1 || len(d.paths) != 1 || d.paths[0] != "log/approved.md" || len(d.spooled) != 0 {
+		t.Fatal("bad successor routing", d.paths)
+	}
+	d.fail = ""
+	sink = NewExtractSink(ExtractorDomain, vault, "system", "extrinsic", data, d)
+	sink.Notify([]string{"log/blocked.md", "log/approved.md", "log/sync.md"})
+	if sink.QueuedCount() != 0 || len(d.paths) != 2 {
+		t.Fatal("retry lost or duplicated", d.paths)
+	}
+}
+
+func TestSuccessorFlushRemainsBounded(t *testing.T) {
+	vault := t.TempDir()
+	d := &successorDispatcher{}
+	sink := NewExtractSink(ExtractorDomain, vault, "system", "extrinsic", t.TempDir(), d)
+	var paths []string
+	for n := 0; n < 6; n++ {
+		path := fmt.Sprintf("log/%d.md", n)
+		writeNote(t, vault, path, "aion")
+		paths = append(paths, path)
+	}
+	sink.Notify(paths)
+	if len(d.paths) != 4 || sink.QueuedCount() != 2 {
+		t.Fatal("unbounded submission")
+	}
+	sink.Flush()
+	if len(d.paths) != 6 || sink.QueuedCount() != 0 {
+		t.Fatal("remainder lost")
+	}
+}

@@ -612,6 +612,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/spirits/runs/{id}/prompt", s.handleSpiritsRunPrompt)
 	mux.HandleFunc("GET /api/spirits/approvals", s.handleSpiritsApprovals)
 	mux.HandleFunc("POST /api/spirits/approvals/{id}/confirm", s.handleSpiritsApprovalConfirm)
+	mux.HandleFunc("POST /api/spirits/approvals/{id}/retry-extraction", s.handleApprovalExtractionRetry)
 	mux.HandleFunc("POST /api/spirits/approvals/{id}/reject", s.handleSpiritsApprovalReject)
 	mux.HandleFunc("POST /api/spirits/approvals/{id}/dismiss", s.handleSpiritsApprovalDismiss)
 	mux.HandleFunc("POST /api/spirits/approvals/{id}/aion", s.handleSpiritsApprovalAion)

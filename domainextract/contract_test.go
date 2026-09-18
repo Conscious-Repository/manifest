@@ -213,3 +213,19 @@ func TestOodaArtifactProvenance(t *testing.T) {
 		t.Fatal("accepted mismatched source hash")
 	}
 }
+
+func TestHermesCompleteInputBound(t *testing.T) {
+	input := inputFixture()
+	input.Context["system/aion/backlog.md"] = strings.Repeat("x", 200000)
+	if prompt, err := input.Prompt(); err != nil || !strings.Contains(prompt, input.Context["system/aion/backlog.md"]) {
+		t.Fatal("complete production-sized context rejected or truncated", err)
+	}
+	input.Context["system/aion/backlog.md"] = strings.Repeat("x", hermes.ExtractionPromptLimit)
+	if _, err := input.Prompt(); err == nil {
+		t.Fatal("oversized context accepted")
+	}
+	input.Context["system/aion/backlog.md"] = strings.Repeat("<", 100000)
+	if _, err := input.Prompt(); err == nil {
+		t.Fatal("JSON expansion bypassed bound")
+	}
+}

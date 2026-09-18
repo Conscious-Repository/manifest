@@ -135,8 +135,10 @@ func TestCanarySourceCallGraphIsolation(t *testing.T) {
 // provider, so Runner.Run still returns through runSuccessor only.
 // Re-audited: the extraction-only branch now embeds extraction.py; re-intake
 // still cannot enter it. The unreachable Claude Python launcher was removed.
+// Seam audit: claude_successor exports the unchanged 512 KiB constant.
+// extractionDutyAllowed still excludes re-intake; no call or effect changed.
 var reviewedSuccessorSources = map[string]string{
-	"../../hermes/claude_successor.go": "4609acc4cac9c725ebc6f4e6dd8883ac68506cad126ba7b5d5ed3869104269d7",
+	"../../hermes/claude_successor.go": "75e6e1d692d6f1be446b8dc5bab93466adb25780482316458e1fa802f6dd997c",
 	"../../hermes/runner.go":           "c4db245b5012e639cae924ee2c64decc4327312d562d411ab2d65ec98ddd7d6f",
 	"../../hermes/successor.go":        "b154048dfe670b02c46d4d2302d17ac9bc8d58ca499c0445e8d7bbd818d0e8af",
 	"../../hermes/successor.py":        "a7737229609b18c627c720f466858045b7aa06b4e03ed29ce1c0774d8385ae5c",

@@ -14,8 +14,12 @@ import (
 
 	"manifest/aion"
 	"manifest/approvals"
+	"manifest/hermes"
 	"manifest/secrets"
 )
+
+// Leave room for the extraction instruction envelope within Hermes’ fixed cap.
+const maxInputBytes = hermes.ExtractionPromptLimit - 4096
 
 type Document struct {
 	Name string `json:"name"`
@@ -53,7 +57,7 @@ func (i Input) Validate() error {
 		seen[d.Name] = true
 	}
 	b, _ := json.Marshal(i)
-	if len(b) > 56000 {
+	if len(b) > maxInputBytes || len(i.promptUnchecked()) > hermes.ExtractionPromptLimit {
 		return fmt.Errorf("extraction input exceeds bounded context; no truncation")
 	}
 	return nil

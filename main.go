@@ -884,7 +884,7 @@ func main() {
 			srv.UseDomainExtraction(extractionRouter)
 			extraction.Start()
 		}
-		srv.UseAionSink(sinkFan{aionSink, reSink}) // transcript-confirm → instant extraction spool (both domains)
+		srv.UseAionSink(sinkFan{aionSink, reSink}) // transcript-confirm → durable domain submission (both domains)
 		// email-sync auto-append (standing consent): a confirmed thread note
 		// authorizes later appends, so matching append-vault-note proposals
 		// apply without a card; refusals stay pending and render normally.

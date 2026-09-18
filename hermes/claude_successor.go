@@ -18,7 +18,9 @@ const extractionBinary = "/home/benjamin/.hermes/hermes-agent/venv/bin/python"
 
 // Half the pinned context in bytes conservatively reserves room for runtime
 // instructions and 4096 output tokens, without truncation or token-ratio guesses.
-const extractionPromptLimit = 512 * 1024
+const ExtractionPromptLimit = 512 * 1024
+
+const extractionPromptLimit = ExtractionPromptLimit
 
 //go:embed extraction.py
 var extractionScript string

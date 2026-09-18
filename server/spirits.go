@@ -333,7 +333,7 @@ func (s *Server) handleSpiritsApprovalConfirm(w http.ResponseWriter, r *http.Req
 		return
 	}
 	// Extraction nudge: a freshly-written transcript with the aion category
-	// should spool the extractor NOW, not on the watcher's debounce. The
+	// should submit extraction now, before the watcher's debounce. The
 	// sink re-checks category + content hash, so non-aion notes and the
 	// watcher's duplicate event are no-ops. The written filename is the
 	// (possibly retitled) apply path, lowercased by the apply.

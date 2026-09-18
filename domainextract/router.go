@@ -37,6 +37,9 @@ func (r *Router) SpoolRunNow(spirit, ritual, request, skill string) error {
 		if r.Legacy == nil {
 			return fmt.Errorf("no legacy executor")
 		}
+		if alive, _ := r.Legacy.EngineAlive(); !alive {
+			return fmt.Errorf("historical executor unavailable; no fallback")
+		}
 		return r.Legacy.SpoolRunNow(spirit, ritual, request, skill)
 	}
 	if skill != "" || ritual == "ooda-email" {
@@ -72,6 +75,21 @@ type Route struct {
 }
 
 func (r *Router) For(ritual string) *Route { return &Route{router: r, ritual: ritual} }
+
+// SubmitNote bypasses historical engine liveness for migrated duties. The
+// existing worker checks authority and holds the shared ownership fence.
+func (r *Route) SubmitNote(path string) error {
+	if !r.router.Config.Enabled(r.ritual) {
+		return fmt.Errorf("successor duty disabled; historical extraction is not dispatched by the note sink")
+	}
+	input, err := ReadInput(r.router.Vault, r.ritual, []Document{{Name: path}})
+	if err != nil {
+		return err
+	}
+	_, err = r.router.Submit(input)
+	return err
+}
+
 func (r *Route) EngineAlive() (bool, time.Time) {
 	if r.router.Config.Enabled(r.ritual) {
 		r.router.mu.RLock()

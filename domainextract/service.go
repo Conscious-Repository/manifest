@@ -274,7 +274,12 @@ func (s *Service) run(path string) {
 		}
 		res, e := s.runner.Run(s.ctx, hermes.Request{MigratedDuty: "extractor/" + j.Input.Ritual, Prompt: prompt})
 		if e != nil || !res.DutyVerified() {
-			finish("uncertain", "bounded execution not verified; owner review required")
+			reason := "bounded execution not verified; owner review required"
+			var refusal *hermes.Refusal
+			if errors.As(e, &refusal) {
+				reason += ": " + refusal.Reason
+			}
+			finish("uncertain", reason)
 			return
 		}
 		j.Model = res.Model
@@ -407,7 +412,7 @@ func ReadInput(vault, ritual string, documents []Document) (Input, error) {
 				}
 				i.Context[name] = string(b)
 				b, _ = json.Marshal(i)
-				if len(b) > 56000 {
+				if len(b) > maxInputBytes {
 					return fmt.Errorf("domain context exceeds bound")
 				}
 				return nil
