@@ -35,7 +35,8 @@ func (Manual) Kind() Kind { return KindManual }
 func (Manual) Scope() []ScopeField {
 	return []ScopeField{
 		{Key: "role", Label: "role", Required: true},
-		{Key: "query", Label: "candidate url, name, or note", Required: true},
+		{Key: "query", Label: "candidate url, name, or note"},
+		{Key: ManualFieldNames, Label: "or a list of names", Placeholder: "one per line — the people you choose to put under a place (consent: owner_import)"},
 		{Key: "org", Label: "org"},
 		// ⚠ `known` is NOT offered here, and was never usable: it is a boolean
 		// the form rendered as a text box, and the field that gives it meaning
@@ -153,6 +154,9 @@ func (m Manual) Draft(e Entry) (CandidateDraft, error) {
 // Search runs the adapter over a Scope. For the manual source the "search" is
 // the owner's own line: exactly one draft, no network call, no pagination.
 func (m Manual) Search(_ context.Context, s Scope) ([]CandidateDraft, error) {
+	if names := strings.TrimSpace(s.Fields[ManualFieldNames]); names != "" {
+		return m.importNames(names, s)
+	}
 	d, err := m.Draft(Entry{
 		Text:  s.Query,
 		Role:  s.Role,
@@ -213,4 +217,83 @@ func nameFromURL(raw string) string {
 		return strings.Join(strings.FieldsFunc(p, func(r rune) bool { return r == '-' || r == '_' }), " ")
 	}
 	return u.Host
+}
+
+// ManualFieldNames is the scope field carrying a pasted list of people —
+// the owner's own import (social graph plan D-E: "pasted names are a
+// first-class intake … recorded as consent: owner_import, no provenance
+// claimed beyond 'the owner typed it', no contact details").
+const ManualFieldNames = "names"
+
+// ManualImportConsent is the consent word every imported draft carries in
+// its note and evidence: the owner chose these people; no source did.
+const ManualImportConsent = "owner_import"
+
+// SplitNames reads a pasted list: one name per line, or separated by
+// commas or semicolons on one line. Blank entries are dropped; a line that
+// is a URL or carries an address is refused outright, because a list
+// that mixes people with links is not a names list.
+func SplitNames(text string) ([]string, error) {
+	var out []string
+	seen := map[string]bool{}
+	for _, line := range strings.FieldsFunc(text, func(r rune) bool { return r == '\n' || r == '\r' || r == ';' }) {
+		parts := []string{line}
+		if !strings.Contains(text, "\n") {
+			parts = strings.Split(line, ",")
+		}
+		for _, p := range parts {
+			name := strings.Join(strings.Fields(p), " ")
+			if name == "" {
+				continue
+			}
+			if containsAddress(name) || firstURL(name) != "" {
+				return nil, fmt.Errorf("%q is a link or an address, not a name — a names list carries names only", name)
+			}
+			if k := strings.ToLower(name); !seen[k] {
+				seen[k] = true
+				out = append(out, name)
+			}
+		}
+	}
+	return out, nil
+}
+
+// importNames turns the list into one draft per person: cited by the
+// owner's own words (owner_note), carrying the org the list was pasted
+// under and nothing else. No edge is claimed — the owner did not say these
+// people know each other, only that they belong to the place.
+func (m Manual) importNames(text string, s Scope) ([]CandidateDraft, error) {
+	names, err := SplitNames(text)
+	if err != nil {
+		return nil, err
+	}
+	if len(names) == 0 {
+		return nil, errors.New("the list names nobody")
+	}
+	owner := strings.TrimSpace(m.Owner)
+	if owner == "" {
+		owner = "owner"
+	}
+	now := time.Now().UTC()
+	org := strings.TrimSpace(s.Fields["org"])
+	out := make([]CandidateDraft, 0, len(names))
+	for _, name := range names {
+		d := CandidateDraft{
+			SourceID:   m.ID(),
+			ExternalID: "import:" + strings.ToLower(strings.Join(strings.Fields(name), "-")),
+			Name:       name,
+			Org:        org,
+			Role:       strings.TrimSpace(s.Role),
+			Note:       "consent: " + ManualImportConsent + " — typed by " + owner + "; no source claimed",
+			Evidence: []Evidence{{
+				SourceID: owner, RetrievedAt: now, Kind: EvidenceOwnerNote, Trust: TrustHigh,
+				Snippet: owner + " listed " + name + orStr(" under "+org, "") + " (consent: " + ManualImportConsent + ")",
+			}},
+		}
+		if org == "" {
+			d.Evidence[0].Snippet = owner + " listed " + name + " (consent: " + ManualImportConsent + ")"
+		}
+		out = append(out, d)
+	}
+	return out, nil
 }

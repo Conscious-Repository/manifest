@@ -77,6 +77,7 @@ func (OpenAlex) Scope() []ScopeField {
 		{Key: "role", Label: "role"},
 		{Key: "query", Label: "keyword, or an author name", Placeholder: "e.g. field cycling MRI — a name (Dana Reyes) looks up authors"},
 		{Key: "work", Label: "or one paper", Placeholder: "DOI, OpenAlex id, or link"},
+		{Key: openAlexFieldInstitution, Label: "or one institution", Placeholder: "a ROR link, an OpenAlex I-id, or the name — its newest works, the people on them"},
 		{Key: "max", Label: "max people shown", Placeholder: strconv.Itoa(openAlexDefaultMax)},
 		{Key: openAlexFieldMode, Label: "search", Placeholder: openAlexModeWorks + " (papers → people; the default for a keyword) or " + openAlexModeAuthors + " (name lookup; the default for a name)"},
 		{Key: openAlexFieldWorks, Label: "works to read", Placeholder: strconv.Itoa(openAlexDefaultWorks) + " — the work budget, at most " + strconv.Itoa(openAlexMaxWorks) + "; separate from people shown"},
@@ -164,6 +165,9 @@ func (oa OpenAlex) Search(ctx context.Context, s Scope) ([]CandidateDraft, error
 func (oa OpenAlex) SearchCounted(ctx context.Context, s Scope) ([]CandidateDraft, Retrieval, error) {
 	if ref := strings.TrimSpace(s.Fields["work"]); ref != "" {
 		return oa.searchWork(ctx, ref, s)
+	}
+	if ref := strings.TrimSpace(s.Fields[openAlexFieldInstitution]); ref != "" {
+		return oa.searchInstitution(ctx, ref, s)
 	}
 	plan, err := openAlexPlanScope(s)
 	if err != nil {

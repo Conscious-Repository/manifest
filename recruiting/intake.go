@@ -3,7 +3,9 @@ package recruiting
 import (
 	"net/url"
 	"regexp"
+	"strconv"
 	"strings"
+	"unicode"
 )
 
 // INTAKE — one paste, resolved (intake plan §5 stage 1).
@@ -41,6 +43,7 @@ const (
 	RungAccount    = "account"    // 4. the API's own account type (GitHub User/Organization)
 	RungOpenGraph  = "og"         // 5. og:type, tiebreaker only
 	RungWords      = "words"      // 6. the words in a bare name — the weakest, and it says so
+	RungList       = "list"       // several names, one per line — the owner's own import
 	RungNothing    = "nothing"    // nothing pasted
 )
 
@@ -63,6 +66,7 @@ type Resolution struct {
 	LinkOnly    bool     `json:"linkOnly,omitempty"` // no adapter may fetch it — keep the URL as a link on a person
 	Rung        string   `json:"rung,omitempty"`     // WHICH rung decided (see the cascade above)
 	Asked       string   `json:"asked,omitempty"`    // what a fetched rung read, verbatim ("Organization")
+	Names       []string `json:"names,omitempty"`    // RungList: the people, one per line, as typed
 }
 
 // Certain reports whether the class was decided by an unambiguous rung. A
@@ -129,6 +133,15 @@ func ResolveIntake(text string) Resolution {
 	r := Resolution{Text: raw}
 	if raw == "" {
 		r.Rung, r.Why = RungNothing, "nothing pasted"
+		return r
+	}
+	// ---- rung 0: several lines of names is a LIST, not one thing ----
+	if names := namesList(raw); len(names) >= 2 {
+		r.Kind, r.Rung, r.Names = "names", RungList, names
+		r.Class, r.Dest = SeedPerson, DestCandidate
+		r.Name = strconv.Itoa(len(names)) + " names"
+		r.Adapters = []string{"manual"}
+		r.Why = strconv.Itoa(len(names)) + " names, one per line — put them under a place as people you chose (consent: owner_import); nothing is fetched"
 		return r
 	}
 
@@ -486,4 +499,43 @@ func isFeedish(host, path string) bool {
 		return true
 	}
 	return feedPathRe.MatchString(path)
+}
+
+// namesList reads a multi-line paste as a list of people, or returns nil
+// when it is not one: every non-empty line must be name-shaped (two to five
+// words of letters, dots, hyphens and apostrophes; no digits, no slash, no
+// @), and there must be at least two. One line is a name and takes the
+// ordinary cascade; a line that is a link makes the whole paste not a list.
+func namesList(raw string) []string {
+	if !strings.ContainsAny(raw, "\n\r") {
+		return nil
+	}
+	var out []string
+	for _, line := range strings.Split(strings.ReplaceAll(raw, "\r", "\n"), "\n") {
+		line = strings.Join(strings.Fields(line), " ")
+		if line == "" {
+			continue
+		}
+		if !nameShapedLine(line) {
+			return nil
+		}
+		out = append(out, line)
+	}
+	if len(out) < 2 {
+		return nil
+	}
+	return out
+}
+
+func nameShapedLine(line string) bool {
+	words := strings.Fields(line)
+	if len(words) < 2 || len(words) > 5 {
+		return false
+	}
+	for _, r := range line {
+		if !(unicode.IsLetter(r) || r == ' ' || r == '.' || r == '-' || r == '\'' || r == ',') {
+			return false
+		}
+	}
+	return true
 }

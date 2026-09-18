@@ -85,6 +85,10 @@ func (s *Server) handleRecruitingSourceRun(w http.ResponseWriter, r *http.Reques
 		Max    int               `json:"max"`
 		DryRun *bool             `json:"dryRun"`
 		Fields map[string]string `json:"fields"`
+		// Seed names the place this sweep is FROM (D-J). The PLACES row and
+		// the intake both send it; without it the run matches a seed by URL,
+		// which a pasted-names run has none of.
+		Seed string `json:"seed"`
 	}
 	if err := decode(r, &b); err != nil {
 		httpError(w, errBadRequest("a run needs a source and a query"))
@@ -98,7 +102,7 @@ func (s *Server) handleRecruitingSourceRun(w http.ResponseWriter, r *http.Reques
 	defer cancel()
 	run, err := s.recruitingRuns.Execute(ctx, recruiting.RunRequest{
 		Source: strings.TrimSpace(b.Source), Role: b.Role, Query: b.Query,
-		Max: b.Max, DryRun: dry, Fields: b.Fields,
+		Max: b.Max, DryRun: dry, Fields: b.Fields, Seed: strings.TrimSpace(b.Seed),
 	}, time.Now())
 	if err != nil {
 		httpError(w, err)

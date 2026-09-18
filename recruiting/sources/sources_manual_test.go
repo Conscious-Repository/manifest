@@ -18,7 +18,7 @@ var testNow = time.Date(2026, 9, 2, 15, 4, 5, 0, time.UTC)
 // implementation may carry a func field (an injected writer), a pointer to a
 // store, or anything that could persist. It returns DTOs and stops.
 func TestNoAdapterHoldsAWriter(t *testing.T) {
-	for _, a := range []Adapter{Manual{}, DeepSeek{}, OpenAlex{}, ORCID{}, GitHub{}, PubMed{}, NIHRePORTER{}, Web{}} {
+	for _, a := range []Adapter{Manual{}, DeepSeek{}, OpenAlex{}, ORCID{}, GitHub{}, PubMed{}, NIHRePORTER{}, ClinicalTrials{}, PatentsView{}, Web{}, Feed{}} {
 		ty := reflect.TypeOf(a)
 		for ty.Kind() == reflect.Ptr {
 			ty = ty.Elem()
@@ -229,5 +229,36 @@ func TestNoAdapterFileWritesToDisk(t *testing.T) {
 				return true
 			})
 		}
+	}
+}
+
+// A pasted list is the owner's own import: one draft per name, cited by the
+// owner's words, consent owner_import spelled on it, no edge, no contact.
+func TestManualImportsAListOfNames(t *testing.T) {
+	m := Manual{Owner: "benjamin"}
+	drafts, err := m.Search(context.Background(), Scope{Role: "role/x", Fields: map[string]string{
+		"names": "Dana Reyes\nKai Ito\n\nDana Reyes\n", "org": "Hyperfine"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(drafts) != 2 {
+		t.Fatalf("two distinct names: %+v", drafts)
+	}
+	d := drafts[0]
+	if d.Name != "Dana Reyes" || d.Org != "Hyperfine" || d.SourceID != "manual" || d.Role != "role/x" {
+		t.Fatalf("draft: %+v", d)
+	}
+	if !strings.Contains(d.Note, ManualImportConsent) || len(d.Evidence) != 1 || d.Evidence[0].Kind != EvidenceOwnerNote ||
+		!strings.Contains(d.Evidence[0].Snippet, "benjamin listed Dana Reyes under Hyperfine") || !d.Evidence[0].Cited() {
+		t.Fatalf("consent and the owner's own words are the provenance: %+v", d)
+	}
+	if len(d.Edges) != 0 || len(d.Contact) != 0 || len(d.Links) != 0 {
+		t.Fatalf("nothing claimed beyond the name: %+v", d)
+	}
+	if _, err := m.Search(context.Background(), Scope{Fields: map[string]string{"names": "Dana Reyes\nhttps://x.com/dana"}}); err == nil {
+		t.Fatal("a list mixing names with links is not a names list")
+	}
+	if names, _ := SplitNames("Dana Reyes, Kai Ito; Priya Raman"); len(names) != 3 {
+		t.Fatalf("one line, commas or semicolons: %v", names)
 	}
 }

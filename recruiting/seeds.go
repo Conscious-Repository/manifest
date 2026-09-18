@@ -6,7 +6,16 @@ import (
 	"manifest/record"
 )
 
-var seedKeys = []string{"id", "class", "name", "org", "url", "added", "source", "consent"}
+var seedKeys = []string{"id", "class", "name", "org", "url", "added", "source", "consent", "cadence"}
+
+// SeedCadences is the closed set for a place's `cadence`: how often it is
+// due for another sweep. Empty is "when you say". The cadence marks a row
+// DUE; it never fires a sweep on its own — a sweep spends somebody else's
+// rate limit, and the last gesture stays the owner's (the same rule as the
+// "load, never run" pending card).
+var SeedCadences = []string{"", "weekly", "monthly", "quarterly"}
+
+func ValidSeedCadence(s string) bool { return inSet(SeedCadences, s) }
 
 // seedRecognized: a seeds.md row is a fields-only bullet carrying [id::].
 func seedRecognized(r *Row) bool { return r.Has("id") }
@@ -46,6 +55,7 @@ func seedOf(r *Row) Seed {
 		Added:   r.Get("added"),
 		Source:  r.Get("source"),
 		Consent: r.Get("consent"),
+		Cadence: strings.ToLower(strings.TrimSpace(r.Get("cadence"))),
 		Unknown: unknownFields(r, seedKeys...),
 	}
 }
@@ -67,7 +77,7 @@ func (d *SeedsDoc) Add(s Seed) (Seed, error) {
 	}
 	r := newRow("id", s.ID, "class", s.Class, "name", s.Name)
 	for _, kv := range [][2]string{{"org", s.Org}, {"url", s.URL}, {"added", s.Added},
-		{"source", s.Source}, {"consent", s.Consent}} {
+		{"source", s.Source}, {"consent", s.Consent}, {"cadence", s.Cadence}} {
 		if kv[1] != "" {
 			r.Set(kv[0], kv[1])
 		}

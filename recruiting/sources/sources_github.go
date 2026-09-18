@@ -73,6 +73,7 @@ func (GitHub) Scope() []ScopeField {
 		{Key: "role", Label: "role"},
 		{Key: "query", Label: "GitHub user search", Placeholder: "e.g. location:boston language:python mri"},
 		{Key: "repo", Label: "or one repo", Placeholder: "owner/repo, or its link"},
+		{Key: githubFieldOrg, Label: "or one organisation", Placeholder: "its public members — the login, or github.com/org"},
 		{Key: "max", Label: "max results", Placeholder: strconv.Itoa(githubDefaultMax)},
 	}
 }
@@ -117,6 +118,9 @@ type githubSearchResponse struct {
 func (g GitHub) Search(ctx context.Context, s Scope) ([]CandidateDraft, error) {
 	if ref := strings.TrimSpace(s.Fields["repo"]); ref != "" {
 		return g.searchRepo(ctx, ref, s)
+	}
+	if ref := strings.TrimSpace(s.Fields[githubFieldOrg]); ref != "" {
+		return g.searchOrg(ctx, ref, s)
 	}
 	query := strings.TrimSpace(s.Query)
 	if query == "" {

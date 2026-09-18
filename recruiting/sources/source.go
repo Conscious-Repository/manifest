@@ -26,6 +26,13 @@ const (
 	KindWeb       Kind = "web"
 	KindManual    Kind = "manual"
 	KindImport    Kind = "import"
+	// Two families added for the company sources (social graph plan D-E,
+	// phase 3): a patent office and a trials registry. Neither is scholarly
+	// — a patent names inventors and a trial names officials, and both say
+	// where the person WAS on a date, which is what the current/former split
+	// on a place row is drawn from.
+	KindPatent   Kind = "patent"
+	KindRegistry Kind = "registry"
 )
 
 // Trust ranks a citation: a primary record beats an aggregator beats loose
@@ -114,6 +121,8 @@ const (
 	EvidenceATSRecord        = "ats_record"
 	EvidenceContactPublished = "contact_published"
 	EvidenceOwnerNote        = "owner_note"
+	EvidencePatent           = "patent"
+	EvidenceTrial            = "trial"
 )
 
 // ScopeField declares one input the UI must collect before a run.
@@ -253,9 +262,30 @@ type CandidateDraft struct {
 	// contact_published instead, and be promoted onto the profile by hand.
 	Contact map[string]string `json:"contact,omitempty"`
 
+	// Active is the latest YEAR the source places this person at the thing
+	// that was swept — the newest paper under the institution, the newest
+	// patent assigned to the company, the trial's start. 0 means the source
+	// lists them NOW (a lab page, an org's member list) or did not date it.
+	// It is what a place row's current/former split is drawn from (social
+	// graph plan D-E: "former employees drawn former from affiliation dates
+	// — a rendering rule, not new sourcing"); see FormerAfterYears.
+	Active int `json:"active,omitempty"`
+
 	Evidence []Evidence  `json:"evidence,omitempty"`
 	Edges    []EdgeClaim `json:"edges,omitempty"`
 	Dedupe   DedupeHint  `json:"dedupe,omitempty"`
+}
+
+// FormerAfterYears is the rendering rule behind current/former: a person a
+// dated source last placed somewhere more than this many years ago is drawn
+// FORMER. Three, because a paper appears a year or two after the work and a
+// two-year window would call last year's postdoc gone.
+const FormerAfterYears = 3
+
+// IsFormer applies FormerAfterYears to one draft against the year `now`.
+// An undated draft (Active 0) is never former: the source lists them now.
+func (d CandidateDraft) IsFormer(nowYear int) bool {
+	return d.Active > 0 && nowYear-d.Active >= FormerAfterYears
 }
 
 // SourceRun is one run's trace. It lives in dataDir, NOT the vault (D14).

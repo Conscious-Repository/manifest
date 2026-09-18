@@ -74,6 +74,16 @@ func (d *SeedsDoc) Update(id string, set map[string]string) (Seed, error) {
 			} else {
 				row.Set(key, val)
 			}
+		case "cadence":
+			val = strings.ToLower(val)
+			if !ValidSeedCadence(val) {
+				return Seed{}, errf("cadence must be one of weekly, monthly, quarterly — or empty")
+			}
+			if val == "" {
+				row.Drop("cadence")
+			} else {
+				row.Set("cadence", val)
+			}
 		default:
 			return Seed{}, errf("a place has no %q to edit", key)
 		}

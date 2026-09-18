@@ -1,0 +1,40 @@
+{
+  "totalCount": 3,
+  "studies": [
+    {
+      "protocolSection": {
+        "identificationModule": {"nctId": "NCT05550001", "briefTitle": "Portable Low-Field MRI in the Neuro ICU"},
+        "statusModule": {"overallStatus": "RECRUITING", "startDateStruct": {"date": "2025-03"}, "completionDateStruct": {"date": "2027-06"}},
+        "sponsorCollaboratorsModule": {"leadSponsor": {"name": "Hyperfine, Inc."}},
+        "contactsLocationsModule": {
+          "centralContacts": [{"name": "Trial Desk", "role": "CONTACT", "phone": "555-0100", "email": "trials@example.com"}],
+          "overallOfficials": [
+            {"name": "Dana Reyes, MD", "affiliation": "Hyperfine, Inc.", "role": "STUDY_DIRECTOR"},
+            {"name": "Kai Ito, PhD", "affiliation": "Yale University", "role": "PRINCIPAL_INVESTIGATOR"}
+          ]
+        }
+      }
+    },
+    {
+      "protocolSection": {
+        "identificationModule": {"nctId": "NCT04000002", "briefTitle": "Bedside MRI for Stroke Triage"},
+        "statusModule": {"overallStatus": "COMPLETED", "startDateStruct": {"date": "2019-10-15"}, "completionDateStruct": {"date": "2021-01"}},
+        "sponsorCollaboratorsModule": {"leadSponsor": {"name": "Hyperfine, Inc."}},
+        "contactsLocationsModule": {
+          "overallOfficials": [
+            {"name": "Dana Reyes, MD", "affiliation": "Hyperfine, Inc.", "role": "STUDY_DIRECTOR"},
+            {"name": "Priya Raman", "affiliation": "Massachusetts General Hospital", "role": "PRINCIPAL_INVESTIGATOR"}
+          ]
+        }
+      }
+    },
+    {
+      "protocolSection": {
+        "identificationModule": {"nctId": "NCT03000003", "briefTitle": "A Study With Nobody Named"},
+        "statusModule": {"overallStatus": "WITHDRAWN"},
+        "sponsorCollaboratorsModule": {"leadSponsor": {"name": "Hyperfine, Inc."}},
+        "contactsLocationsModule": {"overallOfficials": [{"name": "not-a-person@example.com", "role": "STUDY_CHAIR"}]}
+      }
+    }
+  ]
+}

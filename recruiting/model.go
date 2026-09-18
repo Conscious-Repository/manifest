@@ -298,6 +298,7 @@ type Seed struct {
 	Added   string  `json:"added,omitempty"`
 	Source  string  `json:"source,omitempty"`
 	Consent string  `json:"consent,omitempty"`
+	Cadence string  `json:"cadence,omitempty"` // "", weekly, monthly, quarterly — see SeedCadences
 	Unknown []Field `json:"unknown,omitempty"`
 }
 

@@ -119,6 +119,8 @@ func extKeyFromSourceRef(ref string) string {
 		return sources.ExtNodePrefix + "orcid/" + strings.TrimSpace(id)
 	case "github":
 		return sources.ExtNodePrefix + "github/" + strings.ToLower(strings.TrimSpace(id))
+	case "patents":
+		return sources.PatentsViewExtKey(id)
 	}
 	return ""
 }

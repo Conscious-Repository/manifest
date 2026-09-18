@@ -364,11 +364,11 @@ func TestGitHubTransportFailureIsAnError(t *testing.T) {
 		!strings.HasPrefix(err.Error(), "github:") {
 		t.Errorf("closed server: err=%v", err)
 	}
-	// a run names a user search OR one repo; the adapter, not a UI flag,
-	// enforces that it names one of them
-	if got := (GitHub{}).Scope(); len(got) != 4 || got[0].Key != "role" ||
-		got[1].Key != "query" || got[2].Key != "repo" || got[3].Key != "max" {
-		t.Errorf("scope fields must be role/query/repo/max: %+v", got)
+	// a run names a user search, one repo OR one org; the adapter, not a UI
+	// flag, enforces that it names one of them
+	if got := (GitHub{}).Scope(); len(got) != 5 || got[0].Key != "role" ||
+		got[1].Key != "query" || got[2].Key != "repo" || got[3].Key != "org" || got[4].Key != "max" {
+		t.Errorf("scope fields must be role/query/repo/org/max: %+v", got)
 	}
 	if _, err := s.adapter().Search(context.Background(), Scope{Max: 5}); err == nil ||
 		!strings.Contains(err.Error(), "query") {

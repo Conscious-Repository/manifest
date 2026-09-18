@@ -109,6 +109,10 @@ type openAlexPlan struct {
 	Text   string
 	Budget int
 	Filter string
+	// Sort is the upstream order when the plan is not a relevance search —
+	// an institution sweep reads newest first, so the people it names are
+	// the people there NOW.
+	Sort string
 }
 
 // openAlexPlanScope reads the scope into a plan. It refuses what it cannot
@@ -316,6 +320,9 @@ func (p openAlexPlan) params() url.Values {
 	if p.Filter != "" {
 		v.Set("filter", p.Filter)
 	}
+	if p.Sort != "" {
+		v.Set("sort", p.Sort)
+	}
 	return v
 }
 
@@ -327,6 +334,9 @@ func (p openAlexPlan) upstream() string {
 	}
 	if p.Filter != "" {
 		parts = append(parts, "filter="+p.Filter)
+	}
+	if p.Sort != "" {
+		parts = append(parts, "sort="+p.Sort)
 	}
 	return strings.Join(parts, "&")
 }
@@ -651,6 +661,12 @@ func (oa OpenAlex) worksDraft(p openAlexPerson, works []openAlexWork, rec *openA
 				d.Org = org
 				break
 			}
+		}
+	}
+	// the newest work read dates the person at the subject (current/former)
+	for _, m := range mentions {
+		if y := works[m.Work].PublicationYear; y > d.Active {
+			d.Active = y
 		}
 	}
 

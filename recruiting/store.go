@@ -64,6 +64,10 @@ type BridgePerson struct {
 	Draft   string   `json:"draft"` // the draft id inside that run — what pursue/pass act on
 	Swept   string   `json:"swept"` // the run date, for the stale fade
 	Links   []string `json:"links,omitempty"`
+	// Active is the latest year the source placed them at the seed (0 =
+	// listed now); Former applies sources.FormerAfterYears to it.
+	Active int  `json:"active,omitempty"`
+	Former bool `json:"former,omitempty"`
 }
 
 // Projection is the run cache as the graph sees it.

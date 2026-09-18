@@ -1,6 +1,9 @@
 package recruiting
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 // The resolver is the one part of intake that can be pinned exhaustively: it
 // never fetches, so every shape the owner pastes has one right answer.
@@ -159,4 +162,26 @@ func hasAdapter(r Resolution, id string) bool {
 		}
 	}
 	return false
+}
+
+// Several lines of names is a LIST — rung 0, before any identifier or host
+// rule — and the resolution carries the names as typed. One name, or a
+// list with a link in it, takes the ordinary cascade.
+func TestResolveIntakeNamesList(t *testing.T) {
+	r := ResolveIntake("Dana Reyes\nKai Ito\n\n Priya Raman \n")
+	if r.Kind != "names" || r.Rung != RungList || len(r.Names) != 3 || r.Names[2] != "Priya Raman" {
+		t.Fatalf("a list of names: %+v", r)
+	}
+	if r.Class != SeedPerson || !strings.Contains(r.Why, "owner_import") {
+		t.Fatalf("people, by the owner's choice: %+v", r)
+	}
+	if one := ResolveIntake("Dana Reyes"); one.Kind == "names" {
+		t.Fatalf("one line is one name: %+v", one)
+	}
+	if mixed := ResolveIntake("Dana Reyes\nhttps://github.com/dana"); mixed.Kind == "names" {
+		t.Fatalf("a link in the list makes it not a list: %+v", mixed)
+	}
+	if prose := ResolveIntake("Dana Reyes\nshe leads the 2019 field cycling team at Yale"); prose.Kind == "names" {
+		t.Fatalf("a sentence is not a name: %+v", prose)
+	}
 }

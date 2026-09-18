@@ -1,0 +1,52 @@
+{
+  "error": false,
+  "count": 3,
+  "total_hits": 12,
+  "patents": [
+    {
+      "patent_id": "11934567",
+      "patent_title": "Low-field magnetic resonance imaging with a portable magnet",
+      "patent_date": "2024-03-19",
+      "inventors": [
+        {"inventor_id": "fl:d_ln:reyes-3", "inventor_name_first": "Dana", "inventor_name_last": "Reyes"},
+        {"inventor_id": "fl:k_ln:ito-7", "inventor_name_first": "Kai", "inventor_name_last": "Ito"}
+      ],
+      "assignees": [{"assignee_organization": "Hyperfine, Inc."}]
+    },
+    {
+      "patent_id": "10500001",
+      "patent_title": "Gradient coil for a portable scanner",
+      "patent_date": "2019-12-10",
+      "inventors": [
+        {"inventor_id": "fl:d_ln:reyes-3", "inventor_name_first": "Dana", "inventor_name_last": "Reyes"},
+        {"inventor_id": "fl:p_ln:raman-1", "inventor_name_first": "Priya", "inventor_name_last": "Raman"},
+        {"inventor_id": "", "inventor_name_first": "No", "inventor_name_last": "Key"}
+      ],
+      "assignees": [{"assignee_organization": "Hyperfine Research, Inc."}]
+    },
+    {
+      "patent_id": "10400002",
+      "patent_title": "A department patent",
+      "patent_date": "2018-01-02",
+      "inventors": [
+        {"inventor_id": "i1", "inventor_name_first": "A", "inventor_name_last": "One"},
+        {"inventor_id": "i2", "inventor_name_first": "A", "inventor_name_last": "Two"},
+        {"inventor_id": "i3", "inventor_name_first": "A", "inventor_name_last": "Three"},
+        {"inventor_id": "i4", "inventor_name_first": "A", "inventor_name_last": "Four"},
+        {"inventor_id": "i5", "inventor_name_first": "A", "inventor_name_last": "Five"},
+        {"inventor_id": "i6", "inventor_name_first": "A", "inventor_name_last": "Six"},
+        {"inventor_id": "i7", "inventor_name_first": "A", "inventor_name_last": "Seven"},
+        {"inventor_id": "i8", "inventor_name_first": "A", "inventor_name_last": "Eight"},
+        {"inventor_id": "i9", "inventor_name_first": "A", "inventor_name_last": "Nine"},
+        {"inventor_id": "i10", "inventor_name_first": "A", "inventor_name_last": "Ten"},
+        {"inventor_id": "i11", "inventor_name_first": "A", "inventor_name_last": "Eleven"},
+        {"inventor_id": "i12", "inventor_name_first": "A", "inventor_name_last": "Twelve"},
+        {"inventor_id": "i13", "inventor_name_first": "A", "inventor_name_last": "Thirteen"},
+        {"inventor_id": "i14", "inventor_name_first": "A", "inventor_name_last": "Fourteen"},
+        {"inventor_id": "i15", "inventor_name_first": "A", "inventor_name_last": "Fifteen"},
+        {"inventor_id": "i16", "inventor_name_first": "A", "inventor_name_last": "Sixteen"}
+      ],
+      "assignees": [{"assignee_organization": "Hyperfine, Inc."}]
+    }
+  ]
+}

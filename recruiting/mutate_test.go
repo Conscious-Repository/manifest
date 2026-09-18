@@ -175,3 +175,28 @@ func findPerson(all []NetworkPerson, id string) *NetworkPerson {
 	}
 	return nil
 }
+
+// A place's cadence is a closed set, an emptied cadence is dropped from the
+// row, and the row round-trips through the fixpoint.
+func TestPlaceCadence(t *testing.T) {
+	doc := ParseSeeds("")
+	if _, err := doc.Add(Seed{Class: SeedCompany, Name: "Hyperfine", Cadence: "monthly"}); err != nil {
+		t.Fatal(err)
+	}
+	seeds := ParseSeeds(SerializeSeeds(doc)).Seeds()
+	if len(seeds) != 1 || seeds[0].Cadence != "monthly" {
+		t.Fatalf("cadence round-trips: %+v", seeds)
+	}
+	if _, err := doc.Update(seeds[0].ID, map[string]string{"cadence": "hourly"}); err == nil {
+		t.Fatal("hourly is not a cadence")
+	}
+	if s, err := doc.Update(seeds[0].ID, map[string]string{"cadence": "Weekly"}); err != nil || s.Cadence != "weekly" {
+		t.Fatalf("case folds: %+v %v", s, err)
+	}
+	if s, err := doc.Update(seeds[0].ID, map[string]string{"cadence": ""}); err != nil || s.Cadence != "" {
+		t.Fatalf("emptied is dropped: %+v %v", s, err)
+	}
+	if strings.Contains(SerializeSeeds(doc), "cadence") {
+		t.Fatalf("an emptied cadence must not be written blank: %s", SerializeSeeds(doc))
+	}
+}
