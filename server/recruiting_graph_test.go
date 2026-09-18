@@ -1,10 +1,13 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"io/fs"
+	"manifest/recruiting/sources"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -269,5 +272,108 @@ func TestGraphWritesNothing(t *testing.T) {
 		if after[name] != want {
 			t.Fatalf("loading the ego graph rewrote %s", name)
 		}
+	}
+}
+
+// WHOLE MODE (social graph plan D-G) is bounded by the lens, not by drawing
+// everything: the status filter removes a status from the walk itself, the
+// sources switch removes the source nodes and their member_of edges, and a
+// person a live sweep named is drawn as `bridge` off a `source` node.
+func TestGraphWholeModeIsTheLensNotEverything(t *testing.T) {
+	s, _, _ := testGraphServer(t)
+	rs, err := recruiting.NewRunStore(filepath.Join(t.TempDir(), "recruiting", "runs"), s.recruiting)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rs.Register(sources.Manual{Owner: "benjamin"})
+	s.UseRecruitingRuns(rs)
+	run, err := rs.Execute(context.Background(), recruiting.RunRequest{Source: "manual", Role: "role/mri-engineer", Query: "Lena Ortiz"}, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if run.Counts.New != 1 || run.Seed != "source/"+run.ID {
+		t.Fatalf("the sweep: %+v", run.RunState)
+	}
+	mux := s.Handler()
+
+	whole := graphGet(t, mux, "?mode=whole")
+	kinds := map[string]string{}
+	for _, n := range whole.Nodes {
+		kinds[n.Label] = n.Kind
+	}
+	if whole.Mode != "whole" || kinds["Lena Ortiz"] != "bridge" || kinds["Lena Ortiz"] == "" {
+		t.Fatalf("a swept person is a bridge node in whole mode: %v", kinds)
+	}
+	// by id, not label: a manual sweep's source node is labelled by its
+	// query, which here is the person's own name
+	var sourceDrawn bool
+	for _, n := range whole.Nodes {
+		if n.ID == run.Seed && n.Kind == "source" {
+			sourceDrawn = true
+		}
+	}
+	if !sourceDrawn {
+		t.Fatalf("the run is a source node: %+v", whole.Nodes)
+	}
+	var member bool
+	for _, e := range whole.Edges {
+		if e.Kind == "member_of" && e.To == run.Seed {
+			member = true
+		}
+	}
+	if !member {
+		t.Fatalf("no member_of to the source: %+v", whole.Edges)
+	}
+	for _, n := range whole.Nodes {
+		if n.Kind == "source" && n.Hue < 0 || n.Kind == "bridge" && n.Hue < 0 {
+			t.Fatalf("a source and its members carry a hue: %+v", n)
+		}
+		if n.Kind == "bridge" && (n.Run != run.ID || n.Draft != "d1") {
+			t.Fatalf("a bridge node names its run and draft so pursue/pass can act: %+v", n)
+		}
+	}
+
+	// hide bridge: the person is absent, not greyed
+	noBridge := graphGet(t, mux, "?mode=whole&status=in_touch,pursuing,stranger")
+	for _, n := range noBridge.Nodes {
+		if n.Label == "Lena Ortiz" {
+			t.Fatal("a hidden status was drawn")
+		}
+	}
+	// sources off: no source node, no member_of
+	noSrc := graphGet(t, mux, "?mode=whole&sources=0")
+	for _, n := range noSrc.Nodes {
+		if n.Kind == "source" {
+			t.Fatalf("sources=0 drew a source: %+v", n)
+		}
+	}
+	for _, e := range noSrc.Edges {
+		if e.Kind == "member_of" {
+			t.Fatalf("sources=0 drew member_of: %+v", e)
+		}
+	}
+	// and whole mode is still bounded: never past the ceiling
+	if len(whole.Nodes) > graphMaxNodes {
+		t.Fatalf("whole mode exceeded the ceiling: %d", len(whole.Nodes))
+	}
+
+	// the profile of the swept person: deterministic, from the cache
+	req := httptest.NewRequest(http.MethodGet, "/api/aion/recruiting/graph/node?id="+url.QueryEscape(whole.Nodes[len(whole.Nodes)-1].ID), nil)
+	for _, n := range whole.Nodes {
+		if n.Label == "Lena Ortiz" {
+			req = httptest.NewRequest(http.MethodGet, "/api/aion/recruiting/graph/node?id="+url.QueryEscape(n.ID), nil)
+		}
+	}
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("node: %d %s", w.Code, w.Body.String())
+	}
+	var prof graphProfile
+	if err := json.Unmarshal(w.Body.Bytes(), &prof); err != nil {
+		t.Fatal(err)
+	}
+	if prof.Kind != "bridge" || prof.Run != run.ID || prof.Draft != "d1" || len(prof.Sources) != 1 || prof.Sources[0].Label != run.Subject {
+		t.Fatalf("profile: %+v", prof)
 	}
 }

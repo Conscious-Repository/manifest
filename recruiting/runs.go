@@ -494,7 +494,7 @@ func (r *RunStore) Projection() Projection {
 				seenPerson[pid] = true
 				out.People = append(out.People, BridgePerson{
 					ID: pid, Name: d.Draft.Name, Org: d.Draft.Org, Title: d.Draft.Title,
-					Source: run.Source, Seed: seed, Subject: subject, RunID: run.ID, Swept: swept,
+					Source: run.Source, Seed: seed, Subject: subject, RunID: run.ID, Draft: d.ID, Swept: swept,
 					Links: append([]string(nil), d.Draft.Links...),
 				})
 			}

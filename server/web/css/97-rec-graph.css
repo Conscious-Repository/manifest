@@ -54,6 +54,34 @@
 .rg-node.rg-bridge .rg-dot, .rg-node.rg-known .rg-dot { fill: var(--base-40); }
 .rg-node.rg-source .rg-dot { fill: transparent; stroke: var(--base-60); stroke-dasharray: calc(2 / var(--rg-zoom)) calc(2 / var(--rg-zoom)); }
 .rg-node.rg-passed .rg-dot { fill: var(--base-20); }
+
+/* SOURCE HUE (D-C): a source node owns a colour slot; the links to it carry
+   that hue whatever the fill is showing, and its members wear it as a thin
+   ring. `by-source` flips the fill onto the same hue. */
+.rg-edge.rg-member { stroke: hsl(calc(var(--src-hue, 0) * 30) 55% 58%); opacity: 0.55; }
+.rg-node.has-hue .rg-dot { stroke: hsl(calc(var(--src-hue, 0) * 30) 55% 50%); }
+.rg-node.rg-source .rg-dot { stroke: hsl(calc(var(--src-hue, 0) * 30) 60% 45%); }
+.rg-canvas.by-source .rg-node.has-hue .rg-dot { fill: hsl(calc(var(--src-hue, 0) * 30) 55% 58%); }
+.rg-canvas.by-source .rg-node.rg-source .rg-dot { fill: hsl(calc(var(--src-hue, 0) * 30) 55% 88%); }
+
+/* the filter checks: a swatch beside each status, in the fill's own colour */
+.rg-checks { display: flex; flex-direction: column; gap: 3px; }
+.rg-check { display: flex; align-items: center; gap: var(--sp-2); font-size: var(--fs-xs); color: var(--base-70); cursor: pointer; }
+.rg-check input { margin: 0; accent-color: var(--accent); }
+.rg-swatch { width: 10px; height: 10px; border-radius: 50%; background: var(--base-40); flex: 0 0 auto; }
+.rg-swatch.rg-pursuing { background: var(--base-100); }
+.rg-swatch.rg-in_touch { background: var(--ok, #2f855a); }
+.rg-swatch.rg-bridge { background: var(--base-40); }
+.rg-swatch.rg-stranger { background: var(--base-30); }
+.rg-swatch.rg-passed { background: var(--base-20); }
+.rg-swatch.rg-source { background: transparent; border: 1px dashed var(--base-60); }
+
+/* the profile section of the panel */
+.rg-line { font-size: var(--fs-xs); color: var(--base-70); }
+.rg-links { display: flex; flex-wrap: wrap; gap: var(--sp-2); font-size: var(--fs-xs); overflow-wrap: anywhere; }
+.rg-ties { display: flex; flex-direction: column; gap: 3px; padding-top: var(--sp-2); border-top: 1px solid var(--line-soft); }
+.rg-tie { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--sp-2); font-size: var(--fs-xs); }
+.rg-tie-works { font-family: var(--mono); font-size: var(--fs-2xs); color: var(--base-50); }
 .rg-node.rg-stranger .rg-dot { fill: var(--base-30); }
 /* known: put into the graph from a run — drawn and named like someone you
    have a relationship with, coloured apart from a connector because a route

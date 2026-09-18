@@ -71,7 +71,7 @@ function recApplyRoute(sub) {
   sub = (sub || "").replace(/^\//, "");
   if (sub.startsWith("role/")) { recView = "role"; recRoleView = sub.slice(5); }
   else if (sub === "sources" || sub === "network" || sub === "board" || sub === "places") { recView = sub; }
-  else recView = "board";
+  else recView = "network";
 }
 
 function recNav(path) {
@@ -420,11 +420,13 @@ function paintRail(rail) {
   // you would ROUTE an intro through, and a place you SWEEP FROM. People is
   // one list carrying the role; Places is the sweepable things.
   rail.append(el("div", "micro-label rec-rail-label", "VIEWS"));
+  // THE GRAPH IS HOME (social graph plan §4): it leads the rail, and it is
+  // where the recruiting route lands when it names no view
   const views = [
+    ["network", "Graph", ""],
     ["board", "People", recUntriagedCount() || ""],
     ["places", "Places", ""],
     ["sources", "Sources", recPendingDrafts() || ""],
-    ["network", "Network", ""],
   ];
   const viewLinks = el("div", "rec-view-links");
   views.forEach(([key, label, count]) => {

@@ -61,6 +61,7 @@ type BridgePerson struct {
 	Seed    string   `json:"seed"`    // the source node (seed id, or source/<run>)
 	Subject string   `json:"subject"` // what the run was about, for the source node's label
 	RunID   string   `json:"runId"`
+	Draft   string   `json:"draft"` // the draft id inside that run — what pursue/pass act on
 	Swept   string   `json:"swept"` // the run date, for the stale fade
 	Links   []string `json:"links,omitempty"`
 }

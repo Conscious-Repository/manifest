@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"manifest/recruiting"
+	"manifest/recruiting/sources"
 )
 
 // THE EGO GRAPH (surface plan §5) — one view, centred on you, honest at any
@@ -54,6 +55,12 @@ type graphNode struct {
 	Source string `json:"source,omitempty"` // a bridge node: the adapter that named them
 	Seed   string `json:"seed,omitempty"`   // a bridge node: the source node they hang off
 	Swept  string `json:"swept,omitempty"`  // a bridge node: when, for the stale fade
+	Run    string `json:"run,omitempty"`    // a bridge node: the run and draft pursue/pass act on
+	Draft  string `json:"draft,omitempty"`
+	// Hue is the source node's colour slot (0–11), carried by its members so
+	// "who came from where" can be the fill when the owner flips colour-by;
+	// -1 when the node hangs off no source.
+	Hue int `json:"hue"`
 }
 
 // graphReply is the whole answer: what to draw, and what was left out.
@@ -68,6 +75,7 @@ type graphReply struct {
 	Missing []string           `json:"missing,omitempty"` // what a person would have to do to fill it
 	Focus   map[string]string  `json:"focus,omitempty"`   // the centre's own row, for the panel header
 	Search  []graphSearchMatch `json:"search,omitempty"`
+	Mode    string             `json:"mode"` // ego | whole
 }
 
 type graphKindCount struct {
@@ -139,10 +147,41 @@ func (s *Server) handleRecruitingGraph(w http.ResponseWriter, r *http.Request) {
 		passed[k] = true
 	}
 	owner := idx.ownerNode(s.recruiting)
+	kindOf := graphKinder(board, state, conns, bridge, sourceNodes, passed, owner)
+
+	// ---- the lens (social graph plan D-G): which STATUSES are drawn, and
+	// whether sources are. A hidden status is absent from the walk itself,
+	// not painted over, so nothing routes through what you cannot see.
+	mode := "ego"
+	if strings.EqualFold(strings.TrimSpace(r.URL.Query().Get("mode")), "whole") {
+		mode = "whole"
+	}
+	shown := graphStatusFilter(r.URL.Query().Get("status"))
+	showSources := r.URL.Query().Get("sources") != "0"
+	visible := func(id string) bool {
+		k := kindOf(id)
+		if k == "source" {
+			return showSources
+		}
+		if k == "you" {
+			return true
+		}
+		return shown[k]
+	}
+	{
+		kept := edges[:0:0]
+		for _, e := range edges {
+			if visible(e.From) && visible(e.To) {
+				kept = append(kept, e)
+			}
+		}
+		edges = kept
+	}
 
 	reply := graphReply{
 		Degree: graphDegree(r.URL.Query().Get("degree")),
 		Kinds:  kindRows,
+		Mode:   mode,
 		Totals: map[string]int{
 			"edges": totalEdges, "people": len(conns), "board": len(board), "bridge": len(bridge), "sources": len(sourceNodes),
 		},
@@ -175,12 +214,60 @@ func (s *Server) handleRecruitingGraph(w http.ResponseWriter, r *http.Request) {
 
 	// ---- the bounded walk. Nothing past `degree` is ever added, so the
 	// hairball is unreachable by construction rather than by a slider.
-	kindOf := graphKinder(board, state, conns, bridge, sourceNodes, passed, owner)
 	hop := map[string]int{center: 0}
 	order := []string{center}
 	frontier := []string{center}
 	omitted := map[string]int{}
-	for d := 1; d <= reply.Degree && len(order) < graphMaxNodes; d++ {
+	if mode == "whole" {
+		// WHOLE MODE (D-G): everything the lens lets through, bounded by the
+		// same ceiling and the same ranked cut as a ring — the people you are
+		// deciding about survive, strangers go first — and the cut is said.
+		all := map[string]bool{center: true}
+		for _, e := range edges {
+			all[e.From] = true
+			all[e.To] = true
+		}
+		for _, c := range board {
+			if visible(c.ID) {
+				all[c.ID] = true
+			}
+		}
+		for _, p := range conns {
+			if p.Archived == "" && visible(p.ID) {
+				all[p.ID] = true
+			}
+		}
+		for _, p := range bridge {
+			if visible(p.ID) {
+				all[p.ID] = true
+			}
+		}
+		var ids []string
+		for id := range all {
+			if id != center && id != "" {
+				ids = append(ids, id)
+			}
+		}
+		sort.SliceStable(ids, func(i, j int) bool {
+			ri, rj := graphRank(kindOf(ids[i])), graphRank(kindOf(ids[j]))
+			if ri != rj {
+				return ri < rj
+			}
+			return idx.display(ids[i]) < idx.display(ids[j])
+		})
+		if len(ids) > graphMaxNodes-1 {
+			omitted["whole"] = len(ids) - (graphMaxNodes - 1)
+			ids = ids[:graphMaxNodes-1]
+		}
+		for _, id := range ids {
+			// the ring is the rank, so the layout seeds people you know
+			// nearer than strangers before the forces take over
+			hop[id] = graphRank(kindOf(id)) + 1
+			order = append(order, id)
+		}
+		frontier = nil
+	}
+	for d := 1; mode == "ego" && d <= reply.Degree && len(order) < graphMaxNodes; d++ {
 		var next []string
 		seen := map[string]bool{}
 		for _, from := range frontier {
@@ -253,14 +340,29 @@ func (s *Server) handleRecruitingGraph(w http.ResponseWriter, r *http.Request) {
 	for _, p := range bridge {
 		bridgeBy[p.ID] = p
 	}
+	// a source node's hue is a stable function of its id; a member takes the
+	// hue of the first source it hangs off in the drawn set
+	memberHue := map[string]int{}
+	for _, e := range kept {
+		if e.Kind == string(sources.EdgeMemberOf) {
+			if _, ok := memberHue[e.From]; !ok {
+				memberHue[e.From] = graphHue(e.To)
+			}
+		}
+	}
 	for _, id := range order {
 		st := state[id]
 		n := graphNode{
 			ID: id, Label: idx.display(id), Kind: kindOf(id),
-			Hop: hop[id], Deg: deg[id], Stage: st[0], Role: st[1],
+			Hop: hop[id], Deg: deg[id], Stage: st[0], Role: st[1], Hue: -1,
+		}
+		if n.Kind == "source" {
+			n.Hue = graphHue(id)
+		} else if h, ok := memberHue[id]; ok {
+			n.Hue = h
 		}
 		if b, ok := bridgeBy[id]; ok {
-			n.Source, n.Seed, n.Swept = b.Source, b.Seed, b.Swept
+			n.Source, n.Seed, n.Swept, n.Run, n.Draft = b.Source, b.Seed, b.Swept, b.RunID, b.Draft
 		}
 		reply.Nodes = append(reply.Nodes, n)
 	}
@@ -268,6 +370,34 @@ func (s *Server) handleRecruitingGraph(w http.ResponseWriter, r *http.Request) {
 		reply.Missing = graphMissing(edges, conns)
 	}
 	writeJSON(w, reply)
+}
+
+// graphStatusFilter reads `status=a,b,c`; empty means every status but
+// passed — the default the plan names (D-B): looked at and declined is
+// hidden, and remembered.
+func graphStatusFilter(raw string) map[string]bool {
+	out := map[string]bool{}
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return map[string]bool{"in_touch": true, "pursuing": true, "bridge": true, "stranger": true}
+	}
+	for _, s := range strings.Split(raw, ",") {
+		if s = strings.TrimSpace(strings.ToLower(s)); s != "" {
+			out[s] = true
+		}
+	}
+	return out
+}
+
+// graphHue is the colour slot of a source node: a stable hash of its id
+// into twelve, so the same lab is the same hue every time it is drawn.
+func graphHue(id string) int {
+	h := uint32(2166136261)
+	for i := 0; i < len(id); i++ {
+		h ^= uint32(id[i])
+		h *= 16777619
+	}
+	return int(h % 12)
 }
 
 func graphDegree(raw string) int {
@@ -414,4 +544,124 @@ func graphMissing(edges []recruiting.Edge, conns []recruiting.NetworkPerson) []s
 		out = append(out, "nobody here is within reach of the centre — try a wider degree")
 	}
 	return out
+}
+
+// graphProfile is the deterministic section of the profile panel (social
+// graph plan §5): never guessed, assembled from what is on file for this id
+// wherever it lives — a candidate record, a network row, the run cache.
+type graphProfile struct {
+	ID      string            `json:"id"`
+	Label   string            `json:"label"`
+	Kind    string            `json:"kind"`
+	Stage   string            `json:"stage,omitempty"`
+	Role    string            `json:"role,omitempty"`
+	Org     string            `json:"org,omitempty"`
+	Title   string            `json:"title,omitempty"`
+	Links   []string          `json:"links"`   // identity links on file, in file order
+	Sources []graphProfileSrc `json:"sources"` // the source nodes this person hangs off
+	Ties    []graphProfileTie `json:"ties"`    // every claim naming them, with works
+	Run     string            `json:"run,omitempty"`
+	Draft   string            `json:"draft,omitempty"`
+	Swept   string            `json:"swept,omitempty"`
+}
+
+type graphProfileSrc struct {
+	ID    string `json:"id"`
+	Label string `json:"label"`
+}
+
+type graphProfileTie struct {
+	Other      string            `json:"other"`
+	OtherLabel string            `json:"otherLabel"`
+	Kind       string            `json:"kind"`
+	Basis      string            `json:"basis,omitempty"`
+	Confidence string            `json:"confidence,omitempty"`
+	Inferred   bool              `json:"inferred"`
+	Works      []sources.WorkRef `json:"works,omitempty"`
+	Strength   float64           `json:"strength"`
+}
+
+// GET /api/aion/recruiting/graph/node?id=
+func (s *Server) handleRecruitingGraphNode(w http.ResponseWriter, r *http.Request) {
+	if !s.recruitingReady(w) {
+		return
+	}
+	id := strings.TrimSpace(r.URL.Query().Get("id"))
+	if id == "" {
+		httpError(w, errBadRequest("which node?"))
+		return
+	}
+	idx := s.personIndex()
+	board := s.recruiting.Identities()
+	state := s.recruiting.BoardState()
+	conns := s.recruiting.Connectors()
+	bridge := s.recruiting.BridgePeople()
+	sourceNodes := s.recruiting.SourceNodes()
+	passed := map[string]bool{}
+	for k := range s.recruiting.PassedSet() {
+		passed[k] = true
+	}
+	kindOf := graphKinder(board, state, conns, bridge, sourceNodes, passed, idx.ownerNode(s.recruiting))
+
+	p := graphProfile{ID: id, Label: idx.display(id), Kind: kindOf(id), Links: []string{}, Sources: []graphProfileSrc{}, Ties: []graphProfileTie{}}
+	p.Stage, p.Role = state[id][0], state[id][1]
+	// identity links, from wherever the person's own row lives
+	if strings.HasPrefix(id, "cand/") {
+		for _, slug := range s.recruiting.CandidateSlugs() {
+			doc := s.recruiting.LoadCandidate(slug)
+			if doc.Get("id") != id {
+				continue
+			}
+			prof := doc.Profile()
+			p.Org, p.Title = prof["org"], prof["title"]
+			for _, k := range []string{"orcid", "website", "github", "linkedin", "x", "scholar"} {
+				if v := strings.TrimSpace(prof[k]); v != "" {
+					p.Links = append(p.Links, v)
+				}
+			}
+			break
+		}
+	}
+	for _, c := range conns {
+		if c.ID == id {
+			p.Org, p.Title = c.Org, c.Title
+			for _, v := range []string{c.ORCID, c.GitHub, c.LinkedIn} {
+				if strings.TrimSpace(v) != "" {
+					p.Links = append(p.Links, v)
+				}
+			}
+		}
+	}
+	for _, b := range bridge {
+		if b.ID == id {
+			p.Org, p.Title, p.Run, p.Draft, p.Swept = b.Org, b.Title, b.RunID, b.Draft, b.Swept
+			p.Links = append(p.Links, b.Links...)
+		}
+	}
+	for _, e := range s.recruiting.NetworkEdges() {
+		other := ""
+		switch id {
+		case e.From:
+			other = e.To
+		case e.To:
+			other = e.From
+		default:
+			continue
+		}
+		if e.Kind == string(sources.EdgeMemberOf) && e.From == id {
+			p.Sources = append(p.Sources, graphProfileSrc{ID: other, Label: idx.display(other)})
+			continue
+		}
+		p.Ties = append(p.Ties, graphProfileTie{
+			Other: other, OtherLabel: idx.display(other), Kind: e.Kind, Basis: e.Basis,
+			Confidence: e.Confidence, Inferred: e.Inferred, Works: e.Works, Strength: e.Strength(),
+		})
+	}
+	sort.SliceStable(p.Ties, func(i, j int) bool {
+		if p.Ties[i].Strength != p.Ties[j].Strength {
+			return p.Ties[i].Strength > p.Ties[j].Strength
+		}
+		return p.Ties[i].OtherLabel < p.Ties[j].OtherLabel
+	})
+	writeJSON(w, p)
 }
