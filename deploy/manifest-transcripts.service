@@ -1,7 +1,7 @@
-# Initial cutover runtime: read-only continuity on existing transcript cadence.
-# No proposal/vault writes; full proposal polling stays in the dashboard runtime.
+# Guarded transcript polling creates pending approvals only.
+# The dashboard owns approval decisions and vault writes.
 [Unit]
-Description=Manifest Granola and Pocket read-only continuity
+Description=Manifest Granola and Pocket proposal worker
 After=network-online.target
 Wants=network-online.target
 ConditionPathExists=/home/benjamin/.config/manifest/transcript-worker.json
@@ -21,6 +21,10 @@ ReadWritePaths=/private/harnesses/excalibur/vessel/state/dispatch-fence/ea-coord
 ReadWritePaths=/private/harnesses/excalibur/vessel/state/dispatch-fence/ea-coordinator/pocket-sync
 ReadOnlyPaths=/private/consciousrepo
 ReadOnlyPaths=/private/harnesses/excalibur/artifacts
+# Canonical proposal publication stages a temporary file in approvals/.
+ReadWritePaths=/private/harnesses/excalibur/artifacts/approvals
+ReadOnlyPaths=/private/harnesses/excalibur/artifacts/approvals/approved
+ReadOnlyPaths=/private/harnesses/excalibur/artifacts/approvals/rejected
 
 [Install]
 WantedBy=multi-user.target
