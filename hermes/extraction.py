@@ -101,7 +101,7 @@ def main():
     sys.path.insert(0, runtime + '/venv/lib/python%d.%d/site-packages' % sys.version_info[:2])
     sys.path.insert(0, runtime)
     sys.argv = ['hermes', 'chat', '-Q', '-q', prompt, '-m', 'sparks',
-                '--provider', 'lab-sparks', '--safe-mode', '-t', 'none',
+                '--provider', 'lab-sparks', '-t', 'none',
                 '--max-turns', '1', '--source', 'tool', '--cli']
     # Observe the actual HTTP boundary. No prompt, response text or credentials
     # enter telemetry. A second request is refused, including SDK retries.

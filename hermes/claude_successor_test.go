@@ -29,6 +29,12 @@ assert c['custom_providers'][0]['name']=='lab-sparks'
 assert c['custom_providers'][0]['extra_body']=={'model':'deepseek-v4.1-flash','tool_choice':'none'}
 assert c['fallback_providers']==[] and c['fallback_model'] is None and c['mcp_servers']=={}
 assert 'HERMES_IGNORE_USER_CONFIG' not in os.environ
+assert 'HERMES_IGNORE_RULES' not in os.environ
+assert os.environ['HERMES_SAFE_MODE']=='1'
+assert os.stat(os.getcwd()).st_mode & 0o777 == 0o700
+assert os.stat('config.yaml').st_mode & 0o777 == 0o600
+assert c['plugins']=={'enabled':[]}
+assert c['memory']=={'memory_enabled':False,'user_profile_enabled':False,'provider':''}
 assert 'ANTHROPIC_API_KEY' not in os.environ
 assert 'HERMES_KANBAN_TASK' not in os.environ
 json.dump({'provider':'lab-sparks','model':'deepseek-v4.1-flash','responseModel':'deepseek-v4.1-flash','steps':1,'completed':True,'status':200},open('execution.json','w'))
@@ -184,7 +190,7 @@ func TestExtractionContainedLargePrompt(t *testing.T) {
 def main():
     args = sys.argv[1:]
     assert args[:3] == ['chat', '-Q', '-q']
-    assert args[4:] == ['-m', 'sparks', '--provider', 'lab-sparks', '--safe-mode', '-t', 'none', '--max-turns', '1', '--source', 'tool', '--cli']
+    assert args[4:] == ['-m', 'sparks', '--provider', 'lab-sparks', '-t', 'none', '--max-turns', '1', '--source', 'tool', '--cli']
     assert args[3] == 'x' * 524288
     assert os.getcwd() == os.environ['HOME'] == os.environ['HERMES_HOME']
     assert 'ANTHROPIC_API_KEY' not in os.environ

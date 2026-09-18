@@ -140,8 +140,10 @@ func TestCanarySourceCallGraphIsolation(t *testing.T) {
 // Re-audited 2026-09-18: Result adds extraction-only HTTP evidence; Run routing
 // is unchanged. The private config, receipt gate and HTTP observer are reached
 // only for the three extraction duties; re-intake still uses runSuccessor.
+// Re-audited: extraction private-home startup flags/config changed only;
+// the fixed re-intake duty remains excluded by extractionDutyAllowed.
 var reviewedSuccessorSources = map[string]string{
-	"../../hermes/claude_successor.go": "3f905d07dc6862c0c52f02b160da2cb1457c664cc2ec6c0c1f9d120b31b9600f",
+	"../../hermes/claude_successor.go": "34d297b6dc3118e28e852999e4ec98e8ba726f6999a936aed317871c3f75b1b2",
 	"../../hermes/runner.go":           "b59df7dc77d37172b771e4a2c89215a31b6e81ea076d706fb6ef4fc6c6af3bd3",
 	"../../hermes/successor.go":        "b154048dfe670b02c46d4d2302d17ac9bc8d58ca499c0445e8d7bbd818d0e8af",
 	"../../hermes/successor.py":        "a7737229609b18c627c720f466858045b7aa06b4e03ed29ce1c0774d8385ae5c",
