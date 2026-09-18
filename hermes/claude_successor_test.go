@@ -117,7 +117,7 @@ func TestExtractionFailuresAndNoFallback(t *testing.T) {
 
 func TestExtractionResultParsing(t *testing.T) {
 	a := defaultExtractionDuties()["extractor/aion"]
-	for _, raw := range []string{``, `null`, `{}`, `{"candidates":null}`, `{"candidates":{}}`, `{"candidates":[],"candidates":[]}`, `{"candidates":[],"extra":true}`, "```json\n{\"candidates\":[]}\n```", strings.Repeat("x", 64001)} {
+	for _, raw := range []string{``, `null`, `{}`, `{"candidates":null}`, `{"candidates":{}}`, `{"candidates":[],"candidates":[]}`, `{"candidates":[],"extra":true}`, strings.Repeat("x", 64001)} {
 		if r, err := parseExtractionResult([]byte(raw), a); err == nil || r.Reply != "" || r.DutyVerified() {
 			t.Fatalf("accepted %q", raw)
 		}
@@ -125,6 +125,42 @@ func TestExtractionResultParsing(t *testing.T) {
 	for _, raw := range []string{`{"candidates":[]}`, `{"summary":"Jane committed to review.","candidates":[{"type":"aion-backlog","applyPath":"system/aion/backlog.md","source":"log/fixture.md","payload":{"kind":"task","title":"Review draft","quote":"I will review the draft."}}]}`} {
 		if _, err := parseExtractionResult([]byte(raw), a); err != nil {
 			t.Fatal(err)
+		}
+	}
+}
+
+// A single outer Markdown fence is a formatting accommodation; the inner payload
+// still faces every strict check. Anything surrounding the object besides exactly
+// one whole fence must keep refusing.
+func TestExtractionResultFenceTolerance(t *testing.T) {
+	a := defaultExtractionDuties()["extractor/aion"]
+	body := `{"summary":"No commitments.","candidates":[]}`
+	for _, raw := range []string{
+		"```json\n" + body + "\n```",
+		"```\n" + body + "\n```",
+		"```JSON\n" + body + "\n```",
+		"  ```json\n" + body + "\n```  ",
+	} {
+		res, err := parseExtractionResult([]byte(raw), a)
+		if err != nil {
+			t.Fatalf("refused fenced payload %q: %v", raw, err)
+		}
+		if res.Reply != body {
+			t.Fatalf("fenced unwrap changed payload: %q", res.Reply)
+		}
+	}
+	for _, raw := range []string{
+		"Here is the JSON:\n```json\n" + body + "\n```",
+		"```json\n" + body + "\n```\nHope this helps.",
+		"```json\n" + body,
+		"```json\n" + body + "\n",
+		"````\n" + body + "\n````",
+		"```json\n" + body + "\n```\n```json\n" + body + "\n```",
+		"```json\n{\"candidates\":[],\"extra\":true}\n```",
+		"```json\n{\"candidates\":[]}\n{\"candidates\":[]}\n```",
+	} {
+		if r, err := parseExtractionResult([]byte(raw), a); err == nil || r.Reply != "" || r.DutyVerified() {
+			t.Fatalf("accepted %q", raw)
 		}
 	}
 }

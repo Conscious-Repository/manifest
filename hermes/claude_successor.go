@@ -123,12 +123,39 @@ func (r *Runner) runExtractionSuccessor(ctx context.Context, req Request, a Duty
 	return result, err
 }
 
+// unwrapCodeFence removes exactly one optional outer Markdown code fence.
+// The extraction prompt requires a bare JSON object beginning with `{`; models
+// nevertheless sometimes wrap it in ```json ... ```. Tolerating that single
+// wrapper is a formatting accommodation only: the inner payload is still parsed
+// by strictUsageFields, which rejects prose, duplicate/altered keys, extra
+// fields and any surrounding text. Anything that is not exactly one whole fence
+// around the entire reply is left untouched and continues to refuse.
+func unwrapCodeFence(s string) string {
+	trimmed := strings.TrimSpace(s)
+	if !strings.HasPrefix(trimmed, "```") {
+		return s
+	}
+	body := trimmed[3:]
+	// An optional info string (json, JSON, javascript) followed by a newline.
+	if i := strings.IndexByte(body, '\n'); i >= 0 && !strings.Contains(body[:i], "`") {
+		body = body[i+1:]
+	} else {
+		return s
+	}
+	if !strings.HasSuffix(strings.TrimSpace(body), "```") {
+		return s
+	}
+	body = strings.TrimSuffix(strings.TrimSpace(body), "```")
+	return strings.TrimSpace(body)
+}
+
 func parseExtractionResult(raw []byte, a DutyAuthority) (Result, error) {
 	// Full candidate schema/source checks belong to domainextract.ValidateReply.
 	// The installed CLI warns about the explicit empty toolset even in quiet
 	// mode. Strip only that fixed startup line, never arbitrary model chatter.
 	text := strings.TrimPrefix(string(raw), "Warning: Unknown toolsets: none\n")
 	text = strings.TrimPrefix(text, "  ⚠ tirith security scanner enabled but not available — command scanning will use pattern matching only\n")
+	text = unwrapCodeFence(text)
 	raw = []byte(text)
 	fields, ok := strictUsageFields(raw)
 	var candidates []json.RawMessage

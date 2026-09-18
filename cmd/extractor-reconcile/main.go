@@ -19,13 +19,17 @@ func main() {
 	id := flag.String("job", "", "exact original job ID")
 	source := flag.String("source", "", "exact vault-relative source path")
 	auth := flag.String("owner-authorization", "", "owner instruction reference authorizing this attempt")
+	operation := flag.String("operation", "pre-provider", "pre-provider or post-runtime-fix")
+	sourceHash := flag.String("source-sha256", "", "exact original source SHA256")
+	parent := flag.String("parent-attempt", "", "exact parent attempt ID")
+	runtime := flag.String("runtime-fix", "", "runtime fix fingerprint or commit reference")
 	flag.Parse()
-	if err := run(*config, *id, *source, *auth); err != nil {
+	if err := run(*config, *id, *source, *auth, *operation, *sourceHash, *parent, *runtime); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
 }
-func run(path, id, source, auth string) error {
+func run(path, id, source, auth, operation, sourceHash, parent, runtime string) error {
 	var cfg struct {
 		DataDir   string `json:"dataDir"`
 		Vault     string `json:"vaultPath"`
@@ -54,7 +58,18 @@ func run(path, id, source, auth string) error {
 		return fmt.Errorf("private Hermes scratch unavailable")
 	}
 	svc := domainextract.New(context.Background(), cfg.DataDir, cfg.Vault, cfg.Harness, cfg.Extraction, hermes.NewRunner(cfg.Hermes), approvals.NewStore(filepath.Join(cfg.Harness, "artifacts")))
-	job, err := svc.RetryPreProvider(id, source, auth)
+	var job domainextract.Job
+	switch operation {
+	case "pre-provider":
+		if sourceHash != "" || parent != "" || runtime != "" {
+			return fmt.Errorf("post-runtime-fix arguments require explicit operation")
+		}
+		job, err = svc.RetryPreProvider(id, source, auth)
+	case "post-runtime-fix":
+		job, err = svc.RetryPostRuntimeFix(id, source, sourceHash, parent, auth, runtime)
+	default:
+		return fmt.Errorf("unknown reconciliation operation")
+	}
 	if err != nil {
 		return err
 	}

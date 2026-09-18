@@ -128,7 +128,7 @@ func (s *Service) validIdentity(j Job) bool {
 		return j.ID == j.Input.ID()
 	}
 	if j.ParentID != j.Input.ID() || j.ID != retryID(j.ParentID) {
-		return false
+		return s.validRuntimeIdentity(j)
 	}
 	b, err := os.ReadFile(filepath.Join(s.dir, "reconciliations", j.ParentID+".json"))
 	var r Reconciliation
