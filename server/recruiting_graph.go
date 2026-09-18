@@ -5,6 +5,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"manifest/recruiting"
 	"manifest/recruiting/sources"
@@ -76,6 +77,10 @@ type graphReply struct {
 	Focus   map[string]string  `json:"focus,omitempty"`   // the centre's own row, for the panel header
 	Search  []graphSearchMatch `json:"search,omitempty"`
 	Mode    string             `json:"mode"` // ego | whole
+	// Calendar is "" or the reason the calendar-derived ties are missing —
+	// a dead sign-in zeroes every same_meeting edge silently, and an ego view
+	// that then says "nobody within reach" is lying about the cause.
+	Calendar string `json:"calendar,omitempty"`
 }
 
 type graphKindCount struct {
@@ -179,9 +184,10 @@ func (s *Server) handleRecruitingGraph(w http.ResponseWriter, r *http.Request) {
 	}
 
 	reply := graphReply{
-		Degree: graphDegree(r.URL.Query().Get("degree")),
-		Kinds:  kindRows,
-		Mode:   mode,
+		Degree:   graphDegree(r.URL.Query().Get("degree")),
+		Kinds:    kindRows,
+		Mode:     mode,
+		Calendar: s.calendarTiesMissing(),
 		Totals: map[string]int{
 			"edges": totalEdges, "people": len(conns), "board": len(board), "bridge": len(bridge), "sources": len(sourceNodes),
 		},
@@ -368,8 +374,27 @@ func (s *Server) handleRecruitingGraph(w http.ResponseWriter, r *http.Request) {
 	}
 	if len(kept) == 0 {
 		reply.Missing = graphMissing(edges, conns)
+		if reply.Calendar != "" {
+			reply.Missing = append([]string{reply.Calendar}, reply.Missing...)
+		}
 	}
 	writeJSON(w, reply)
+}
+
+// calendarTiesMissing names the reason the meeting ties are absent, when they
+// are: the calendar sign-in has expired (the OAuth app's 7-day tokens, the
+// recurring cause), so PastMeetings returns nothing and every same_meeting
+// edge is gone. "" when the calendar is fine or not configured at all.
+func (s *Server) calendarTiesMissing() string {
+	if s.cal == nil || !s.cal.Enabled() {
+		return ""
+	}
+	for _, st := range s.cal.AccountStatuses(time.Now()) {
+		if st.NeedsReauth {
+			return "your calendar sign-in expired (" + st.Email + ") — reconnect it in Settings; the ties from meetings are missing until you do"
+		}
+	}
+	return ""
 }
 
 // graphStatusFilter reads `status=a,b,c`; empty means every status but
