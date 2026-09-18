@@ -1,261 +1,411 @@
 package recruiting
 
 import (
+	"context"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"os"
-	"path/filepath"
 	"strings"
 	"testing"
-	"time"
 
+	"manifest/graph"
 	"manifest/recruiting/sources"
 )
 
-// TIE STRENGTH (social graph plan D-I). A tie is worth what its works are
-// worth, and a second shared work makes it stronger instead of being refused.
+// Social ties (ties.go): what a cited paper lets the general graph say
+// about who wrote it with whom — and, just as much, what it must NOT say.
 
-func pin(t *testing.T, year int) {
-	t.Helper()
-	was := strengthYear
-	strengthYear = func() int { return year }
-	t.Cleanup(func() { strengthYear = was })
+const (
+	orcidAvery    = "0000-0001-2345-6789"
+	orcidKim      = "0000-0002-0000-0002"
+	orcidStranger = "0000-0009-9999-9999"
+	paperDOI      = "https://doi.org/10.1000/xyz.2024"
+	paperCite     = "Low-field coil arrays, Nature, 2024, 10.1000/xyz.2024"
+)
+
+// coauthorDraft is one author on the shared paper: their ORCID as a link,
+// the paper as publication evidence, and one coauthor claim per far key —
+// what an OpenAlex work sweep emits.
+func paperAuthorDraft(name, orcid string, far ...string) sources.CandidateDraft {
+	d := sources.CandidateDraft{
+		SourceID: "openalex", ExternalID: "A-" + orcid, Name: name, Org: "Example Lab",
+		Links: []string{"https://orcid.org/" + orcid}, Orcid: "https://orcid.org/" + orcid,
+		Topics: []string{"Low-Field MRI"},
+		Evidence: []sources.Evidence{{
+			SourceID: "openalex", URLOrFile: paperDOI, RetrievedAt: testNow,
+			Snippet: paperCite + " · first author · Example Lab · 3 authors", Kind: sources.EvidencePublication, Trust: sources.TrustMedium,
+		}},
+	}
+	for _, f := range far {
+		d.Edges = append(d.Edges, sources.EdgeClaim{
+			From: "ext/orcid/" + f, Type: sources.EdgeCoauthor, SourceID: "openalex",
+			Basis: "both authors on " + paperCite, Confidence: 0.55, Evidence: paperDOI,
+		})
+	}
+	return d
 }
 
-func TestWorksRoundTripOnTheRow(t *testing.T) {
-	doc := ParseEdges("# edges\n")
-	e := Edge{From: "a", To: "b", Kind: "coauthor", Basis: "paper X", Source: "openalex", Confidence: "0.55",
-		Works: []sources.WorkRef{{Ref: "10.1/x", Year: 2024, Authors: 2}, {Ref: "W99", Year: 2019, Authors: 12}}}
-	if _, err := doc.Add(e); err != nil {
-		t.Fatal(err)
+func edgeKinds(edges []graph.Edge) map[string]int {
+	out := map[string]int{}
+	for _, e := range edges {
+		out[e.Kind]++
 	}
-	raw := SerializeEdges(doc)
-	if !strings.Contains(raw, "[work:: 10.1/x@2024/2]") || !strings.Contains(raw, "[work:: W99@2019/12]") {
-		t.Fatalf("works not on the row:\n%s", raw)
-	}
-	back := ParseEdges(raw).Edges()
-	if len(back) != 1 || len(back[0].Works) != 2 || back[0].Works[1].Authors != 12 || back[0].Works[0].Year != 2024 {
-		t.Fatalf("works did not round-trip: %+v", back)
-	}
-	// the fixpoint: parse → serialize is byte-identical
-	if again := SerializeEdges(ParseEdges(raw)); again != raw {
-		t.Fatalf("not a fixpoint:\n%s\n---\n%s", raw, again)
-	}
+	return out
 }
 
-func TestASecondSharedWorkAccumulatesInsteadOfBeingRefused(t *testing.T) {
-	doc := ParseEdges("# edges\n")
-	first := Edge{From: "a", To: "b", Kind: "coauthor", Basis: "paper X", Source: "openalex", Confidence: "0.55",
-		Works: []sources.WorkRef{{Ref: "10.1/x", Year: 2024, Authors: 2}}}
-	if _, merged, err := doc.Merge(first); err != nil || merged {
-		t.Fatalf("first claim: merged=%v err=%v", merged, err)
-	}
-	second := Edge{From: "b", To: "a", Kind: "coauthor", Basis: "paper Y", Source: "openalex", Confidence: "0.60",
-		Works: []sources.WorkRef{{Ref: "10.1/y", Year: 2022, Authors: 3}, {Ref: "10.1/x", Year: 2024, Authors: 2}}}
-	got, merged, err := doc.Merge(second)
-	if err != nil || !merged {
-		t.Fatalf("second claim about the same pair must merge: merged=%v err=%v", merged, err)
-	}
-	if len(doc.Edges()) != 1 {
-		t.Fatalf("two rows for one tie: %+v", doc.Edges())
-	}
-	if len(got.Works) != 2 || got.Confidence != "0.60" || got.Basis != "paper X" {
-		t.Fatalf("merge: works=%d conf=%s basis=%q", len(got.Works), got.Confidence, got.Basis)
-	}
-}
+// Two people on one cited paper, both accepted: the second accept mirrors
+// the coauthorship into the general graph, canonically ordered, with the
+// paper's basis and URL, plus the paper itself and each person's authorship.
+// The first accept — when the other author was still a stranger — writes no
+// person tie and says which endpoint it refused.
+func TestDeriveTiesCoauthorFromCitedPaperNeedsBothKnown(t *testing.T) {
+	s, _ := testStore(t)
+	avery := paperAuthorDraft("Avery Quill", orcidAvery, orcidKim)
+	kim := paperAuthorDraft("Kim Collab", orcidKim, orcidAvery, orcidStranger)
 
-// FRACTIONAL COUNTING: a two-author paper is a tie; a slot on a 40-author
-// consortium paper is nearly nothing, and the walk treats it that way.
-func TestATwoAuthorPaperOutweighsAConsortiumSlot(t *testing.T) {
-	pin(t, 2026)
-	pair := Edge{Kind: "coauthor", Confidence: "0.55", Works: []sources.WorkRef{{Ref: "a", Year: 2026, Authors: 2}}}
-	crowd := Edge{Kind: "coauthor", Confidence: "0.55", Works: []sources.WorkRef{{Ref: "b", Year: 2026, Authors: 40}}}
-	if pair.Strength() != 1 || crowd.Strength() >= 0.03 {
-		t.Fatalf("strength: pair=%.3f crowd=%.3f", pair.Strength(), crowd.Strength())
-	}
-	if pair.PathWeight() != 0.55 || crowd.PathWeight() > 0.02 {
-		t.Fatalf("path weight: pair=%.3f crowd=%.3f", pair.PathWeight(), crowd.PathWeight())
-	}
-	// the floor: the consortium slot is not a route; the pair is
-	kept := PathEdges([]Edge{withEnds(pair, "x", "y"), withEnds(crowd, "x", "z")})
-	if len(kept) != 1 || kept[0].To != "y" {
-		t.Fatalf("PathEdges kept %+v", kept)
-	}
-	// decay: the same pair paper a half-life ago is worth half
-	old := Edge{Kind: "coauthor", Confidence: "0.55", Works: []sources.WorkRef{{Ref: "a", Year: 2018, Authors: 2}}}
-	if s := old.Strength(); s < 0.49 || s > 0.51 {
-		t.Fatalf("decay after one half-life: %.3f", s)
-	}
-	// and a claim with no works on file is taken at face value
-	if plain := (Edge{Kind: "same_meeting", Confidence: "0.70"}); plain.PathWeight() != 0.70 {
-		t.Fatalf("no works → stated confidence: %.2f", plain.PathWeight())
-	}
-}
-
-func withEnds(e Edge, from, to string) Edge {
-	e.From, e.To, e.Basis, e.Source = from, to, "b", "s"
-	return e
-}
-
-// member_of is never a hop: a lab is not a person who can introduce you.
-func TestMembershipIsNotAnIntroHop(t *testing.T) {
-	kept := PathEdges([]Edge{{From: "p", To: "seed/lab-x", Kind: "member_of", Basis: "listed", Source: "web", Confidence: "0.90"}})
-	if len(kept) != 0 {
-		t.Fatalf("member_of walked: %+v", kept)
-	}
-}
-
-// THE RUN CACHE DRAWN (D-D, D-F): a sweep's people are bridge nodes with the
-// adapter's claims and a member_of edge to the source that named them; the
-// vault is untouched by any of it; delete the run and it is all gone.
-func TestASweepIsDrawnFromItsCacheAndWritesNoRecord(t *testing.T) {
-	dana := citedDraft("Dana Reyes", "A1")
-	dana.Links = append(dana.Links, "https://orcid.org/0000-0002-1825-0097")
-	dana.Edges = []sources.EdgeClaim{{From: "ext/orcid/0000-0001-5109-3700", Type: sources.EdgeCoauthor,
-		SourceID: "fake", Basis: "both authors on A1", Confidence: 0.55,
-		Works: []sources.WorkRef{{Ref: "10.1/a1", Year: 2025, Authors: 2}}}}
-	kai := citedDraft("Kai Ito", "K2")
-	fake := &fakeAdapter{id: "fake", drafts: []sources.CandidateDraft{dana, kai}}
-	rs, store, vault := testRunStore(t, fake)
-	before := snapshot(t, vault)
-
-	run := mustRun(t, rs, RunRequest{Source: "fake", Query: "coil"})
-	// nothing in the vault moved — a sweep is a cache, never a record
-	assertOnlyChanged(t, "after a sweep", before, snapshot(t, vault))
-	if len(store.LoadNetworkPeople().People()) != 2 { // the two seeded connectors only
-		t.Fatalf("a sweep wrote a network row: %+v", store.LoadNetworkPeople().People())
-	}
-
-	proj := rs.Projection()
-	if len(proj.People) != 2 {
-		t.Fatalf("bridge people: %+v", proj.People)
-	}
-	var danaB BridgePerson
-	for _, p := range proj.People {
-		if p.Name == "Dana Reyes" {
-			danaB = p
-		}
-	}
-	if danaB.ID != "ext/orcid/0000-0002-1825-0097" || danaB.Seed != "source/"+run.ID || danaB.Subject != "coil" || danaB.Swept == "" {
-		t.Fatalf("dana as a bridge person: %+v", danaB)
-	}
-	if proj.Sources[danaB.Seed] != "coil" {
-		t.Fatalf("the source node is labelled by the subject: %+v", proj.Sources)
-	}
-	var member, coauthor bool
-	for _, e := range proj.Edges {
-		if e.Kind == "member_of" && e.From == danaB.ID && e.To == danaB.Seed {
-			member = true
-		}
-		if e.Kind == "coauthor" && e.To == danaB.ID && e.From == "ext/orcid/0000-0001-5109-3700" && len(e.Works) == 1 {
-			coauthor = true
-		}
-	}
-	if !member || !coauthor {
-		t.Fatalf("edges drawn from the cache: member=%v coauthor=%v %+v", member, coauthor, proj.Edges)
-	}
-	// the record store sees them, marked derived, and never writes them
-	seen := 0
-	for _, e := range store.NetworkEdges() {
-		if e.Kind == "member_of" || (e.Kind == "coauthor" && e.To == danaB.ID) {
-			seen++
-			if !e.Derived {
-				t.Fatalf("a cache edge must say it is derived: %+v", e)
-			}
-		}
-	}
-	if seen < 3 {
-		t.Fatalf("NetworkEdges did not merge the cache: %d", seen)
-	}
-	if raw, _ := os.ReadFile(filepath.Join(vault, "system/aion/recruiting/network/edges.md")); strings.Contains(string(raw), "member_of") {
-		t.Fatal("a cache edge reached the vault")
-	}
-
-	// a pass hides the person; a delete removes the source and everyone it named
-	if _, err := rs.Reject(run.ID, "d2", "", testNow); err != nil {
-		t.Fatal(err)
-	}
-	if p := rs.Projection().People; len(p) != 1 || p[0].Name != "Dana Reyes" {
-		t.Fatalf("a passed draft is no longer a bridge person: %+v", p)
-	}
-	if _, err := rs.Delete(run.ID); err != nil {
-		t.Fatal(err)
-	}
-	if p := rs.Projection(); len(p.People) != 0 || len(p.Edges) != 0 {
-		t.Fatalf("delete the source and the bridge people go with it: %+v", p)
-	}
-}
-
-// A person named by two sweeps of two sources is ONE node hanging off both.
-func TestOnePersonTwoSourcesOneNode(t *testing.T) {
-	dana := citedDraft("Dana Reyes", "A1")
-	dana.Links = append(dana.Links, "https://orcid.org/0000-0002-1825-0097")
-	fake := &fakeAdapter{id: "fake", drafts: []sources.CandidateDraft{dana}}
-	rs, _, _ := testRunStore(t, fake)
-	a := mustRun(t, rs, RunRequest{Source: "fake", Query: "coil"})
-	b := mustRun(t, rs, RunRequest{Source: "fake", Query: "magnet"})
-	proj := rs.Projection()
-	if len(proj.People) != 1 {
-		t.Fatalf("one person, two sweeps → one node: %+v", proj.People)
-	}
-	members := 0
-	for _, e := range proj.Edges {
-		if e.Kind == "member_of" && (e.To == "source/"+a.ID || e.To == "source/"+b.ID) {
-			members++
-		}
-	}
-	if members != 2 {
-		t.Fatalf("hangs off both sources: %+v", proj.Edges)
-	}
-}
-
-// The seed the PLACES button names becomes the run's source node; a run that
-// names none but sweeps a seed's URL still lands on that seed.
-func TestARunKnowsThePlaceItIsFrom(t *testing.T) {
-	fake := &fakeAdapter{id: "fake", drafts: []sources.CandidateDraft{citedDraft("Dana Reyes", "A1")}}
-	rs, store, _ := testRunStore(t, fake)
-	seed, err := store.AddSeed(Seed{Class: SeedLab, Name: "Coil Lab", URL: "https://coil.example.edu/people"}, testNow)
+	a, err := s.AcceptDraft(avery, testNow)
 	if err != nil {
 		t.Fatal(err)
 	}
-	named := mustRun(t, rs, RunRequest{Source: "fake", Query: "coil", Seed: seed.ID})
-	if named.Seed != seed.ID || named.Subject != "Coil Lab" {
-		t.Fatalf("named seed: %+v", named.RunState)
+	first := DeriveTies(avery, a.ID, s.LoadEdges().Edges(), s.PersonResolver(), testNow)
+	if len(first.Papers) != 1 || first.Papers[0].ID != "doi/10.1000/xyz.2024" || first.Papers[0].Kind != graph.KindPaper || !strings.HasPrefix(first.Papers[0].Title, "Low-field coil arrays") {
+		t.Fatalf("the paper is registered by its DOI: %+v", first.Papers)
 	}
-	matched := mustRun(t, rs, RunRequest{Source: "fake", Query: "coil", Fields: map[string]string{"seed_url": "https://coil.example.edu/people/"}})
-	if matched.Seed != seed.ID {
-		t.Fatalf("a run sweeping a seed's URL lands on the seed: %+v", matched.RunState)
+	if kinds := edgeKinds(first.Edges); kinds[graph.EdgeAuthored] != 1 || kinds[graph.EdgeCoauthor] != 0 {
+		t.Fatalf("with kim a stranger, only the authorship is claimed: %+v", first.Edges)
 	}
-	loose := mustRun(t, rs, RunRequest{Source: "fake", Query: "coil"})
-	if loose.Seed != "source/"+loose.ID || loose.Subject != "coil" {
-		t.Fatalf("a run from nowhere is its own source: %+v", loose.RunState)
+	if len(first.Skipped) != 1 || first.Skipped[0].Endpoint != "ext/orcid/"+orcidKim || first.Skipped[0].Kind != graph.EdgeCoauthor {
+		t.Fatalf("the refused tie is named: %+v", first.Skipped)
 	}
-	_ = time.Now
+
+	k, err := s.AcceptDraft(kim, testNow)
+	if err != nil {
+		t.Fatal(err)
+	}
+	second := DeriveTies(kim, k.ID, s.LoadEdges().Edges(), s.PersonResolver(), testNow)
+	var tie *graph.Edge
+	for i := range second.Edges {
+		if second.Edges[i].Kind == graph.EdgeCoauthor {
+			tie = &second.Edges[i]
+		}
+	}
+	if tie == nil {
+		t.Fatalf("both authors known → a coauthor tie: %+v", second.Edges)
+	}
+	if tie.From != PersonRef(a.ID) || tie.To != PersonRef(k.ID) {
+		t.Fatalf("a symmetric tie is stored smaller-id first: %s → %s", tie.From, tie.To)
+	}
+	if tie.Inferred || tie.Confidence != "0.55" || tie.Source != "openalex" || tie.Evidence != paperDOI || !strings.Contains(tie.Basis, paperCite) || tie.Observed != "2026-09-02" {
+		t.Fatalf("the tie keeps the row's provenance: %+v", tie)
+	}
+	if err := graph.Validate(*tie, graph.Default()); err != nil {
+		t.Fatalf("the platform validator refuses it: %v", err)
+	}
+	// the stranger on the same paper is refused, by name, and stays an
+	// external key in network/edges.md
+	if len(second.Skipped) != 1 || second.Skipped[0].Endpoint != "ext/orcid/"+orcidStranger {
+		t.Fatalf("never-guess: %+v", second.Skipped)
+	}
+	strangerOnFile := false
+	for _, e := range s.LoadEdges().Edges() {
+		if e.From == "ext/orcid/"+orcidStranger && e.To == k.ID && e.Evidence == paperDOI {
+			strangerOnFile = true
+		}
+	}
+	if !strangerOnFile {
+		t.Fatal("the external-key claim still lands in network/edges.md with its evidence")
+	}
+	// the authorship edge cites the work
+	for _, e := range second.Edges {
+		if e.Kind == graph.EdgeAuthored && (e.To.ID != "doi/10.1000/xyz.2024" || e.Evidence != paperDOI || e.Confidence != TieAuthoredConfidence || e.Inferred) {
+			t.Fatalf("authored edge: %+v", e)
+		}
+	}
 }
 
-// Accepting a draft whose pair is already on file from an earlier accept
-// ACCUMULATES the works onto the one row.
-func TestAcceptAccumulatesASecondSharedWork(t *testing.T) {
-	first := citedDraft("Dana Reyes", "A1")
-	first.Links = append(first.Links, "https://orcid.org/0000-0002-1825-0097")
-	first.Edges = []sources.EdgeClaim{{From: "ext/orcid/0000-0001-5109-3700", Type: sources.EdgeCoauthor, SourceID: "fake",
-		Basis: "both on paper 1", Confidence: 0.55, Works: []sources.WorkRef{{Ref: "10.1/p1", Year: 2024, Authors: 2}}}}
-	fake := &fakeAdapter{id: "fake", drafts: []sources.CandidateDraft{first}}
-	rs, store, _ := testRunStore(t, fake)
-	run := mustRun(t, rs, RunRequest{Source: "fake", Query: "coil"})
-	if _, _, err := rs.Accept(run.ID, "d1", testNow); err != nil {
+// A name is not an endpoint. A claim whose far end is a display name, an
+// unknown external key, or nothing at all yields no tie; and the resolver
+// itself never answers to a name.
+func TestDeriveTiesNeverGuessesFromANameAlone(t *testing.T) {
+	s, _ := testStore(t)
+	d := paperAuthorDraft("Avery Quill", orcidAvery)
+	d.Edges = []sources.EdgeClaim{
+		{From: "Kim Collab", Type: sources.EdgeCoauthor, SourceID: "pubmed", Basis: "listed together on a paper", Confidence: 0.55},
+		{From: "ext/orcid/" + orcidStranger, Type: sources.EdgeSameLab, SourceID: "openalex", Basis: "same institution", Confidence: 0.45, Inferred: true},
+	}
+	c, err := s.AcceptDraft(d, testNow)
+	if err != nil {
 		t.Fatal(err)
 	}
-	// the same coauthor, a second paper, a second sweep: the person is now a
-	// record, so this arrives as a duplicate — accept the claim through the
-	// store directly, as a later phase's "add these works" would
-	cand := store.LoadCandidate("dana-reyes")
-	second := sources.CandidateDraft{SourceID: "fake", ExternalID: "A1", Name: "Dana Reyes", Links: first.Links,
-		Edges: []sources.EdgeClaim{{From: "ext/orcid/0000-0001-5109-3700", Type: sources.EdgeCoauthor, SourceID: "fake",
-			Basis: "both on paper 2", Confidence: 0.55, Works: []sources.WorkRef{{Ref: "10.1/p2", Year: 2025, Authors: 3}}}}}
-	if err := store.saveDraftEdges(second, cand.Get("id")); err != nil {
+	// even with a record NAMED Kim Collab on the board
+	if _, err := s.AddCandidate(QuickAdd{Text: "Kim Collab", Name: "Kim Collab"}, testNow); err != nil {
 		t.Fatal(err)
 	}
-	edges := store.LoadEdges().Edges()
-	if len(edges) != 1 || len(edges[0].Works) != 2 {
-		t.Fatalf("the second work must land on the one row: %+v", edges)
+	resolve := s.PersonResolver()
+	if _, ok := resolve("Kim Collab"); ok {
+		t.Fatal("a display name resolved to a person")
+	}
+	if id, ok := resolve(c.ID); !ok || id != c.ID {
+		t.Fatalf("a record id resolves to itself: %q %v", id, ok)
+	}
+	if id, ok := resolve("ext/orcid/" + orcidAvery); !ok || id != c.ID {
+		t.Fatalf("a matched external key resolves to its record: %q %v", id, ok)
+	}
+	if _, ok := resolve("ext/orcid/" + orcidStranger); ok {
+		t.Fatal("a stranger's ORCID resolved")
+	}
+	ties := DeriveTies(d, c.ID, s.LoadEdges().Edges(), resolve, testNow)
+	if kinds := edgeKinds(ties.Edges); kinds[graph.EdgeCoauthor] != 0 || kinds[graph.EdgeSameLab] != 0 {
+		t.Fatalf("a tie was invented: %+v", ties.Edges)
+	}
+	if len(ties.Skipped) != 2 {
+		t.Fatalf("both refusals are named: %+v", ties.Skipped)
+	}
+	// and nothing at all without a candidate or a resolver
+	if got := DeriveTies(d, "", nil, nil, testNow); len(got.Edges) != 0 || len(got.Papers) != 0 {
+		t.Fatalf("no candidate, no claims: %+v", got)
+	}
+	if got := DeriveTies(d, c.ID, s.LoadEdges().Edges(), nil, testNow); len(got.Edges) != 1 || got.Edges[0].Kind != graph.EdgeAuthored {
+		t.Fatalf("no resolver → nobody is known → authorship only: %+v", got.Edges)
+	}
+}
+
+// Applying the same accept twice adds nothing; a pair claimed twice keeps
+// the stronger claim — stated over inferred, then higher confidence — and
+// a low-confidence overlap never displaces a cited coauthorship.
+func TestDeriveTiesIdempotentAndConflictsResolveDeterministically(t *testing.T) {
+	s, _ := testStore(t)
+	gs, vault := testGraphStore(t)
+	a, err := s.AcceptDraft(paperAuthorDraft("Avery Quill", orcidAvery, orcidKim), testNow)
+	if err != nil {
+		t.Fatal(err)
+	}
+	kim := paperAuthorDraft("Kim Collab", orcidKim, orcidAvery)
+	k, err := s.AcceptDraft(kim, testNow)
+	if err != nil {
+		t.Fatal(err)
+	}
+	claims := DeriveKnowledge(kim, k.ID, "", testNow).WithTies(DeriveTies(kim, k.ID, s.LoadEdges().Edges(), s.PersonResolver(), testNow))
+	first, err := ApplyKnowledge(gs, claims)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// person + topic + paper; expertise + authored + coauthor
+	if len(first.AddedEntities) != 3 || len(first.AddedEdges) != 3 {
+		t.Fatalf("first apply: %d entities %d edges", len(first.AddedEntities), len(first.AddedEdges))
+	}
+	before := snapshot(t, vault)
+	second, err := ApplyKnowledge(gs, claims)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(second.AddedEntities) != 0 || len(second.AddedEdges) != 0 {
+		t.Fatalf("replay added %d/%d", len(second.AddedEntities), len(second.AddedEdges))
+	}
+	for p, b := range before {
+		if after := snapshot(t, vault); after[p] != b {
+			t.Fatalf("replay rewrote %s", p)
+		}
+	}
+	// the same tie derived from the OTHER side is the same key — nothing new
+	fromAvery := DeriveTies(paperAuthorDraft("Avery Quill", orcidAvery, orcidKim), a.ID, s.LoadEdges().Edges(), s.PersonResolver(), testNow)
+	third, err := ApplyKnowledge(gs, KnowledgeClaims{Person: graph.Entity{ID: a.ID, Kind: graph.KindPerson}}.WithTies(fromAvery))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, e := range third.AddedEdges {
+		if e.Kind == graph.EdgeCoauthor {
+			t.Fatalf("the pair was claimed a second time from the other side: %+v", e)
+		}
+	}
+
+	// conflicts, over hand-built rows (the store itself never writes two
+	// rows with one key): stated beats inferred whatever the number; among
+	// equals the higher confidence wins
+	rows := []Edge{
+		{From: a.ID, To: k.ID, Kind: "coauthor", Basis: "derived overlap", Confidence: "0.80", Inferred: true, Source: "scan"},
+		{From: k.ID, To: a.ID, Kind: "coauthor", Basis: "both authors on the paper", Confidence: "0.55", Inferred: false, Source: "openalex"},
+		{From: a.ID, To: k.ID, Kind: "same_lab", Basis: "weaker", Confidence: "0.45", Inferred: true, Source: "openalex"},
+		{From: k.ID, To: a.ID, Kind: "same_lab", Basis: "stronger", Confidence: "0.50", Inferred: true, Source: "openalex"},
+	}
+	got := DeriveTies(sources.CandidateDraft{}, k.ID, rows, s.PersonResolver(), testNow)
+	if len(got.Edges) != 2 {
+		t.Fatalf("one claim per key: %+v", got.Edges)
+	}
+	for _, e := range got.Edges {
+		switch e.Kind {
+		case "coauthor":
+			if e.Inferred || e.Confidence != "0.55" {
+				t.Fatalf("an inferred 0.80 displaced the cited claim: %+v", e)
+			}
+		case "same_lab":
+			if e.Confidence != "0.50" || e.Basis != "stronger" {
+				t.Fatalf("higher confidence wins: %+v", e)
+			}
+		}
+		if e.From != PersonRef(a.ID) || e.To != PersonRef(k.ID) {
+			t.Fatalf("canonical order regardless of the row's direction: %+v", e)
+		}
+	}
+	// deterministic: the same rows in reverse order give the same answer
+	rev := []Edge{rows[3], rows[2], rows[1], rows[0]}
+	again := DeriveTies(sources.CandidateDraft{}, k.ID, rev, s.PersonResolver(), testNow)
+	if fmt.Sprint(again.Edges) != fmt.Sprint(got.Edges) {
+		t.Fatalf("order-dependent result:\n%+v\n%+v", got.Edges, again.Edges)
+	}
+}
+
+// The calendar / notes derivations (same_meeting, co_mentioned) are
+// untouched by the tie projection: they stay on the network read as they
+// were, are never written to the general graph (not in its vocabulary), and
+// network/edges.md is byte-identical after the general-graph write.
+func TestDeriveTiesPreservesDerivedNetworkEdges(t *testing.T) {
+	s, vault := testStore(t)
+	gs, _ := testGraphStore(t)
+	a, _ := s.AcceptDraft(paperAuthorDraft("Avery Quill", orcidAvery, orcidKim), testNow)
+	kim := paperAuthorDraft("Kim Collab", orcidKim, orcidAvery)
+	k, err := s.AcceptDraft(kim, testNow)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.UseDerivedEdges(func() []Edge {
+		return []Edge{
+			{From: a.ID, To: k.ID, Kind: "same_meeting", Basis: "both on the 2026-08-01 call", Confidence: "0.70", Inferred: true, Source: "calendar"},
+			{From: a.ID, To: k.ID, Kind: "co_mentioned", Basis: "log/2026-08-02.md names both", Confidence: "0.40", Inferred: true, Source: "notes"},
+		}
+	})
+	edgesFile := s.Path("network/edges.md")
+	fileBefore, _ := os.ReadFile(edgesFile)
+	netBefore := s.NetworkEdges()
+
+	ties := DeriveTies(kim, k.ID, netBefore, s.PersonResolver(), testNow)
+	kinds := edgeKinds(ties.Edges)
+	if kinds["same_meeting"] != 0 || kinds["co_mentioned"] != 0 || kinds[graph.EdgeCoauthor] != 1 {
+		t.Fatalf("only the platform-vocabulary ties are mirrored: %+v", kinds)
+	}
+	refused := map[string]bool{}
+	for _, sk := range ties.Skipped {
+		refused[sk.Kind] = true
+	}
+	if !refused["same_meeting"] || !refused["co_mentioned"] {
+		t.Fatalf("the derived kinds are refused by name, not dropped silently: %+v", ties.Skipped)
+	}
+	if _, err := ApplyKnowledge(gs, DeriveKnowledge(kim, k.ID, "", testNow).WithTies(ties)); err != nil {
+		t.Fatal(err)
+	}
+	fileAfter, _ := os.ReadFile(edgesFile)
+	if string(fileBefore) != string(fileAfter) {
+		t.Fatal("a general-graph write touched network/edges.md")
+	}
+	if _, err := os.Stat(vault + "/system/aion/recruiting/network/edges.md"); err != nil {
+		t.Fatal(err)
+	}
+	netAfter := s.NetworkEdges()
+	if len(netAfter) != len(netBefore) {
+		t.Fatalf("the network read changed: %d → %d", len(netBefore), len(netAfter))
+	}
+	derived := 0
+	for _, e := range netAfter {
+		if e.Derived {
+			derived++
+		}
+	}
+	if derived != 2 {
+		t.Fatalf("the log-derived edges are still there: %d", derived)
+	}
+	for _, e := range gs.LoadEdges().Edges() {
+		if e.Kind == "same_meeting" || e.Kind == "co_mentioned" {
+			t.Fatalf("a derived edge was serialized into the general graph: %+v", e)
+		}
+	}
+}
+
+// A PubMed draft resolved through OpenAlex's work object carries the paper's
+// coauthors — by durable key — onto the draft, and a second lookup adds
+// nothing.
+func TestPubMedLookupCarriesCoauthorClaims(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/entrez/eutils/esearch.fcgi":
+			fmt.Fprint(w, `{"esearchresult":{"idlist":["39000001"]}}`)
+		case "/entrez/eutils/efetch.fcgi":
+			fmt.Fprint(w, `<PubmedArticleSet><PubmedArticle><MedlineCitation><PMID>39000001</PMID><Article><ArticleTitle>Diffusion MRI reconstruction.</ArticleTitle><AuthorList>
+				<Author><LastName>Yu</LastName><ForeName>G</ForeName><Initials>G</Initials></Author>
+				<Author><LastName>Park</LastName><ForeName>S</ForeName><Initials>S</Initials></Author>
+				</AuthorList></Article></MedlineCitation><PubmedData><ArticleIdList><ArticleId IdType="doi">10.1000/dmri.2025</ArticleId></ArticleIdList></PubmedData></PubmedArticle></PubmedArticleSet>`)
+		case "/works/pmid:39000001":
+			fmt.Fprint(w, `{"id":"https://openalex.org/W1234","doi":"https://doi.org/10.1000/dmri.2025","title":"Diffusion MRI reconstruction.","authorships":[
+				{"author_position":"first","raw_author_name":"Yu G","author":{"id":"https://openalex.org/A1234","display_name":"Guang Yu"},"institutions":[{"id":"https://openalex.org/I1","display_name":"Example University"}]},
+				{"author_position":"last","raw_author_name":"Park S","author":{"id":"https://openalex.org/A5678","display_name":"Sun Park","orcid":"https://orcid.org/0000-0003-0000-0003"},"institutions":[{"id":"https://openalex.org/I1","display_name":"Example University"}]},
+				{"author_position":"middle","raw_author_name":"Nobody","author":{"display_name":"No Key"}}]}`)
+		case "/authors/A1234":
+			fmt.Fprint(w, `{"id":"https://openalex.org/A1234","display_name":"Guang Yu","last_known_institution":{"display_name":"Example University"},"topics":[{"display_name":"Diffusion MRI"}]}`)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+	rs, store, _ := testRunStore(t, nil)
+	rs.Register(sources.PubMed{BaseURL: srv.URL, Client: *srv.Client()})
+	rs.Register(sources.OpenAlex{BaseURL: srv.URL, Client: *srv.Client()})
+	run := mustRun(t, rs, RunRequest{Source: "pubmed", Query: "diffusion MRI"})
+	if len(run.Drafts[0].Draft.Edges) != 0 {
+		t.Fatal("PubMed alone names nobody by key")
+	}
+	run, res, err := rs.Lookup(context.Background(), run.ID, "d1", testNow)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Edges != 2 {
+		t.Fatalf("one coauthor + one same_lab claim ride the resolved paper: %+v", res)
+	}
+	d := run.Drafts[0].Draft
+	for _, e := range d.Edges {
+		if e.From != "ext/orcid/0000-0003-0000-0003" || e.Evidence != "https://doi.org/10.1000/dmri.2025" || e.To != "" {
+			t.Fatalf("claim shape: %+v", e)
+		}
+		if strings.Contains(e.Basis, "No Key") {
+			t.Fatalf("a keyless author is never an endpoint: %+v", e)
+		}
+	}
+	_, again, err := rs.Lookup(context.Background(), run.ID, "d1", testNow)
+	if err != nil || again.Edges != 0 {
+		t.Fatalf("a second lookup re-claims nothing: %+v %v", again, err)
+	}
+	// accepted: the claims land in network/edges.md by external key, and the
+	// paper reached through PubMed and through OpenAlex is ONE node (the DOI)
+	_, c, err := rs.Accept(run.ID, "d1", testNow)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rows := store.LoadEdges().Edges()
+	if len(rows) != 2 || rows[0].To != c.ID || rows[0].Evidence != "https://doi.org/10.1000/dmri.2025" {
+		t.Fatalf("network rows: %+v", rows)
+	}
+	ties := DeriveTies(d, c.ID, rows, store.PersonResolver(), testNow)
+	if len(ties.Papers) != 1 || ties.Papers[0].ID != "doi/10.1000/dmri.2025" || !strings.HasPrefix(ties.Papers[0].Title, "Diffusion MRI reconstruction") {
+		t.Fatalf("one paper by DOI: %+v", ties.Papers)
+	}
+	if len(ties.Skipped) != 2 {
+		t.Fatalf("the stranger is refused for both kinds: %+v", ties.Skipped)
+	}
+}
+
+func TestPaperRef(t *testing.T) {
+	for in, want := range map[string]string{
+		"https://doi.org/10.1038/s41586-020-2649-2": "doi/10.1038/s41586-020-2649-2",
+		"http://doi.org/10.1000/ABC.Def":            "doi/10.1000/abc.def",
+		"https://openalex.org/W3035965352":          "ext/openalex/W3035965352",
+		"https://pubmed.ncbi.nlm.nih.gov/39000001/": "ext/pubmed/39000001",
+		"https://openalex.org/A123":                 "",
+		"https://lab.example/people/avery":          "",
+		"":                                          "",
+	} {
+		got, ok := PaperRef(in)
+		if (want == "") == ok || got.ID != want || (ok && got.Kind != graph.KindPaper) {
+			t.Errorf("PaperRef(%q) = %+v %v, want %q", in, got, ok, want)
+		}
 	}
 }
