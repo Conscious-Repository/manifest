@@ -243,6 +243,14 @@ func exactKeys(v any, t reflect.Type) bool {
 	}
 	switch x := v.(type) {
 	case map[string]any:
+		if t.Kind() == reflect.Map && t.Key().Kind() == reflect.String {
+			for _, value := range x {
+				if !exactKeys(value, t.Elem()) {
+					return false
+				}
+			}
+			return true
+		}
 		if t.Kind() != reflect.Struct {
 			return false
 		}

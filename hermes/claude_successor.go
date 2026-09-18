@@ -28,9 +28,10 @@ var extractionScript string
 // Pin the sparks alias and its wire model using Hermes provider configuration.
 // The installed chat path does not expand model.aliases before API submission;
 // extra_body is Hermes' own provider setting that pins the canonical wire model.
+// Load this invocation's private config (ignoring it triggers first-run setup).
 // Keep this invocation's config
 // private and fixed: no inherited fallback, MCP servers, skills or credentials.
-const extractionConfig = `{"compression":{"enabled":false},"model":{"context_length":1048576,"aliases":{"sparks":"lab-sparks/deepseek-v4.1-flash"}},"custom_providers":[{"name":"lab-sparks","base_url":"http://192.168.87.11:8000/v1","api_key":"local","model":"deepseek-v4.1-flash","api_mode":"chat_completions","models":{"sparks":{"context_length":1048576},"deepseek-v4.1-flash":{"context_length":1048576}},"discover_models":false,"extra_body":{"model":"deepseek-v4.1-flash","tool_choice":"none"}}],"fallback_providers":[],"fallback_model":null,"mcp_servers":{}}`
+const extractionConfig = `{"compression":{"enabled":false},"model":{"provider":"lab-sparks","default":"sparks","context_length":1048576,"aliases":{"sparks":"lab-sparks/deepseek-v4.1-flash"}},"custom_providers":[{"name":"lab-sparks","base_url":"http://192.168.87.11:8000/v1","api_key":"local","model":"deepseek-v4.1-flash","api_mode":"chat_completions","models":{"sparks":{"context_length":1048576},"deepseek-v4.1-flash":{"context_length":1048576}},"discover_models":false,"extra_body":{"model":"deepseek-v4.1-flash","tool_choice":"none"}}],"fallback_providers":[],"fallback_model":null,"mcp_servers":{}}`
 
 // Package-private process seam; production always invokes the fixed CLI by argv.
 var extractionCommand = func(ctx context.Context, args ...string) *exec.Cmd {
@@ -88,18 +89,35 @@ func (r *Runner) runExtractionSuccessor(ctx context.Context, req Request, a Duty
 	cmd := extractionCommand(ctx)
 	cmd.Stdin = strings.NewReader(req.Prompt)
 	cmd.Dir = scratch
-	cmd.Env = []string{"HOME=" + scratch, "HERMES_HOME=" + scratch, "TMPDIR=" + scratch, "PATH=/usr/bin:/bin", "LANG=C.UTF-8", "HERMES_MAX_TOKENS=4096", "HERMES_SAFE_MODE=1", "HERMES_IGNORE_USER_CONFIG=1", "HERMES_IGNORE_RULES=1", "PYTHONDONTWRITEBYTECODE=1", "NO_COLOR=1", "TERM=dumb"}
+	cmd.Env = []string{"HOME=" + scratch, "HERMES_HOME=" + scratch, "TMPDIR=" + scratch, "PATH=/usr/bin:/bin", "LANG=C.UTF-8", "HERMES_MAX_TOKENS=4096", "HERMES_SAFE_MODE=1", "HERMES_IGNORE_RULES=1", "PYTHONDONTWRITEBYTECODE=1", "NO_COLOR=1", "TERM=dumb"}
 	cmd.WaitDelay = time.Second
 	var output limitedOutput
 	cmd.Stdout = &output
 	cmd.Stderr = io.Discard
-	if err = cmd.Run(); err != nil || ctx.Err() != nil {
-		if ctx.Err() != nil {
-			return Result{}, refuse("bounded Hermes timeout or cancellation")
-		}
-		return Result{}, refuse("bounded Hermes execution failed")
+	err = cmd.Run()
+	var observed ExtractionExecution
+	raw, receiptErr := os.ReadFile(filepath.Join(scratch, "execution.json"))
+	observedResult := Result{}
+	if receiptErr == nil && json.Unmarshal(raw, &observed) == nil {
+		observedResult.Extraction = &observed
+		observedResult.Model = observed.Model
 	}
-	return parseExtractionResult(output.Bytes(), a)
+	if err != nil || ctx.Err() != nil {
+		if ctx.Err() != nil {
+			return observedResult, refuse("bounded Hermes timeout or cancellation")
+		}
+		if strings.Contains(string(output.Bytes()), "Failed to initialize agent:") && strings.Contains(string(output.Bytes()), "Permission denied") {
+			return observedResult, refuse("Hermes agent initialization denied by filesystem boundary")
+		}
+		return observedResult, refuse("bounded Hermes execution failed")
+	}
+	if observed.Provider != a.Provider || observed.Model != a.Model || observed.ResponseModel != a.Model || observed.Steps != 1 || !observed.Completed || observed.Status != 200 {
+		return observedResult, refuse("Hermes provider execution receipt not verified")
+	}
+	result, err := parseExtractionResult(output.Bytes(), a)
+	result.Extraction = &observed
+	result.Model = observed.Model
+	return result, err
 }
 
 func parseExtractionResult(raw []byte, a DutyAuthority) (Result, error) {

@@ -137,9 +137,12 @@ func TestCanarySourceCallGraphIsolation(t *testing.T) {
 // still cannot enter it. The unreachable Claude Python launcher was removed.
 // Seam audit: claude_successor exports the unchanged 512 KiB constant.
 // extractionDutyAllowed still excludes re-intake; no call or effect changed.
+// Re-audited 2026-09-18: Result adds extraction-only HTTP evidence; Run routing
+// is unchanged. The private config, receipt gate and HTTP observer are reached
+// only for the three extraction duties; re-intake still uses runSuccessor.
 var reviewedSuccessorSources = map[string]string{
-	"../../hermes/claude_successor.go": "75e6e1d692d6f1be446b8dc5bab93466adb25780482316458e1fa802f6dd997c",
-	"../../hermes/runner.go":           "c4db245b5012e639cae924ee2c64decc4327312d562d411ab2d65ec98ddd7d6f",
+	"../../hermes/claude_successor.go": "3f905d07dc6862c0c52f02b160da2cb1457c664cc2ec6c0c1f9d120b31b9600f",
+	"../../hermes/runner.go":           "b59df7dc77d37172b771e4a2c89215a31b6e81ea076d706fb6ef4fc6c6af3bd3",
 	"../../hermes/successor.go":        "b154048dfe670b02c46d4d2302d17ac9bc8d58ca499c0445e8d7bbd818d0e8af",
 	"../../hermes/successor.py":        "a7737229609b18c627c720f466858045b7aa06b4e03ed29ce1c0774d8385ae5c",
 	"../../hermes/authority.go":        "fef7b7a179b9f62bb53e910381c4ea3bca198a3743432a8f7541abe334585b32",

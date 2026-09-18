@@ -23,12 +23,15 @@ func TestExtractionCLI(t *testing.T) {
 assert sys.stdin.read()=="fixture $(touch /tmp/not-executed); `+"`literal`"+`"
 assert os.getcwd()==os.environ['HERMES_HOME']==os.environ['HOME']
 c=json.load(open(os.path.join(os.environ['HERMES_HOME'],'config.yaml')))
+assert c['model']['provider']=='lab-sparks' and c['model']['default']=='sparks'
 assert c['model']['aliases']['sparks']=='lab-sparks/deepseek-v4.1-flash'
 assert c['custom_providers'][0]['name']=='lab-sparks'
 assert c['custom_providers'][0]['extra_body']=={'model':'deepseek-v4.1-flash','tool_choice':'none'}
 assert c['fallback_providers']==[] and c['fallback_model'] is None and c['mcp_servers']=={}
+assert 'HERMES_IGNORE_USER_CONFIG' not in os.environ
 assert 'ANTHROPIC_API_KEY' not in os.environ
 assert 'HERMES_KANBAN_TASK' not in os.environ
+json.dump({'provider':'lab-sparks','model':'deepseek-v4.1-flash','responseModel':'deepseek-v4.1-flash','steps':1,'completed':True,'status':200},open('execution.json','w'))
 print('{"candidates":[]}')`)
 	}
 	t.Setenv("ANTHROPIC_API_KEY", "must-not-pass")
@@ -212,11 +215,31 @@ def main():
         pass
     else:
         raise AssertionError('shell execution')
+    import httpx
+    response = httpx.Client().send(httpx.Request())
+    assert response.status_code == 200
+    try:
+        httpx.Client().send(httpx.Request())
+    except RuntimeError:
+        pass
+    else:
+        raise AssertionError('second provider call permitted')
     open('scratch-test', 'w').write('allowed')
     print('{"candidates":[]}')
 `
 	code = strings.ReplaceAll(code, "OUTSIDE", "'"+outside+"'")
 	if err := os.WriteFile(filepath.Join(runtime, "hermes_cli", "main.py"), []byte(code), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(runtime, "httpx.py"), []byte(`class Request:
+    url = 'http://192.168.87.11:8000/v1/chat/completions'
+    content = b'{"model":"deepseek-v4.1-flash"}'
+class Response:
+    status_code = 200
+    def read(self): return b'{"model":"deepseek-v4.1-flash"}'
+class Client:
+    def send(self, request, *args, **kwargs): return Response()
+`), 0600); err != nil {
 		t.Fatal(err)
 	}
 	script := strings.ReplaceAll(extractionScript, "/home/benjamin/.hermes/hermes-agent", runtime)
@@ -270,5 +293,39 @@ func TestExtractionAuthorityProjection(t *testing.T) {
 	}
 	if err := r.ValidateExtractionDuty("aion"); err != nil {
 		t.Fatal("projection mutated authority", err)
+	}
+}
+
+func TestExtractionRequiresObservedProviderReceipt(t *testing.T) {
+	old := extractionCommand
+	t.Cleanup(func() { extractionCommand = old })
+	for _, mode := range []string{"absent", "wrong-model", "wrong-provider", "two-steps", "incomplete", "http-error", "initialization"} {
+		t.Run(mode, func(t *testing.T) {
+			extractionCommand = func(ctx context.Context, args ...string) *exec.Cmd {
+				return exec.CommandContext(ctx, "/usr/bin/python3", "-c", `import json,sys
+mode=sys.argv[1]
+r={'provider':'lab-sparks','model':'deepseek-v4.1-flash','responseModel':'deepseek-v4.1-flash','steps':1,'completed':True,'status':200}
+if mode=='wrong-model': r['responseModel']='other'
+if mode=='wrong-provider': r['provider']='other'
+if mode=='two-steps': r['steps']=2
+if mode=='incomplete': r['completed']=False
+if mode=='http-error': r['status']=500
+if mode not in ('absent','initialization'): json.dump(r,open('execution.json','w'))
+if mode=='initialization':
+ print('Failed to initialize agent: Permission denied: redacted')
+ sys.exit(1)
+print('{"candidates":[]}')`, mode)
+			}
+			res, err := NewRunner(Config{Enabled: true}).Run(context.Background(), Request{MigratedDuty: "extractor/aion", Prompt: "fixture"})
+			if err == nil || res.DutyVerified() || res.Reply != "" {
+				t.Fatal("unverified response accepted", res, err)
+			}
+			if mode == "initialization" && !strings.Contains(err.Error(), "initialization denied by filesystem boundary") {
+				t.Fatal(err)
+			}
+			if mode != "absent" && mode != "initialization" && res.Extraction == nil {
+				t.Fatal("lost observed failure evidence")
+			}
+		})
 	}
 }

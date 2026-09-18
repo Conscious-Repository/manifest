@@ -103,6 +103,41 @@ def main():
     sys.argv = ['hermes', 'chat', '-Q', '-q', prompt, '-m', 'sparks',
                 '--provider', 'lab-sparks', '--safe-mode', '-t', 'none',
                 '--max-turns', '1', '--source', 'tool', '--cli']
+    # Observe the actual HTTP boundary. No prompt, response text or credentials
+    # enter telemetry. A second request is refused, including SDK retries.
+    import json
+    import httpx
+    send = httpx.Client.send
+    receipt = {'provider': '', 'model': '', 'responseModel': '',
+               'steps': 0, 'completed': False, 'status': 0}
+    def save_receipt():
+        with open('execution.json', 'w') as f:
+            json.dump(receipt, f)
+            f.flush()
+            os.fsync(f.fileno())
+    def observed_send(client, request, *args, **kwargs):
+        if str(request.url) != 'http://192.168.87.11:8000/v1/chat/completions' or receipt['steps']:
+            raise RuntimeError('unapproved provider request or retry')
+        body = json.loads(request.content)
+        if body.get('model') != 'deepseek-v4.1-flash' or body.get('tools'):
+            raise RuntimeError('unapproved model or tools')
+        receipt.update(provider='lab-sparks', model=body['model'], steps=1)
+        save_receipt()
+        kwargs['follow_redirects'] = False
+        response = send(client, request, *args, **kwargs)
+        raw = response.read()
+        receipt.update(completed=True, status=response.status_code)
+        try:
+            receipt['responseModel'] = json.loads(raw).get('model', '')
+        except (ValueError, AttributeError):
+            for line in raw.splitlines():
+                if line.startswith(b'data: ') and line != b'data: [DONE]':
+                    item = json.loads(line[6:])
+                    if item.get('model'):
+                        receipt['responseModel'] = item['model']
+        save_receipt()
+        return response
+    httpx.Client.send = observed_send
     from hermes_cli.main import main as hermes_main
     hermes_main()
 

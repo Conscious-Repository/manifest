@@ -149,6 +149,7 @@ type Request struct {
 
 // Result is a completed turn.
 type Result struct {
+	Extraction      *ExtractionExecution
 	CostPolicy      string
 	CostTelemetry   string
 	ProviderBinding string

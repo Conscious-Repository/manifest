@@ -37,19 +37,21 @@ func (c Config) Enabled(ritual string) bool {
 }
 
 type Job struct {
-	Version           int                  `json:"version"`
-	OwnershipRevision uint64               `json:"ownershipRevision"`
-	Replay            bool                 `json:"replay"`
-	ID                string               `json:"id"`
-	Input             Input                `json:"input"`
-	State             string               `json:"state"`
-	Reason            string               `json:"reason,omitempty"`
-	Started           time.Time            `json:"started"`
-	Finished          time.Time            `json:"finished"`
-	Model             string               `json:"model,omitempty"`
-	SpentUSD          float64              `json:"spentUsd"`
-	Candidates        []approvals.Proposal `json:"candidates,omitempty"`
-	Published         int                  `json:"published"`
+	ParentID          string                      `json:"parentId,omitempty"`
+	Execution         *hermes.ExtractionExecution `json:"execution,omitempty"`
+	Version           int                         `json:"version"`
+	OwnershipRevision uint64                      `json:"ownershipRevision"`
+	Replay            bool                        `json:"replay"`
+	ID                string                      `json:"id"`
+	Input             Input                       `json:"input"`
+	State             string                      `json:"state"`
+	Reason            string                      `json:"reason,omitempty"`
+	Started           time.Time                   `json:"started"`
+	Finished          time.Time                   `json:"finished"`
+	Model             string                      `json:"model,omitempty"`
+	SpentUSD          float64                     `json:"spentUsd"`
+	Candidates        []approvals.Proposal        `json:"candidates,omitempty"`
+	Published         int                         `json:"published"`
 }
 type Service struct {
 	dir, vault, harness string
@@ -202,7 +204,7 @@ func (s *Service) run(path string) {
 	s.mu.Lock()
 	b, e := os.ReadFile(path)
 	var j Job
-	if e != nil || json.Unmarshal(b, &j) != nil || j.ID != j.Input.ID() || !s.cfg.Enabled(j.Input.Ritual) {
+	if e != nil || json.Unmarshal(b, &j) != nil || !s.validIdentity(j) || !s.cfg.Enabled(j.Input.Ritual) {
 		s.mu.Unlock()
 		return
 	}
@@ -273,6 +275,8 @@ func (s *Service) run(path string) {
 			return
 		}
 		res, e := s.runner.Run(s.ctx, hermes.Request{MigratedDuty: "extractor/" + j.Input.Ritual, Prompt: prompt})
+		j.Execution = res.Extraction
+		j.Model = res.Model
 		if e != nil || !res.DutyVerified() {
 			reason := "bounded execution not verified; owner review required"
 			var refusal *hermes.Refusal
@@ -359,7 +363,8 @@ func (s *Service) report(j Job) error {
 	if !j.Finished.IsZero() {
 		finished = j.Finished.Format(time.RFC3339)
 	}
-	report := (&mdfm.Writer{}).Set("run", "manifest-"+j.ID[:20]).Set("spirit", "extractor").Set("ritual", j.Input.Ritual).Set("executor", "manifest").Set("finished", finished).Set("portal", "lab-sparks").Set("request", strings.Join(names, ", ")).Set("started", j.Started.Format(time.RFC3339)).Set("outcome", outcome).Set("model", j.Model).SetRaw("items_written", fmt.Sprint(j.Published)).SetRaw("charge_spent_usd", fmt.Sprint(j.SpentUSD)).String("## Outcome\n\n" + j.Reason + "\n")
+	execution, _ := json.Marshal(j.Execution)
+	report := (&mdfm.Writer{}).Set("run", "manifest-"+j.ID[:20]).Set("spirit", "extractor").Set("ritual", j.Input.Ritual).Set("executor", "manifest").Set("finished", finished).Set("portal", "lab-sparks").Set("request", strings.Join(names, ", ")).Set("started", j.Started.Format(time.RFC3339)).Set("outcome", outcome).Set("model", j.Model).SetRaw("items_written", fmt.Sprint(j.Published)).SetRaw("charge_spent_usd", fmt.Sprint(j.SpentUSD)).String("## Outcome\n\n" + j.Reason + "\n\nExecution receipt: " + string(execution) + "\n")
 	return atomic(filepath.Join(s.harness, "artifacts", "runs", j.Started.Format("2006-01-02")+"-extractor-manifest-"+j.ID[:20]+".md"), []byte(report))
 }
 
