@@ -564,8 +564,8 @@ function rgCanvas(data) {
     });
 
     // named nodes are appended last so their labels sit over the ring
-    const order = sim.nodes.slice().sort((a, b) =>
-      (a.kind === "stranger" ? 0 : 1) - (b.kind === "stranger" ? 0 : 1));
+    const quiet = (k) => k === "stranger" || k === "bridge" || k === "passed";
+    const order = sim.nodes.slice().sort((a, b) => (quiet(a.kind) ? 0 : 1) - (quiet(b.kind) ? 0 : 1));
     order.forEach((n) => {
       const g = rgSVG("g", "rg-node rg-" + n.kind, {});
       n.hit = rgSVG("circle", "rg-hit", { r: String(n.r) });
@@ -736,8 +736,8 @@ function rgMenu(id, ev) {
   };
   item("stand here", () => rgStand(id));
   item("why connected", () => rgSelect(id));
-  if (node.kind === "considering") item("open the record", () => { recSel = id; recNav("board"); });
-  if (node.kind === "stranger" || node.kind === "considering") {
+  if (node.kind === "pursuing" || node.kind === "passed") item("open the record", () => { recSel = id; recNav("board"); });
+  if (node.kind === "stranger" || node.kind === "bridge" || node.kind === "pursuing") {
     item("someone I'd ask", async () => {
       if (await recWrite("/api/aion/recruiting/network/mark",
         { key: id.replace(/^contact\//, ""), name: node.label }, "POST",
@@ -1039,8 +1039,9 @@ function rgPanel(data) {
   close.onclick = () => rgSelect("");
   head.append(close);
   box.append(head);
-  const meta = [node.kind === "considering" ? "on the board" : node.kind === "connector" ? "someone you'd ask"
-    : node.kind === "known" ? "in your graph"
+  const meta = [node.kind === "pursuing" ? "pursuing" : node.kind === "in_touch" ? "in touch"
+    : node.kind === "bridge" ? "named by " + (node.source || "a sweep") : node.kind === "source" ? "a source"
+    : node.kind === "passed" ? "passed"
     : node.kind === "you" ? "you" : "not on the board", node.stage, node.role].filter(Boolean).join(" · ");
   box.append(el("div", "rec-draft-sub", meta));
 
@@ -1076,12 +1077,12 @@ function rgPanel(data) {
   }
 
   const acts = el("div", "rg-acts");
-  if (node.kind === "considering") {
+  if (node.kind === "pursuing" || node.kind === "passed") {
     const open = el("button", "pill light", "open the record");
     open.onclick = () => { recSel = node.id; recNav("board"); };
     acts.append(open);
   }
-  if (node.kind === "stranger" || node.kind === "considering") {
+  if (node.kind === "stranger" || node.kind === "bridge" || node.kind === "pursuing") {
     const ask = el("button", "pill light", "someone I'd ask");
     ask.title = "mark them as a connector — intro paths start from these people";
     ask.onclick = async () => {

@@ -18,7 +18,9 @@
 package recruiting
 
 import (
+	"math"
 	"strings"
+	"time"
 
 	"manifest/record"
 	"manifest/recruiting/sources"
@@ -342,6 +344,56 @@ type NetworkPerson struct {
 	Unknown []Field `json:"unknown,omitempty"`
 }
 
+// ---- tie strength (social graph plan D-I) ----
+//
+// Bibliometrics settled how much a shared paper is worth: FRACTIONAL
+// counting — each work has total weight 1 spread over its author pairs, so a
+// two-author paper is a tie and a slot on a 40-author consortium paper is
+// nearly nothing (Newman's 1/(n−1); Perianes-Rodriguez, Waltman & van Eck
+// 2016). Relationship-intelligence tools add the other half: ties DECAY,
+// because relationships do. Both are here, and nowhere else.
+
+// StrengthHalfLife is how long a shared work keeps half its weight.
+const StrengthHalfLife = 8.0
+
+// strengthYear is "now" for the decay, a variable so a test can pin it.
+var strengthYear = func() int { return time.Now().UTC().Year() }
+
+// Strength is Σ over the edge's works of 1/(n−1) · 0.5^(age/half-life). An
+// edge with no works on file (a calendar overlap, an owner's assertion, a
+// row written before works existed) is taken at face value: 1.
+func (e Edge) Strength() float64 {
+	if len(e.Works) == 0 {
+		return 1
+	}
+	now := strengthYear()
+	total := 0.0
+	for _, w := range e.Works {
+		pairs := float64(w.Authors - 1)
+		if pairs < 1 {
+			pairs = 1
+		}
+		decay := 1.0
+		if w.Year > 0 && now > w.Year {
+			decay = math.Pow(0.5, float64(now-w.Year)/StrengthHalfLife)
+		}
+		total += decay / pairs
+	}
+	return total
+}
+
+// PathWeight is what an intro path multiplies through: the claim's stated
+// confidence, scaled down by strength when the works say the tie is thin.
+// Strength ≥ 1 (one recent two-author paper, or more) leaves the confidence
+// as stated; it never raises it.
+func (e Edge) PathWeight() float64 {
+	conf := e.Weight()
+	if s := e.Strength(); s < 1 {
+		return conf * s
+	}
+	return conf
+}
+
 // PeopleDoc is network/people.md.
 type PeopleDoc struct {
 	DocFM
@@ -361,6 +413,10 @@ type Edge struct {
 	Source     string `json:"source,omitempty"`
 	Evidence   string `json:"evidence,omitempty"`
 	Observed   string `json:"observed,omitempty"`
+	// Works are the shared works behind the claim (social graph plan D-I):
+	// one row per work, `[work:: <ref>@<year>/<authors>]`, accumulated as
+	// further works name the same pair. Strength() is computed from them.
+	Works []sources.WorkRef `json:"works,omitempty"`
 	// Derived marks an edge this package did not read from edges.md — it was
 	// computed from something outside the recruiting root (the owner's own
 	// calendar, their notes) and is recomputed on every read. It is a Go/JSON

@@ -35,18 +35,66 @@ type Store struct {
 	// Recomputed on every read and never saved: LoadEdges/SaveEdges only ever
 	// touch the file, so a derivation cannot leak into the vault.
 	derivedEdges func() []Edge
-	mu           sync.Mutex
+	// runProjection yields the run cache DRAWN (social graph plan D-D/D-F):
+	// every person a live sweep named, as a bridge node, with the claims the
+	// adapter made and a member_of edge to the source that named them. Set by
+	// the RunStore; the record store never reads dataDir itself. Like
+	// derivedEdges it is a READ — nothing here is ever written to the vault.
+	runProjection func() Projection
+	mu            sync.Mutex
 }
 
 // UseDerivedEdges injects the outside-the-vault edge source (see the field).
 func (s *Store) UseDerivedEdges(fn func() []Edge) { s.derivedEdges = fn }
+
+// UseRunProjection hands the store the run cache's drawable projection.
+func (s *Store) UseRunProjection(fn func() Projection) { s.runProjection = fn }
+
+// BridgePerson is one person a live sweep named, drawn from the run cache:
+// no record, no file, re-derived on every sweep, gone with the source.
+type BridgePerson struct {
+	ID      string   `json:"id"` // the durable external key, else draft/<run>/<d>
+	Name    string   `json:"name"`
+	Org     string   `json:"org,omitempty"`
+	Title   string   `json:"title,omitempty"`
+	Source  string   `json:"source"`  // the adapter
+	Seed    string   `json:"seed"`    // the source node (seed id, or source/<run>)
+	Subject string   `json:"subject"` // what the run was about, for the source node's label
+	RunID   string   `json:"runId"`
+	Swept   string   `json:"swept"` // the run date, for the stale fade
+	Links   []string `json:"links,omitempty"`
+}
+
+// Projection is the run cache as the graph sees it.
+type Projection struct {
+	People []BridgePerson `json:"people"`
+	Edges  []Edge         `json:"edges"`
+	// Sources are the source nodes the member_of edges point at, labelled.
+	Sources map[string]string `json:"sources"`
+}
+
+// BridgePeople is the cache-tier people, or none when no run store is wired.
+func (s *Store) BridgePeople() []BridgePerson {
+	if s.runProjection == nil {
+		return nil
+	}
+	return s.runProjection().People
+}
+
+// SourceNodes labels the source endpoints member_of edges name.
+func (s *Store) SourceNodes() map[string]string {
+	if s.runProjection == nil {
+		return map[string]string{}
+	}
+	return s.runProjection().Sources
+}
 
 // networkEdges is the graph the VIEW reads: what is on file, plus what was
 // derived, with the file winning any claim they both make. Nothing else in
 // this package uses it — every write path reads LoadEdges directly.
 func (s *Store) networkEdges() []Edge {
 	stored := s.LoadEdges().Edges()
-	if s.derivedEdges == nil {
+	if s.derivedEdges == nil && s.runProjection == nil {
 		return stored
 	}
 	have := map[string]bool{}
@@ -54,13 +102,29 @@ func (s *Store) networkEdges() []Edge {
 		have[edgeKey(e.From, e.To, e.Kind)] = true
 	}
 	out := stored
-	for _, e := range s.derivedEdges() {
+	derived := []Edge{}
+	if s.derivedEdges != nil {
+		derived = s.derivedEdges()
+	}
+	for _, e := range derived {
 		if ValidateEdge(e) != nil || have[edgeKey(e.From, e.To, e.Kind)] {
 			continue
 		}
 		have[edgeKey(e.From, e.To, e.Kind)] = true
 		e.Derived = true
 		out = append(out, e)
+	}
+	// the run cache last: a claim on file (accepted, hand-written) wins over
+	// the same claim still sitting in a sweep
+	if s.runProjection != nil {
+		for _, e := range s.runProjection().Edges {
+			if ValidateEdge(e) != nil || have[edgeKey(e.From, e.To, e.Kind)] {
+				continue
+			}
+			have[edgeKey(e.From, e.To, e.Kind)] = true
+			e.Derived = true
+			out = append(out, e)
+		}
 	}
 	return out
 }
@@ -385,62 +449,6 @@ func (s *Store) acceptDraft(d sources.CandidateDraft, now time.Time) (Candidate,
 	return s.candidateView(slug, doc), nil
 }
 
-// GraphDraft is the third thing a draft can become (beside a candidate and a
-// tombstone): a person in the social graph. It writes the network/people.md
-// row and the draft's relationship claims, repointing every edge that named
-// this person by an external key onto the row — exactly what acceptDraft does
-// for the graph, minus the record. Consent is left empty on purpose: this is
-// someone the owner KNOWS OF, not someone he would ask, and OwnerSeeds must
-// never start a route from them. D15 holds: no adapter sets an email here.
-func (s *Store) GraphDraft(d sources.CandidateDraft, now time.Time) (NetworkPerson, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	d = SanitizeDraft(d)
-	if err := ValidateDraft(d); err != nil {
-		return NetworkPerson{}, err
-	}
-	ref := SourceRef(d)
-	doc := s.LoadNetworkPeople()
-	for _, have := range doc.People() {
-		if ref != "" && have.SourceRef == ref {
-			return NetworkPerson{}, errf("already in your graph: %s", have.Name)
-		}
-		if strings.EqualFold(strings.TrimSpace(have.Name), strings.TrimSpace(d.Name)) {
-			return NetworkPerson{}, errf("already in your graph: %s", have.Name)
-		}
-	}
-	for _, slug := range s.CandidateSlugs() {
-		if have := s.LoadCandidate(slug); strings.EqualFold(strings.TrimSpace(have.Get("name")), strings.TrimSpace(d.Name)) {
-			return NetworkPerson{}, errf("already on the board: %s", d.Name)
-		}
-	}
-	p := NetworkPerson{
-		Name: d.Name, Org: d.Org, Title: d.Title,
-		Source: d.SourceID, SourceRef: ref,
-		Added: now.UTC().Format("2006-01-02"),
-	}
-	for _, l := range d.Links {
-		switch k := ExtKeyFromURL(l); {
-		case strings.HasPrefix(k, sources.ExtNodePrefix+"github/"):
-			p.GitHub = l
-		case strings.HasPrefix(k, sources.ExtNodePrefix+"orcid/"):
-			p.ORCID = l
-		}
-	}
-	p, err := doc.Add(p)
-	if err != nil {
-		return NetworkPerson{}, err
-	}
-	// the ROW lands first, for the same reason the record does in acceptDraft
-	if err := s.SaveNetworkPeople(doc); err != nil {
-		return NetworkPerson{}, err
-	}
-	if err := s.saveDraftEdges(d, p.ID); err != nil {
-		return NetworkPerson{}, err
-	}
-	return p, nil
-}
-
 // saveDraftEdges appends the draft's relationship claims, filling in the `to`
 // endpoint (the candidate that did not exist when the adapter ran), resolving
 // external keys onto records that already exist, repointing edges that named
@@ -460,11 +468,10 @@ func (s *Store) saveDraftEdges(d sources.CandidateDraft, candidateID string) err
 		for _, k := range mine {
 			index[k] = candidateID
 		}
-		have := map[string]bool{}
-		for _, e := range edges.Edges() {
-			have[edgeKey(e.From, e.To, e.Kind)] = true
-		}
 		for _, e := range d.Edges {
+			if e.Type == sources.EdgeMemberOf {
+				continue // membership is drawn from the run cache, never filed on a person
+			}
 			from := strings.TrimSpace(e.From)
 			if id, ok := index[from]; ok && id != "" {
 				from = id
@@ -475,17 +482,14 @@ func (s *Store) saveDraftEdges(d sources.CandidateDraft, candidateID string) err
 			} else if id, ok := index[to]; ok && id != "" {
 				to = id
 			}
-			if from == to || have[edgeKey(from, to, string(e.Type))] {
-				continue // the same claim, already on file
+			if from == to {
+				continue
 			}
-			if _, err := edges.Add(Edge{
-				From: from, To: to, Kind: string(e.Type), Basis: e.Basis,
-				Confidence: FormatConfidence(e.Confidence), Inferred: e.Inferred,
-				Source: e.SourceID, Evidence: strings.TrimSpace(e.Evidence),
-			}); err != nil {
+			// the same pair from a second work ACCUMULATES (D-I): Merge unions
+			// the works onto the row on file instead of refusing the claim
+			if _, _, err := edges.Merge(claimEdge(from, to, e, "")); err != nil {
 				return err
 			}
-			have[edgeKey(from, to, string(e.Type))] = true
 			changed = true
 		}
 	}

@@ -1,6 +1,8 @@
 package recruiting
 
 import (
+	"manifest/recruiting/sources"
+	"strconv"
 	"strings"
 
 	"manifest/graph"
@@ -14,7 +16,7 @@ var (
 		// 2026-09-05) · ref: the vault contact this person came from
 		"archived", "ref"}
 	edgeKeys = []string{"from", "to", "kind", "basis", "confidence", "inferred",
-		"source", "evidence", "observed"}
+		"source", "evidence", "observed", "work"}
 )
 
 func networkPersonRecognized(r *Row) bool { return r.Has("id") }
@@ -124,10 +126,127 @@ func (d *EdgesDoc) Edges() []Edge {
 			Basis: r.Get("basis"), Confidence: r.Get("confidence"),
 			Inferred: boolField(r.Get("inferred")), Source: r.Get("source"),
 			Evidence: r.Get("evidence"), Observed: r.Get("observed"),
+			Works:   parseWorks(r.GetAll("work")),
 			Unknown: unknownFields(r, edgeKeys...),
 		})
 	}
 	return out
+}
+
+// A work rides on the row as `[work:: <ref>@<year>/<authors>]`, one key per
+// work, so a row with three shared papers has three `work` fields — the
+// record kernel's repeated-key shape, the same one a profile's websites use.
+func formatWork(w sources.WorkRef) string {
+	s := strings.TrimSpace(w.Ref)
+	if w.Year > 0 || w.Authors > 0 {
+		s += "@" + itoa(w.Year)
+	}
+	if w.Authors > 0 {
+		s += "/" + itoa(w.Authors)
+	}
+	return s
+}
+
+func parseWorks(vals []string) []sources.WorkRef {
+	var out []sources.WorkRef
+	for _, v := range vals {
+		v = strings.TrimSpace(v)
+		if v == "" {
+			continue
+		}
+		w := sources.WorkRef{Ref: v}
+		if i := strings.LastIndex(v, "@"); i > 0 {
+			w.Ref = v[:i]
+			rest := v[i+1:]
+			if j := strings.Index(rest, "/"); j >= 0 {
+				w.Authors, _ = strconv.Atoi(rest[j+1:])
+				rest = rest[:j]
+			}
+			w.Year, _ = strconv.Atoi(rest)
+		}
+		out = append(out, w)
+	}
+	return out
+}
+
+// mergeWorks unions two work lists by ref, first-seen order.
+func mergeWorks(have, add []sources.WorkRef) []sources.WorkRef {
+	seen := map[string]bool{}
+	out := append([]sources.WorkRef(nil), have...)
+	for _, w := range have {
+		seen[strings.TrimSpace(w.Ref)] = true
+	}
+	for _, w := range add {
+		k := strings.TrimSpace(w.Ref)
+		if k == "" || seen[k] {
+			continue
+		}
+		seen[k] = true
+		out = append(out, w)
+	}
+	return out
+}
+
+// Merge is Add for a claim that may already be on file. The same pair and
+// kind from a second work ACCUMULATES: the works union, the confidence keeps
+// the higher stated value, the observed date keeps the earlier one, and the
+// basis stays as first written. Refusing the second claim — what saveDraft
+// did before D-I — threw away exactly the fact that makes a tie strong.
+// Returns the row as it now stands and whether an existing row absorbed it.
+func (d *EdgesDoc) Merge(e Edge) (Edge, bool, error) {
+	if err := ValidateEdge(e); err != nil {
+		return Edge{}, false, err
+	}
+	want := edgeKey(e.From, e.To, e.Kind)
+	for _, ln := range d.Lines {
+		r := ln.Row
+		if r == nil || edgeKey(r.Get("from"), r.Get("to"), r.Get("kind")) != want {
+			continue
+		}
+		works := mergeWorks(parseWorks(r.GetAll("work")), e.Works)
+		if len(works) > 0 {
+			vals := make([]string, 0, len(works))
+			for _, w := range works {
+				vals = append(vals, formatWork(w))
+			}
+			r.SetAll("work", vals)
+		}
+		if c := strings.TrimSpace(e.Confidence); c != "" {
+			if have := strings.TrimSpace(r.Get("confidence")); have == "" || parseConf(c) > parseConf(have) {
+				r.Set("confidence", c)
+			}
+		}
+		if o := strings.TrimSpace(e.Observed); o != "" {
+			if have := strings.TrimSpace(r.Get("observed")); have == "" || o < have {
+				r.Set("observed", o)
+			}
+		}
+		if e.Evidence != "" && strings.TrimSpace(r.Get("evidence")) == "" {
+			r.Set("evidence", e.Evidence)
+		}
+		return edgeOfRow(r), true, nil
+	}
+	out, err := d.Add(e)
+	return out, false, err
+}
+
+func parseConf(s string) float64 {
+	v, err := strconv.ParseFloat(strings.TrimSpace(s), 64)
+	if err != nil {
+		return 0
+	}
+	return v
+}
+
+func edgeOfRow(r *Row) Edge {
+	return Edge{
+		From: r.Get("from"), To: r.Get("to"), Kind: r.Get("kind"),
+		Basis: r.Get("basis"), Confidence: r.Get("confidence"),
+		Inferred: boolField(r.Get("inferred")), Source: r.Get("source"),
+		Evidence: r.Get("evidence"), Observed: r.Get("observed"),
+		Works:   parseWorks(r.GetAll("work")),
+		Unknown: unknownFields(r, edgeKeys...),
+	}
 }
 
 // ValidateEdge is the "no claim without a basis" rule. An edge with no
@@ -167,6 +286,13 @@ func (d *EdgesDoc) Add(e Edge) (Edge, error) {
 		if kv[1] != "" {
 			r.Set(kv[0], kv[1])
 		}
+	}
+	if len(e.Works) > 0 {
+		vals := make([]string, 0, len(e.Works))
+		for _, w := range e.Works {
+			vals = append(vals, formatWork(w))
+		}
+		r.SetAll("work", vals)
 	}
 	for _, f := range e.Unknown {
 		r.Set(f.Key, f.Value)

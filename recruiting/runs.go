@@ -46,10 +46,10 @@ const (
 	DraftDuplicate = "duplicate"
 	DraftAccepted  = "accepted"
 	DraftRejected  = "rejected"
-	// DraftGraphed: the person went INTO THE GRAPH — a network row and their
-	// relationship claims — without becoming a candidate. The owner's rule
-	// (2026-09-11): everyone a paper names ends up in the social graph; the
-	// only decision is whether they are ALSO someone to recruit.
+	// DraftGraphed is READ-ONLY since 2026-09-18: the "into the graph" outcome
+	// wrote a network row per swept stranger, which the social graph plan
+	// (D-F) retired — swept people are the run cache drawn, not records. Old
+	// run files may still carry the status; nothing writes it any more.
 	DraftGraphed = "graphed"
 )
 
@@ -126,6 +126,10 @@ type RunState struct {
 	// run alike, since a preview's drafts accept too. It starts the D14 clock.
 	TriagedAt time.Time `json:"triagedAt,omitzero"`
 	ExpiresAt time.Time `json:"expiresAt,omitzero"`
+	// Seed is the source node this run's people belong to (D-J): the seeds.md
+	// row it swept, else `source/<run id>`. Subject is its label.
+	Seed    string `json:"seed,omitempty"`
+	Subject string `json:"subject,omitempty"`
 }
 
 // Draft is one review-queue entry: the adapter's draft plus what the owner
@@ -178,6 +182,11 @@ type RunRequest struct {
 	Max    int               `json:"max,omitempty"`
 	DryRun bool              `json:"dryRun"`
 	Fields map[string]string `json:"fields,omitempty"`
+	// Seed is the place this sweep is FROM (a seeds.md id), when the caller
+	// knows it — the PLACES button does. The run records it as its source
+	// node; without it the run matches a seed by URL, else stands as its own
+	// source node.
+	Seed string `json:"seed,omitempty"`
 }
 
 // RunStore owns the run directories and the registered adapters. It holds
@@ -208,7 +217,9 @@ func NewRunStore(root string, store *Store) (*RunStore, error) {
 			return nil, errf("recruiting: run cache %q must live outside the vault %q (D14)", absRoot, vault)
 		}
 	}
-	return &RunStore{root: absRoot, store: store, adapters: map[string]sources.Adapter{}}, nil
+	rs := &RunStore{root: absRoot, store: store, adapters: map[string]sources.Adapter{}}
+	store.UseRunProjection(rs.Projection)
+	return rs, nil
 }
 
 // Register adds one adapter to the rail. Registering the same id twice
@@ -354,6 +365,7 @@ func (r *RunStore) ExecuteTracked(ctx context.Context, req RunRequest, now time.
 	run := Run{RunState: RunState{
 		ID: runID, Source: adapter.ID(), Scope: scope, StartedAt: now.UTC(),
 	}}
+	run.Seed, run.Subject = r.sourceNode(req, scope, runID)
 	run.Counts.Fetched = len(drafts)
 	run.Counts.PeopleSeen = sources.Known(max2(emitted, retrieval.PeopleSeen))
 	if ok {
@@ -405,6 +417,123 @@ func (r *RunStore) ExecuteTracked(ctx context.Context, req RunRequest, now time.
 		return Run{}, err
 	}
 	return r.project(run, nil), nil
+}
+
+// sourceNode answers what a run is FROM: the seed the caller named, else the
+// seed whose URL the scope carries, else the run itself as a source node —
+// a paper pasted straight into a sweep is still a hub its authors hang off.
+func (r *RunStore) sourceNode(req RunRequest, scope sources.Scope, runID string) (string, string) {
+	seeds := r.store.LoadSeeds().Seeds()
+	if want := strings.TrimSpace(req.Seed); want != "" {
+		for _, s := range seeds {
+			if s.ID == want {
+				return s.ID, s.Name
+			}
+		}
+	}
+	var urls []string
+	for _, k := range []string{"seed_url", "work", "repo", "feed_url"} {
+		if v := strings.TrimSpace(scope.Fields[k]); v != "" {
+			urls = append(urls, strings.ToLower(strings.TrimRight(v, "/")))
+		}
+	}
+	for _, s := range seeds {
+		u := strings.ToLower(strings.TrimRight(strings.TrimSpace(s.URL), "/"))
+		if u == "" {
+			continue
+		}
+		for _, w := range urls {
+			if w == u {
+				return s.ID, s.Name
+			}
+		}
+	}
+	subject := strings.TrimSpace(scope.Query)
+	if subject == "" && len(urls) > 0 {
+		subject = urls[0]
+	}
+	if subject == "" {
+		subject = runID
+	}
+	return "source/" + runID, subject
+}
+
+// Projection is the run cache DRAWN (D-D, D-F): every `new` draft in a live
+// run as a bridge person, with the claims the adapter made and one member_of
+// edge to the run's source node. Read straight from the run files, without
+// the store lock and without deriving paths, so the record store can call it
+// from inside networkEdges() with nothing re-entering. Nothing here is a
+// record; delete the run and all of it is gone.
+func (r *RunStore) Projection() Projection {
+	out := Projection{People: []BridgePerson{}, Edges: []Edge{}, Sources: map[string]string{}}
+	now := time.Now().UTC()
+	seenPerson := map[string]bool{}
+	seenEdge := map[string]int{} // edgeKey → index in out.Edges, so a second work merges
+	for _, id := range r.ids() {
+		run, err := r.load(id)
+		if err != nil || (!run.ExpiresAt.IsZero() && run.ExpiresAt.Before(now)) {
+			continue
+		}
+		seed, subject := run.Seed, run.Subject
+		if seed == "" {
+			seed, subject = "source/"+run.ID, firstNonEmpty(run.Scope.Query, run.ID)
+		}
+		out.Sources[seed] = subject
+		swept := run.StartedAt.UTC().Format("2006-01-02")
+		for _, d := range run.Drafts {
+			if d.Status != DraftNew {
+				continue
+			}
+			pid := ""
+			if keys := extKeysOfDraft(d.Draft); len(keys) > 0 {
+				pid = keys[0]
+			} else {
+				pid = "draft/" + run.ID + "/" + d.ID
+			}
+			if !seenPerson[pid] {
+				seenPerson[pid] = true
+				out.People = append(out.People, BridgePerson{
+					ID: pid, Name: d.Draft.Name, Org: d.Draft.Org, Title: d.Draft.Title,
+					Source: run.Source, Seed: seed, Subject: subject, RunID: run.ID, Swept: swept,
+					Links: append([]string(nil), d.Draft.Links...),
+				})
+			}
+			add := func(e Edge) {
+				k := edgeKey(e.From, e.To, e.Kind)
+				if i, ok := seenEdge[k]; ok {
+					out.Edges[i].Works = mergeWorks(out.Edges[i].Works, e.Works)
+					return
+				}
+				seenEdge[k] = len(out.Edges)
+				out.Edges = append(out.Edges, e)
+			}
+			add(Edge{
+				From: pid, To: seed, Kind: string(sources.EdgeMemberOf),
+				Basis:      d.Draft.Name + " was listed by " + run.Source + " for " + subject,
+				Confidence: FormatConfidence(0.9), Source: run.Source, Observed: swept,
+			})
+			for _, c := range d.Draft.Edges {
+				from, to := strings.TrimSpace(c.From), strings.TrimSpace(c.To)
+				if to == "" {
+					to = pid
+				}
+				if from == "" || from == to {
+					continue
+				}
+				add(claimEdge(from, to, c, swept))
+			}
+		}
+	}
+	return out
+}
+
+func firstNonEmpty(vals ...string) string {
+	for _, v := range vals {
+		if strings.TrimSpace(v) != "" {
+			return strings.TrimSpace(v)
+		}
+	}
+	return ""
 }
 
 // project decorates a run for the wire: every draft carries the intro paths
@@ -599,46 +728,6 @@ func (run *Run) decide(i int, status, candidateID string, now time.Time) {
 	run.triage(now)
 }
 
-// Graph puts one draft INTO THE GRAPH: a network/people.md row carrying the
-// source identity, plus every relationship claim the adapter made, with the
-// person as the endpoint that did not exist when it ran. No candidate record
-// is written and no consent is claimed — they are known, not recruited and
-// not someone the owner would ask. A later accept is a separate decision.
-func (r *RunStore) Graph(runID, draftID string, now time.Time) (Run, NetworkPerson, error) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	run, err := r.load(runID)
-	if err != nil {
-		return Run{}, NetworkPerson{}, err
-	}
-	i, err := run.find(draftID)
-	if err != nil {
-		return Run{}, NetworkPerson{}, err
-	}
-	d := &run.Drafts[i]
-	switch d.Status {
-	case DraftNew:
-	case DraftDuplicate:
-		return Run{}, NetworkPerson{}, errf("draft %s is already known as %s", draftID, d.CandidateID)
-	default:
-		return Run{}, NetworkPerson{}, errf("draft %s is already %s", draftID, d.Status)
-	}
-	p, err := r.store.GraphDraft(d.Draft, now)
-	if err != nil {
-		return Run{}, NetworkPerson{}, err
-	}
-	run.decide(i, DraftGraphed, p.ID, now)
-	if err := r.writeRun(run, nil); err != nil {
-		return Run{}, NetworkPerson{}, err
-	}
-	return r.project(run, nil), p, nil
-}
-
-// Unreject reverses a pass (Phase 3): the draft returns to `new` exactly as
-// it was before the decision — no decided-at, the rejected count back down,
-// and the run's D14 expiry clock cleared, since a queue with a `new` draft
-// in it is not triaged. Only a rejected draft can come back: an accepted one
-// is a record now, and a duplicate never left. The passed tombstone is removed.
 // PreviewUnreject uses the same transition as Unreject without writing state.
 func (r *RunStore) PreviewUnreject(runID, draftID string) (Run, error) {
 	r.mu.Lock()

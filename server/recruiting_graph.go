@@ -44,13 +44,16 @@ const (
 
 // graphNode is one person in the picture.
 type graphNode struct {
-	ID    string `json:"id"`
-	Label string `json:"label"`
-	Kind  string `json:"kind"`            // you | connector | considering | known | stranger
-	Hop   int    `json:"hop"`             // rings out from the centre
-	Deg   int    `json:"deg"`             // edges within the RENDERED set
-	Stage string `json:"stage,omitempty"` // a candidate's stage, so a node shows state and not just topology
-	Role  string `json:"role,omitempty"`
+	ID     string `json:"id"`
+	Label  string `json:"label"`
+	Kind   string `json:"kind"`            // you | in_touch | pursuing | bridge | passed | source | stranger
+	Hop    int    `json:"hop"`             // rings out from the centre
+	Deg    int    `json:"deg"`             // edges within the RENDERED set
+	Stage  string `json:"stage,omitempty"` // a candidate's stage, so a node shows state and not just topology
+	Role   string `json:"role,omitempty"`
+	Source string `json:"source,omitempty"` // a bridge node: the adapter that named them
+	Seed   string `json:"seed,omitempty"`   // a bridge node: the source node they hang off
+	Swept  string `json:"swept,omitempty"`  // a bridge node: when, for the stale fade
 }
 
 // graphReply is the whole answer: what to draw, and what was left out.
@@ -89,6 +92,7 @@ func (s *Server) handleRecruitingGraph(w http.ResponseWriter, r *http.Request) {
 	}
 	idx := s.personIndex()
 	edges := s.recruiting.NetworkEdges()
+	totalEdges := len(edges)
 
 	kinds := map[string]bool{}
 	for _, k := range r.URL.Query()["kind"] {
@@ -126,20 +130,27 @@ func (s *Server) handleRecruitingGraph(w http.ResponseWriter, r *http.Request) {
 	}
 
 	board := s.recruiting.Identities()
+	state := s.recruiting.BoardState()
 	conns := s.recruiting.Connectors()
+	bridge := s.recruiting.BridgePeople()
+	sourceNodes := s.recruiting.SourceNodes()
+	passed := map[string]bool{}
+	for k := range s.recruiting.PassedSet() {
+		passed[k] = true
+	}
 	owner := idx.ownerNode(s.recruiting)
 
 	reply := graphReply{
 		Degree: graphDegree(r.URL.Query().Get("degree")),
 		Kinds:  kindRows,
 		Totals: map[string]int{
-			"edges": len(s.recruiting.NetworkEdges()), "people": len(conns), "board": len(board),
+			"edges": totalEdges, "people": len(conns), "board": len(board), "bridge": len(bridge), "sources": len(sourceNodes),
 		},
 	}
 
 	// the search box: matches by label, never drawn until chosen
 	if q := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("q"))); q != "" {
-		reply.Search = graphSearch(q, idx, edges, board, conns, owner)
+		reply.Search = graphSearch(q, idx, edges, board, state, conns, bridge, sourceNodes, passed, owner)
 	}
 
 	center := strings.TrimSpace(r.URL.Query().Get("center"))
@@ -164,7 +175,7 @@ func (s *Server) handleRecruitingGraph(w http.ResponseWriter, r *http.Request) {
 
 	// ---- the bounded walk. Nothing past `degree` is ever added, so the
 	// hairball is unreachable by construction rather than by a slider.
-	kindOf := graphKinder(board, conns, owner)
+	kindOf := graphKinder(board, state, conns, bridge, sourceNodes, passed, owner)
 	hop := map[string]int{center: 0}
 	order := []string{center}
 	frontier := []string{center}
@@ -238,13 +249,20 @@ func (s *Server) handleRecruitingGraph(w http.ResponseWriter, r *http.Request) {
 	// ⚠ NOT View(): View derives every candidate's intro paths from these very
 	// edges, so drawing the picture through it pays the whole derivation twice
 	// — and the graph only wants two fields.
-	state := s.recruiting.BoardState()
+	bridgeBy := map[string]recruiting.BridgePerson{}
+	for _, p := range bridge {
+		bridgeBy[p.ID] = p
+	}
 	for _, id := range order {
 		st := state[id]
-		reply.Nodes = append(reply.Nodes, graphNode{
+		n := graphNode{
 			ID: id, Label: idx.display(id), Kind: kindOf(id),
 			Hop: hop[id], Deg: deg[id], Stage: st[0], Role: st[1],
-		})
+		}
+		if b, ok := bridgeBy[id]; ok {
+			n.Source, n.Seed, n.Swept = b.Source, b.Seed, b.Swept
+		}
+		reply.Nodes = append(reply.Nodes, n)
 	}
 	if len(kept) == 0 {
 		reply.Missing = graphMissing(edges, conns)
@@ -263,27 +281,36 @@ func graphDegree(raw string) int {
 	return n
 }
 
-// graphKinder answers what a node IS — which is what makes a node encode
-// operational state instead of topology (the standing critique of the global
-// graph view: pretty, and it tells you nothing you can act on).
-func graphKinder(board []recruiting.PersonIdentity, conns []recruiting.NetworkPerson, owner string) func(string) string {
+// graphKinder answers what a node IS — the plan's STATUS (D-B), which is
+// what makes a node encode operational state instead of topology. Nothing is
+// stored for it: a contact or a consent:owner connector is in_touch, an
+// active candidate is pursuing (a projection of the record's stage, D-H), an
+// archived one or a tombstoned person is passed, a person a live sweep named
+// is bridge, a seed or run is a source, and an endpoint in none of those is a
+// stranger — an old edge naming someone nobody knows any more.
+func graphKinder(board []recruiting.PersonIdentity, state map[string][2]string, conns []recruiting.NetworkPerson,
+	bridge []recruiting.BridgePerson, sourceNodes map[string]string, passed map[string]bool, owner string) func(string) string {
 	on := map[string]string{}
+	for id := range sourceNodes {
+		on[id] = "source"
+	}
+	for _, p := range bridge {
+		on[p.ID] = "bridge"
+	}
 	for _, c := range board {
-		on[c.ID] = "considering"
+		if st := state[c.ID]; st[0] == recruiting.StageArchived {
+			on[c.ID] = "passed"
+		} else {
+			on[c.ID] = "pursuing"
+		}
 	}
 	for _, p := range conns {
 		if p.Archived != "" {
 			continue
 		}
-		// a connector is someone the owner would ASK — consent:owner, the only
-		// thing that starts an intro path. A person put into the graph from a
-		// run is known, and drawn as such: a route may pass through them, it
-		// never starts from them.
-		if p.Consent == "owner" {
-			on[p.ID] = "connector"
-		} else {
-			on[p.ID] = "known"
-		}
+		// a route may START only from consent:owner (OwnerSeeds); a row put
+		// there any other way is known, which on this graph is in_touch too
+		on[p.ID] = "in_touch"
 	}
 	return func(id string) string {
 		if id != "" && id == owner {
@@ -292,29 +319,46 @@ func graphKinder(board []recruiting.PersonIdentity, conns []recruiting.NetworkPe
 		if k, ok := on[id]; ok {
 			return k
 		}
+		if strings.HasPrefix(id, "contact/") {
+			return "in_touch"
+		}
+		if strings.HasPrefix(id, "seed/") || strings.HasPrefix(id, "source/") {
+			return "source"
+		}
+		if passed[id] {
+			return "passed"
+		}
 		return "stranger"
 	}
 }
 
+// graphRank orders a ring before it is cut: the people you are deciding
+// about, then the ones you know, then the sources and the people a sweep
+// named, then strangers, then the passed.
 func graphRank(kind string) int {
 	switch kind {
 	case "you":
 		return 0
-	case "considering":
+	case "pursuing":
 		return 1
-	case "connector":
+	case "in_touch":
 		return 2
-	case "known":
+	case "source":
 		return 3
+	case "bridge":
+		return 4
+	case "stranger":
+		return 5
 	}
-	return 4
+	return 6
 }
 
 // graphSearch is the entry point, not the canvas: it answers "who" without
 // drawing anybody, and the answer is what you then centre on.
 func graphSearch(q string, idx personIndex, edges []recruiting.Edge,
-	board []recruiting.PersonIdentity, conns []recruiting.NetworkPerson, owner string) []graphSearchMatch {
-	kindOf := graphKinder(board, conns, owner)
+	board []recruiting.PersonIdentity, state map[string][2]string, conns []recruiting.NetworkPerson,
+	bridge []recruiting.BridgePerson, sourceNodes map[string]string, passed map[string]bool, owner string) []graphSearchMatch {
+	kindOf := graphKinder(board, state, conns, bridge, sourceNodes, passed, owner)
 	seen := map[string]bool{}
 	add := func(out []graphSearchMatch, id string) []graphSearchMatch {
 		if id == "" || seen[id] || len(out) >= 25 {

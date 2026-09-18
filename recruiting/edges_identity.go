@@ -178,6 +178,16 @@ func extKeysOfDraft(d sources.CandidateDraft) []string {
 
 // repointEdges rewrites every endpoint in `from` to `to`, and returns how
 // many rows changed. Called when an external identity becomes a record.
+// claimEdge converts one adapter claim into a row-shaped edge, works included.
+func claimEdge(from, to string, c sources.EdgeClaim, observed string) Edge {
+	return Edge{
+		From: from, To: to, Kind: string(c.Type), Basis: c.Basis,
+		Confidence: FormatConfidence(c.Confidence), Inferred: c.Inferred,
+		Source: c.SourceID, Evidence: c.Evidence, Observed: observed,
+		Works: append([]sources.WorkRef(nil), c.Works...),
+	}
+}
+
 func repointEdges(doc *EdgesDoc, from []string, to string) int {
 	if to == "" || len(from) == 0 {
 		return 0

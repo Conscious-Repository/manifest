@@ -73,6 +73,11 @@ const (
 	// them — and the reason every edge built from it is inferred, low
 	// confidence, and names the note it came from.
 	EdgeCoMentioned EdgeType = "co_mentioned"
+	// EdgeMemberOf (social graph plan D-J, 2026-09-18): a person → the SOURCE
+	// that named them (a lab, a company, a paper or repo you dropped in). The
+	// one edge whose far endpoint is not a person; it is how a source node has
+	// anything to draw links from, and it is never an intro hop.
+	EdgeMemberOf EdgeType = "member_of"
 )
 
 // EdgeTypes is the closed set, in the plan's declaration order.
@@ -80,7 +85,7 @@ var EdgeTypes = []EdgeType{
 	EdgeDirectKnown, EdgeOwnerSaid, EdgeCoauthor, EdgeCoinventor, EdgeCoworker,
 	EdgeSameLab, EdgeSameGrant, EdgeSameRepo, EdgeSameConference, EdgeSameCompany,
 	EdgeAdvisor, EdgeReferralPathCandidate, EdgeImportedExport,
-	EdgeSameMeeting, EdgeCoMentioned,
+	EdgeSameMeeting, EdgeCoMentioned, EdgeMemberOf,
 }
 
 func ValidEdgeType(t EdgeType) bool {
@@ -166,6 +171,20 @@ type EdgeClaim struct {
 	// that knows the URL should set it, because a tie without a citation is
 	// only as good as its basis prose.
 	Evidence string `json:"evidence,omitempty"`
+	// Works are the shared works behind a coauthor / coinventor / same_grant
+	// claim, each with the year and how many people were on it. A tie is worth
+	// what its works are worth: one two-author paper this year is a
+	// relationship, a slot on a 40-author consortium paper is not (social
+	// graph plan D-I, fractional counting). A claim about the same pair from
+	// a second work ACCUMULATES onto the first instead of being refused.
+	Works []WorkRef `json:"works,omitempty"`
+}
+
+// WorkRef is one shared work behind a tie.
+type WorkRef struct {
+	Ref     string `json:"ref"`               // a DOI, an OpenAlex/PubMed id, a patent or grant number, a repo
+	Year    int    `json:"year,omitempty"`    // 0 when the source did not say
+	Authors int    `json:"authors,omitempty"` // people on it; 0 when unknown (counted as a pair)
 }
 
 // Key is the identity of a claim for dedupe: the same far endpoint, the same

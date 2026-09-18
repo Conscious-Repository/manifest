@@ -223,6 +223,20 @@ func (s *Server) personIndex() personIndex {
 			}
 		}
 	}
+	// the run cache's people and the source nodes their member_of edges name
+	// (social graph plan D-F/D-J): bridge people are drawn from the cache,
+	// never from a row, and a source node is labelled by what was swept
+	for _, p := range s.recruiting.BridgePeople() {
+		idx.name[p.ID] = p.Name
+	}
+	for id, label := range s.recruiting.SourceNodes() {
+		idx.name[id] = label
+	}
+	for _, sd := range s.recruiting.LoadSeeds().Seeds() {
+		if sd.ID != "" && sd.Name != "" {
+			idx.name[sd.ID] = sd.Name
+		}
+	}
 	// a candidate outranks a contact: if the person is on the board, the edge
 	// should land on the record that carries their evidence
 	for _, c := range s.recruiting.Identities() {

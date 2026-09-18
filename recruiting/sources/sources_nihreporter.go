@@ -402,6 +402,19 @@ func nihExtKey(p nihInvestigator, name string) string {
 	return ""
 }
 
+// year is the grant's fiscal year as a number, 0 when RePORTER did not say.
+func (p nihProject) year() int {
+	fy := strings.TrimSpace(p.FiscalYear.String())
+	if fy == "" || fy == "0" {
+		return 0
+	}
+	n, err := strconv.Atoi(fy)
+	if err != nil {
+		return 0
+	}
+	return n
+}
+
 func nihGrantEdges(sourceID string, team []nihTeammate, key, name string, proj nihProject) []EdgeClaim {
 	if len(team) < nihMultiPIProjectMinPIs || len(team) > nihMaxEdgePIs {
 		return nil
@@ -420,6 +433,7 @@ func nihGrantEdges(sourceID string, team []nihTeammate, key, name string, proj n
 			Basis:      m.name + " and " + name + " are both principal investigators on " + num + " — " + title,
 			Confidence: nihSameGrantConfidence,
 			Inferred:   false,
+			Works:      []WorkRef{{Ref: num, Year: proj.year(), Authors: len(team)}},
 		})
 	}
 	return out

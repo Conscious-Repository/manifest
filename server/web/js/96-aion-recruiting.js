@@ -539,7 +539,15 @@ async function recSyncRoles() {
 // recSeedSweep maps a seed onto the run that sweeps it, or null when nothing
 // can. This is also what the intake's "sweep it" uses, so a seed row and a
 // fresh paste can never disagree about which source speaks for a thing.
+// recSeedSweep maps a place onto the adapter that can read it, and names the
+// place on the run (D-J): the run's people hang off that source node.
 function recSeedSweep(seed) {
+  const t = recSeedSweepTarget(seed);
+  if (t && seed && seed.id) t.seed = seed.id;
+  return t;
+}
+
+function recSeedSweepTarget(seed) {
   const url = (seed.url || "").trim();
   const name = (seed.name || "").trim();
   const feed = ((seed.unknown || []).find((f) => f.key === "feed") || {}).value || "";
@@ -563,6 +571,7 @@ function recSeedSweep(seed) {
 // somebody else's rate limit, so the last gesture stays the owner's.
 function recLoadRun(target) {
   recRunForm.source = target.source;
+  recRunForm.seed = target.seed || "";
   recRunForm.query = target.query || "";
   recRunForm.fields = Object.assign({}, target.fields || {});
   recRunForm.role = recRoleId();
@@ -1910,6 +1919,7 @@ async function recRunSource() {
     source: recRunForm.source,
     role: recRunForm.role || recRoleId(),
     query,
+    seed: recRunForm.seed || "",
   };
   const max = parseInt(recRunForm.max, 10);
   if (max > 0) body.max = max;
@@ -1989,6 +1999,7 @@ function recSweep(target) {
     source: target.source,
     role: recRoleId(),
     query: target.query || "",
+    seed: target.seed || "",
     fields: Object.assign({}, target.fields || {}),
   });
 }
@@ -1996,7 +2007,7 @@ function recSweep(target) {
 // recDraftStatusWord says what a decided draft became, in the owner's words.
 function recDraftStatusWord(status) {
   if (status === "rejected") return "passed";
-  if (status === "graphed") return "in your graph";
+  if (status === "graphed") return "in your graph"; // old run files only; the outcome was retired 2026-09-18
   return status;
 }
 
@@ -2663,16 +2674,6 @@ function recDraftCard(run, d) {
       accept.disabled = true; // one record per press: a double-click is not two accepts
       recSourcesPost("/api/aion/recruiting/sources/accept/" + run.id + "/" + d.id, {}, "candidate added from " + run.source);
     };
-    // THE THIRD OUTCOME (owner, 2026-09-11): everyone a paper names ends up
-    // in the social graph; recruiting them is the separate decision. This
-    // writes the person and their ties, and no candidate record.
-    const graph = el("button", "pill light rec-draft-graph", "Into the graph");
-    graph.title = "add this person and their coauthor/co-PI/repo ties to your social graph — known, not a candidate, not someone you'd ask";
-    graph.onclick = () => {
-      graph.disabled = true;
-      recSourcesPost("/api/aion/recruiting/sources/graph/" + run.id + "/" + d.id, {},
-        ((d.draft || {}).name || "this person") + " is in your graph");
-    };
     const look = el("button", "pill light", d.lookedUpAt ? "look up again" : "look up");
     look.title = "ask the other public indexes (openalex, orcid, github, pubmed) about this exact name";
     look.onclick = () => {
@@ -2691,7 +2692,7 @@ function recDraftCard(run, d) {
         recNav("sources");
       });
     };
-    acts.append(accept, graph, look, recDraftPass(run, d), laterBtn);
+    acts.append(accept, look, recDraftPass(run, d), laterBtn);
     card.append(acts);
   } else if (d.decidedAt) {
     // the reassurance ("this search only — nothing was deleted") is the

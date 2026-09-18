@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"manifest/graph"
+	"manifest/recruiting/sources"
 )
 
 // Intro-path derivation (Phase 4). The network is a set of relationship
@@ -57,19 +58,45 @@ const (
 // walked.
 const MinPathConfidence = 0.5
 
-// PathEdges is the subgraph an intro path may traverse.
+// MinPathWeight is the floor on a tie's strength-scaled weight (D-I): a
+// coauthor claim is confident enough to be a route, but a slot on a
+// 40-author consortium paper weighs 0.55/39 and is not an introduction.
+const MinPathWeight = 0.05
+
+// PathEdges is the subgraph an intro path may traverse: claims confident
+// enough to route through (MinPathConfidence, on the STATED confidence),
+// whose works do not thin them below MinPathWeight, and never member_of —
+// a lab is not a person who can introduce you.
 func PathEdges(all []Edge) []Edge {
 	out := make([]Edge, 0, len(all))
 	for _, e := range all {
+		if e.Kind == string(sources.EdgeMemberOf) {
+			continue
+		}
 		conf := UnstatedEdgeConfidence
 		if c := strings.TrimSpace(e.Confidence); c != "" {
 			if v, err := strconv.ParseFloat(c, 64); err == nil {
 				conf = v
 			}
 		}
-		if conf >= MinPathConfidence {
+		if conf >= MinPathConfidence && e.PathWeight() >= MinPathWeight {
 			out = append(out, e)
 		}
+	}
+	return out
+}
+
+// pathGraphEdges projects rows for the FINDER: the confidence the walk
+// multiplies through is PathWeight — the stated confidence scaled by tie
+// strength — so a route over one two-author paper outranks one over a
+// consortium slot. The projection written to system/graph (ties.go) keeps
+// the stated confidence; this one is for ranking only.
+func pathGraphEdges(edges []Edge) []graph.Edge {
+	out := make([]graph.Edge, 0, len(edges))
+	for _, e := range edges {
+		g := e.Graph()
+		g.Confidence = FormatConfidence(e.PathWeight())
+		out = append(out, g)
 	}
 	return out
 }
@@ -108,7 +135,7 @@ type PathFinder struct {
 
 // NewPathFinder builds the traversal graph over the network's claims.
 func NewPathFinder(people []NetworkPerson, edges []Edge) *PathFinder {
-	return &PathFinder{people: people, g: graph.Build(GraphEdges(edges), EdgeVocabulary())}
+	return &PathFinder{people: people, g: graph.Build(pathGraphEdges(edges), EdgeVocabulary())}
 }
 
 // Paths is DerivePaths for one person who may be known under several ids —

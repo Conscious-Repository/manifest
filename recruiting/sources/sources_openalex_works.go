@@ -275,6 +275,7 @@ func (oa OpenAlex) workEdges(w openAlexWork, i int) []EdgeClaim {
 			Confidence: openAlexCoauthorConfidence,
 			Inferred:   false,
 			Evidence:   workURL,
+			Works:      []WorkRef{{Ref: w.workRef(), Year: w.PublicationYear, Authors: len(w.Authorships)}},
 		})
 		// one same_lab claim per pair, on the FIRST shared institution in the
 		// other author's listed order — a second shared id is the same claim
@@ -333,6 +334,15 @@ func orcidID(s string) string {
 
 // citation is the one-line bibliographic string every evidence row on this
 // work repeats verbatim.
+// workRef is the durable key of a work for tie evidence: the DOI when there
+// is one, else the OpenAlex id.
+func (w openAlexWork) workRef() string {
+	if d := strings.TrimSpace(w.DOI); d != "" {
+		return strings.TrimPrefix(strings.TrimPrefix(d, "https://doi.org/"), "http://doi.org/")
+	}
+	return strings.TrimSpace(w.ID)
+}
+
 func (w openAlexWork) citation() string {
 	parts := []string{orStr(strings.TrimSpace(w.Title), strings.TrimSpace(w.DisplayName))}
 	if src := strings.TrimSpace(w.PrimaryLocation.Source.DisplayName); src != "" {
