@@ -293,4 +293,18 @@ func TestOldRunsStandAsTheirOwnSource(t *testing.T) {
 	if _, ok := rs.Projection().Sources[got.Seed]; !ok {
 		t.Fatalf("and the graph names the same node: %v", rs.Projection().Sources)
 	}
+	// and an old run whose scope names a place's URL hangs off that place
+	st.Scope.Fields = map[string]string{"seed_url": "https://lab.example.edu/people/"}
+	if err := rs.writeRun(st, nil); err != nil {
+		t.Fatal(err)
+	}
+	seed, err := rs.store.AddSeed(Seed{Class: SeedLab, Name: "Example Lab", URL: "https://lab.example.edu/people"}, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, r := range rs.Runs(time.Now()) {
+		if r.ID == run.ID && r.Seed != seed.ID {
+			t.Fatalf("an old crawl of a place's URL is that place's sweep: %q", r.Seed)
+		}
+	}
 }
