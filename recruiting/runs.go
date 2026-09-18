@@ -544,6 +544,14 @@ func (r *RunStore) project(run Run, f *PathFinder) Run {
 	if f == nil {
 		f = r.pathFinder()
 	}
+	// a run written before source nodes existed stands as its own — the
+	// same rule Projection() applies, so the PLACES row and the graph node
+	// name the same thing
+	if run.Seed == "" {
+		run.Seed = "source/" + run.ID
+		f := run.Scope.Fields
+		run.Subject = firstNonEmpty(run.Scope.Query, f["work"], f["repo"], f["feed_url"], f["seed_url"], run.ID)
+	}
 	for i := range run.Drafts {
 		d := &run.Drafts[i]
 		targets := []string{d.CandidateID}

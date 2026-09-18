@@ -1,6 +1,7 @@
 package recruiting
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
@@ -257,5 +258,39 @@ func TestAcceptAccumulatesASecondSharedWork(t *testing.T) {
 	edges := store.LoadEdges().Edges()
 	if len(edges) != 1 || len(edges[0].Works) != 2 {
 		t.Fatalf("the second work must land on the one row: %+v", edges)
+	}
+}
+
+// A run from before source nodes existed still reads as its own source —
+// the same id the graph projection gives it — so nothing swept is invisible
+// on PLACES.
+func TestOldRunsStandAsTheirOwnSource(t *testing.T) {
+	a := &fakeAdapter{id: "fake", drafts: []sources.CandidateDraft{{Name: "Dana Reyes", Links: []string{"https://orcid.org/0000-0001-0000-0001"},
+		Evidence: []sources.Evidence{{SourceID: "fake", URLOrFile: "https://x/1", Snippet: "s", Kind: sources.EvidencePublication, Trust: sources.TrustHigh}}}}}
+	rs, _, _ := testRunStore(t, a)
+	run, err := rs.Execute(context.Background(), RunRequest{Source: a.ID(), Query: "field cycling"}, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	// strip the seed the way an old file has none
+	st, err := rs.load(run.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	st.Seed, st.Subject = "", ""
+	if err := rs.writeRun(st, nil); err != nil {
+		t.Fatal(err)
+	}
+	var got Run
+	for _, r := range rs.Runs(time.Now()) {
+		if r.ID == run.ID {
+			got = r
+		}
+	}
+	if got.Seed != "source/"+run.ID || got.Subject != "field cycling" {
+		t.Fatalf("an old run is its own source node: %q %q", got.Seed, got.Subject)
+	}
+	if _, ok := rs.Projection().Sources[got.Seed]; !ok {
+		t.Fatalf("and the graph names the same node: %v", rs.Projection().Sources)
 	}
 }
