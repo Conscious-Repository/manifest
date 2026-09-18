@@ -557,6 +557,15 @@ a.rec-place-name:hover { text-decoration: underline; }
 .rec-place-sub { font-family: var(--mono); font-size: var(--fs-2xs); color: var(--base-40); }
 .rec-place-acts { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--sp-4); flex: none; }
 .rec-place-acts .rec-linkish { padding: 0; }
+.rec-place-hue { flex: none; width: 10px; height: 10px; border-radius: 50%; align-self: center; background: hsl(calc(var(--src-hue, 0) * 30) 55% 58%); }
+.rec-place-class-chip { font-family: var(--mono); font-size: var(--fs-2xs); color: var(--base-40); border: 1px solid var(--line-soft); border-radius: 999px; padding: 0 6px; }
+.rec-place-stats { flex: 1 1 100%; display: flex; flex-wrap: wrap; gap: var(--sp-3); font-family: var(--mono); font-size: var(--fs-2xs); color: var(--base-40); }
+.rec-place-stat.has { color: var(--base-70); }
+.rec-place-stat.attn { color: var(--base-100); font-weight: 500; }
+.rec-place-cadence, .rec-place-sweeps { font-size: var(--fs-2xs); padding: 0 4px; height: auto; line-height: 1.6; }
+.rec-place-runs { flex: 1 1 100%; display: flex; flex-direction: column; gap: var(--sp-3); padding: var(--sp-3) 0 var(--sp-2) var(--sp-5); border-left: 2px solid hsl(calc(var(--src-hue, 0) * 30) 55% 58% / 0.5); }
+.rec-names .rec-scaffold-names { padding: var(--sp-2) 0; }
+.rec-names-place { max-width: 100%; }
 /* a place that cannot be swept says WHY, in the slot where the sweep would be */
 .rec-place-need { color: var(--base-40); }
 .rec-place-need:hover { color: var(--base-100); }

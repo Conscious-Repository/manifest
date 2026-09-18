@@ -28,7 +28,6 @@ let recPeopleFacet = "considering"; // considering | known | everyone — the RO
 function recRunCleared(run) { return !(run.drafts || []).some((d) => d.status === "new"); }
 let recSourceRunFocus = "";
 let recSourceRunFilter = "";
-let recSourceLayout = "review"; // review queue first; search history remains available
 let recSourceQuery = "";
 let recSourceRole = "";
 let recSourceStatus = "new";
@@ -42,6 +41,12 @@ let recPeopleShowArchived = false;  // `who I'd ask` includes the set-aside
 let recPersonEdit = null; // the connector id whose row is in edit mode
 let recPlaceQuery = "";   // PLACES search
 let recPlaceEdit = null;  // the place id whose row is in edit mode
+let recPlacesLayout = "places"; // places | review — the old SOURCES queue lives one chip over
+let recPlaceOpen = {};          // place id → its runs unfolded
+// REC_FORMER_AFTER_YEARS mirrors sources.FormerAfterYears: a person a dated
+// source last placed somewhere this many years ago is drawn FORMER.
+const REC_FORMER_AFTER_YEARS = 3;
+const REC_CADENCE_DAYS = { weekly: 7, monthly: 30, quarterly: 91 };
 let recNetQuery = "";     // network view search
 let recNetTab = "paths";  // paths | people | edges
 let recInspOpen = { details: false, evidence: false, network: false, activity: false, ashby: false };
@@ -70,7 +75,8 @@ const REC_RUN_COMMON_FIELDS = ["role", "query", "max"];
 function recApplyRoute(sub) {
   sub = (sub || "").replace(/^\//, "");
   if (sub.startsWith("role/")) { recView = "role"; recRoleView = sub.slice(5); }
-  else if (sub === "sources" || sub === "network" || sub === "board" || sub === "places") { recView = sub; }
+  else if (sub === "sources") { recView = "places"; recPlacesLayout = "review"; } // the queue is a chip on PLACES now
+  else if (sub === "network" || sub === "board" || sub === "places") { recView = sub; }
   else recView = "network";
 }
 
@@ -324,8 +330,8 @@ function recHeaderMeta() {
       return recPendingDrafts() + " results to review · " + recRuns.length + " searches";
     case "places": {
       const places = (recCache.seeds || []).filter((p) => p.class !== "person");
-      const sweepable = places.filter(recPlaceSweepable).length;
-      return places.length + " places · " + sweepable + " sweepable";
+      const waiting = recPendingDrafts();
+      return places.length + " places · " + recRuns.length + " sweeps" + (waiting ? " · " + waiting + " to review" : "");
     }
     case "network":
       return (net.people || []).length + " people · " + (net.edges || []).length + " edges";
@@ -425,8 +431,7 @@ function paintRail(rail) {
   const views = [
     ["network", "Graph", ""],
     ["board", "People", recUntriagedCount() || ""],
-    ["places", "Places", ""],
-    ["sources", "Sources", recPendingDrafts() || ""],
+    ["places", "Places", recPendingDrafts() || ""],
   ];
   const viewLinks = el("div", "rec-view-links");
   views.forEach(([key, label, count]) => {
@@ -549,24 +554,52 @@ function recSeedSweep(seed) {
   return t;
 }
 
-function recSeedSweepTarget(seed) {
+function recSeedSweepTarget(seed) { return recSeedSweeps(seed)[0] || null; }
+
+// recSourceAvailable — whether the rail registered an adapter. Before the
+// rail has loaded, the always-registered set is assumed; PatentsView is
+// key-gated on the server and never assumed.
+function recSourceAvailable(id) {
+  const list = ((recSources || {}).sources || []);
+  if (list.length) return list.some((a) => a.id === id);
+  return ["web", "github", "openalex", "clinicaltrials", "feed", "manual", "nihreporter", "pubmed", "orcid"].includes(id);
+}
+
+// recSeedSweeps lists EVERY adapter that can read a place, the default
+// first (social graph plan D-E: patents → trials → OpenAlex institution →
+// GitHub org, with the website crawl that already existed). A company is
+// several sources; the row offers them all and names what each reads.
+function recSeedSweeps(seed) {
   const url = (seed.url || "").trim();
   const name = (seed.name || "").trim();
   const feed = ((seed.unknown || []).find((f) => f.key === "feed") || {}).value || "";
+  const gh = /github\.com\//i.test(url);
+  const out = [];
   switch (seed.class) {
     case "work":
-      return { source: "openalex", fields: { work: url || name } };
+      out.push({ source: "openalex", fields: { work: url || name }, label: "its authors · OpenAlex" });
+      break;
     case "repo":
-      return { source: "github", fields: { repo: url || name } };
+      out.push({ source: "github", fields: { repo: url || name }, label: "its contributors · GitHub" });
+      break;
     case "media":
-      return feed || url ? { source: "feed", fields: { feed_url: feed || url } } : null;
+      if (feed || url) out.push({ source: "feed", fields: { feed_url: feed || url }, label: "its episodes · feed" });
+      break;
     case "lab":
     case "company":
-      return url ? { source: "web", fields: { seed_url: url }, query: name } : null;
+      if (url && !gh) out.push({ source: "web", fields: { seed_url: url }, query: name, label: "its website · crawl" });
+      if (seed.class === "company" && name) {
+        out.push({ source: "patents", query: name, now: true, label: "its patents · PatentsView" });
+        out.push({ source: "clinicaltrials", query: name, now: true, label: "its trials · ClinicalTrials.gov" });
+      }
+      if (name) out.push({ source: "openalex", fields: { institution: /ror\.org\//i.test(url) ? url : name }, label: "its newest papers · OpenAlex" });
+      if (gh) out.push({ source: "github", fields: { org: url }, label: "its public members · GitHub" });
+      break;
     case "person":
-      return { source: "openalex", query: name };
+      out.push({ source: "openalex", query: name, label: "their papers · OpenAlex" });
+      break;
   }
-  return null;
+  return out.filter((t) => recSourceAvailable(t.source));
 }
 
 // recLoadRun prefills the run form and shows it. It never RUNS: a sweep costs
@@ -820,6 +853,12 @@ function recIntakeBox() {
   input.type = "text";
   input.placeholder = "＋ add a person, lab, paper, podcast or profile — paste a link or a name";
   input.value = recIntake && !recIntake.res && !recIntake.busy ? recIntake.text || "" : "";
+  // a text input flattens a pasted list; the list is read from the
+  // clipboard itself so several names stay several lines
+  input.onpaste = (e) => {
+    const t = e.clipboardData && e.clipboardData.getData ? e.clipboardData.getData("text") : "";
+    if (t && /\n/.test(t.trim())) { e.preventDefault(); recIntakeLook(t); }
+  };
   input.onkeydown = (e) => {
     if (e.key === "Escape") { recIntakeReset(); if (recPaint) recPaint(); return; }
     if (e.key !== "Enter") return;
@@ -845,6 +884,7 @@ function recIntakeBox() {
     return box;
   }
   const res = recIntake.res || {};
+  if (res.kind === "names") { card.append(recNamesCard(res)); box.append(card); return box; }
 
   // what it decided, why, and WHICH RUNG decided — a guess you can see the
   // basis of is one you can correct; a guess you cannot is one you must catch
@@ -1219,8 +1259,91 @@ async function recLoadKnown() {
 
 function recPlaceSweepable(p) { return !!recSeedSweep(p); }
 
+// recHue mirrors graphHue (FNV-1a mod 12): the swatch on a place row is the
+// colour of its node and its member links on the graph, by construction.
+function recHue(id) {
+  let h = 2166136261;
+  for (let i = 0; i < id.length; i++) { h ^= id.charCodeAt(i); h = Math.imul(h, 16777619) >>> 0; }
+  return h % 12;
+}
+
+// recPlaceRuns — the runs under one source node, newest first.
+function recPlaceRuns(id) {
+  return recRuns.filter((r) => (r.seed || "") === id)
+    .sort((a, b) => (b.startedAt || "").localeCompare(a.startedAt || ""));
+}
+
+// recPlaceStats — who the place names across its runs: distinct people
+// (passed ones excluded — a pass is a search-time suppression), split
+// current/former by the newest year a source placed them there, plus who is
+// already on the board and how many are waiting for a decision.
+function recPlaceStats(runs) {
+  const year = new Date().getFullYear();
+  const people = new Map();
+  let waiting = 0;
+  runs.forEach((run) => (run.drafts || []).forEach((d) => {
+    if (d.status === "rejected") return;
+    if (d.status === "new") waiting++;
+    const dr = d.draft || {};
+    const key = dr.externalId ? run.source + ":" + dr.externalId : (dr.name || "").trim().toLowerCase();
+    if (!key) return;
+    const p = people.get(key) || { active: 0, board: false };
+    p.active = Math.max(p.active, dr.active || 0);
+    if (d.status === "accepted" || d.status === "duplicate") p.board = true;
+    people.set(key, p);
+  }));
+  let former = 0, board = 0;
+  people.forEach((p) => {
+    if (p.active > 0 && year - p.active >= REC_FORMER_AFTER_YEARS) former++;
+    if (p.board) board++;
+  });
+  return { members: people.size, former, current: people.size - former, board, waiting };
+}
+
+// recPlaceDue — a cadence marks a row due; it never fires a sweep.
+function recPlaceDue(p, last) {
+  const days = REC_CADENCE_DAYS[p.cadence || ""];
+  if (!days) return false;
+  if (!last) return true;
+  const t = Date.parse(last.startedAt);
+  return !isFinite(t) || Date.now() - t > days * 86400e3;
+}
+
+// recAdhocSources — sweeps that named no place (a pasted paper, a one-off
+// list) stand as their own source nodes on the graph; here they get a row
+// each, under their own label, so nothing swept is invisible.
+function recAdhocSources() {
+  const seen = new Map();
+  recRuns.forEach((r) => {
+    const id = r.seed || "";
+    if (!id.startsWith("source/") || seen.has(id)) return;
+    const f = (r.scope || {}).fields || {};
+    seen.set(id, { id, name: r.subject || (r.scope || {}).query || f.work || f.repo || f.feed_url || f.seed_url || r.source,
+      class: "sweep", adhoc: true, url: f.work || f.repo || f.feed_url || f.seed_url || "" });
+  });
+  return Array.from(seen.values());
+}
+
 function paintPlacesView(main) {
-  main.append(el("p", "rec-view-purpose", "Keep the labs, companies and publications you search here. Open their results to review people, or start another search."));
+  // two layouts on one view: the places (rows, runs folded under each) and
+  // the review queue that used to be the SOURCES tab
+  const waiting = recPendingDrafts();
+  const modes = el("div", "rec-toolbar");
+  [["places", "Places"], ["review", waiting ? "Review · " + waiting : "Review"]].forEach(([key, label]) => {
+    const b = el("button", "filter-chip" + (recPlacesLayout === key ? " on" : ""), label);
+    b.setAttribute("aria-pressed", String(recPlacesLayout === key));
+    b.onclick = () => { recPlacesLayout = key; if (recPaint) recPaint(); };
+    modes.append(b);
+  });
+  main.append(modes);
+  const pending = recPendingSweep();
+  if (pending) main.append(recPendingSweepCard(pending));
+  if (recPlacesLayout === "review") {
+    paintSourceReview(main);
+    main.append(recAdvancedRun());
+    return;
+  }
+  main.append(el("p", "rec-view-purpose", "Every place you sweep from — a lab, a company, a paper, a repo, a show — and who it named. Each has its own colour on the graph; a sweep lands its people there at once."));
   const bar = el("div", "rec-toolbar");
   const search = el("input", "pp-in rec-search");
   search.type = "search";
@@ -1236,12 +1359,13 @@ function paintPlacesView(main) {
   const body = () => {
     host.innerHTML = "";
     const q = recPlaceQuery.trim().toLowerCase();
-    const all = (recCache.seeds || []).filter((p) => p.class !== "person")
-      .filter((p) => !q || [p.name, p.org, p.url, p.class].join(" ").toLowerCase().includes(q));
-    if (!all.length) {
+    const match = (p) => !q || [p.name, p.org, p.url, p.class].join(" ").toLowerCase().includes(q);
+    const all = (recCache.seeds || []).filter((p) => p.class !== "person").filter(match);
+    const adhoc = recAdhocSources().filter(match);
+    if (!all.length && !adhoc.length) {
       host.append(emptyRow(q
         ? "no place matches — clear the search to see them all"
-        : "nowhere to look yet — paste a lab, a paper, a repo or a show above"));
+        : "nowhere to look yet — paste a lab, a company, a paper, a repo, a show, or a list of names above"));
       return;
     }
     (recCache.seedClasses || []).forEach((cls) => {
@@ -1251,15 +1375,80 @@ function paintPlacesView(main) {
       host.append(el("div", "micro-label rec-place-class", cls));
       inClass.forEach((p) => host.append(recPlaceRow(p)));
     });
+    if (adhoc.length) {
+      host.append(el("div", "micro-label rec-place-class", "one-off sweeps"));
+      adhoc.forEach((p) => host.append(recPlaceRow(p)));
+    }
   };
   body();
+  main.append(recAdvancedRun());
+}
+
+// recNamesCard — a pasted list of people is the owner's own import: they
+// land under a place you pick, as bridge people you chose (consent:
+// owner_import). Nothing is fetched and no record is made until you pursue
+// one.
+function recNamesCard(res) {
+  const st = recIntake;
+  const names = res.names || [];
+  const wrap = el("div", "rec-names");
+  const why = el("div", "rec-scaffold-why");
+  why.append(el("span", "rec-scaffold-paste", names.length + " names"));
+  why.append(el("span", "", res.why || ""));
+  wrap.append(why);
+  wrap.append(el("div", "rec-scaffold-names",
+    names.slice(0, 12).join(" · ") + (names.length > 12 ? " · +" + (names.length - 12) + " more" : "")));
+  const under = el("div", "rec-scaffold-classes");
+  under.append(el("span", "micro-label", "UNDER"));
+  const sel = el("select", "pp-in rec-names-place");
+  const none = el("option", "", "no place — a one-off list");
+  none.value = "";
+  sel.append(none);
+  (recCache.seeds || []).filter((p) => p.class !== "person").forEach((p) => {
+    const o = el("option", "", p.name + " · " + p.class);
+    o.value = p.id;
+    if (st.place === p.id) o.selected = true;
+    sel.append(o);
+  });
+  sel.onchange = () => {
+    st.place = sel.value;
+    const p = (recCache.seeds || []).find((s) => s.id === sel.value);
+    st.org = p ? p.name : "";
+  };
+  under.append(sel);
+  wrap.append(under);
+  wrap.append(el("div", "rec-scaffold-note", "they join the graph as people you chose (consent: owner_import) — no source is claimed, nothing is fetched, no contact details; pursue one to make a record"));
+  const acts = el("div", "rec-scaffold-acts");
+  const go = el("button", "pill rec-primary", "import " + names.length);
+  go.onclick = () => {
+    const t = {
+      source: "manual", seed: st.place || "", now: true,
+      query: "names: " + names.slice(0, 3).join(", ") + (names.length > 3 ? "…" : ""),
+      fields: { names: names.join("\n"), org: st.org || "" },
+    };
+    recIntakeReset();
+    recSweep(t);
+  };
+  acts.append(go);
+  const cancel = el("button", "rec-linkish", "cancel");
+  cancel.onclick = () => { recIntakeReset(); if (recPaint) recPaint(); };
+  acts.append(cancel);
+  wrap.append(acts);
+  return wrap;
 }
 
 function recPlaceRow(p) {
   const row = el("div", "rec-place");
   if (recPlaceEdit === p.id) return recPlaceEditor(p, row);
+  row.style.setProperty("--src-hue", recHue(p.id || p.name || ""));
+  const runs = recPlaceRuns(p.id);
+  const st = recPlaceStats(runs);
+  const open = !!recPlaceOpen[p.id];
 
   const top = el("div", "rec-place-top");
+  const hue = el("span", "rec-place-hue");
+  hue.title = "its colour on the graph — the source node and every member link";
+  top.append(hue);
   if (p.url) {
     const a = linkEl(p.name, p.url);
     a.className = "rec-place-name";
@@ -1269,28 +1458,49 @@ function recPlaceRow(p) {
     top.append(el("span", "rec-place-name", p.name));
   }
   if (p.org) top.append(el("span", "rec-place-sub", p.org));
+  if (!p.adhoc) top.append(el("span", "rec-place-class-chip", p.class));
   row.append(top);
 
-  const acts = el("div", "rec-place-acts");
-  const matches = recRuns.filter((r) => {
-    const scope = r.scope || {}, f = scope.fields || {};
-    return [scope.query, f.seed_url, f.work, f.repo, f.feed_url].filter(Boolean)
-      .some((v) => v === p.url || v === p.name);
-  }).sort((a,b) => (b.startedAt || "").localeCompare(a.startedAt || ""));
-  if (matches.length) {
-    const latest = matches[0];
-    row.append(el("div", "rec-card-coverage", "Last searched " + fmtWhen(latest.startedAt)));
-    const results = el("button", "pill light", "Review results");
-    results.onclick = () => recOpenSourceRun(latest);
-    acts.append(results);
+  // who it named, current/former by the newest dated evidence, and when
+  const stats = el("div", "rec-place-stats");
+  const last = runs[0];
+  if (st.members) {
+    stats.append(el("span", "rec-place-stat has", st.members + (st.members === 1 ? " person" : " people")));
+    if (st.former) {
+      const split = el("span", "rec-place-stat", st.current + " current · " + st.former + " former");
+      split.title = "former = last placed here " + REC_FORMER_AFTER_YEARS + "+ years ago by a dated source";
+      stats.append(split);
+    }
+    if (st.board) stats.append(el("span", "rec-place-stat", st.board + " on the board"));
+    if (st.waiting) stats.append(el("span", "rec-place-stat attn", st.waiting + " to review"));
   }
-  const target = recSeedSweep(p);
-  if (target) {
+  stats.append(el("span", "rec-place-stat", last ? "swept " + fmtWhen(last.startedAt) : "never swept"));
+  if (recPlaceDue(p, last)) {
+    const due = el("span", "rec-place-stat attn", "due");
+    due.title = "its cadence says another sweep is due — nothing sweeps on its own";
+    stats.append(due);
+  }
+  row.append(stats);
+
+  const acts = el("div", "rec-place-acts");
+  // every adapter that can read it, named by what it reads
+  const sweeps = p.adhoc ? [] : recSeedSweeps(p);
+  const fire = (t) => recSweep(Object.assign({}, t, { seed: p.id }));
+  if (sweeps.length === 1) {
     const go = el("button", "rec-linkish", "sweep →");
-    go.title = "load the " + target.source + " run scoped to this place";
-    go.onclick = () => recSweep(target);
+    go.title = sweeps[0].label;
+    go.onclick = () => fire(sweeps[0]);
     acts.append(go);
-  } else {
+  } else if (sweeps.length > 1) {
+    const sel = el("select", "pp-in rec-place-sweeps");
+    const head = el("option", "", "sweep…");
+    head.value = "";
+    sel.append(head);
+    sweeps.forEach((t, i) => { const o = el("option", "", t.label); o.value = String(i); sel.append(o); });
+    sel.title = "which source to read this place through";
+    sel.onchange = () => { const t = sweeps[parseInt(sel.value, 10)]; sel.value = ""; if (t) fire(t); };
+    acts.append(sel);
+  } else if (!p.adhoc) {
     // a place that cannot be swept says WHY and what would fix it, instead of
     // quietly rendering without the button it exists for
     const need = p.class === "media" ? "a feed or a link" : "a link";
@@ -1299,11 +1509,39 @@ function recPlaceRow(p) {
     fix.onclick = () => { recPlaceEdit = p.id; if (recPaint) recPaint(); };
     acts.append(fix);
   }
-  const edit = el("button", "rec-linkish", "edit");
-  edit.onclick = () => { recPlaceEdit = p.id; if (recPaint) recPaint(); };
-  acts.append(edit);
-  acts.append(armedDelete("delete", "delete — sure?", () => recPlaceDelete(p)));
+  if (!p.adhoc) {
+    const cad = el("select", "pp-in rec-place-cadence");
+    [["", "no cadence"], ["weekly", "weekly"], ["monthly", "monthly"], ["quarterly", "quarterly"]].forEach(([v, l]) => {
+      const o = el("option", "", l);
+      o.value = v;
+      o.selected = (p.cadence || "") === v;
+      cad.append(o);
+    });
+    cad.title = "how often this place is due another sweep — it marks the row due; it never sweeps on its own";
+    cad.onchange = async () => {
+      await recWrite("/api/aion/recruiting/place/" + encodeURIComponent(p.id), { cadence: cad.value }, "POST",
+        p.name + (cad.value ? " · " + cad.value : " · no cadence"));
+      renderAion();
+    };
+    acts.append(cad);
+  }
+  if (runs.length) {
+    const tog = el("button", "rec-linkish", (open ? "▾ " : "▸ ") + runs.length + (runs.length === 1 ? " sweep" : " sweeps"));
+    tog.onclick = () => { recPlaceOpen[p.id] = !open; if (recPaint) recPaint(); };
+    acts.append(tog);
+  }
+  if (!p.adhoc) {
+    const edit = el("button", "rec-linkish", "edit");
+    edit.onclick = () => { recPlaceEdit = p.id; if (recPaint) recPaint(); };
+    acts.append(edit);
+    acts.append(armedDelete("delete", "delete — sure?", () => recPlaceDelete(p)));
+  }
   row.append(acts);
+  if (open && runs.length) {
+    const list = el("div", "rec-place-runs");
+    runs.forEach((r) => list.append(recRunCard(r)));
+    row.append(list);
+  }
   return row;
 }
 
@@ -1410,7 +1648,6 @@ function paintMain(main) {
   // it is a rubric editor, not a place things arrive.
   if (recView !== "role") main.append(recIntakeBox());
   if (recView === "places") { paintPlacesView(main); return; }
-  if (recView === "sources") { paintSourcesView(main); return; }
   if (recView === "network") { paintNetworkView(main); return; }
   if (recView === "role") { paintRoleView(main); return; }
   paintBoardView(main);
@@ -1697,65 +1934,6 @@ function recArchive(c, archived, extra) {
 // ---- SOURCES view (its own body — no longer an accordion that pushed the
 // whole board below the fold) ----
 
-function paintSourcesView(main) {
-  if (!recSources || recSources.unavailable) {
-    main.append(emptyRow("Search results could not be loaded."));
-    const retry = el("button", "pill light", "Retry");
-    retry.onclick = async () => { await loadRecruitingSources(); renderAion(); };
-    main.append(retry);
-    return;
-  }
-  const modes = el("div", "rec-toolbar");
-  [["review", "Review results"], ["runs", "Search history"]].forEach(([key, label]) => {
-    const b = el("button", "filter-chip" + (recSourceLayout === key ? " on" : ""), label);
-    b.setAttribute("aria-pressed", String(recSourceLayout === key));
-    b.onclick = () => { recSourceLayout = key; if (recPaint) recPaint(); };
-    modes.append(b);
-  });
-  main.append(modes);
-  if (recSourceLayout === "review") {
-    const pending = recPendingSweep();
-    if (pending) main.append(recPendingSweepCard(pending));
-    paintSourceReview(main);
-    main.append(recAdvancedRun());
-    return;
-  }
-  // YOU POINT AT A THING; THE SOURCE FOLLOWS FROM IT (owner, 2026-09-05:
-  // "adding a new source isn't intuitive yet"). The front door is the intake
-  // above and the `sweep →` on any place or person — both land here as a
-  // PENDING SWEEP, one card naming what will be read and by whom. The form
-  // that makes you choose an adapter is still here, one fold down, for the
-  // day you want to hand-build a query. Two levels, and no more.
-  const pending = recPendingSweep();
-  if (pending) main.append(recPendingSweepCard(pending));
-  const list = el("div", "rec-run-list");
-  // A RUN WITH NOTHING LEFT TO DECIDE is done, and a done run in the way of a
-  // live one is the silt the owner asked to be rid of. `cleared` folds them
-  // away by default; the toggle says how many, so nothing disappears without
-  // saying so.
-  const decided = recRuns.filter(recRunCleared);
-  const live = recRuns.filter((r) => !recRunCleared(r));
-  const visibleRuns = live.concat(recShowCleared ? decided : []);
-  visibleRuns.sort((a,b) => Number(b.id === recSourceRunFocus) - Number(a.id === recSourceRunFocus));
-  visibleRuns.forEach((run) => list.append(recRunCard(run)));
-  if (!recRuns.length) {
-    list.append(emptyRow("nothing swept yet — paste a link above, or open PLACES and sweep one"));
-  } else if (!live.length && !recShowCleared) {
-    list.append(emptyRow("nothing left to review — every run is triaged"));
-  }
-  main.append(list);
-  main.append(recAdvancedRun());
-  if (decided.length) {
-    const foot = el("div", "rec-foot");
-    const t = el("button", "rec-linkish", recShowCleared
-      ? "hide the " + decided.length + " cleared run" + (decided.length === 1 ? "" : "s")
-      : "show " + decided.length + " cleared run" + (decided.length === 1 ? "" : "s"));
-    t.title = "runs with nothing left to decide — kept until they expire, and pinned ones kept past that";
-    t.onclick = () => { recShowCleared = !recShowCleared; if (recPaint) recPaint(); };
-    foot.append(t);
-    main.append(foot);
-  }
-}
 
 // recPendingSweep — the sweep that has been loaded and not yet run. Derived
 // from the run form, so pointing at a place, a person or a pasted link all
@@ -1944,8 +2122,11 @@ async function recRunFire(body) {
     const out = await r.json();
     if (out.runs) recRuns = out.runs;
     if (out.run) {
+      // the run lands UNDER ITS PLACE, unfolded — the source node it hangs
+      // off on the graph is the row it hangs off here
       recSourceRunFocus = out.run.id;
-      recSourceLayout = "runs";
+      recPlacesLayout = "places";
+      recPlaceOpen = { [out.run.seed || ""]: true };
       recRunOpen = { [out.run.id]: true };
       recShowCleared = recRunCleared(out.run);
     }
@@ -1988,7 +2169,9 @@ function recRunRetrieval(c) {
 // and the owner reasonably read the silence as "it did nothing".
 function recSweepIsLookup(t) {
   const f = (t && t.fields) || {};
-  return !!(f.work || f.repo || f.feed_url);
+  // an org's member list, an institution's newest works, a sponsor's trials
+  // and an assignee's patents are each ONE bounded call, like a paper
+  return !!(f.work || f.repo || f.feed_url || f.org || f.institution || f.names || (t && t.now));
 }
 
 // recSweep is the one gesture behind every `sweep →`: a lookup runs now and
@@ -1996,7 +2179,7 @@ function recSweepIsLookup(t) {
 function recSweep(target) {
   if (!target) return;
   if (!recSweepIsLookup(target)) { recLoadRun(target); return; }
-  recNav("sources");
+  recNav("places");
   recRunFire({
     source: target.source,
     role: recRoleId(),
@@ -2689,7 +2872,7 @@ function recDraftCard(run, d) {
       recDraftLater[key] = true;
       if (recPaint) recPaint();
       showToast("Set aside for this session · view Later to return", () => {
-        recSourceLayout = "review"; recSourceStatus = "later";
+        recPlacesLayout = "review"; recSourceStatus = "later";
         recSourceQuery = ""; recSourceRole = ""; recSourceRunFilter = "";
         recNav("sources");
       });
@@ -4049,7 +4232,7 @@ function recSourceEntries() {
 function recOpenSourceRun(run) {
   recSourceRunFocus = run.id;
   recSourceRunFilter = run.id;
-  recSourceLayout = "review";
+  recPlacesLayout = "review";
   recSourceQuery = "";
   recSourceRole = "";
   recSourceStatus = recRunCleared(run) ? "all" : "new";
