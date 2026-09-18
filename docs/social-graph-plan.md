@@ -298,3 +298,17 @@ past what stale-fade keeps legible).
   envelope byte-for-byte; the receipt is in the ledger before Ashby is
   called; a reapplicant is flagged, not dropped.
 - Live smoke after each phase on metis, as the 2026-09 passes did.
+
+## Status (stamped as phases ship)
+
+- **Phase 1 — model.** SHIPPED c03f4ed + c1f0ba0 (2026-09-18), live.
+- **Phase 2 — graph as home.** SHIPPED 93c2bed + d94e895 (2026-09-18), live.
+  Finding while verifying: ego mode from the owner was empty because the
+  Google calendar token had expired (`invalid_grant`), not because of the
+  graph — the reply now names it (68a8dc2). Reconnect is the owner's.
+- **Phase 3 — direct landing + Places.** SHIPPED 78e5dc6 + ab73c15
+  (2026-09-18). Adapters: PatentsView (key-gated on `PATENTSVIEW_API_KEY`;
+  not yet set on metis), ClinicalTrials.gov, OpenAlex institution sweep,
+  GitHub org members; pasted names as `owner_import`; place cadence (marks
+  due, never fires). Sources tab folded into Places.
+- Phases 4–6: not started.
