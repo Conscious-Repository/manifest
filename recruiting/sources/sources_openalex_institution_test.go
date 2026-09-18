@@ -2,6 +2,7 @@ package sources
 
 import (
 	"context"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -131,5 +132,32 @@ func TestOpenAlexInstitutionIsAScope(t *testing.T) {
 	}
 	if _, err := (OpenAlex{}).PrepareScope(Scope{Fields: map[string]string{"institution": "Yale University", "years": "soon"}}); err == nil {
 		t.Fatal("a malformed years window is refused before any fetch")
+	}
+}
+
+// A name that resolved to an institution with nothing under it is an
+// answer in words, naming what was resolved — never a silent empty run.
+func TestOpenAlexInstitutionWithNoWorksSaysWhich(t *testing.T) {
+	works := newOpenAlexWorksServer(t)
+	works.pages = map[string]string{"*": `{"meta":{"count":0},"results":[]}`}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/institutions" {
+			_, _ = w.Write([]byte(`{"results":[{"id":"https://openalex.org/I999","display_name":"Hyperfine Research"}]}`))
+			return
+		}
+		resp, err := works.srv.Client().Get(works.srv.URL + r.URL.RequestURI())
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadGateway)
+			return
+		}
+		defer resp.Body.Close()
+		w.WriteHeader(resp.StatusCode)
+		_, _ = io.Copy(w, resp.Body)
+	}))
+	t.Cleanup(srv.Close)
+	oa := OpenAlex{BaseURL: srv.URL, Client: *srv.Client()}
+	_, _, err := oa.SearchCounted(context.Background(), Scope{Fields: map[string]string{"institution": "Hyperfine"}})
+	if err == nil || !strings.Contains(err.Error(), "Hyperfine Research (I999, resolved by search Hyperfine) has no works") {
+		t.Fatalf("say which institution was read: %v", err)
 	}
 }

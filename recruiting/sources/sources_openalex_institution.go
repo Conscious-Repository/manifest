@@ -145,6 +145,10 @@ func (oa OpenAlex) searchInstitution(ctx context.Context, ref string, s Scope) (
 	if err != nil {
 		return nil, ret, err
 	}
+	if ret.Read == 0 && plan.Query == "" {
+		// a silent zero would hide a wrong name match; say what was read
+		return nil, ret, fmt.Errorf("openalex: %s (%s, resolved by %s) has no works in the registry — name the institution by its ROR link or OpenAlex id if this is the wrong one", orStr(inst.Name, inst.ID), inst.ID, inst.Via)
+	}
 	// every draft says which institution it was read under, and how that
 	// institution was resolved — the one place a wrong name match shows
 	for i := range out {

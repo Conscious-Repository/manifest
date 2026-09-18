@@ -592,7 +592,10 @@ function recSeedSweeps(seed) {
         out.push({ source: "patents", query: name, now: true, label: "its patents · PatentsView" });
         out.push({ source: "clinicaltrials", query: name, now: true, label: "its trials · ClinicalTrials.gov" });
       }
-      if (name) out.push({ source: "openalex", fields: { institution: /ror\.org\//i.test(url) ? url : name }, label: "its newest papers · OpenAlex" });
+      // a company is an OpenAlex institution by name; a lab is not (its
+      // university is), so a lab offers this only through a ROR link
+      if (/ror\.org\//i.test(url)) out.push({ source: "openalex", fields: { institution: url }, label: "its newest papers · OpenAlex" });
+      else if (seed.class === "company" && name) out.push({ source: "openalex", fields: { institution: name }, label: "its newest papers · OpenAlex" });
       if (gh) out.push({ source: "github", fields: { org: url }, label: "its public members · GitHub" });
       break;
     case "person":

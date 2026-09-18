@@ -432,7 +432,7 @@ func (r *RunStore) sourceNode(req RunRequest, scope sources.Scope, runID string)
 		}
 	}
 	var urls []string
-	for _, k := range []string{"seed_url", "work", "repo", "feed_url"} {
+	for _, k := range []string{"seed_url", "work", "repo", "feed_url", "org", "institution"} {
 		if v := strings.TrimSpace(scope.Fields[k]); v != "" {
 			urls = append(urls, strings.ToLower(strings.TrimRight(v, "/")))
 		}
