@@ -31,6 +31,7 @@ assert c['fallback_providers']==[] and c['fallback_model'] is None and c['mcp_se
 assert 'HERMES_IGNORE_USER_CONFIG' not in os.environ
 assert 'HERMES_IGNORE_RULES' not in os.environ
 assert os.environ['HERMES_SAFE_MODE']=='1'
+assert os.environ['HERMES_INTERNAL_TOOL_FREE']=='1'
 assert os.stat(os.getcwd()).st_mode & 0o777 == 0o700
 assert os.stat('config.yaml').st_mode & 0o777 == 0o600
 assert c['plugins']=={'enabled':[]}
