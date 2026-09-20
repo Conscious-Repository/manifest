@@ -78,6 +78,8 @@
   /* section toggles and inline name links read as rows, not 15px text */
   .pp-section-head, .aion-sec-label, .aion-done-toggle { min-height: var(--touch-sm); display: flex; align-items: center; }
   .sprt-spirit, .ritual-job-name, .pp3-link { display: inline-flex; align-items: center; min-height: 36px; }
+  /* a portal digest line's meta (saves · who · kind · when) takes its own line */
+  .portal-line-meta { flex: 1 1 100%; margin-left: 0; white-space: normal; }
   /* an approval's diff scrolls inside its own box, never the page; the
      create-note title row wraps its date · field · .md */
   .appr-collapse, .appr-diff { min-width: 0; max-width: 100%; }

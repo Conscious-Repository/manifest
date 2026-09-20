@@ -51,8 +51,11 @@ a.feed-title:hover { color: var(--blue); text-decoration: underline; }
 .type-chip.type-portal { }
 /* .portal-subhead / .portal-change-chip: structural only — recipe from .micro-label */
 .portal-subhead { margin: var(--sp-4) 0 var(--sp-1); }
-.portal-line { display: flex; align-items: baseline; gap: var(--sp-5); padding: var(--sp-1) 0; }
-.portal-line-text { font-size: var(--fs-lg); color: var(--text); text-decoration: none; flex: 1; }
+.portal-line { display: flex; align-items: baseline; flex-wrap: wrap; gap: var(--sp-2) var(--sp-5); padding: var(--sp-2) 0; }
+.portal-line-text { font-size: var(--fs-lg); color: var(--text); text-decoration: none; flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; }
+.portal-line > .portal-change-chip { flex: none; }
+/* what the line carries beyond its name: saves · who · kind · when */
+.portal-line-meta { flex: none; margin-left: auto; font-family: var(--mono); font-size: var(--fs-2xs); color: var(--muted); white-space: nowrap; }
 a.portal-line-text:hover { color: var(--blue); text-decoration: underline; }
 .portal-change-chip { border-radius: var(--radius); padding: 1px var(--sp-3); }
 .portal-change-chip.change-new { color: var(--base-50); border: 1px solid var(--base-25); }

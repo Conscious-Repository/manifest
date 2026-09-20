@@ -336,6 +336,21 @@ func (c *Cache) Dismiss(cardID string, now time.Time) {
 	c.write(st)
 }
 
+// DismissedAt reports when a card id was dismissed (zero, false when never).
+func (c *Cache) DismissedAt(cardID string) (time.Time, bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	v, ok := c.readCached().Dismissed[cardID]
+	if !ok {
+		return time.Time{}, false
+	}
+	t, err := time.Parse(time.RFC3339, v)
+	if err != nil {
+		return time.Time{}, true
+	}
+	return t, true
+}
+
 // Dismissed reports whether a card id has been dismissed.
 func (c *Cache) Dismissed(cardID string) bool {
 	c.mu.Lock()

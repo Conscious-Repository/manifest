@@ -251,14 +251,16 @@ type Card struct {
 func (svc *Service) Cards() []Card {
 	now := svc.now()
 	var cards []Card
-	// ClickUp — daily digests.
+	today := now.In(svc.loc).Format("2006-01-02")
+	// ClickUp — daily digests. A dismissed day comes back only with the
+	// changes that landed after the dismissal.
 	if svc.store.HasCreds("clickup", mustDef("clickup")) {
 		cu := svc.cache("clickup")
 		events := cu.Events()
-		today := now.In(svc.loc).Format("2006-01-02")
-		for _, day := range digestDays(events, svc.loc) {
-			id, forYou, groups, at := buildDigest(events, day, svc.loc)
-			if len(groups) == 0 || cu.Dismissed(id) {
+		for _, day := range digestDays(events, "clickup", svc.loc) {
+			floor, _ := cu.DismissedAt("clickup-digest:" + day)
+			id, forYou, groups, at := buildDigest(events, day, svc.loc, floor)
+			if len(groups) == 0 {
 				continue
 			}
 			cards = append(cards, Card{
@@ -268,17 +270,28 @@ func (svc *Service) Cards() []Card {
 			})
 		}
 	}
-	// Benchling — itemized.
+	// Benchling — daily digests too (2026-09-20): one line per object, the
+	// saves it took, who made them, grouped by project. Item-level dismissals
+	// from before this still count: an object whose every save was dismissed
+	// stays out of the line-up.
 	if svc.store.HasCreds("benchling", mustDef("benchling")) {
 		bn := svc.cache("benchling")
+		var events []Event
 		for _, e := range bn.Events() {
-			if bn.Dismissed(e.ID) {
+			if !bn.Dismissed(e.ID) {
+				events = append(events, e)
+			}
+		}
+		for _, day := range digestDays(events, "benchling", svc.loc) {
+			floor, _ := bn.DismissedAt("benchling-digest:" + day)
+			id, groups, summary, at := buildBenchlingDigest(events, day, svc.loc, floor)
+			if len(groups) == 0 {
 				continue
 			}
 			cards = append(cards, Card{
-				ID: e.ID, Type: "portal-item", Portal: "benchling",
-				Title: e.Title, Detail: e.Detail, Change: e.Change, URL: e.URL, Actor: e.Actor,
-				Date: e.At.Format(time.RFC3339), Pinned: false,
+				ID: id, Type: "portal-digest", Portal: "benchling",
+				Title: "Benchling · " + day, Detail: summary, Date: at.Format(time.RFC3339),
+				Pinned: day == today, Groups: groups,
 			})
 		}
 	}

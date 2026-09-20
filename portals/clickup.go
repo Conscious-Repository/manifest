@@ -317,6 +317,14 @@ type DigestLine struct {
 	Text  string `json:"text"` // "created · Close 743 N Euclid"
 	URL   string `json:"url"`
 	ForMe bool   `json:"forMe"`
+	// what one line carries beyond its text (2026-09-20): how many changes
+	// it collapses, who made them, what kind of object it is, and the
+	// last change's nature — so the reader can triage without a click
+	Count  int    `json:"count,omitempty"`
+	Who    string `json:"who,omitempty"`
+	Detail string `json:"detail,omitempty"`
+	Change string `json:"change,omitempty"`
+	At     string `json:"at,omitempty"` // RFC3339 of the latest change on the line
 }
 
 // DigestGroup is a list's changes (or the "for you" block when List=="").
@@ -328,12 +336,12 @@ type DigestGroup struct {
 // buildDigest turns a day's ClickUp events into one card: an "assigned to you /
 // mentions you" block first, then per-list groups (created · status · closed).
 // Pure function of the events + day — same input, same card, always.
-func buildDigest(events []Event, day string, loc *time.Location) (id string, forYou []DigestLine, groups []DigestGroup, at time.Time) {
+func buildDigest(events []Event, day string, loc *time.Location, floor time.Time) (id string, forYou []DigestLine, groups []DigestGroup, at time.Time) {
 	id = "clickup-digest:" + day
 	byList := map[string][]DigestLine{}
 	var lists []string
 	for _, e := range events {
-		if e.Portal != "clickup" || e.At.In(loc).Format("2006-01-02") != day {
+		if e.Portal != "clickup" || e.At.In(loc).Format("2006-01-02") != day || !e.At.After(floor) {
 			continue
 		}
 		if e.At.After(at) {
@@ -343,7 +351,7 @@ func buildDigest(events []Event, day string, loc *time.Location) (id string, for
 		if change == "" {
 			change = "changed"
 		}
-		line := DigestLine{Text: change + " · " + e.Title, URL: e.URL, ForMe: e.ForMe}
+		line := DigestLine{Text: change + " · " + e.Title, URL: e.URL, ForMe: e.ForMe, Count: 1, Who: e.Actor, Detail: e.List, Change: change, At: e.At.UTC().Format(time.RFC3339)}
 		if e.ForMe {
 			forYou = append(forYou, line)
 		}
@@ -368,11 +376,11 @@ func buildDigest(events []Event, day string, loc *time.Location) (id string, for
 
 // digestDays returns the distinct America/Chicago days present in the events,
 // newest first — each becomes at most one card.
-func digestDays(events []Event, loc *time.Location) []string {
+func digestDays(events []Event, portal string, loc *time.Location) []string {
 	seen := map[string]bool{}
 	var days []string
 	for _, e := range events {
-		if e.Portal != "clickup" {
+		if e.Portal != portal {
 			continue
 		}
 		d := e.At.In(loc).Format("2006-01-02")

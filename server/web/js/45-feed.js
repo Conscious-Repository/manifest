@@ -400,7 +400,8 @@ function portalCardEl(pc) {
     ],
     title: pc.title,
     date: pc.date,
-    why: !isDigest && pc.detail ? pc.detail : null,
+    // a digest's detail is its one-line summary ("41 changes · 8 items · Ellie, Aion")
+    why: pc.detail ? pc.detail : null,
     meta: !isDigest && pc.actor ? "by " + pc.actor : null,
   });
 
@@ -430,13 +431,23 @@ function portalChangeClass(change) {
   return /^(new|edited)$/.test(change) ? "change-" + change : "change-status";
 }
 
-// portalLineRow is one digest line: the task, linking to the source app.
+// portalLineRow is one digest line: the object, linking to the source app,
+// with what the line carries beyond its name (2026-09-20): a new/edited chip,
+// then "18 saves · Ellie · notebook entry · 4:11 PM" — enough to triage
+// without opening anything.
 function portalLineRow(ln) {
   const row = el("div", "portal-line");
   const label = ln.url
     ? Object.assign(el("a", "portal-line-text", ln.text), { href: ln.url, target: "_blank" })
     : el("span", "portal-line-text", ln.text);
+  if (ln.change && /^(new|edited)$/.test(ln.change)) row.append(el("span", "portal-change-chip micro-label " + portalChangeClass(ln.change), ln.change));
   row.append(label);
+  const bits = [];
+  if (ln.count > 1) bits.push(ln.count + " saves");
+  if (ln.who) bits.push(ln.who);
+  if (ln.detail) bits.push(ln.detail);
+  if (ln.at) bits.push(fmtWhen(ln.at));
+  if (bits.length) row.append(el("span", "portal-line-meta", bits.join(" · ")));
   return row;
 }
 

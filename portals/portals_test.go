@@ -205,28 +205,42 @@ func TestBenchlingItems(t *testing.T) {
 	svc.pollOne(context.Background(), mustDef("benchling"))
 
 	cards := svc.Cards()
-	if len(cards) != 2 {
-		t.Fatalf("want 2 benchling cards (entity + result), got %d: %+v", len(cards), cards)
+	if len(cards) != 1 {
+		t.Fatalf("want one benchling day digest (entity + result), got %d: %+v", len(cards), cards)
 	}
-	// The nameless assay result identifies by schema + id.
+	c := cards[0]
+	if c.Type != "portal-digest" || c.Portal != "benchling" || !c.Pinned {
+		t.Fatalf("bad card: %+v", c)
+	}
+	// Both objects are lines; the nameless assay result identifies by schema + id.
+	var lines []DigestLine
+	for _, g := range c.Groups {
+		lines = append(lines, g.Lines...)
+	}
+	if len(lines) != 2 {
+		t.Fatalf("want 2 lines, got %+v", c.Groups)
+	}
 	var sawResult bool
-	for _, c := range cards {
-		if c.Type != "portal-item" || c.Portal != "benchling" {
-			t.Fatalf("bad card: %+v", c)
-		}
-		if c.Title == "qPCR res_9" {
+	for _, ln := range lines {
+		if ln.Text == "qPCR res_9" {
 			sawResult = true
+		}
+		if ln.Count != 1 || ln.Change != "new" {
+			t.Fatalf("line should be one new save: %+v", ln)
 		}
 	}
 	if !sawResult {
-		t.Fatalf("assay result card missing: %+v", cards)
+		t.Fatalf("assay result line missing: %+v", lines)
+	}
+	if c.Detail != "2 changes · 2 items · Ben" {
+		t.Fatalf("summary = %q", c.Detail)
 	}
 
 	// Degraded: a failed poll keeps the last-good cache (no emptied inbox).
 	fail = true
 	svc.pollOne(context.Background(), mustDef("benchling"))
-	if n := svc.InboxCount(); n != 2 {
-		t.Fatalf("failed poll emptied the cache: InboxCount = %d, want 2", n)
+	if n := svc.InboxCount(); n != 1 {
+		t.Fatalf("failed poll emptied the cache: InboxCount = %d, want 1", n)
 	}
 	row := svc.row(mustDef("benchling"))
 	if row.State != StateDegraded || row.Err == "" {
@@ -267,13 +281,13 @@ func TestBenchlingPartialFailure(t *testing.T) {
 		t.Fatalf("one bad endpoint must not degrade the portal: state = %s (%s)", row.State, row.Err)
 	}
 	cards := svc.Cards()
-	if len(cards) != 1 || cards[0].Title != "Thymus culture" {
-		t.Fatalf("the working resource's card was discarded: %+v", cards)
+	if len(cards) != 1 || len(cards[0].Groups) != 1 || len(cards[0].Groups[0].Lines) != 1 || cards[0].Groups[0].Lines[0].Text != "Thymus culture" {
+		t.Fatalf("the working resource's change was discarded: %+v", cards)
 	}
 	// A notebook entry (no schema) gets the kind label as its noun, and the
-	// new/edited signal rides on Change.
-	if cards[0].Detail != "notebook entry" || cards[0].Change != "new" {
-		t.Fatalf("entry card detail=%q change=%q, want \"notebook entry\"/\"new\"", cards[0].Detail, cards[0].Change)
+	// new/edited signal rides on the line's Change.
+	if ln := cards[0].Groups[0].Lines[0]; ln.Detail != "notebook entry" || ln.Change != "new" {
+		t.Fatalf("entry line detail=%q change=%q, want \"notebook entry\"/\"new\"", ln.Detail, ln.Change)
 	}
 }
 
@@ -306,5 +320,66 @@ func TestClickUpChangeDiff(t *testing.T) {
 	old2, had2 := decodeSnap(prior2)
 	if ev := c.classify(task, 0, now, old2, had2); ev.Change != "assigned Ellie" {
 		t.Fatalf("assignee-add change = %q, want \"assigned Ellie\"", ev.Change)
+	}
+}
+
+// ---- Benchling day digest: saves collapse per object, lines carry the count,
+// who and kind, group by project; a dismissed day resurfaces only with what
+// landed after the dismissal (2026-09-20) ----
+
+func TestBenchlingDigestCollapsesSaves(t *testing.T) {
+	loc := chicago(t)
+	day := "2026-09-20"
+	at := func(h, m int) time.Time { return time.Date(2026, 9, 20, h, m, 0, 0, loc) }
+	ev := func(kind, ext, title, detail, change, actor, proj string, ts time.Time) Event {
+		return Event{ID: "benchling:" + kind + ":" + ext + ":" + ts.UTC().Format("20060102150405"), Portal: "benchling", Kind: kind,
+			Title: title, Detail: detail, Change: change, Actor: actor, At: ts,
+			URL: "https://aion.benchling.com/aion/f/lib_n6yfjIcu9i-" + proj + "/" + ext + "-x/edit"}
+	}
+	var events []Event
+	for i := 0; i < 18; i++ { // one notebook entry saved eighteen times
+		events = append(events, ev("entry", "etr_1", "W-008 Results table", "notebook entry", "edited", "Ellie", "w-008-magnetoacoustics", at(9, i)))
+	}
+	events = append(events,
+		ev("entity", "bfi_1", "GPLD7M - 2", "3_endpoint RNA seq", "new", "Aion", "aion-registry", at(10, 0)),
+		ev("entity", "bfi_1", "GPLD7M - 2", "3_endpoint RNA seq", "edited", "Ellie", "aion-registry", at(11, 0)),
+		ev("entry", "etr_2", "Thymus culture", "notebook entry", "edited", "Ellie", "w-008-magnetoacoustics", at(12, 0)),
+		ev("entry", "etr_3", "Yesterday", "notebook entry", "edited", "Ellie", "w-008-magnetoacoustics", time.Date(2026, 9, 19, 12, 0, 0, 0, loc)),
+	)
+	id, groups, summary, latest := buildBenchlingDigest(events, day, loc, time.Time{})
+	if id != "benchling-digest:2026-09-20" || !latest.Equal(at(12, 0)) {
+		t.Fatalf("id/latest = %s %v", id, latest)
+	}
+	if summary != "21 changes · 3 items · Ellie, Aion" {
+		t.Fatalf("summary = %q", summary)
+	}
+	if len(groups) != 2 || groups[0].List != "w 008 magnetoacoustics" || groups[1].List != "aion registry" {
+		t.Fatalf("groups = %+v", groups)
+	}
+	// busiest project first; within it the latest change first
+	w := groups[0].Lines
+	if len(w) != 2 || w[0].Text != "Thymus culture" || w[1].Text != "W-008 Results table" {
+		t.Fatalf("w-008 lines = %+v", w)
+	}
+	if w[1].Count != 18 || w[1].Who != "Ellie" || w[1].Detail != "notebook entry" || w[1].Change != "edited" {
+		t.Fatalf("collapsed line = %+v", w[1])
+	}
+	// a new-then-edited entity reads as new, and names both people in order
+	g := groups[1].Lines[0]
+	if g.Count != 2 || g.Change != "new" || g.Who != "Aion, Ellie" {
+		t.Fatalf("entity line = %+v", g)
+	}
+	// dismissed at 11:30: only the 12:00 change comes back
+	_, groups, summary, _ = buildBenchlingDigest(events, day, loc, at(11, 30))
+	if len(groups) != 1 || len(groups[0].Lines) != 1 || groups[0].Lines[0].Text != "Thymus culture" || summary != "1 change · 1 item · Ellie" {
+		t.Fatalf("after dismissal = %+v %q", groups, summary)
+	}
+	// dismissed after the last change: nothing to show
+	if _, groups, _, _ = buildBenchlingDigest(events, day, loc, at(12, 0)); groups != nil {
+		t.Fatalf("expected no groups after a late dismissal, got %+v", groups)
+	}
+	// no folder in the URL → the "—" group
+	if p := benchProject("https://aion.benchling.com/"); p != "" {
+		t.Fatalf("project = %q", p)
 	}
 }
