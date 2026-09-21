@@ -2,6 +2,7 @@ package recruiting
 
 import (
 	"context"
+	"encoding/json"
 	"log"
 	"sort"
 	"strings"
@@ -28,7 +29,7 @@ import (
 // onto someone's record where they will read as fact forever. A near miss is
 // dropped, not ranked — the cost of a miss is one empty result, the cost of a
 // wrong merge is a corrupted citation.
-// If all deterministic sources miss, DeepSeek may reason over cited draft
+// After deterministic collection, DeepSeek reasons over cited draft
 // evidence. It returns the original byline and separately supported claims;
 // it cannot fuzzy-merge an external search hit.
 //
@@ -48,7 +49,7 @@ import (
 // order their answers are merged. A source is skipped when it is the one that
 // produced the draft (it has already said what it knows) and when it is not
 // registered on this box.
-var lookupSources = []string{"openalex", "orcid", "github", "pubmed", "deepseek"}
+var lookupSources = []string{"openalex", "orcid", "github", "pubmed", "web", "deepseek"}
 
 // lookupMax bounds each source's answer. A name lookup wants the few rows that
 // carry that exact name, not a survey.
@@ -61,7 +62,9 @@ const lookupTopicsMax = 10
 // LookupResult reports what one pass actually found — per source, so a silent
 // zero is legible as "they are not in these indexes" rather than "it broke".
 type LookupResult struct {
-	Name string `json:"name"`
+	Name      string   `json:"name"`
+	Brief     bool     `json:"brief"`
+	Ambiguous []string `json:"ambiguous,omitempty"`
 	// Asked and Matched are source ids: everything consulted, and everything
 	// that answered with this exact name or a cited paper-to-author resolution.
 	Asked   []string `json:"asked"`
@@ -82,17 +85,24 @@ type LookupResult struct {
 // Lookup enriches ONE draft in place from the other public sources.
 func (r *RunStore) Lookup(ctx context.Context, runID, draftID string, now time.Time) (Run, LookupResult, error) {
 	r.mu.Lock()
-	defer r.mu.Unlock()
 
 	run, err := r.load(runID)
 	if err != nil {
+		r.mu.Unlock()
 		return Run{}, LookupResult{}, err
 	}
 	i, err := run.find(draftID)
 	if err != nil {
+		r.mu.Unlock()
 		return Run{}, LookupResult{}, err
 	}
 	d := &run.Drafts[i]
+	original, _ := json.Marshal(d)
+	adapters := make(map[string]sources.Adapter, len(r.adapters))
+	for id, adapter := range r.adapters {
+		adapters[id] = adapter
+	}
+	r.mu.Unlock() // network requests never hold the entire review queue hostage
 	name := strings.TrimSpace(d.Draft.Name)
 	if name == "" {
 		return Run{}, LookupResult{}, errf("draft %s has no name to look up", draftID)
@@ -121,34 +131,48 @@ func (r *RunStore) Lookup(ctx context.Context, runID, draftID string, now time.T
 	}
 
 	for _, id := range lookupSources {
-		// DeepSeek is the evidence-reasoning fallback for gaps the deterministic
-		// sources can't fill. It runs when NO source matched, OR when sources
-		// matched but produced no topics (the pubmed case: an ORCID/org match
-		// fills org but the initials can't be OpenAlex-disambiguated, so topics
-		// are still missing). Skip it only when a source already carried topics
-		// — reasoning over empty gaps is the whole point, not a redundant call.
-		if id == "deepseek" && len(res.Matched) > 0 && len(d.Draft.Topics) > 0 {
-			continue
-		}
-		adapter, ok := r.adapters[id]
-		if !ok || id == d.Draft.SourceID {
+		adapter, ok := adapters[id]
+		if !ok || (id == d.Draft.SourceID && id != "web") {
 			continue
 		}
 		res.Asked = append(res.Asked, id)
+		budget := 12 * time.Second
+		if id == "web" {
+			budget = 20 * time.Second
+		}
+		if id == "deepseek" {
+			budget = 240 * time.Second
+		}
+		sourceCtx, cancel := context.WithTimeout(ctx, budget)
 		scope := sources.Scope{Role: run.Scope.Role, Query: name, Max: lookupMax}
 		var hits []sources.CandidateDraft
 		if lookup, ok := adapter.(interface {
 			LookupCandidate(context.Context, sources.CandidateDraft, sources.Scope) ([]sources.CandidateDraft, error)
 		}); ok {
-			hits, err = lookup.LookupCandidate(ctx, d.Draft, scope)
+			hits, err = lookup.LookupCandidate(sourceCtx, d.Draft, scope)
 		} else {
-			hits, err = adapter.Search(ctx, scope)
+			hits, err = adapter.Search(sourceCtx, scope)
 		}
+		cancel()
 		if err != nil {
 			res.Failed = append(res.Failed, id)
 			if id == "deepseek" {
 				log.Printf("recruiting lookup: DeepSeek skipped: %v", err)
 			}
+			// A bounded reader can return useful evidence before another page fails.
+			if len(hits) == 0 {
+				continue
+			}
+		}
+		// Multiple distinct exact-name records are ambiguous, not cumulative CVs.
+		identities := map[string]bool{}
+		for _, h := range hits {
+			if nameKey(h.Name) == want {
+				identities[h.ExternalID+"\x00"+h.Org] = true
+			}
+		}
+		if len(identities) > 1 {
+			res.Ambiguous = append(res.Ambiguous, id)
 			continue
 		}
 		matched := false
@@ -157,6 +181,11 @@ func (r *RunStore) Lookup(ctx context.Context, runID, draftID string, now time.T
 				continue // a different person who shares a search result
 			}
 			matched = true
+			if h.Brief != nil {
+				h.Brief.GeneratedAt = now.UTC()
+				d.Draft.Brief = h.Brief
+				res.Brief = true
+			}
 			for _, l := range h.Links {
 				if l = strings.TrimSpace(l); l != "" && !haveLink[l] {
 					haveLink[l] = true
@@ -256,6 +285,23 @@ func (r *RunStore) Lookup(ctx context.Context, runID, draftID string, now time.T
 	res.Filled = dedupeStrings(res.Filled)
 
 	d.LookedUpAt = now.UTC()
+	d.Enhancement = &res
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	latest, err := r.load(runID)
+	if err != nil {
+		return Run{}, LookupResult{}, err
+	}
+	latestIndex, err := latest.find(draftID)
+	if err != nil {
+		return Run{}, LookupResult{}, err
+	}
+	current, _ := json.Marshal(latest.Drafts[latestIndex])
+	if string(current) != string(original) {
+		return Run{}, LookupResult{}, errf("candidate changed during enhancement; retry from its current state")
+	}
+	latest.Drafts[latestIndex] = *d
+	run = latest
 	if err := r.writeRun(run, nil); err != nil {
 		return Run{}, LookupResult{}, err
 	}

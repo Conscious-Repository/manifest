@@ -22,6 +22,6 @@ func (r *RunStore) RegisterDefaults() {
 		r.Register(sources.PatentsView{Key: key, Client: c})
 	}
 	if base := labmodel.BaseURL(); base != "" {
-		r.Register(sources.DeepSeek{BaseURL: base, Model: labmodel.Model(), Client: c})
+		r.Register(sources.DeepSeek{BaseURL: base, Model: labmodel.Model(), Client: http.Client{Timeout: 245 * time.Second}})
 	}
 }

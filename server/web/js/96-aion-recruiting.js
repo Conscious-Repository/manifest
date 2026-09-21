@@ -41,6 +41,10 @@ let recPeopleShowArchived = false;  // `who I'd ask` includes the set-aside
 let recPersonEdit = null; // the connector id whose row is in edit mode
 let recPlaceQuery = "";   // PLACES search
 let recPlaceEdit = null;  // the place id whose row is in edit mode
+let recFocusedReview = false;
+let recFocusedKey = "";
+let recFocusedIndex = 0;
+const recEnhancing = new Set();
 let recPlacesLayout = "places"; // places | review — the old SOURCES queue lives one chip over
 let recPlaceOpen = {};          // place id → its runs unfolded
 // REC_FORMER_AFTER_YEARS mirrors sources.FormerAfterYears: a person a dated
@@ -135,7 +139,7 @@ async function recSourcesPost(url, body, okMsg, method) {
   } catch (e) {
     showToast(String(e.message || e).slice(0, 140), null, "error");
     // repaint from the state we still hold: a button the caller disabled
-    // while the request was out ("looking up…", the armed pass, "undo pass")
+    // while the request was out ("Enhancing…", the armed pass, "undo pass")
     // must not stay dead on a card whose facts did not change
     renderAion();
     return null;
@@ -1273,7 +1277,7 @@ function recHue(id) {
 // recPlaceRuns — the runs under one source node, newest first.
 function recPlaceRuns(id) {
   return recRuns.filter((r) => (r.seed || "") === id)
-    .sort((a, b) => (b.startedAt || "").localeCompare(a.startedAt || ""));
+    .sort((a, b) => (b.startedAt || "").localeCompare(a.startedAt || "") || a.id.localeCompare(b.id));
 }
 
 // recPlaceStats — who the place names across its runs: distinct people
@@ -1349,10 +1353,14 @@ function paintPlacesView(main) {
     b.onclick = () => { recPlacesLayout = key; if (recPaint) recPaint(); };
     modes.append(b);
   });
+  const reviewAll = el("button", "pill light", "Review all candidates →");
+  reviewAll.onclick = () => { recClearSourceFilters(); recFocusedReview = true; recFocusedKey = ""; recFocusedIndex = 0; recPlacesLayout = "review"; if (recPaint) recPaint(); };
+  modes.append(reviewAll);
   main.append(modes);
   const pending = recPendingSweep();
   if (pending) main.append(recPendingSweepCard(pending));
   if (recPlacesLayout === "review") {
+    if (recFocusedReview) { paintFocusedSourceReview(main); return; }
     paintSourceReview(main);
     main.append(recAdvancedRun());
     return;
@@ -2343,22 +2351,28 @@ function recHost(u) {
 // recDraftLookup asks the other public indexes about this exact person and
 // reports what came back — including nothing, which is an answer.
 async function recDraftLookup(run, d) {
-  const out = await recSourcesPost("/api/aion/recruiting/sources/lookup/" + run.id + "/" + d.id, {});
+  const key = run.id + "#" + d.id;
+  if (recEnhancing.has(key)) return;
+  recEnhancing.add(key);
+  let out;
+  try { out = await recSourcesPost("/api/aion/recruiting/sources/lookup/" + run.id + "/" + d.id, {}); }
+  finally { recEnhancing.delete(key); if (recPaint) recPaint(); }
   if (!out) return;
   showToast(recLookupMessage(out.lookup || {}));
 }
 
 function recLookupMessage(r) {
   const bits = [];
+  if (r.brief) bits.push("cited brief");
   if (r.cites) bits.push(r.cites + " citation" + (r.cites === 1 ? "" : "s"));
   if (r.links) bits.push(r.links + " link" + (r.links === 1 ? "" : "s"));
   if ((r.filled || []).length) bits.push("filled " + r.filled.join(" + "));
   const where = (r.matched || []).length ? " from " + r.matched.join(", ") : "";
   const failed = r.failed || [];
-  const result = bits.length ? "looked up " + r.name + ": " + bits.join(" · ") + where
-    : failed.length ? "lookup incomplete for " + r.name
-    : "looked up " + r.name + " — nothing new under that exact name";
-  return result + (failed.length ? ". Could not finish " + failed.join(", ") + "; try the lookup again when the service is available." : "");
+  const result = bits.length ? "Enhanced " + r.name + ": " + bits.join(" · ") + where
+    : failed.length ? "Enhancement incomplete for " + r.name
+    : "Enhanced " + r.name + " — nothing new under that exact name";
+  return result + ((r.ambiguous || []).length ? ". Identity unresolved in " + r.ambiguous.join(", ") : "") + (failed.length ? ". Could not finish " + failed.join(", ") + "; try Enhance again when the service is available." : "");
 }
 
 // ---- the decision card (enrichment Phase 2) ----
@@ -2721,7 +2735,7 @@ function recDraftCard(run, d) {
   head.append(el("span", "micro-label rec-draft-status " + d.status, recDraftStatusWord(d.status)));
   head.append(el("span", "rec-draft-name", dr.name || "(unnamed)"));
   if (later) head.append(el("span", "micro-label rec-draft-later-mark", "later"));
-  if (d.lookedUpAt) head.append(el("span", "rec-draft-flag", "looked up"));
+  if (d.lookedUpAt) head.append(el("span", "rec-draft-flag", d.enhancement?.brief ? "enhanced" : "enhancement attempted"));
   card.append(head);
 
   if (later) {
@@ -2757,6 +2771,14 @@ function recDraftCard(run, d) {
   recDraftTopics(run, d, dr, key).forEach((n) => card.append(n));
 
   card.append(recBackgroundBrief(dr));
+  if (d.enhancement) {
+    const coverage = d.enhancement;
+    const missing = [];
+    if (!coverage.brief) missing.push(dr.brief ? "Refresh produced no new brief; previous brief retained" : "No supported generated brief; inspect source evidence");
+    if ((coverage.failed || []).length) missing.push("Unavailable: " + coverage.failed.join(", "));
+    if ((coverage.ambiguous || []).length) missing.push("Identity unresolved: " + coverage.ambiguous.join(", "));
+    if (missing.length) card.append(el("p", "rec-card-coverage", missing.join(" · ")));
+  }
 
   // 3 · classified presence — each class labelled, none folded into a count
   const contacts = recDraftContacts(dr);
@@ -2787,7 +2809,7 @@ function recDraftCard(run, d) {
   const seenKind = {};
   (dr.evidence || []).forEach((e) => {
     const u = (e.urlOrFile || "").trim();
-    const k = u + "\u0000" + (e.kind || "");
+    const k = u + "\u0000" + (e.kind || "") + "\u0000" + (e.snippet || "");
     if (u && seenKind[k]) return;
     if (u) { seen[u] = true; seenKind[k] = true; }
     cites.push(e);
@@ -2881,11 +2903,13 @@ function recDraftCard(run, d) {
       accept.disabled = true; // one record per press: a double-click is not two accepts
       recSourcesPost("/api/aion/recruiting/sources/accept/" + run.id + "/" + d.id, {}, "candidate added from " + run.source);
     };
-    const look = el("button", "pill light", d.lookedUpAt ? "look up again" : "look up");
-    look.title = "ask the other public indexes (openalex, orcid, github, pubmed) about this exact name";
+    const look = el("button", "pill light", d.lookedUpAt ? "Enhance again" : "Enhance");
+    look.title = "Collect public profile evidence and generate a cited brief with DeepSeek. This can take several minutes; you can keep reviewing other candidates.";
+    look.disabled = recEnhancing.has(key);
+    if (look.disabled) look.textContent = "Enhancing…";
     look.onclick = () => {
       look.disabled = true;
-      look.textContent = "looking up…";
+      look.textContent = "Enhancing…";
       recDraftLookup(run, d);
     };
     const laterBtn = el("button", "pill light", "Later this session");
@@ -4203,9 +4227,10 @@ function recEvidenceExcerpt(e) {
 
 function recBackgroundBrief(person) {
   const box = el("div", "rec-background");
+  if (person.brief) box.append(recEnhancedBrief(person.brief));
   const ev = (person.evidence || []).filter((e) => (e.snippet || "").trim());
   const seen = new Set();
-  const selected = ev.filter((e) => {
+  const selected = (person.brief ? [] : ev).filter((e) => {
     const key = (e.urlOrFile || e.url || "") + "|" + e.snippet;
     if (seen.has(key)) return false;
     seen.add(key); return true;
@@ -4225,7 +4250,7 @@ function recBackgroundBrief(person) {
     else row.append(el("span", "rec-card-coverage", "Source address not recorded"));
     box.append(row);
   });
-  if (!selected.length) box.append(el("div", "rec-background-text", "No background excerpt available yet. Open a profile or look up more information."));
+  if (!selected.length && !person.brief) box.append(el("div", "rec-background-text", "No background excerpt available yet. Open a profile or Enhance to collect more information."));
   const missing = [];
   if (!person.title) missing.push("job title");
   if (!person.org) missing.push("affiliation");
@@ -4236,7 +4261,7 @@ function recBackgroundBrief(person) {
 
 function recSourceEntries() {
   const q = recSourceQuery.trim().toLowerCase();
-  return recRuns.slice().sort((a,b) => (b.startedAt || "").localeCompare(a.startedAt || "")).flatMap((run) => (run.drafts || []).map((draft) => ({run, draft}))).filter(({run, draft}) => {
+  return recRuns.slice().sort((a,b) => (b.startedAt || "").localeCompare(a.startedAt || "") || a.id.localeCompare(b.id)).flatMap((run) => (run.drafts || []).map((draft) => ({run, draft}))).filter(({run, draft}) => {
     const d = draft.draft || {}, scope = run.scope || {};
     if (recSourceRunFilter && run.id !== recSourceRunFilter) return false;
     if (recSourceRole && (d.role || scope.role || "") !== recSourceRole) return false;
@@ -4252,6 +4277,7 @@ function recSourceEntries() {
 }
 
 function recOpenSourceRun(run) {
+  recFocusedReview = false;
   recSourceRunFocus = run.id;
   recSourceRunFilter = run.id;
   recPlacesLayout = "review";
@@ -4269,6 +4295,9 @@ function recClearSourceFilters() {
 }
 
 function paintSourceReview(main) {
+  const focus = el("button", "pill light", "Review these candidates →");
+  focus.onclick = () => { recFocusedReview = true; recFocusedKey = ""; recFocusedIndex = 0; if (recPaint) recPaint(); };
+  main.append(focus);
   main.append(el("p", "rec-view-purpose", "Read the background, check its sources, then add the person for further review. Each decision applies to this search result."));
   const selectedRun = recRuns.find((r) => r.id === recSourceRunFilter);
   if (selectedRun) {
@@ -4523,4 +4552,83 @@ async function recPollLive() {
     }
   }catch(_){ /* Preserve the last readable view; the next poll retries. */ }
   finally{recLiveReading=false;}
+}
+
+// Generated interpretation is visibly separate from the verbatim source record.
+function recEnhancedBrief(brief) {
+  const box = el("section", "rec-enhanced-brief");
+  box.append(el("div", "micro-label", "Generated brief · " + (brief.model || "DeepSeek") + (brief.generatedAt ? " · " + fmtWhen(brief.generatedAt) : "")));
+  box.append(el("p", "rec-card-coverage", "Check the cited evidence before deciding. This brief may be incomplete."));
+  [["overview", "Overview"], ["experience", "Experience"], ["education", "Education"], ["work", "Public work & posts"]].forEach(([section, title]) => {
+    const items = (brief.items || []).filter((item) => item.section === section);
+    const group = el("section", "rec-brief-section");
+    group.append(el("h3", "micro-label", title));
+    if (!items.length) group.append(el("p", "rec-card-coverage", "Not established by the collected evidence."));
+    items.forEach((item) => {
+      const row = el("div", "rec-background-item");
+      row.append(el("p", "rec-background-text", item.text));
+      const citation = el("details", "rec-brief-citation");
+      citation.append(el("summary", "rec-linkish", "Supporting quote · " + recHost(item.url)));
+      citation.append(el("blockquote", "rec-ev-quote", item.quote));
+      citation.append(linkEl("Read source ↗", item.url));
+      row.append(citation); group.append(row);
+    });
+    box.append(group);
+  });
+  const gaps = [!((brief.items || []).some((i) => i.section === "experience")) ? "Confirm recent roles and dates." : "", !((brief.items || []).some((i) => i.section === "education")) ? "Confirm relevant education or training." : ""].filter(Boolean);
+  if (gaps.length) box.append(el("p", "rec-card-coverage", "Questions for follow-up: " + gaps.join(" ")));
+  const evidence = el("details", "rec-brief-citation");
+  evidence.append(el("summary", "micro-label", "Evidence supplied to the model · " + (brief.evidence || []).length));
+  (brief.evidence || []).forEach((e) => {
+    const row = el("div", "rec-ev-row");
+    row.append(linkEl(recHost(e.urlOrFile) + " ↗", e.urlOrFile), el("blockquote", "rec-ev-quote", e.snippet));
+    if (e.retrievedAt) row.append(el("span", "micro-label", "Retrieved " + fmtWhen(e.retrievedAt)));
+    evidence.append(row);
+  });
+  box.append(evidence);
+  return box;
+}
+
+function recFocusedSelection(entries) {
+  const found = entries.findIndex(({run, draft}) => run.id + "#" + draft.id === recFocusedKey);
+  recFocusedIndex = found >= 0 ? found : Math.min(recFocusedIndex, Math.max(0, entries.length - 1));
+  const entry = entries[recFocusedIndex];
+  recFocusedKey = entry ? entry.run.id + "#" + entry.draft.id : "";
+  return entry;
+}
+
+function paintFocusedSourceReview(main) {
+  const previousKey = recFocusedKey;
+  const entries = recSourceEntries();
+  const entry = recFocusedSelection(entries);
+  const nav = el("div", "rec-toolbar rec-focused-nav");
+  const back = el("button", "rec-linkish", "Back to results");
+  back.onclick = () => { recFocusedReview = false; if (recPaint) recPaint(); };
+  nav.append(back);
+  const position = el("span", "micro-label", entries.length ? (recFocusedIndex + 1) + " / " + entries.length : "Review complete");
+  position.setAttribute("role", "status");
+  nav.append(position);
+  [[-1, "Previous"], [1, "Next"]].forEach(([delta, label]) => {
+    const button = el("button", "pill light", label);
+    button.dataset.reviewNav = label;
+    button.disabled = !entry || recFocusedIndex + delta < 0 || recFocusedIndex + delta >= entries.length;
+    button.onclick = () => {
+      recFocusedIndex += delta; recFocusedKey = "";
+      if (recPaint) recPaint();
+      const next = document.querySelector('[data-review-nav="' + label + '"]');
+      if (next && !next.disabled) next.focus();
+      else document.querySelector(".rec-focused-title")?.focus();
+    };
+    nav.append(button);
+  });
+  main.append(nav);
+  if (!entry) { main.append(emptyRow("No candidates remain in this view. Return to results to change filters.")); return; }
+  const {run, draft} = entry;
+  const context = el("h2", "rec-focused-title", (draft.draft || {}).name || "Candidate");
+  context.tabIndex = -1;
+  main.append(context, el("p", "micro-label", recRunLabel(run) + " · " + recRoleTitle((draft.draft || {}).role || (run.scope || {}).role)));
+  recDraftOpen[run.id + "#" + draft.id] = true;
+  const panel = el("article", "rec-focused-candidate");
+  panel.append(recDraftCard(run, draft)); main.append(panel);
+  if (previousKey && previousKey !== recFocusedKey) requestAnimationFrame(() => { if (context.isConnected) context.focus(); });
 }

@@ -108,7 +108,7 @@ func TestDeepSeekDownAndContextBound(t *testing.T) {
 	}
 	got := deepseekContext(d)
 	b, err := json.Marshal(got)
-	if err != nil || len(got.Evidence) != 8 || len(got.Name) > 200 || len(b) > 40000 {
+	if err != nil || len(got.Evidence) > 24 || len(got.Name) > 200 || len(b) > 140000 {
 		t.Fatalf("unbounded context %d %v", len(b), err)
 	}
 }

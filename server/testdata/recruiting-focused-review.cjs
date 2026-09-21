@@ -1,0 +1,17 @@
+const fs=require('fs'),vm=require('vm'),assert=require('node:assert/strict'),path=require('path');
+const source=fs.readFileSync(path.join(__dirname,'../web/js/96-aion-recruiting.js'),'utf8');
+const ctx=vm.createContext({});
+vm.runInContext('let recFocusedKey="", recFocusedIndex=0;'+source.slice(source.indexOf('function recFocusedSelection('),source.indexOf('function paintFocusedSourceReview(')),ctx);
+const row=id=>({run:{id:'run'},draft:{id}}), rows=['a','b','c'].map(row);
+ctx.entries=rows;
+assert.equal(vm.runInContext('recFocusedSelection(entries).draft.id',ctx),'a');
+assert.equal(vm.runInContext('recFocusedKey="run#b"; recFocusedSelection(entries).draft.id',ctx),'b');
+ctx.entries=[row('x'),...rows];
+assert.equal(vm.runInContext('recFocusedSelection(entries).draft.id',ctx),'b','new results must not move selection');
+ctx.entries=[row('x'),row('a'),row('c')];
+assert.equal(vm.runInContext('recFocusedSelection(entries).draft.id',ctx),'c','decision advances to next remaining candidate');
+ctx.entries=[];
+assert.equal(vm.runInContext('recFocusedSelection(entries)',ctx),undefined);
+ctx.entries=[row('new')];
+assert.equal(vm.runInContext('recFocusedSelection(entries).draft.id',ctx),'new');
+console.log('PASS stable review selection, new results, decision advancement, empty and refill.');

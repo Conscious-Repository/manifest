@@ -705,3 +705,15 @@ a.rec-place-name:hover { text-decoration: underline; }
   .rec-funnel-arrow { display: none; }
   .rec-archived-note { margin-left: 0; flex-basis: 100%; }
 }
+
+/* Focused source review retains the source card and its explicit decisions. */
+.rec-focused-nav { position: sticky; top: 0; z-index: 2; background: var(--bg); padding: var(--sp-6) 0; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+.rec-focused-title { font-size: var(--fs-2xl); margin: var(--sp-7) 0; overflow-wrap: anywhere; }
+.rec-focused-candidate { min-width: 0; }
+.rec-focused-candidate .rec-draft { display: flex; flex-direction: column; }
+.rec-focused-candidate .rec-draft-actions { order: -1; flex-wrap: wrap; padding: var(--sp-6) 0; border-bottom: 1px solid var(--line); }
+.rec-enhanced-brief { border-top: 1px solid var(--line); padding-top: var(--sp-7); }
+.rec-brief-section { margin: var(--sp-7) 0; }
+.rec-brief-citation { margin: var(--sp-4) 0; overflow-wrap: anywhere; }
+.rec-brief-citation summary { cursor: pointer; }
+.rec-brief-citation .rec-ev-quote { white-space: pre-wrap; }

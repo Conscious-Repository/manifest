@@ -223,6 +223,7 @@ type TopicInference struct {
 }
 
 type CandidateDraft struct {
+	Brief *CandidateBrief `json:"brief,omitempty"`
 	// CanonicalName is a supported lookup trace, never a replacement for Name.
 	CanonicalName   string           `json:"canonicalName,omitempty"`
 	TopicInferences []TopicInference `json:"topicInferences,omitempty"`

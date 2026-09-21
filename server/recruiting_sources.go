@@ -260,7 +260,7 @@ func (s *Server) handleRecruitingSourceLookup(w http.ResponseWriter, r *http.Req
 	if !s.recruitingRunsReady(w) {
 		return
 	}
-	ctx, cancel := context.WithTimeout(r.Context(), 60*time.Second)
+	ctx, cancel := context.WithTimeout(r.Context(), 330*time.Second)
 	defer cancel()
 	run, res, err := s.recruitingRuns.Lookup(ctx, r.PathValue("run"), r.PathValue("draft"), time.Now())
 	if err != nil {

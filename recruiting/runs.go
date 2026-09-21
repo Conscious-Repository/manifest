@@ -137,13 +137,14 @@ type RunState struct {
 // matched (duplicate). ExistingRunID/ExistingDraftID instead point to a
 // still-new sibling queue entry; they never masquerade as a vault record.
 type Draft struct {
-	ID              string    `json:"id"`
-	Status          string    `json:"status"`
-	Reason          string    `json:"reason,omitempty"`
-	CandidateID     string    `json:"candidateId,omitempty"`
-	ExistingRunID   string    `json:"existingRunId,omitempty"`
-	ExistingDraftID string    `json:"existingDraftId,omitempty"`
-	DecidedAt       time.Time `json:"decidedAt,omitzero"`
+	ID              string        `json:"id"`
+	Status          string        `json:"status"`
+	Reason          string        `json:"reason,omitempty"`
+	CandidateID     string        `json:"candidateId,omitempty"`
+	ExistingRunID   string        `json:"existingRunId,omitempty"`
+	ExistingDraftID string        `json:"existingDraftId,omitempty"`
+	DecidedAt       time.Time     `json:"decidedAt,omitzero"`
+	Enhancement     *LookupResult `json:"enhancement,omitempty"`
 	// LookedUpAt stamps the deterministic cross-source pass (lookup.go), so
 	// the queue shows which drafts have already been asked about and a second
 	// press is a deliberate refresh rather than an accident.

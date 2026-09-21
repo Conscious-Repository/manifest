@@ -332,8 +332,10 @@ an inferred skill. Candidate inspectors belong only to the visible People queue;
 previous/next follows that queue. On tablets the selected candidate takes the
 content pane, and on phones it uses the shared sheet. Mobile recruiting navigation
 keeps its four views visible and folds roles/sync. Full resumes retain their source
-text with a deterministic outline of standalone headings. Model-generated briefs
-are a separate planned feature; current excerpts must not be labeled AI summaries.
+text with a deterministic outline of standalone headings. Explicit Enhance now produces a separate, labeled model-generated brief with
+inspectable supporting quotes and the bounded input evidence. Source excerpts
+remain verbatim and must not be labeled AI summaries. Focused source review uses
+the current filtered queue; decisions advance to the next remaining candidate.
 
 Recruiting visual preference (owner, 2026-09-07): use clean divider rows for people,
 search results and search history, and unboxed resume text. Preserve visible action
