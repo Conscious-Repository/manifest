@@ -1088,3 +1088,56 @@ func TestEmptyWebRunPersistsHonestNote(t *testing.T) {
 		t.Fatalf("note not persisted: %+v, %v", saved, err)
 	}
 }
+
+func TestWebSiblingRunDuplicates(t *testing.T) {
+	a := &fakeAdapter{id: "web", drafts: []sources.CandidateDraft{citedDraft("Dana Reyes", "https://lab.example/people/#dana-reyes")}}
+	rs, _, vault := testRunStore(t, a)
+	before := snapshot(t, vault)
+	first := mustRun(t, rs, RunRequest{Source: "web", Query: "mri", Fields: map[string]string{"seed_url": "https://lab.example/people/"}})
+	a.drafts[0].ExternalID = "https://lab.example/allpeople/#dana-reyes"
+	second := mustRun(t, rs, RunRequest{Source: "web", Query: "mri", Fields: map[string]string{"seed_url": "https://lab.example/allpeople/"}})
+	d := second.Drafts[0]
+	if second.Counts.New != 0 || second.Counts.Duplicate != 1 || d.Status != DraftDuplicate || d.ExistingRunID != first.ID || d.ExistingDraftID != "d1" || d.CandidateID != "" {
+		t.Fatalf("missing queued duplicate: %+v", second)
+	}
+	loaded, err := rs.Get(second.ID)
+	if err != nil || loaded.Drafts[0].ExistingRunID != first.ID {
+		t.Fatalf("pointer not persisted: %+v %v", loaded, err)
+	}
+	original, err := rs.Get(first.ID)
+	if err != nil || original.Drafts[0].Status != DraftNew {
+		t.Fatalf("original changed: %+v %v", original, err)
+	}
+	assertOnlyChanged(t, "web runs", before, snapshot(t, vault))
+	// Distinct known organizations are not evidence of the same person.
+	a.drafts[0].Org = "Different University"
+	third := mustRun(t, rs, RunRequest{Source: "web", Query: "mri"})
+	if third.Counts.New != 1 {
+		t.Fatalf("different org suppressed: %+v", third)
+	}
+	fourth := mustRun(t, rs, RunRequest{Source: "web", Query: "mri"})
+	if fourth.Counts.Duplicate != 1 || fourth.Drafts[0].ExistingRunID != third.ID {
+		t.Fatalf("namesake hid matching queue: %+v", fourth)
+	}
+}
+
+func TestWebLegacyTombstoneAcrossPages(t *testing.T) {
+	a := &fakeAdapter{id: "web", drafts: []sources.CandidateDraft{citedDraft("Michael S. Avidan", "https://lab.example/people/#michael-s-avidan")}}
+	rs, store, vault := testRunStore(t, a)
+	key := "web:https://medicine.washu.edu/#dr--michael-s--avidan"
+	if err := store.AddPassed(Passed{Key: key, Name: "Dr. Michael S. Avidan", Source: "web", Reason: "passed earlier"}, testNow); err != nil {
+		t.Fatal(err)
+	}
+	before := snapshot(t, vault)
+	run := mustRun(t, rs, RunRequest{Source: "web", Query: "mri"})
+	if run.Counts.New != 0 || run.Counts.Rejected != 1 || !strings.HasPrefix(run.Drafts[0].Reason, suppressedReason) {
+		t.Fatalf("passed person re-proposed: %+v", run)
+	}
+	if _, err := rs.Delete(run.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := store.PassedSet()[key]; !ok {
+		t.Fatal("inherited tombstone removed")
+	}
+	assertOnlyChanged(t, "suppression and deletion", before, snapshot(t, vault))
+}

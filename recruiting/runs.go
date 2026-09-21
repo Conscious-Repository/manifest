@@ -134,13 +134,16 @@ type RunState struct {
 
 // Draft is one review-queue entry: the adapter's draft plus what the owner
 // decided about it. CandidateID is the vault record it became (accepted) or
-// matched (duplicate).
+// matched (duplicate). ExistingRunID/ExistingDraftID instead point to a
+// still-new sibling queue entry; they never masquerade as a vault record.
 type Draft struct {
-	ID          string    `json:"id"`
-	Status      string    `json:"status"`
-	Reason      string    `json:"reason,omitempty"`
-	CandidateID string    `json:"candidateId,omitempty"`
-	DecidedAt   time.Time `json:"decidedAt,omitzero"`
+	ID              string    `json:"id"`
+	Status          string    `json:"status"`
+	Reason          string    `json:"reason,omitempty"`
+	CandidateID     string    `json:"candidateId,omitempty"`
+	ExistingRunID   string    `json:"existingRunId,omitempty"`
+	ExistingDraftID string    `json:"existingDraftId,omitempty"`
+	DecidedAt       time.Time `json:"decidedAt,omitzero"`
 	// LookedUpAt stamps the deterministic cross-source pass (lookup.go), so
 	// the queue shows which drafts have already been asked about and a second
 	// press is a deliberate refresh rather than an accident.
@@ -382,6 +385,33 @@ func (r *RunStore) ExecuteTracked(ctx context.Context, req RunRequest, now time.
 	// SeekOut's hidden filters): re-sweeping a lab must not re-ask a question
 	// that was already answered.
 	suppressed := r.store.PassedSet()
+	// URL-based web ids change between roster sections. Legacy stones carry
+	// the printed name, so match that too without rewriting passed.md.
+	webPassed := map[string]Passed{}
+	for _, p := range r.store.LoadPassed().Passed() {
+		if p.Source == "web" || strings.HasPrefix(p.Key, "web:") {
+			if key := sources.WebPersonKey(p.Name); key != "" {
+				webPassed[key] = p
+			}
+		}
+	}
+	queued := map[string][]Draft{}
+	if adapter.ID() == "web" {
+		for _, id := range r.ids() {
+			prior, err := r.load(id)
+			if err != nil || prior.Source != "web" || (!prior.ExpiresAt.IsZero() && now.After(prior.ExpiresAt) && !prior.Pinned) {
+				continue
+			}
+			for _, d := range prior.Drafts {
+				if d.Status != DraftNew {
+					continue
+				}
+				key := sources.WebPersonKey(d.Draft.Name)
+				d.ExistingRunID, d.ExistingDraftID = prior.ID, d.ID
+				queued[key] = append(queued[key], d)
+			}
+		}
+	}
 	for i, d := range drafts {
 		d.SourceID = adapter.ID()
 		if d.Role == "" {
@@ -392,7 +422,11 @@ func (r *RunStore) ExecuteTracked(ctx context.Context, req RunRequest, now time.
 		// view, whichever adapter produced it
 		d = sources.ClassifyLinks(d)
 		entry := Draft{ID: "d" + strconv.Itoa(i+1), Status: DraftNew, Draft: d}
-		if p, ok := suppressed[PassedKey(d.SourceID, d.ExternalID, d.Name)]; ok {
+		p, passed := suppressed[PassedKey(d.SourceID, d.ExternalID, d.Name)]
+		if !passed && d.SourceID == "web" {
+			p, passed = webPassed[sources.WebPersonKey(d.Name)]
+		}
+		if passed {
 			entry.Status = DraftRejected
 			entry.Reason = suppressedReason + p.At
 			if p.Reason != "" {
@@ -403,6 +437,11 @@ func (r *RunStore) ExecuteTracked(ctx context.Context, req RunRequest, now time.
 		} else if id, why := existing.match(d); id != "" {
 			entry.Status, entry.CandidateID, entry.Reason = DraftDuplicate, id, why
 			entry.Draft.Dedupe = sources.DedupeHint{CandidateID: id, Reason: why}
+			run.Counts.Duplicate++
+		} else if prior, ok := matchQueuedWeb(queued, d); ok {
+			entry.Status = DraftDuplicate
+			entry.ExistingRunID, entry.ExistingDraftID = prior.ExistingRunID, prior.ExistingDraftID
+			entry.Reason = "already queued in run " + prior.ExistingRunID + " draft " + prior.ExistingDraftID
 			run.Counts.Duplicate++
 		} else {
 			run.Counts.New++
@@ -417,6 +456,18 @@ func (r *RunStore) ExecuteTracked(ctx context.Context, req RunRequest, now time.
 		return Run{}, err
 	}
 	return r.project(run, nil), nil
+}
+
+// Same known name with conflicting known organizations is not a match.
+// Keep every namesake in the index so one conflict cannot hide a later match.
+func matchQueuedWeb(queued map[string][]Draft, d sources.CandidateDraft) (Draft, bool) {
+	for _, prior := range queued[sources.WebPersonKey(d.Name)] {
+		org, have := normalizeKey(d.Org), normalizeKey(prior.Draft.Org)
+		if org == "" || have == "" || org == have {
+			return prior, true
+		}
+	}
+	return Draft{}, false
 }
 
 // sourceNode answers what a run is FROM: the seed the caller named, else the

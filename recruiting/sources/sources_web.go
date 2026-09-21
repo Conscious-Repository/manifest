@@ -264,6 +264,7 @@ var webNameStop = map[string]bool{
 	// Whole labels are checked separately; do not blacklist their individual
 	// words, which could also appear in a real printed name.
 	"collective intelligence": true,
+	"incomplete grades":       true, "poster award": true, "faculty handbook": true,
 }
 
 // webNameParticles may appear lower-cased in the middle of a name.
@@ -369,10 +370,11 @@ func (w Web) Search(ctx context.Context, s Scope) ([]CandidateDraft, error) {
 	robots := map[string]*webRobots{}
 	processed := map[string]bool{} // queued URLs are not yet processed pages
 	var out []CandidateDraft
-	seen := map[string]bool{} // page URL + name, so a card quoted twice is one draft
+	seen := map[string]int{} // normalized person name → first draft; merge later evidence
 	fetched := 0
 	emptySeed := false
 	seedHost := seed.Hostname()
+	departmentScoped := webFacultyProfile(seed)
 
 	for len(frontier) > 0 && fetched < maxPages && len(out) < maxDrafts {
 		if err := ctx.Err(); err != nil {
@@ -406,17 +408,34 @@ func (w Web) Search(ctx context.Context, s Scope) ([]CandidateDraft, error) {
 		processed[key] = true
 		visited[key] = true
 
+		if item.depth == 0 {
+			departmentScoped = departmentScoped || webFacultyProfile(page.url)
+		}
+		// A lab reached from a departmental profile must not lead back
+		// into unrelated personnel on that shared host, including redirects.
+		if departmentScoped && item.depth > 0 && strings.EqualFold(page.url.Hostname(), seedHost) && !webLabPath(page.url) {
+			continue
+		}
 		relevant := page.relevant(terms) || item.section
-		if relevant {
+		if relevant && !(webHandbook(page.url) || (departmentScoped && webDepartmentIndex(page.url))) {
 			for _, d := range w.drafts(page, item, s.Role) {
-				k := page.url.String() + "\x00" + strings.ToLower(d.Name)
-				if seen[k] {
+				k := WebPersonKey(d.Name)
+				if i, ok := seen[k]; ok {
+					out[i].Evidence = append(out[i].Evidence, d.Evidence...)
+					out[i].Note += "\n" + d.Note
+					for _, link := range d.Links {
+						if !webHasLink(out[i].Links, link) {
+							out[i].Links = append(out[i].Links, link)
+						}
+					}
+					if out[i].Org == "" {
+						out[i].Org = d.Org
+					}
 					continue
 				}
-				seen[k] = true
-				out = append(out, d)
-				if len(out) >= maxDrafts {
-					break
+				if len(out) < maxDrafts {
+					seen[k] = len(out)
+					out = append(out, d)
 				}
 			}
 		}
@@ -430,6 +449,20 @@ func (w Web) Search(ctx context.Context, s Scope) ([]CandidateDraft, error) {
 			continue
 		}
 		for _, l := range page.links {
+			// A faculty profile is one person's foothold on a shared site,
+			// not authority to sweep its department. Only an explicit lab
+			// link outside chrome can leave it; same-site labs need their
+			// own /lab(s)/ subtree. Dedicated lab seeds keep their ordering.
+			if webFacultyProfile(page.url) && (l.chrome || !webExplicitLab(l) ||
+				(strings.EqualFold(l.url.Hostname(), page.url.Hostname()) && !webLabPath(l.url))) {
+				continue
+			}
+			if departmentScoped && strings.EqualFold(l.url.Hostname(), seedHost) && !webLabPath(l.url) {
+				continue
+			}
+			if webHandbook(l.url) || (departmentScoped && webDepartmentIndex(l.url)) {
+				continue
+			}
 			key := l.url.String()
 			if visited[key] {
 				continue
@@ -463,6 +496,59 @@ func (w Web) Search(ctx context.Context, s Scope) ([]CandidateDraft, error) {
 		}
 	}
 	return out, nil
+}
+
+// WebPersonKey is the web identity rule: printed name, independent of the
+// page on which a roster repeats it. Honorifics and punctuation are not identity.
+func WebPersonKey(name string) string {
+	words := strings.Fields(strings.ToLower(name))
+	if len(words) > 0 && (strings.Trim(words[0], ".") == "dr" || strings.Trim(words[0], ".") == "prof") {
+		words = words[1:]
+	}
+	return strings.Join(strings.FieldsFunc(strings.Join(words, " "), func(r rune) bool { return !unicode.IsLetter(r) && !unicode.IsDigit(r) }), " ")
+}
+
+func webFacultyProfile(u *url.URL) bool {
+	parts := strings.Split(strings.Trim(strings.ToLower(u.Path), "/"), "/")
+	for i, part := range parts {
+		if part == "faculty" && i+1 < len(parts) && parts[i+1] != "index.html" {
+			return true
+		}
+	}
+	return false
+}
+
+func webHandbook(u *url.URL) bool {
+	p := strings.ToLower(u.Path)
+	for _, part := range strings.Split(p, "/") {
+		if strings.Contains(part, "handbook") {
+			return true
+		}
+	}
+	return false
+}
+
+func webDepartmentIndex(u *url.URL) bool {
+	p := strings.ToLower(strings.TrimSuffix(u.Path, "/"))
+	return p == "/faculty" || p == "/faculty/index.html" || p == "/directory" || p == "/directory/index.html"
+}
+
+func webLabPath(u *url.URL) bool {
+	for _, part := range strings.Split(strings.ToLower(u.Path), "/") {
+		if part == "lab" || part == "labs" {
+			return true
+		}
+	}
+	return false
+}
+
+func webExplicitLab(l webLink) bool {
+	for _, word := range strings.FieldsFunc(strings.ToLower(l.text+" "+l.title+" "+l.url.Path), func(r rune) bool { return !unicode.IsLetter(r) }) {
+		if word == "lab" || word == "laboratory" || word == "labs" {
+			return true
+		}
+	}
+	return false
 }
 
 // webLabSection matches whole words in a link's path, text or title, so
@@ -784,9 +870,10 @@ type webLine struct {
 }
 
 type webLink struct {
-	url   *url.URL
-	text  string
-	title string
+	chrome bool
+	url    *url.URL
+	text   string
+	title  string
 }
 
 // fetch GETs one URL, refuses to follow a redirect anywhere the filters
@@ -982,7 +1069,7 @@ func (p *webPage) extract(doc *html.Node) {
 		if tag == "a" {
 			if href := p.resolve(webAttr(n, "href")); href != nil {
 				curLinks = append(curLinks, href.String())
-				p.links = append(p.links, webLink{url: href, text: strings.Join(strings.Fields(webText(n)), " "), title: webAttr(n, "title")})
+				p.links = append(p.links, webLink{chrome: chrome || webChromeNode(n), url: href, text: strings.Join(strings.Fields(webText(n)), " "), title: webAttr(n, "title")})
 			}
 			inAnchor = true
 		}
@@ -1213,6 +1300,10 @@ func webPersonName(s string) bool {
 	if len(words) < 2 || len(words) > 4 {
 		return false
 	}
+	// Surname followed by undotted uppercase initials is citation syntax.
+	if len(words) == 2 && len([]rune(words[1])) >= 2 && strings.ToUpper(words[1]) == words[1] && !strings.Contains(words[1], ".") {
+		return false
+	}
 	initials := 0
 	for _, wd := range words {
 		if r := []rune(strings.Trim(wd, ".,")); len(r) == 1 && unicode.IsUpper(r[0]) && strings.HasSuffix(wd, ".") {
@@ -1327,7 +1418,7 @@ func webCues(lines []string) (title, org string) {
 				hasOrg = true
 			}
 		}
-		if hasTitle && title == "" && !webLabelish(l) {
+		if hasTitle && title == "" && !webLabelish(l) && webRoleLine(l) {
 			title = l
 			continue
 		}
@@ -1336,6 +1427,20 @@ func webCues(lines []string) (title, org string) {
 		}
 	}
 	return title, org
+}
+
+// Role labels are short noun phrases, not sentences or clipped biographies.
+func webRoleLine(s string) bool {
+	if len([]rune(s)) > 80 || strings.ContainsAny(s, ".!?;…") {
+		return false
+	}
+	lower := " " + strings.ToLower(s) + " "
+	for _, phrase := range []string{" and has ", " has ", " have ", " my ", " fellow students ", " mentored ", " was ", " is ", " as soon as ", " teaching assistant award "} {
+		if strings.Contains(lower, phrase) {
+			return false
+		}
+	}
+	return true
 }
 
 // webPhoneish reports whether a line looks like it carries a phone number:
@@ -1466,4 +1571,13 @@ func (w Web) Preview(ctx context.Context, ref string) (PreviewFacts, error) {
 	out.Total = len(page.links)
 	out.fact("links on the page", strconv.Itoa(len(page.links)), w.ID(), final)
 	return out, nil
+}
+
+func webHasLink(links []string, want string) bool {
+	for _, link := range links {
+		if link == want {
+			return true
+		}
+	}
+	return false
 }

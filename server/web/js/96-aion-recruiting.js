@@ -2732,6 +2732,10 @@ function recDraftCard(run, d) {
     card.append(on);
   }
 
+  if (d.existingRunId) {
+    card.append(el("div", "rec-draft-sub", "Already queued in run " + d.existingRunId + " · " + d.existingDraftId));
+  }
+
   // 2 · what they have worked on, and what the source said about them —
   // the two things a go/no-go rests on, so they come before presence,
   // provenance and path (owner, 2026-09-05).

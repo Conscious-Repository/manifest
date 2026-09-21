@@ -245,7 +245,7 @@ func TestWebTraversesSeedToCrossDomainPerson(t *testing.T) {
 	if d.Title != "Postdoctoral Fellow" {
 		t.Errorf("title=%q", d.Title)
 	}
-	if len(d.Evidence) != 1 {
+	if len(d.Evidence) != 3 {
 		t.Fatalf("evidence=%+v", d.Evidence)
 	}
 	ev := d.Evidence[0]
@@ -262,7 +262,7 @@ func TestWebTraversesSeedToCrossDomainPerson(t *testing.T) {
 		!strings.Contains(d.Note, "discovered from https://seed.example/") || !strings.Contains(d.Note, "depth 1") {
 		t.Errorf("provenance note: %q", d.Note)
 	}
-	if len(d.Links) != 1 || d.Links[0] != "https://seed.example/people/dana" {
+	if len(d.Links) != 3 || d.Links[0] != "https://seed.example/people/dana" {
 		t.Errorf("links=%v", d.Links)
 	}
 
@@ -288,24 +288,12 @@ func TestWebTraversesSeedToCrossDomainPerson(t *testing.T) {
 		t.Errorf("Priya links=%v", p.Links)
 	}
 
-	// the depth-3 person page: its own heading names the person, so the
-	// page is theirs and is the link; it is a second draft for the same
-	// name because it is a second citation
-	var deep *CandidateDraft
-	for i := range got {
-		if got[i].Name == "Dana Reyes" && got[i].Evidence[0].URLOrFile == "https://code.example/dreyes" {
-			deep = &got[i]
-		}
+	// Repeated people merge into the first draft and retain deeper evidence.
+	if len(got) != 4 || d.Evidence[2].URLOrFile != "https://code.example/dreyes" ||
+		!strings.Contains(d.Note, "depth 3") || !webHasLink(d.Links, "https://code.example/dreyes") {
+		t.Fatalf("lost merged identity/evidence: %+v", got)
 	}
-	if deep == nil {
-		t.Fatalf("no draft from the depth-3 page: %+v", got)
-	}
-	if !strings.Contains(deep.Note, "depth 3") || !strings.Contains(deep.Note, "discovered from https://lab.example/imaging") {
-		t.Errorf("depth-3 provenance: %q", deep.Note)
-	}
-	if len(deep.Links) == 0 || deep.Links[0] != "https://code.example/dreyes" {
-		t.Errorf("depth-3 links=%v", deep.Links)
-	}
+
 	for _, d := range got {
 		if len(d.Edges) != 0 {
 			t.Errorf("%s: edges emitted in 3b.6: %+v", d.Name, d.Edges)
@@ -390,14 +378,13 @@ func TestWebRespectsPageCap(t *testing.T) {
 		t.Errorf("max_pages=999 fetched %d want cap %d", len(got), webMaxPages)
 	}
 
-	// the draft cap stops the traversal too: Max 2 means two drafts and no
-	// page fetched past the one that filled them
+	// Repeated cards count once, so the page budget is reached before Max 2.
 	n = fresh()
 	got, err := n.adapter().Search(context.Background(), Scope{Query: "mri", Max: 2, Fields: map[string]string{"seed_url": "https://big.example/", "max_pages": "50"}})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(got) != 2 || len(n.pages()) != 3 {
+	if len(got) != 1 || len(n.pages()) != 50 {
 		t.Errorf("Max=2: drafts=%d pages=%d", len(got), len(n.pages()))
 	}
 
@@ -569,7 +556,7 @@ func TestWebNeverEmitsContactDetails(t *testing.T) {
 	// address line
 	var own *CandidateDraft
 	for i := range got {
-		if got[i].Evidence[0].URLOrFile == "https://seed.example/people/dana" {
+		if got[i].Name == "Dana Reyes" && len(got[i].Evidence) >= 2 && got[i].Evidence[1].URLOrFile == "https://seed.example/people/dana" {
 			own = &got[i]
 		}
 	}
@@ -1154,5 +1141,81 @@ func TestWebSectionRedirectToQueuedURL(t *testing.T) {
 	got, err := n.adapter().Search(context.Background(), webScope("https://seed.example/", map[string]string{"depth": "1", "max_pages": "2"}))
 	if err != nil || len(got) != 1 || got[0].Name != "Michael Levin" {
 		t.Fatalf("queued redirect lost people: %+v, %v; %v", got, err, n.pages())
+	}
+}
+
+func TestWebFacultyProfileScope(t *testing.T) {
+	n := newWebNet().site("department.example", map[string]string{
+		"/labs/zhou/people":       `<title>Zhou Lab</title><h1>Sam Okafor</h1><p>PhD Student</p><a href="/administrative-staff">Staff</a>`,
+		"/administrative-staff":   `<title>Lab staff</title><h1>Nick Benassi</h1><p>Senior Associate Dean</p>`,
+		"/faculty/Chao-Zhou.html": `<h1>Chao Zhou</h1><p>Professor</p><nav><a href="/people">People</a><a href="https://other.example/lab">Other lab</a></nav><a href="/faculty/index.html">Faculty</a><a href="/handbook/people">Lab handbook</a><a href="https://zhou.example/lab">Zhou Laboratory</a><a href="/labs/zhou/people">Zhou Lab</a>`,
+		"/people":                 `<h1>Nick Benassi</h1><p>Senior Associate Dean</p>`,
+		"/faculty/index.html":     `<h1>Mandy Martin</h1><p>Project Coordinator</p>`,
+		"/handbook/people":        `<h1>Scott Crawford</h1><p>Senior Assistant Dean</p>`,
+	}).site("zhou.example", map[string]string{
+		"/lab":    `<h1>Zhou Laboratory</h1><a href="/people">People</a><a href="https://department.example/faculty/index.html">Faculty</a>`,
+		"/people": `<h2>Dana Reyes</h2><p>Postdoctoral Fellow</p>`,
+	}).site("other.example", map[string]string{"/lab": `<h1>Other Person</h1><p>Professor</p>`})
+	got, err := n.adapter().Search(context.Background(), webScope("https://department.example/faculty/Chao-Zhou.html", nil))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 3 || draftByName(got, "Chao Zhou") == nil || draftByName(got, "Dana Reyes") == nil || draftByName(got, "Sam Okafor") == nil {
+		t.Fatalf("scope leaked or lab lost: %+v", got)
+	}
+	for _, u := range []string{"https://department.example/administrative-staff", "https://department.example/people", "https://department.example/faculty/index.html", "https://department.example/handbook/people", "https://other.example/lab"} {
+		if n.requested(u) {
+			t.Errorf("department/chrome escape: %s", u)
+		}
+	}
+}
+
+// Golden identity regression: two roster sections and a profile are one person,
+// with every distinct visited evidence page remaining inspectable.
+func TestWebTwoSectionsOnePersonGolden(t *testing.T) {
+	n := newWebNet().site("lab.example", map[string]string{
+		"/people/":         `<title>Lab people</title><h1>Bahareh Bahmani</h1><p>Postdoctoral Fellow</p><a href="/team-2/">Team</a>`,
+		"/team-2/":         `<title>Lab people</title><h1>Bahareh Bahmani</h1><p>Research Scientist</p><p>Example University</p><a href="/people/bahareh/">Profile</a>`,
+		"/people/bahareh/": `<title>Lab people</title><h1>Dr. Bahareh Bahmani</h1><p>Research Scientist</p>`,
+	})
+	scope := webScope("https://lab.example/people/", nil)
+	scope.Max = 10
+	got, err := n.adapter().Search(context.Background(), scope)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 1 {
+		t.Fatalf("drafts=%+v", got)
+	}
+	d := got[0]
+	var urls []string
+	for _, e := range d.Evidence {
+		urls = append(urls, e.URLOrFile)
+	}
+	golden := "Bahareh Bahmani|Postdoctoral Fellow|Example University|https://lab.example/people/,https://lab.example/team-2/,https://lab.example/people/bahareh/"
+	actual := d.Name + "|" + d.Title + "|" + d.Org + "|" + strings.Join(urls, ",")
+	if actual != golden {
+		t.Fatalf("identity/evidence golden:\ngot  %s\nwant %s", actual, golden)
+	}
+}
+
+func TestWebRejectsCitationLabelsAndProse(t *testing.T) {
+	for _, name := range []string{"Incomplete Grades", "Poster Award", "Rubin JR", "Stevens KR", "Weddell JC"} {
+		t.Run(name, func(t *testing.T) {
+			n := newWebNet().site("lab.example", map[string]string{"/": "<title>Lab people</title><h1>" + name + "</h1><p>Excellent Teaching Assistant</p>"})
+			got, err := n.adapter().Search(context.Background(), webScope("https://lab.example/", nil))
+			if err != nil || len(got) != 0 {
+				t.Fatalf("non-person accepted: %+v %v", got, err)
+			}
+		})
+	}
+	for _, title := range []string{"and has mentored over 20 undergraduate students", "Imoukhuede PI (2019). A Pilot study", "my fellow students and the Danforth community", "Professor…", "Professor. Leads research", "Professor " + strings.Repeat("advanced ", 10)} {
+		t.Run(title, func(t *testing.T) {
+			n := newWebNet().site("lab.example", map[string]string{"/": "<title>Lab people</title><h1>Dana Reyes</h1><p>" + title + "</p>"})
+			got, err := n.adapter().Search(context.Background(), webScope("https://lab.example/", nil))
+			if err != nil || len(got) != 0 {
+				t.Fatalf("prose role accepted: %+v %v", got, err)
+			}
+		})
 	}
 }
