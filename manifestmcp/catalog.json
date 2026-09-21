@@ -11,8 +11,12 @@
         },
         {
           "key": "query",
-          "label": "candidate url, name, or note",
-          "required": true
+          "label": "candidate url, name, or note"
+        },
+        {
+          "key": "names",
+          "label": "or a list of names",
+          "placeholder": "one per line — the people you choose to put under a place (consent: owner_import)"
         },
         {
           "key": "org",
@@ -37,6 +41,11 @@
           "key": "work",
           "label": "or one paper",
           "placeholder": "DOI, OpenAlex id, or link"
+        },
+        {
+          "key": "institution",
+          "label": "or one institution",
+          "placeholder": "a ROR link, an OpenAlex I-id, or the name — its newest works, the people on them"
         },
         {
           "key": "max",
@@ -110,6 +119,11 @@
           "placeholder": "owner/repo, or its link"
         },
         {
+          "key": "org",
+          "label": "or one organisation",
+          "placeholder": "its public members — the login, or github.com/org"
+        },
+        {
           "key": "max",
           "label": "max results",
           "placeholder": "25"
@@ -154,6 +168,27 @@
           "key": "query",
           "label": "RePORTER search",
           "placeholder": "e.g. diffusion MRI reconstruction",
+          "required": true
+        },
+        {
+          "key": "max",
+          "label": "max people shown",
+          "placeholder": "25"
+        }
+      ]
+    },
+    {
+      "id": "clinicaltrials",
+      "kind": "registry",
+      "fields": [
+        {
+          "key": "role",
+          "label": "role"
+        },
+        {
+          "key": "query",
+          "label": "sponsor",
+          "placeholder": "e.g. Hyperfine — the company or institution sponsoring the trials",
           "required": true
         },
         {
@@ -525,6 +560,9 @@
                 "additionalProperties": {
                   "type": "string"
                 }
+              },
+              "seed": {
+                "type": "string"
               }
             },
             "required": [
@@ -1263,6 +1301,9 @@
                 "type": "string"
               },
               "consent": {
+                "type": "string"
+              },
+              "cadence": {
                 "type": "string"
               },
               "unknown": {
