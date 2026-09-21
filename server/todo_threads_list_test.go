@@ -58,3 +58,29 @@ func TestTaskThreadsList(t *testing.T) {
 		t.Fatal("taskDomain")
 	}
 }
+
+// keepTaskThread: known tasks stay while open, while an agent turn runs,
+// or within the grace after their last comment even when ticked off (the
+// owner keeps talking on a done task); unknown ids stay only when the
+// store that would know them is unavailable.
+func TestKeepTaskThread(t *testing.T) {
+	now := time.Date(2026, 9, 21, 4, 0, 0, 0, time.UTC)
+	recent, stale := now.Add(-2*24*time.Hour), now.Add(-30*24*time.Hour)
+	cases := []struct {
+		known, open, active bool
+		updated             time.Time
+		want                bool
+	}{
+		{true, true, false, stale, true},     // open: always
+		{true, false, false, recent, true},   // ticked off two days ago, still talking
+		{true, false, true, stale, true},     // ticked off, but an agent turn is in flight
+		{true, false, false, stale, false},   // ticked off a month ago: gone from the rail
+		{false, true, false, stale, true},    // unknown id, store unavailable: the thread is the evidence
+		{false, false, false, recent, false}, // unknown id, store readable: deleted / QA probe
+	}
+	for i, c := range cases {
+		if got := keepTaskThread(c.known, c.open, c.active, c.updated, now); got != c.want {
+			t.Errorf("case %d %+v = %v", i, c, got)
+		}
+	}
+}

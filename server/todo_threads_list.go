@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"manifest/tasks"
 	"manifest/threads"
 )
 
@@ -70,24 +71,25 @@ func (s *Server) taskThreads() []taskThreadRow {
 	}
 	doc := s.tasksDocOrNil()
 	deleg := s.delegationIndex()
+	now := time.Now()
 	out := []taskThreadRow{}
 	for _, id := range ids {
 		thread := s.listThread(id)
 		if len(thread) == 0 {
 			continue
 		}
-		text, open := s.openTaskTextIn(doc, id)
-		known := text != id
-		if known && !open {
+		text, open, known := s.resolveTaskThread(doc, id)
+		last := thread[len(thread)-1]
+		d, delegated := deleg[id]
+		if !keepTaskThread(known, open, delegated && activeDelegation(d.State), last.At, now) {
 			continue
 		}
-		last := thread[len(thread)-1]
 		row := taskThreadRow{ID: id, Title: text, Domain: taskDomain(id), Updated: last.At, Comments: len(thread),
-			LastAuthor: firstNonEmptyStr(last.AuthorName, last.Author), LastAction: last.Action, LastText: snip(last.Text, 140), Open: true}
+			LastAuthor: firstNonEmptyStr(last.AuthorName, last.Author), LastAction: last.Action, LastText: snip(last.Text, 140), Open: open}
 		if rec := s.readPlanRecord(id); rec.Assignee != "" {
 			row.Agent = rec.Assignee
 		}
-		if d, ok := deleg[id]; ok {
+		if delegated {
 			row.State, row.Phase = d.State, d.Phase
 			if row.Agent == "" && d.Agent != "" {
 				row.Agent = d.Agent
@@ -97,6 +99,42 @@ func (s *Server) taskThreads() []taskThreadRow {
 	}
 	sort.SliceStable(out, func(i, j int) bool { return out[i].Updated.After(out[j].Updated) })
 	return out
+}
+
+// taskThreadGrace: a checked-off task keeps its conversation in the rail
+// this long after the last comment — the owner often keeps talking on a
+// task after ticking it (the plan lands, the result is discussed).
+const taskThreadGrace = 14 * 24 * time.Hour
+
+// keepTaskThread is the rail's rule for one conversation: a task the record
+// knows stays while it is open, while an agent turn is in flight, or while
+// its last comment is within the grace; a task no record knows (deleted,
+// archived, a QA probe) is no conversation — unless its store could not be
+// read, in which case the thread is the only evidence and it stays.
+func keepTaskThread(known, open, active bool, updated, now time.Time) bool {
+	if !known {
+		return open // open doubles as "store unavailable" for an unknown id
+	}
+	return open || active || now.Sub(updated) <= taskThreadGrace
+}
+
+// resolveTaskThread reads the task behind a thread: its words, whether it is
+// open, and whether any record knows it at all (known false with open true
+// means the store that would know is unavailable).
+func (s *Server) resolveTaskThread(doc *tasks.Doc, id string) (text string, open, known bool) {
+	text, open = s.openTaskTextIn(doc, id)
+	if text != id {
+		return text, open, true
+	}
+	switch {
+	case strings.HasPrefix(id, "aion:"), strings.HasPrefix(id, "re:"):
+		_, _, ok := s.backlogStoreFor(id)
+		return id, !ok, false
+	case strings.HasPrefix(id, "prop:"):
+		return id, s.realestate == nil, false
+	default:
+		return id, doc == nil, false
+	}
 }
 
 func firstNonEmptyStr(v ...string) string {

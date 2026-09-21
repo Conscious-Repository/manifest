@@ -724,7 +724,7 @@ function chatInboxKey(entry){return (entry.taskThread?"task":entry.terminal?"ter
 // its agent, the task's words its title, the newest comment its time.
 function chatTaskEntry(t){
   const agent=(t.agent||"").replace(/^agent:/,"");
-  return {agent, taskThread:true, session:{id:t.id, title:t.title||t.id, updated:t.updated, task:t.id, domain:t.domain||"", turns:t.comments||0,
+  return {agent, taskThread:true, session:{id:t.id, title:t.title||t.id, updated:t.updated, task:t.id, domain:t.domain||"", turns:t.comments||0, done:t.open===false,
     taskState:t.state||"", phase:t.phase||"", lastAuthor:t.lastAuthor||"", lastAction:t.lastAction||"", lastText:t.lastText||""}};
 }
 function chatApplyPins(state){
@@ -954,6 +954,7 @@ function chatEntryState(entry){
   else if(st==='failed'){execution='failed';label='Run failed';}
   else if(st==='done'){execution='completed';label='Run finished';}
   else if(!session.turns){execution='draft';label='Not started';}
+  else if(session.done){execution='completed';label='Done · '+(session.lastAuthor?session.lastAuthor+' · ':'')+'thread open';}
   else label=(session.lastAuthor?session.lastAuthor+' · ':'')+'Idle';
  }else if(entry.terminal){
   const ob=typeof terminalStates!=='undefined'&&terminalStates.get(session.id)||session;
@@ -1225,7 +1226,7 @@ function chatTaskRow(s) {
   const title = el("span", "chat-rail-title", s.title || s.id);
   title.title = "a task conversation — opens the task stage";
   top.append(title);
-  const mark = el("span", "chat-rail-task-mark", "☐"); mark.title = "a task"; top.append(mark);
+  const mark = el("span", "chat-rail-task-mark", s.done ? "☑" : "☐"); mark.title = s.done ? "a task, ticked off — its conversation is still open" : "a task"; top.append(mark);
   if (["running", "plan-running", "queued", "plan-queued", "go-queued"].includes(s.taskState)) top.append(el("span", "chat-rail-live", "✦"));
   row.append(top);
   const rm = el("div", "chat-rail-meta");
