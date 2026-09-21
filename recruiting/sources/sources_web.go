@@ -880,25 +880,39 @@ type webLink struct {
 // reject, and parses the body as HTML. A non-200, a non-HTML content type
 // or an unparseable body is an error the caller skips.
 func (w Web) fetch(ctx context.Context, u *url.URL) (*webPage, error) {
-	body, final, ctype, err := w.get(ctx, u.String(), webMaxBody)
+	_, finalURL, doc, err := w.fetchDoc(ctx, u)
 	if err != nil {
 		return nil, err
 	}
-	if mt, _, _ := mime.ParseMediaType(ctype); mt != "text/html" && mt != "application/xhtml+xml" {
-		return nil, fmt.Errorf("web: %s is %q, not HTML", final, ctype)
-	}
-	doc, err := html.Parse(strings.NewReader(string(body)))
-	if err != nil {
-		return nil, fmt.Errorf("web: %s did not parse: %v", final, err)
-	}
-	finalURL, err := url.Parse(final)
-	if err != nil {
-		return nil, err
-	}
-	finalURL.Fragment = ""
 	page := &webPage{url: finalURL, retrieved: time.Now().UTC()}
 	page.extract(doc)
 	return page, nil
+}
+
+// fetchDoc is fetch before the page is linearised: the bytes as read, the
+// URL they came from, and the parsed document. The contact reader
+// (web_contacts.go) needs the tree — a mailto: href is dropped by
+// extract's link resolver, and binding an address to a name is a question
+// about which element holds both — and the bytes, to recognise one
+// boilerplate body served under several URLs.
+func (w Web) fetchDoc(ctx context.Context, u *url.URL) ([]byte, *url.URL, *html.Node, error) {
+	body, final, ctype, err := w.get(ctx, u.String(), webMaxBody)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	if mt, _, _ := mime.ParseMediaType(ctype); mt != "text/html" && mt != "application/xhtml+xml" {
+		return nil, nil, nil, fmt.Errorf("web: %s is %q, not HTML", final, ctype)
+	}
+	doc, err := html.Parse(strings.NewReader(string(body)))
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("web: %s did not parse: %v", final, err)
+	}
+	finalURL, err := url.Parse(final)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	finalURL.Fragment = ""
+	return body, finalURL, doc, nil
 }
 
 // get performs one GET with the polite User-Agent, a redirect policy that

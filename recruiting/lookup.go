@@ -80,6 +80,12 @@ type LookupResult struct {
 	Edges int `json:"edges,omitempty"`
 	// Filled names the profile fields this pass supplied, e.g. ["org"].
 	Filled []string `json:"filled,omitempty"`
+	// Contacts counts the contact_published rows this pass filed from the
+	// draft's own found-on page (contacts.go); ContactPages says what those
+	// pages were and whether each could be read as the roster it was meant
+	// to be. Both empty for a draft no web page produced.
+	Contacts     int            `json:"contacts,omitempty"`
+	ContactPages []ContactsPage `json:"contactPages,omitempty"`
 }
 
 // Lookup enriches ONE draft in place from the other public sources.
@@ -265,6 +271,14 @@ func (r *RunStore) Lookup(ctx context.Context, runID, draftID string, now time.T
 		if matched {
 			res.Matched = append(res.Matched, id)
 		}
+	}
+	// the draft's own found-on page, read once more for the addresses its
+	// markup binds to this printed name (contacts.go). After the model step
+	// on purpose: the address is filed as a citation for the owner to read,
+	// not handed to DeepSeek as context in the same breath.
+	if src, ok := adapters["web"].(contactSource); ok && run.Source == "web" {
+		pass := &ContactPass{r: r, source: src, pages: map[string]contactRead{}, bodies: map[string]string{}}
+		res.Contacts, res.ContactPages = pass.lookupContacts(ctx, &run, draftID, now)
 	}
 	// whatever the union of links now holds that no source labelled, label by
 	// host — the same fallback Execute applies to a fresh queue

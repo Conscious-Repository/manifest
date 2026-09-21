@@ -2368,6 +2368,7 @@ function recLookupMessage(r) {
   if (r.brief) bits.push("cited brief");
   if (r.cites) bits.push(r.cites + " citation" + (r.cites === 1 ? "" : "s"));
   if (r.links) bits.push(r.links + " link" + (r.links === 1 ? "" : "s"));
+  if (r.contacts) bits.push(r.contacts + " published address" + (r.contacts === 1 ? "" : "es"));
   if ((r.filled || []).length) bits.push("filled " + r.filled.join(" + "));
   const where = (r.matched || []).length ? " from " + r.matched.join(", ") : "";
   const failed = r.failed || [];

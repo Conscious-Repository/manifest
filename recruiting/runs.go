@@ -130,6 +130,10 @@ type RunState struct {
 	// row it swept, else `source/<run id>`. Subject is its label.
 	Seed    string `json:"seed,omitempty"`
 	Subject string `json:"subject,omitempty"`
+	// Contacts is the last published-address pass over this run's queue
+	// (contacts.go): when it ran, what it read, what it left unset. Nil for
+	// a run never passed; a run.json written before it existed reads back nil.
+	Contacts *ContactsResult `json:"contacts,omitempty"`
 }
 
 // Draft is one review-queue entry: the adapter's draft plus what the owner
