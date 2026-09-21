@@ -446,6 +446,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/tasks/assign", s.handleTaskAssign)
 	mux.HandleFunc("POST /api/tasks/fire", s.handleTaskFire)
 	mux.HandleFunc("GET /api/tasks/thread", s.handleTaskThreadGet)
+	mux.HandleFunc("GET /api/tasks/threads", s.handleTaskThreads) // the CHAT rail's task rows (2026-09-21)
 	mux.HandleFunc("POST /api/tasks/thread", s.handleTaskThreadPost)
 	mux.HandleFunc("POST /api/tasks/thread/file", s.handleTaskThreadFile)
 	mux.HandleFunc("GET /api/tasks/thread/file/{hash}", s.handleTaskThreadBlob)

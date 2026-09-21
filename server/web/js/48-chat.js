@@ -37,6 +37,7 @@ let chatAgent = "";
 let chatRoster = [];         // last /api/agents/chat/roster fetch
 let chatAgentSessions = {};  // agent slug → its session list
 let chatAgentTasks = {};     // agent slug → the open todos it holds (Phase 4 bridge)
+let chatTaskThreads = [];    // every task conversation (GET /api/tasks/threads) — rail rows beside the sessions (2026-09-21)
 let chatCurSession = null;   // the open session object as last fetched (head repaint after rename)
 
 // the last section + last-open thread per section survive a reload
@@ -639,10 +640,18 @@ async function loadChatRoster() {
   }
 }
 
+// chatLoadTaskThreads — the task conversations the rail lists as rows: a
+// task an agent holds is a thread like any other (2026-09-21).
+async function chatLoadTaskThreads() {
+  try {
+    const res = await fetch("/api/tasks/threads", { cache: "no-store" });
+    if (res.ok) chatTaskThreads = (await res.json()).threads || [];
+  } catch (e) {}
+}
 // Load conversation summaries together so the inbox can sort across agents.
 async function loadChatSessions() {
   const agents = chatRoster.filter(a => !chatIsTerm(a.name)).map(a => a.name);
-  await Promise.all([chatLoadPins(),chatLoadLifecycle(),chatLoadWorkstreams(),chatLoadReviewStatus(),chatLoadSeen(),...["", ...agents].map(async agent => {
+  await Promise.all([chatLoadPins(),chatLoadLifecycle(),chatLoadWorkstreams(),chatLoadReviewStatus(),chatLoadSeen(),chatLoadTaskThreads(),...["", ...agents].map(async agent => {
     try {
       const res = await fetch(chatBaseFor(agent));
       if (!res.ok) return; // retain the last good directory during an outage
@@ -710,7 +719,14 @@ async function chatMarkViewed(){
 let chatPins={};
 let chatPinsRevision=-1;
 const chatPinURL="/api/chat/state/inbox/pins";
-function chatInboxKey(entry){return (entry.terminal?"terminal":entry.agent?"agent":"spirit")+":"+entry.agent+"/"+entry.session.id;}
+function chatInboxKey(entry){return (entry.taskThread?"task":entry.terminal?"terminal":entry.agent?"agent":"spirit")+":"+entry.agent+"/"+entry.session.id;}
+// chatTaskEntry — a task conversation as an inbox entry: the assignee is
+// its agent, the task's words its title, the newest comment its time.
+function chatTaskEntry(t){
+  const agent=(t.agent||"").replace(/^agent:/,"");
+  return {agent, taskThread:true, session:{id:t.id, title:t.title||t.id, updated:t.updated, task:t.id, domain:t.domain||"", turns:t.comments||0,
+    taskState:t.state||"", phase:t.phase||"", lastAuthor:t.lastAuthor||"", lastAction:t.lastAction||"", lastText:t.lastText||""}};
+}
 function chatApplyPins(state){
   if(state.key!=="inbox"||state.slot!=="pins"||!Number.isSafeInteger(state.revision)||state.revision<0||state.revision<chatPinsRevision)return;
   chatPinsRevision=state.revision;chatPins=state.value?.pins||{};
@@ -930,7 +946,16 @@ function chatEntryState(entry){
  const session=entry.session,review={...chatReviewStatus[session.conversation?.key]};
  const tasks=new Set([session.task,...(session.conversation?.links||[]).filter(l=>l.kind==='task').map(l=>l.id)].filter(Boolean));for(const task of tasks)for(const field of ['ready','changes','accepted','unreviewed'])review[field]=(review[field]||0)+(chatReviewTaskStatus[task]?.[field]||0);
  let execution='unknown',label='Status unavailable';
- if(entry.terminal){
+ if(entry.taskThread){
+  const st=session.taskState||"",phase=session.phase?" ("+session.phase+")":"";
+  if(['running','plan-running'].includes(st)){execution='running';label='Working'+phase;}
+  else if(['queued','plan-queued','go-queued'].includes(st)){execution='queued';label='Queued'+phase;}
+  else if(st==='plan-ready'||st==='proposed'){execution='waiting_user';label=st==='plan-ready'?'Plan ready · review':'Proposed · review';}
+  else if(st==='failed'){execution='failed';label='Run failed';}
+  else if(st==='done'){execution='completed';label='Run finished';}
+  else if(!session.turns){execution='draft';label='Not started';}
+  else label=(session.lastAuthor?session.lastAuthor+' · ':'')+'Idle';
+ }else if(entry.terminal){
   const ob=typeof terminalStates!=='undefined'&&terminalStates.get(session.id)||session;
   if(session.launchPhase==='draft'||ob.process==='not-started'){execution='draft';label='Not started';}
   else if(ob.connectivity==='connected'){
@@ -975,6 +1000,7 @@ function chatInboxEntries() {
   const entries = chatSessions.map(session => ({agent: "", session}));
   chatRoster.filter(a => !chatIsTerm(a.name)).forEach(agent => (chatAgentSessions[agent.name] || []).filter(session=>!chatHasNativeParent(session)).forEach(session => entries.push({agent: agent.name, session})));
   if (chatTermEnabled) Object.keys(chatTermKinds).forEach(agent => chatTermList(agent).filter(session=>!chatHasCanonicalParent(session)&&!chatHasNativeParent(session)).forEach(session => entries.push({agent, session, terminal: true})));
+  (chatTaskThreads || []).forEach(t => entries.push(chatTaskEntry(t)));
   const query = chatSearchQuery.trim().toLowerCase();
   return entries.filter(chatEntryMatchesAttention).filter(entry => (chatLifecycle[chatInboxKey(entry)]||"active")===chatLifecycleFilter).filter(entry => (chatWorkstreamFilter==="all"||(chatWorkstreamFilter==="standalone"?!chatWorkstreamMember(chatInboxKey(entry)):chatWorkstreamMember(chatInboxKey(entry))===chatWorkstreamFilter)) && (chatInboxFilter === "all" || entry.agent === chatInboxFilter || (entry.terminal&&[...(chatAgentSessions[chatInboxFilter]||[]),...chatTermSessions.filter(s=>s.kind===chatInboxFilter)].some(s=>s.origin?.mode==="continue"&&s.origin?.backend==="terminal"&&s.origin?.id===entry.session.id&&s.origin?.agent===entry.agent)))
     && [entry.session.title, entry.session.name, entry.session.cwd, chatAgentLabel(entry.agent), entry.session.spirit].filter(Boolean).join(" ").toLowerCase().includes(query))
@@ -994,10 +1020,10 @@ function renderChatInboxRows() {
   if(chatLifecycleFilter==="deleted")host.append(el("p","chat-head-meta","Deleted from your Chats. Restore anytime. Task and provider history are retained."));
   if (!entries.length) host.append(emptyRow(chatSearchQuery || chatWorkstreamFilter!=="all" || chatInboxFilter!=="all" || chatAttentionFilter!=="all" ? "No matching conversations" : "No conversations yet"));
   const rows=entries.map(entry => {
-    const row = entry.terminal ? chatTermRow(entry.session) : chatRailRow(entry.session, entry.agent);
-    row.classList.toggle("open", entry.agent === chatAgent && entry.session.id === chatOpenId);
+    const row = entry.taskThread ? chatTaskRow(entry.session) : entry.terminal ? chatTermRow(entry.session) : chatRailRow(entry.session, entry.agent);
+    row.classList.toggle("open", entry.taskThread ? entry.session.id === chatTaskID : entry.agent === chatAgent && entry.session.id === chatOpenId);
     const meta = row.querySelector(".chat-rail-meta");
-    if (meta) meta.prepend(el("span", "chat-inbox-agent", entry.terminal ? chatTermKinds[entry.agent] : entry.agent ? chatAgentLabel(entry.agent) : entry.session.spirit || "Spirits"));
+    if (meta) meta.prepend(el("span", "chat-inbox-agent", entry.taskThread ? (entry.agent ? chatAgentLabel(entry.agent) + " · task" : "Task") : entry.terminal ? chatTermKinds[entry.agent] : entry.agent ? chatAgentLabel(entry.agent) : entry.session.spirit || "Spirits"));
     const key=chatInboxKey(entry),pinned=chatPins[key]===true;
     const state=chatEntryState(entry);row.dataset.execution=state.execution;
     const changed=chatSeen[key]&&chatSeen[key].marker!==chatActivityMarker(entry.session);if(changed&&meta)meta.prepend(el("span","chat-unread","new"));row.dataset.unread=String(!!changed);row.dataset.inboxKey=key;row.dataset.activity=chatActivityMarker(entry.session);
@@ -1028,7 +1054,7 @@ function renderChatInboxRows() {
     for(const [value,label] of [[3,'urgent'],[2,'high'],[1,'normal'],[0,'low']]){const option=el('option','','priority · '+label);option.value=value;priority.append(option);}const previous=chatWorkstreams.priorities?.[key]??1;priority.value=previous;
     priority.onclick=e=>e.stopPropagation();priority.onkeydown=e=>e.stopPropagation();priority.onchange=async()=>{priority.disabled=true;try{await chatSetPriority(key,previous,Number(priority.value));renderChatInboxRows();}catch(e){showToast(e.message);priority.value=previous;}finally{priority.disabled=false;}};menuBody.append(priority);
     if(group&&meta)meta.append(el("span","chat-row-group",chatWorkstreams.groups[group]));
-    row.onclick = () => { location.hash = entry.agent ? "#/chat/a/" + encodeURIComponent(entry.agent) + "/" + encodeURIComponent(entry.session.id) : "#/chat/" + encodeURIComponent(entry.session.id); };
+    row.onclick = () => { location.hash = entry.taskThread ? chatTaskThreadHash(entry.session.id) : entry.agent ? "#/chat/a/" + encodeURIComponent(entry.agent) + "/" + encodeURIComponent(entry.session.id) : "#/chat/" + encodeURIComponent(entry.session.id); };
     return row;
   });
   chatRenderProjectGroups(host,entries,rows);
@@ -1037,7 +1063,10 @@ function chatRenderProjectGroups(host,entries,rows){
  const state=chatRenderProjectGroups.state||(chatRenderProjectGroups.state={collapsed:new Set(),expanded:new Set()});
  const groups=new Map(),recent=[];
  entries.forEach((entry,index)=>{
-  const assigned=chatWorkstreamMember(chatInboxKey(entry));
+  let assigned=chatWorkstreamMember(chatInboxKey(entry));
+  // a task conversation sits under the project named like its domain
+  // ("manifest/…" → the manifest workstream) unless the owner filed it elsewhere
+  if(!assigned&&entry.taskThread&&entry.session.domain){const want=entry.session.domain.toLowerCase();assigned=Object.keys(chatWorkstreams.groups).find(id=>String(chatWorkstreams.groups[id]||'').toLowerCase()===want)||'';}
   const cwd=entry.terminal?(entry.session.cwd||'').replace(/\/+$/,''):'';
   const folder=cwd&&cwd!=='~'&&!/^\/(?:home|Users)\/[^/]+$/.test(cwd);
   const key=assigned?'workstream:'+assigned:folder?'folder:'+(entry.session.device||'local')+':'+cwd:'';
@@ -1183,6 +1212,32 @@ function chatRailRow(s, agent) {
       if (event.target === row && event.key === "Enter") { event.preventDefault(); row.click(); }
     });
   }
+  return row;
+}
+
+// chatTaskRow — one task conversation in the rail (2026-09-21): the task's
+// words with the ☐ mark, then when it last moved and how many comments; it
+// opens the task stage (#/chat/task/<id>). No rename here — the task's
+// words are the record's.
+function chatTaskRow(s) {
+  const row = el("div", "chat-rail-row chat-rail-taskrow");
+  const top = el("div", "chat-rail-top");
+  const title = el("span", "chat-rail-title", s.title || s.id);
+  title.title = "a task conversation — opens the task stage";
+  top.append(title);
+  const mark = el("span", "chat-rail-task-mark", "☐"); mark.title = "a task"; top.append(mark);
+  if (["running", "plan-running", "queued", "plan-queued", "go-queued"].includes(s.taskState)) top.append(el("span", "chat-rail-live", "✦"));
+  row.append(top);
+  const rm = el("div", "chat-rail-meta");
+  rm.append(el("span", "chat-rail-when", fmtWhen(s.updated)));
+  if (s.turns) rm.append(el("span", "chat-rail-turns", s.turns + (s.turns === 1 ? " comment" : " comments")));
+  row.append(rm);
+  row.onclick = () => { location.hash = chatTaskThreadHash(s.id); };
+  row.tabIndex = 0;
+  row.setAttribute("role", "link");
+  row.addEventListener("keydown", event => {
+    if (event.target === row && event.key === "Enter") { event.preventDefault(); row.click(); }
+  });
   return row;
 }
 
