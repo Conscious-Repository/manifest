@@ -174,10 +174,24 @@
   }
 
   /* ARTIFACTS derived from comment attachments (real source; the prototype's
-     hard-coded ARTIFACTS array maps to these + agent output). */
+     hard-coded ARTIFACTS array maps to these + agent output) plus the
+     published transcript notes (team.artifacts — the `open` tier only, by
+     content hash; opened through the same /api/team/file route). */
   function artifactEntries(items, idx, team) {
     const out = [];
-    if (!team || !team.comments) return out;
+    if (!team) return out;
+    (team.artifacts || []).forEach(function (a) {
+      if (!a || !a.hash) return;
+      out.push({
+        date: String(a.date || '').slice(0, 10),
+        title: a.title || a.name || a.hash.slice(0, 12),
+        provenance: 'transcript · shared with the team',
+        goal: null,
+        hash: a.hash,
+        itemId: null
+      });
+    });
+    if (!team.comments) return out;
     const byId = {};
     items.forEach(function (it) { byId[it.id] = it; });
     ((team && team.archives) || []).forEach(function (it) { byId[it.id] = it; });

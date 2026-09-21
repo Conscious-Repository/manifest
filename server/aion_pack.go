@@ -441,7 +441,9 @@ func aionPackRender(snap *aionPackSnapshot) map[string]string {
 			"- heuristics.md — the live operating heuristics\n" +
 			"- finances.md — capital, burn, runway (portal figures only)\n" +
 			"- hiring.md — open roles (verbatim)\n" +
-			"- references.md — reading and reference links (verbatim)\n")
+			"- references.md — reading and reference links (verbatim)\n" +
+			"- transcripts/ — the transcript corpus you may read (open + internal notes, verbatim); start at transcripts/INDEX.md\n" +
+			"- digests/ — precomputed rollups over that corpus and the daily email digests; digests/README.md carries their own revision stamp and coverage\n")
 		out["README.md"] = b.String()
 	}
 
@@ -484,7 +486,12 @@ func (l *AionLive) syncPackLocked() {
 // PackLoop keeps the pack current when nobody is touching the portal —
 // refresh() already regenerates on any read, so this is only the quiet-hours
 // cadence. refresh is cheap when the source has not moved (a corpus hash).
+//
+// The transcript channel (aion_corpus.go) rides the same cadence and ONLY
+// this cadence: its source is the vault's log/ directory, which no portal
+// read fingerprints, so it is scanned here — once at start, then every tick.
 func (l *AionLive) PackLoop(ctx context.Context, every time.Duration) {
+	l.SyncCorpus()
 	t := time.NewTicker(every)
 	defer t.Stop()
 	for {
@@ -493,6 +500,7 @@ func (l *AionLive) PackLoop(ctx context.Context, every time.Duration) {
 			return
 		case <-t.C:
 			_ = l.refresh(false)
+			l.SyncCorpus()
 		}
 	}
 }

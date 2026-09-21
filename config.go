@@ -239,6 +239,11 @@ type AionPortalConfig struct {
 // on lab-apps what manifest writes on metis.
 type AionConfig struct {
 	PackDir string `json:"packDir"` // default /shared/apps/kairos/aion-context
+	// TranscriptDir is the vault-relative directory of the aion-category
+	// transcript notes (server/aion_corpus.go): tier-gated by aion/tier-map.json
+	// into <PackDir>/transcripts + digests and the portal's ARTIFACTS.
+	// Default "log"; "" disables the channel.
+	TranscriptDir string `json:"transcriptDir"`
 }
 
 type FundraisingSheetsConfig struct {
@@ -300,7 +305,7 @@ func defaultConfig() Config {
 		Port:            7777,
 		PortalPort:      7778,
 		Ooda:            OodaConfig{Port: 7779, Domain: "ooda.group", PackDir: "/private/harnesses/zeck/realestate"},
-		Aion:            AionConfig{PackDir: "/shared/apps/kairos/aion-context"},
+		Aion:            AionConfig{PackDir: "/shared/apps/kairos/aion-context", TranscriptDir: "log"},
 		// Consume.PublicPort stays 0: the public curation feed is opt-in, set
 		// explicitly (conventionally 7780). The private reading lane needs no
 		// config at all.

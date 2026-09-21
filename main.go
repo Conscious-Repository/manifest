@@ -983,9 +983,17 @@ func main() {
 			// loop covers quiet hours when no portal read triggers a refresh.
 			if cfg.Aion.PackDir != "" {
 				if live := srv.AionLive(); live != nil {
+					// the transcript channel (2026-09-21): log/ notes through
+					// the tier map into <packDir>/transcripts + digests, and
+					// the open ones into the portal's files/ tree. The loop
+					// below scans it; UseThreads (later in startup) wires the
+					// blob store, so the first tick publishes the artifacts.
+					if cfg.Aion.TranscriptDir != "" {
+						live.UseTranscripts(filepath.Join(cfg.VaultPath, filepath.FromSlash(cfg.Aion.TranscriptDir)))
+					}
 					live.UseAPack(cfg.Aion.PackDir)
 					go live.PackLoop(context.Background(), 5*time.Minute)
-					log.Printf("aion pack: enabled (→ %s)", cfg.Aion.PackDir)
+					log.Printf("aion pack: enabled (→ %s; transcripts from %q)", cfg.Aion.PackDir, cfg.Aion.TranscriptDir)
 				}
 			}
 		}
@@ -1040,6 +1048,13 @@ func main() {
 				}
 			}
 			srv.UseThreads(private, reStore, aionTeamStore, aionBlobs, cfg.AionPortal.AdminEmail)
+			// the blob store is wired now: publish the open transcripts to
+			// the portal without waiting for the pack loop's first tick
+			if aionBlobs != nil && cfg.Aion.PackDir != "" {
+				if live := srv.AionLive(); live != nil {
+					go live.SyncCorpus()
+				}
+			}
 			// native chat with kairos (chat-kairos handoff): shared threads on
 			// the same portal volume, ingested by the AgentLoopTicker's chatSweep.
 			if aionTeamStore != nil && cfg.AionPortal.TeamDir != "" {

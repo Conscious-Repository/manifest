@@ -49,6 +49,19 @@ type AionLive struct {
 	// per revision.
 	packDir    string
 	packErrRev string
+
+	// the transcript channel (aion_corpus.go): the vault's log/ directory
+	// (absolute; "" = disabled), the last composed corpus revision + time,
+	// one log line per failing revision, and the published OPEN-note list
+	// the portal's team state carries (nil = not loaded yet).
+	transcriptDir string
+	tierMap       aion.TierMap // nil → aion.LoadTierMap() (the embedded data file)
+	corpusMu      sync.Mutex
+	corpusRev     string
+	corpusAt      time.Time
+	corpusErrRev  string
+	artifacts     []aion.TranscriptArtifact
+	artifactsRev  string
 }
 
 type aionLiveCache struct {
@@ -103,6 +116,11 @@ type aionTeamStateView struct {
 	teamportal.Ext
 	EffectiveItems []AionEffectiveItem `json:"effective_items"`
 	Sync           AionLiveStatus      `json:"sync"`
+	// Artifacts are the OPEN transcript notes published to the team dir's
+	// files/ tree (aion_corpus.go) — the portal's ARTIFACTS list reads them
+	// beside comment attachments and opens them through the same
+	// /api/team/file/{hash} route. Additive; older clients ignore it.
+	Artifacts []aion.TranscriptArtifact `json:"artifacts"`
 }
 
 func newAionLive(s *Server) *AionLive {
@@ -479,7 +497,7 @@ func (l *AionLive) TeamState() aionTeamStateView {
 	if team, _ := l.teamStore(); team != nil {
 		ext = team.Ext()
 	}
-	return aionTeamStateView{Ext: ext, EffectiveItems: l.EffectiveItems(), Sync: l.Status()}
+	return aionTeamStateView{Ext: ext, EffectiveItems: l.EffectiveItems(), Sync: l.Status(), Artifacts: l.Artifacts()}
 }
 
 func (l *AionLive) OwnerOf(itemID string) (string, bool) {

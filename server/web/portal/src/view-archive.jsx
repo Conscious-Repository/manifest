@@ -50,7 +50,7 @@ function ArchiveView({ data, items, goalsIndex, filter, tab, onTab, onSelect, pi
       )}
       {(tab === 'papers' || tab === 'artifacts') && (
         <div style={{ fontSize: 11, color: 'var(--warn,#a44)', marginTop: 16, maxWidth: '74ch' }}>
-          flagged · papers and artifacts have no published source in contract v1 — they read from content/references.md and comment attachments until a data/library.json section exists.
+          flagged · papers have no published source in contract v1 — they read from content/references.md. Artifacts are comment attachments plus the transcript notes the owner tiered as shareable with the team.
         </div>
       )}
     </div>
