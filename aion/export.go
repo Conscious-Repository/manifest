@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -75,6 +76,11 @@ type ExportInput struct {
 	ReferencesMD []byte // verbatim
 	Goals        []ExportGoal
 	PublishedAt  string // RFC3339
+	// Tiers is the transcript tier map the backlog export filters through
+	// (tiers.go): a backlog item whose source: resolves to a HELD transcript
+	// is omitted from backlog.json entirely — its title is the disclosure.
+	// nil → LoadTierMap() (the embedded data file); tests inject a fixture.
+	Tiers TierMap
 }
 
 // RenderContract materializes the nine contract files, keyed by
@@ -85,6 +91,14 @@ func RenderContract(in ExportInput) (map[string][]byte, error) {
 	out["server/web/portal/content/hiring.md"] = append([]byte(nil), in.HiringMD...)
 	out["server/web/portal/content/references.md"] = append([]byte(nil), in.ReferencesMD...)
 
+	tm := in.Tiers
+	if tm == nil {
+		var err error
+		if tm, err = LoadTierMap(); err != nil {
+			return nil, fmt.Errorf("render backlog: %w", err)
+		}
+	}
+	backlog := exportBacklog(in.Backlog, tm)
 	files := []struct {
 		path string
 		v    any
@@ -92,10 +106,10 @@ func RenderContract(in ExportInput) (map[string][]byte, error) {
 		{"server/web/portal/data/finances.json", exportFinances(in.Finances)},
 		{"server/web/portal/data/vto.json", exportVTO(in.VTO)},
 		{"server/web/portal/data/goals.json", map[string]any{"goals": in.Goals}},
-		{"server/web/portal/data/backlog.json", exportBacklog(in.Backlog)},
+		{"server/web/portal/data/backlog.json", backlog},
 		{"server/web/portal/data/heuristics.json", exportHeuristics(in.Heuristics)},
 		{"server/web/portal/data/people.json", exportPeople(in.People)},
-		{"server/web/portal/data/meta.json", exportMeta(in)},
+		{"server/web/portal/data/meta.json", exportMeta(in, len(backlog.Items))},
 	}
 	for _, f := range files {
 		b, err := json.MarshalIndent(f.v, "", "  ")
@@ -397,12 +411,32 @@ type exportItemT struct {
 	Outcome  *string `json:"outcome"`
 }
 
-func exportBacklog(d *BacklogDoc) map[string]any {
+// exportBacklogT is backlog.json: the exported items plus the count of items
+// the tier gate withheld. suppressed_held is ADDITIVE to the contract-2 shape
+// (the portal reads `items` and ignores unknown keys) and makes the omission
+// observable: a reader can reconcile against the app's own backlog count.
+type exportBacklogT struct {
+	Items          []exportItemT `json:"items"`
+	SuppressedHeld int           `json:"suppressed_held"`
+}
+
+// exportBacklog projects the backlog for the portal. An item ANY of whose
+// source: links resolves to a HELD transcript (TierMap.HeldSource) is omitted
+// entirely — not just its source path: the title itself discloses the
+// subject. Items sourced from open/internal transcripts, from unmapped log/
+// notes, from non-transcript paths, or with no source at all are exported as
+// before. Read-side only: the vault, the item and its id are untouched.
+func exportBacklog(d *BacklogDoc, tm TierMap) exportBacklogT {
 	items := []exportItemT{}
+	suppressed := 0
 	for _, it := range d.Items() {
 		src := ""
 		if len(it.Sources) > 0 {
 			src = it.Sources[0]
+		}
+		if slices.ContainsFunc(it.Sources, tm.HeldSource) {
+			suppressed++
+			continue
 		}
 		id := it.ID
 		if !it.IDPersisted || !strings.HasPrefix(id, "aion-bl/") {
@@ -417,7 +451,7 @@ func exportBacklog(d *BacklogDoc) map[string]any {
 			Outcome: nullable(it.Outcome),
 		})
 	}
-	return map[string]any{"items": items}
+	return exportBacklogT{Items: items, SuppressedHeld: suppressed}
 }
 
 type exportHeuristicT struct {
@@ -468,12 +502,14 @@ type exportSectionT struct {
 	Count int    `json:"count"`
 }
 
-func exportMeta(in ExportInput) map[string]any {
+// exportMeta stamps the section census; backlogCount is the EXPORTED item
+// count (post tier gate), so meta agrees with what backlog.json carries.
+func exportMeta(in ExportInput, backlogCount int) map[string]any {
 	sections := []exportSectionT{
 		{"finances", "data/finances.json", 1},
 		{"vto", "data/vto.json", 1},
 		{"goals", "data/goals.json", len(in.Goals)},
-		{"backlog", "data/backlog.json", len(in.Backlog.Items())},
+		{"backlog", "data/backlog.json", backlogCount},
 		{"heuristics", "data/heuristics.json", len(in.Heuristics.LiveEntries())},
 		{"people", "data/people.json", len(in.People.People())},
 		{"hiring", "content/hiring.md", 1},

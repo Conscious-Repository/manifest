@@ -1,6 +1,8 @@
 package aion
 
 import (
+	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 	"testing"
@@ -25,6 +27,45 @@ var heldNotes2026_09_21 = []string{
 	"2026-08-07 rj sync.md",
 	"2026-05-05 artemy sync.md",
 	"2026-05-05 jack ruhl sync.md",
+}
+
+// SourceTier is the export's source: → tier predicate: only a bare
+// "log/<basename>" (with or without .md) resolves; every other shape is
+// "not a transcript" and an unmapped log/ note resolves to nothing.
+func TestTierMapSourceTier(t *testing.T) {
+	tm := TierMap{
+		"2026-06-01 heye immigration sync.md": {Tier: TierHeld, Reason: "immigration"},
+		"2026-01-19 aion team sync.md":        {Tier: TierOpen, Reason: "team sync"},
+		"2025-12-15 mechanisms sync.md":       {Tier: TierInternal, Reason: "internal ops"},
+	}
+	cases := []struct {
+		source string
+		tier   Tier
+		ok     bool
+	}{
+		{"log/2026-06-01 heye immigration sync", TierHeld, true},
+		{"log/2026-06-01 heye immigration sync.md", TierHeld, true},
+		{"  log/2026-06-01 heye immigration sync|the sync  ", TierHeld, true},
+		{"log/2026-06-01 heye immigration sync#Transcript", TierHeld, true},
+		{"log/2026-01-19 aion team sync", TierOpen, true},
+		{"log/2025-12-15 mechanisms sync", TierInternal, true},
+		{"log/2026-09-20 rj sync", "", false},           // unmapped log/ note → no tier
+		{"2026-06-01 heye immigration sync", "", false}, // no log/ prefix → not a transcript
+		{"intrinsic/2026-06-01 heye immigration sync", "", false},
+		{"updates for justin", "", false},
+		{"log/", "", false},
+		{"log/sub/2026-06-01 heye immigration sync", "", false},
+		{"", "", false},
+	}
+	for _, c := range cases {
+		tier, ok := tm.SourceTier(c.source)
+		if ok != c.ok || tier != c.tier {
+			t.Errorf("SourceTier(%q) = (%q, %v), want (%q, %v)", c.source, tier, ok, c.tier, c.ok)
+		}
+	}
+	if !tm.HeldSource("log/2026-06-01 heye immigration sync") || tm.HeldSource("log/2026-01-19 aion team sync") || tm.HeldSource("log/2026-09-20 rj sync") {
+		t.Fatal("HeldSource must be true for the held note only")
+	}
 }
 
 // Tier-map completeness: every one of the 230 notes carries exactly one of
@@ -73,6 +114,77 @@ func TestTierMapCompleteness(t *testing.T) {
 	}
 	if tm.KairosEligible("2099-01-01 not in the map.md") || tm.PortalEligible("2099-01-01 not in the map.md") {
 		t.Fatal("an unmapped note must never be eligible")
+	}
+}
+
+// MarshalTierMap reproduces the checked-in data file byte-for-byte, so an
+// owner decision recorded from the approvals inbox is a one-entry diff.
+func TestMarshalTierMapRoundTrip(t *testing.T) {
+	tm, err := LoadTierMap()
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, err := MarshalTierMap(tm)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(b) != string(tierMapJSON) {
+		t.Fatalf("MarshalTierMap does not round-trip the data file (len %d vs %d)", len(b), len(tierMapJSON))
+	}
+}
+
+// WriteTierMapEntry: adds or overwrites one note's entry in a copy of the
+// data file, keeps every other entry, refuses a tier outside the vocabulary
+// and a missing file (it never invents a fresh map).
+func TestWriteTierMapEntry(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "tier-map.json")
+	if err := os.WriteFile(p, tierMapJSON, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	const name = "2026-09-20 rj sync.md"
+	if err := WriteTierMapEntry(p, name, TierEntry{Tier: TierHeld, Reason: "owner · approvals inbox (granola)", Bytes: 12}); err != nil {
+		t.Fatal(err)
+	}
+	raw, _ := os.ReadFile(p)
+	m, err := ParseTierMap(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(m) != 231 {
+		t.Fatalf("entries = %d, want 231", len(m))
+	}
+	if e := m[name]; e.Tier != TierHeld || e.Reason != "owner · approvals inbox (granola)" || e.Bytes != 12 {
+		t.Fatalf("entry = %+v", e)
+	}
+	if !m.HeldSource("log/2026-09-20 rj sync") {
+		t.Fatal("the recorded tier must govern the export predicate")
+	}
+	// override in place: same count, new tier
+	if err := WriteTierMapEntry(p, name, TierEntry{Tier: TierOpen, Reason: "owner · approvals inbox (granola)", Bytes: 12}); err != nil {
+		t.Fatal(err)
+	}
+	raw, _ = os.ReadFile(p)
+	m, _ = ParseTierMap(raw)
+	if len(m) != 231 || m[name].Tier != TierOpen {
+		t.Fatalf("override failed: %d entries, tier %q", len(m), m[name].Tier)
+	}
+	if strings.Contains(string(raw), "\\u0026") || !strings.Contains(string(raw), "heye & benjamin") {
+		t.Fatal("rewrite HTML-escaped the file (\"&\" must stay literal)")
+	}
+	if strings.HasSuffix(string(raw), "\n") {
+		t.Fatal("rewrite added a trailing newline the data file does not carry")
+	}
+	if err := WriteTierMapEntry(p, name, TierEntry{Tier: "public"}); err == nil {
+		t.Fatal("accepted a tier outside open|internal|held")
+	}
+	if err := WriteTierMapEntry(p, "log/"+name, TierEntry{Tier: TierOpen}); err == nil {
+		t.Fatal("accepted a non-basename key")
+	}
+	if err := WriteTierMapEntry(filepath.Join(t.TempDir(), "missing.json"), name, TierEntry{Tier: TierOpen}); err == nil {
+		t.Fatal("invented a fresh map for a missing file")
+	}
+	if _, err := os.Stat(p + ".tmp"); err == nil {
+		t.Fatal("temp file left behind")
 	}
 }
 

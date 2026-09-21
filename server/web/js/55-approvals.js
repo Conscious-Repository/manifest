@@ -157,6 +157,10 @@ function approvalCardEl(a) {
   let attendees = null; // create-vault-note: the editable people list sent on Confirm
   let categories = null; // create-vault-note: the editable frontmatter categories
   const titleRef = { value: null }; // create-vault-note: the editable filename title
+  // create-vault-note from a synced transcript: the accepted visibility tier
+  // (value) and whether the row is showing (an aion note only) — Confirm
+  // sends it only while shown, so a non-aion note records nothing.
+  const visRef = { value: null, shown: () => false };
   if (actionable) {
     card.classList.add("actionable");
     // create-vault-note shows its path via the editable title field below, so the
@@ -199,7 +203,13 @@ function approvalCardEl(a) {
       attendees = parseAttendees(a.proposed || "");
       card.append(buildAttendeeEditor(attendees));
       categories = parseCategories(a.proposed || "");
-      card.append(buildCategoryEditor(categories));
+      // a synced transcript (granola / heypocket / email) also proposes its
+      // visibility tier — shown only while the note carries `aion`, so the
+      // row appears and disappears with the category chip
+      let visibility = null;
+      if (a.visibilitySuggestion) visibility = buildVisibilityEditor(a.visibilitySuggestion, categories, visRef);
+      card.append(buildCategoryEditor(categories, () => { if (visibility) visibility.sync(); }));
+      if (visibility) card.append(visibility.wrap);
     }
 
     if (isGoals && a.goalsPayload) {
@@ -259,7 +269,7 @@ function approvalCardEl(a) {
         confirmBtn.disabled = false;
       }
       spiritApprovalAct(a.id, "confirm",
-        isNewNote ? { attendees, title: titleRef.value, categories } : null);
+        isNewNote ? { attendees, title: titleRef.value, categories, visibility: visRef.shown() ? visRef.value : null } : null);
     });
   if (blocked) { confirmBtn.disabled = true; confirmBtn.classList.add("disabled"); }
   actions.append(confirmBtn, pillLight("Reject", () => spiritApprovalAct(a.id, "reject")));
@@ -310,7 +320,9 @@ function parseCategories(proposed) {
 // buildCategoryEditor renders the frontmatter-category chips + add box +
 // one-tap suggestions, mutating `categories` in place so Confirm sends the
 // edited list. `aion` is called out — it wires the note into extraction.
-function buildCategoryEditor(categories) {
+// onChange (optional) fires after every edit so a dependent row (the
+// visibility tier, aion-only) can follow the category.
+function buildCategoryEditor(categories, onChange) {
   const wrap = el("div", "appr-attendees appr-categories");
   wrap.append(el("div", "appr-attendees-label",
     "Categories — aion / real-estate auto-extract tasks + decisions into FEED after confirm"));
@@ -319,6 +331,7 @@ function buildCategoryEditor(categories) {
   const LIVE = { aion: "tag aion → the note auto-extracts into the AION backlog pipeline",
     "real-estate": "tag real-estate → the note auto-extracts into the RE backlog pipeline" };
   const renderChips = () => {
+    if (onChange) onChange();
     chips.innerHTML = "";
     categories.forEach((name, i) => {
       const c = el("span", "attendee-chip" + (LIVE[name.toLowerCase()] ? " cat-live" : ""));
@@ -357,6 +370,57 @@ function buildCategoryEditor(categories) {
   wrap.append(chips, addRow);
   renderChips();
   return wrap;
+}
+
+// The three transcript tiers (aion/tiers.go): where a note may travel.
+const APPR_VISIBILITY_TIERS = ["open", "internal", "held"];
+const APPR_VISIBILITY_HINT = {
+  open: "open → shareable with the team: portal ARTIFACTS + kairos context, backlog items exported",
+  internal: "internal → company-internal: kairos context only, backlog items exported",
+  held: "held → private (salary, comp, personal, legal): nowhere; its backlog items leave the portal export",
+};
+
+// buildVisibilityEditor renders the transcript's visibility tier the same way
+// the people/category rows do: the suggested tier pre-selected as a live chip,
+// the other two as one-tap alternatives. Accepting is confirming; tapping
+// another chip overrides. The row shows only while `categories` carries
+// `aion` (the tier map governs aion transcripts alone) — sync() re-checks
+// after every category edit. Mutates ref.value; ref.shown() says whether the
+// row is on the card, so Confirm sends the tier only when it was offered.
+function buildVisibilityEditor(sug, categories, ref) {
+  const wrap = el("div", "appr-attendees appr-visibility");
+  const known = !!sug.known;
+  ref.value = APPR_VISIBILITY_TIERS.includes(sug.suggested) ? sug.suggested : "held";
+  const where = sug.source === "pocket" ? "HeyPocket" : sug.source === "email" ? "email" : "Granola";
+  wrap.append(el("div", "appr-attendees-label",
+    "Visibility — suggested: " + ref.value + (known
+      ? " (already tiered as " + ref.value + " in the tier map)"
+      : " (" + where + " transcript not yet tiered — the safe default)") +
+    ". Accept by confirming, or pick another tier"));
+  const chips = el("div", "attendee-chips");
+  const renderChips = () => {
+    chips.innerHTML = "";
+    APPR_VISIBILITY_TIERS.forEach((tier) => {
+      if (tier === ref.value) {
+        const c = el("span", "attendee-chip cat-live vis-current");
+        c.append(el("span", "attendee-name", tier + (tier === sug.suggested ? " · suggested" : "")));
+        c.title = APPR_VISIBILITY_HINT[tier];
+        chips.append(c);
+        return;
+      }
+      const alt = el("button", "attendee-add-btn cat-suggest vis-pick", "＋ " + tier);
+      alt.title = APPR_VISIBILITY_HINT[tier];
+      alt.onclick = () => { ref.value = tier; renderChips(); };
+      chips.append(alt);
+    });
+  };
+  wrap.append(chips);
+  renderChips();
+  const isAion = () => (categories || []).some((c) => String(c).trim().toLowerCase() === "aion");
+  const sync = () => { wrap.hidden = !isAion(); };
+  ref.shown = () => !wrap.hidden;
+  sync();
+  return { wrap, sync };
 }
 
 // parseAttendees pulls the [[wikilink]] names from a converted note's
@@ -1151,6 +1215,11 @@ function spiritApprovalAct(id, kind, edits) {
     if (edits.categories !== null && edits.categories !== undefined) {
       body.editCategories = true;
       body.categories = edits.categories;
+    }
+    // the accepted transcript tier — only when the row was offered (aion note)
+    if (edits.visibility !== null && edits.visibility !== undefined && String(edits.visibility).trim() !== "") {
+      body.editVisibility = true;
+      body.visibility = String(edits.visibility).trim();
     }
   }
   postApprovalDecision(id, kind, body);

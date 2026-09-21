@@ -98,6 +98,119 @@ note: seed round
 	}
 }
 
+// The portal export omits a backlog item sourced from a HELD transcript
+// entirely (its title is the disclosure), counts the omission, and leaves
+// every other item — open/internal/unmapped transcript, non-transcript
+// path, no source — exactly as before. Tier resolution is the data file,
+// never a heuristic; the vault-side doc is untouched.
+func TestExportBacklogSuppressesHeldSourced(t *testing.T) {
+	const (
+		heldNote   = "2026-06-01 heye immigration sync"
+		heldNote2  = "2026-05-05 artemy sync"
+		heldTitle  = "Compile the B1/O1 visa evidence packet"
+		heldTitle2 = "Share the password-protected investor portal asset"
+		heldTitle3 = "Review the corrected recommendation letters"
+	)
+	tm := TierMap{
+		heldNote + ".md":                {Tier: TierHeld, Reason: "immigration"},
+		heldNote2 + ".md":               {Tier: TierHeld, Reason: "personal"},
+		"2026-01-19 aion team sync.md":  {Tier: TierOpen, Reason: "team sync"},
+		"2025-12-15 mechanisms sync.md": {Tier: TierInternal, Reason: "internal ops"},
+	}
+	backlog := `- [ ] ` + heldTitle + ` [kind:: task] [status:: open] [source:: [[log/` + heldNote + `]]] [captured:: 2026-06-01]
+- [ ] ` + heldTitle2 + ` [kind:: task] [status:: open] [source:: [[log/` + heldNote2 + `.md]]] [captured:: 2026-05-05]
+- [ ] ` + heldTitle3 + ` [kind:: task] [status:: open] [source:: [[log/2026-01-19 aion team sync]]] [source:: [[log/` + heldNote + `]]] [captured:: 2026-06-01]
+- [ ] Open-sourced item stays [kind:: task] [status:: open] [source:: [[log/2026-01-19 aion team sync]]] [captured:: 2026-01-19]
+- [ ] Internal-sourced item stays [kind:: task] [status:: open] [source:: [[log/2025-12-15 mechanisms sync]]] [captured:: 2025-12-15]
+- [ ] Unmapped-transcript item stays [kind:: task] [status:: open] [source:: [[log/2026-09-20 rj sync]]] [captured:: 2026-09-20]
+- [ ] Non-transcript item stays [kind:: task] [status:: open] [source:: [[updates for justin]]] [captured:: 2026-08-01]
+- [ ] Intrinsic item stays [kind:: task] [status:: open] [source:: [[intrinsic/2026-08-01 lab notes]]] [captured:: 2026-08-01]
+- [ ] Sourceless item stays [kind:: task] [status:: open] [captured:: 2026-08-01]
+- Held decision goes too [kind:: decision] [status:: decided] [decided:: 2026-05-05] [outcome:: no] [source:: [[log/` + heldNote2 + `]]] [captured:: 2026-05-05]
+`
+	in := exportFixture()
+	in.Backlog = ParseBacklog(backlog)
+	in.Tiers = tm
+	if got := len(in.Backlog.Items()); got != 10 {
+		t.Fatalf("fixture parsed %d items, want 10", got)
+	}
+	out, err := RenderContract(in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b := out["server/web/portal/data/backlog.json"]
+	for _, leak := range []string{heldNote, heldNote2, heldTitle, heldTitle2, heldTitle3, "visa", "investor portal"} {
+		if strings.Contains(string(b), leak) {
+			t.Fatalf("backlog.json leaked held-sourced %q:\n%s", leak, b)
+		}
+	}
+	var doc struct {
+		Items          []struct{ ID, Title, Source string }
+		SuppressedHeld int `json:"suppressed_held"`
+	}
+	if err := json.Unmarshal(b, &doc); err != nil {
+		t.Fatal(err)
+	}
+	if doc.SuppressedHeld != 4 {
+		t.Fatalf("suppressed_held = %d, want 4", doc.SuppressedHeld)
+	}
+	want := []string{
+		"Open-sourced item stays", "Internal-sourced item stays", "Unmapped-transcript item stays",
+		"Non-transcript item stays", "Intrinsic item stays", "Sourceless item stays",
+	}
+	if len(doc.Items) != len(want) {
+		t.Fatalf("exported %d items, want %d: %+v", len(doc.Items), len(want), doc.Items)
+	}
+	for i, w := range want {
+		if doc.Items[i].Title != w {
+			t.Fatalf("item %d = %q, want %q", i, doc.Items[i].Title, w)
+		}
+	}
+	// the intrinsic/ path is NOT a transcript reference: it rides through verbatim
+	if doc.Items[4].Source != "intrinsic/2026-08-01 lab notes" {
+		t.Fatalf("intrinsic source rewritten: %q", doc.Items[4].Source)
+	}
+	// meta's backlog census is the EXPORTED count, not the vault's
+	var meta struct {
+		Sections []struct {
+			Name  string
+			Count int
+		}
+	}
+	if err := json.Unmarshal(out["server/web/portal/data/meta.json"], &meta); err != nil {
+		t.Fatal(err)
+	}
+	for _, sec := range meta.Sections {
+		if sec.Name == "backlog" && sec.Count != len(want) {
+			t.Fatalf("meta backlog count = %d, want %d", sec.Count, len(want))
+		}
+	}
+	// the vault-side doc still holds all ten: read-side filter only
+	if got := len(in.Backlog.Items()); got != 10 {
+		t.Fatalf("filter mutated the backlog doc: %d items", got)
+	}
+	// determinism: byte-identical on re-render
+	out2, _ := RenderContract(in)
+	for p := range out {
+		if string(out[p]) != string(out2[p]) {
+			t.Fatalf("%s: non-deterministic", p)
+		}
+	}
+	// nil Tiers → the embedded data file: the owner's real held note is gated
+	in.Tiers = nil
+	out3, err := RenderContract(in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(out3["server/web/portal/data/backlog.json"]), heldTitle) {
+		t.Fatal("embedded tier map did not gate the held-sourced item")
+	}
+	// the contract's acceptance gate still reads the filtered document
+	if errs, _ := AcceptContract(out, nil); len(errs) != 0 {
+		t.Fatalf("acceptance errors: %v", errs)
+	}
+}
+
 func TestRenderContractShapes(t *testing.T) {
 	out, err := RenderContract(exportFixture())
 	if err != nil {

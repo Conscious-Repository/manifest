@@ -21,7 +21,20 @@ func (s *Server) aionExportInput(generatedAt string) aion.ExportInput {
 		Heuristics: s.aion.LoadHeuristics(), Finances: s.aion.LoadFinances(),
 		HiringMD: s.aionRecruitingHiringMD(), ReferencesMD: []byte(s.aion.RawFile("references.md")),
 		Goals: s.aionExportGoals(), PublishedAt: generatedAt,
+		Tiers: s.aionTierMap(),
 	}
+}
+
+// aionTierMap is the transcript tier map every disclosure gate in this
+// server consults — the export's backlog filter, the corpus channel, and the
+// approvals inbox's visibility suggestion. The live projection's fixture map
+// (tests) wins; nil means "the embedded data file", which each consumer
+// loads through aion.LoadTierMap.
+func (s *Server) aionTierMap() aion.TierMap {
+	if s.aionLive != nil && s.aionLive.tierMap != nil {
+		return s.aionLive.tierMap
+	}
+	return nil
 }
 
 func (s *Server) aionExportGoals() []aion.ExportGoal {

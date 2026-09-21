@@ -2,6 +2,7 @@ package server
 
 import (
 	"errors"
+	"fmt"
 	"log"
 	"net/http"
 	"strings"
@@ -135,6 +136,12 @@ type approvalRow struct {
 	// then renders the outcome with a lone Dismiss (owner ask 2026-08-31: a
 	// settled card must not keep offering Reject as the only way out).
 	PortalSettled string `json:"portalSettled,omitempty"`
+	// VisibilitySuggestion is the transcript tier the card proposes for a
+	// synced create-vault-note (granola/pocket/email): the data file's tier
+	// when it already names the note, else `held`. nil for any other note.
+	// The card shows it only while the note carries the aion category
+	// (aion_visibility.go).
+	VisibilitySuggestion *aionVisibilitySuggestion `json:"visibilitySuggestion,omitempty"`
 }
 
 // approvalRows returns the enriched pending approvals, skipping any types in
@@ -184,8 +191,10 @@ func (s *Server) harnessApprovalRowsMatching(h Harness, exclude map[string]bool,
 				}
 			case approvals.TypeCreateVaultNote:
 				// A new vault-root note: allowed by its own path rule, no current
-				// content (the diff renders as an all-added new file).
+				// content (the diff renders as an all-added new file). A synced
+				// transcript also carries the tier the card proposes for it.
 				rr.Allowed = approvals.CreateVaultNotePathAllowed(p.ApplyPath)
+				rr.VisibilitySuggestion = s.aionVisibilitySuggestion(p)
 			case approvals.TypeAppendVaultNote:
 				// An email-thread append that auto-apply refused (renamed note,
 				// thread-id mismatch): surfaces as a human card with the current
@@ -311,6 +320,11 @@ func (s *Server) handleSpiritsApprovalConfirm(w http.ResponseWriter, r *http.Req
 		Title          string   `json:"title"` // create-vault-note: owner-edited filename title
 		Categories     []string `json:"categories"`
 		EditCategories bool     `json:"editCategories"`
+		// Visibility is the accepted (or overridden) transcript tier for an
+		// aion transcript note — recorded in the tier map AFTER the note is
+		// written (aion_visibility.go); it never touches the note itself.
+		Visibility     string `json:"visibility"`
+		EditVisibility bool   `json:"editVisibility"`
 	}
 	_ = decode(r, &b) // body is optional (plain confirm)
 	id := r.PathValue("id")
@@ -337,9 +351,20 @@ func (s *Server) handleSpiritsApprovalConfirm(w http.ResponseWriter, r *http.Req
 	// sink re-checks category + content hash, so non-aion notes and the
 	// watcher's duplicate event are no-ops. The written filename is the
 	// (possibly retitled) apply path, lowercased by the apply.
-	if loadErr == nil && pending.Type == approvals.TypeCreateVaultNote && s.aionSink != nil {
-		if approved, err := store.LoadApproved(id); err == nil && approved.ApplyPath != "" {
+	if loadErr == nil && pending.Type == approvals.TypeCreateVaultNote {
+		approved, err := store.LoadApproved(id)
+		if err == nil && approved.ApplyPath != "" && s.aionSink != nil {
 			s.aionSink.Notify([]string{"log/" + strings.ToLower(approved.ApplyPath)})
+		}
+		// The accepted visibility tier: filed in the tier map under the
+		// filename that was actually written. The note is already on disk;
+		// a failed record is reported, not retried, and an unrecorded note
+		// stays UNMAPPED (excluded everywhere) — the safe side.
+		if err == nil && b.EditVisibility {
+			if rerr := s.aionRecordVisibility(approved, b.Visibility); rerr != nil {
+				httpError(w, fmt.Errorf("note confirmed, but visibility was not recorded: %w", rerr))
+				return
+			}
 		}
 	}
 	// re-contract applies write index-read records (contract, contractor,
