@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"net/http"
+	"sync"
 	"time"
 )
 
@@ -39,9 +40,9 @@ func (m *memResponse) WriteHeader(code int) { m.code = code }
 func (s *Server) inline(r *http.Request, h http.HandlerFunc, path string, values map[string]string) json.RawMessage {
 	req := r.Clone(r.Context())
 	req.Method = http.MethodGet
-	req.URL = &(*r.URL)
-	req.URL.Path = path
-	req.URL.RawQuery = ""
+	u := *r.URL // each part gets its own URL: Clone shares the pointer
+	u.Path, u.RawQuery = path, ""
+	req.URL = &u
 	for k, v := range values {
 		req.SetPathValue(k, v)
 	}
@@ -64,25 +65,46 @@ func (s *Server) handleChatInbox(w http.ResponseWriter, r *http.Request) {
 		} `json:"agents"`
 	}
 	_ = json.Unmarshal(roster, &rosterBody)
+	// the parts are independent and each handler already serves concurrent
+	// requests, so they compose in parallel — the wall time is the slowest
+	// part (the terminal registry's live probe), not the sum
+	var mu sync.Mutex
+	var wg sync.WaitGroup
 	agents := map[string]json.RawMessage{}
+	state := map[string]json.RawMessage{}
+	parts := map[string]json.RawMessage{}
+	part := func(store map[string]json.RawMessage, key string, h http.HandlerFunc, path string, values map[string]string) {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			body := s.inline(r, h, path, values)
+			mu.Lock()
+			store[key] = body
+			mu.Unlock()
+		}()
+	}
 	for _, a := range rosterBody.Agents {
 		if a.Backend == "terminal" || a.Name == "" {
 			continue
 		}
-		agents[a.Name] = s.inline(r, s.portalChatRoute(s.handlePortalChatSessions, s.handleAgentChatSessions), "/api/agents/chat/"+a.Name+"/sessions", map[string]string{"agent": a.Name})
+		part(agents, a.Name, s.portalChatRoute(s.handlePortalChatSessions, s.handleAgentChatSessions), "/api/agents/chat/"+a.Name+"/sessions", map[string]string{"agent": a.Name})
 	}
-	state := map[string]json.RawMessage{}
 	for _, slot := range []string{"pins", "lifecycle", "workstreams", "seen"} {
-		state[slot] = s.inline(r, s.handleChatState, "/api/chat/state/inbox/"+slot, map[string]string{"key": "inbox", "slot": slot})
+		part(state, slot, s.handleChatState, "/api/chat/state/inbox/"+slot, map[string]string{"key": "inbox", "slot": slot})
 	}
+	part(parts, "spirits", s.handleChatSessions, "/api/chat/sessions", nil)
+	part(parts, "terminal", s.handleTermSessions, "/api/terminal/sessions", nil)
+	part(parts, "review", s.handleChatReviewStatus, "/api/chat/review-status", nil)
+	part(parts, "taskThreads", s.handleTaskThreads, "/api/tasks/threads", nil)
+	wg.Wait()
 	writeJSON(w, map[string]any{
 		"at":          time.Now().UTC().Format(time.RFC3339),
 		"roster":      roster,
 		"agents":      agents,
-		"spirits":     s.inline(r, s.handleChatSessions, "/api/chat/sessions", nil),
-		"terminal":    s.inline(r, s.handleTermSessions, "/api/terminal/sessions", nil),
+		"spirits":     parts["spirits"],
+		"terminal":    parts["terminal"],
 		"state":       state,
-		"review":      s.inline(r, s.handleChatReviewStatus, "/api/chat/review-status", nil),
-		"taskThreads": s.inline(r, s.handleTaskThreads, "/api/tasks/threads", nil),
+		"review":      parts["review"],
+		"taskThreads": parts["taskThreads"],
 	})
 }
