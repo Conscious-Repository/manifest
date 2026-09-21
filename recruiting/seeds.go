@@ -6,7 +6,7 @@ import (
 	"manifest/record"
 )
 
-var seedKeys = []string{"id", "class", "name", "org", "url", "added", "source", "consent", "cadence"}
+var seedKeys = []string{"id", "class", "name", "org", "url", "added", "source", "consent", "cadence", "label"}
 
 // SeedCadences is the closed set for a place's `cadence`: how often it is
 // due for another sweep. Empty is "when you say". The cadence marks a row
@@ -46,7 +46,7 @@ func (d *SeedsDoc) Seeds() []Seed {
 // seedOf is THE projection of one row — read by Seeds() and by the editor in
 // mutate.go, so a field added here reaches both without a second copy.
 func seedOf(r *Row) Seed {
-	return Seed{
+	s := Seed{
 		ID:      r.Get("id"),
 		Class:   strings.ToLower(strings.TrimSpace(r.Get("class"))),
 		Name:    r.Get("name"),
@@ -56,8 +56,11 @@ func seedOf(r *Row) Seed {
 		Source:  r.Get("source"),
 		Consent: r.Get("consent"),
 		Cadence: strings.ToLower(strings.TrimSpace(r.Get("cadence"))),
+		Label:   strings.TrimSpace(r.Get("label")),
 		Unknown: unknownFields(r, seedKeys...),
 	}
+	s.Display = LabLabel(s)
+	return s
 }
 
 // Add appends one seed, refusing a duplicate id and anything outside the
@@ -77,7 +80,7 @@ func (d *SeedsDoc) Add(s Seed) (Seed, error) {
 	}
 	r := newRow("id", s.ID, "class", s.Class, "name", s.Name)
 	for _, kv := range [][2]string{{"org", s.Org}, {"url", s.URL}, {"added", s.Added},
-		{"source", s.Source}, {"consent", s.Consent}, {"cadence", s.Cadence}} {
+		{"source", s.Source}, {"consent", s.Consent}, {"cadence", s.Cadence}, {"label", s.Label}} {
 		if kv[1] != "" {
 			r.Set(kv[0], kv[1])
 		}

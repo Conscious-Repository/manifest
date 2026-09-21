@@ -1315,6 +1315,17 @@ function recPlaceDue(p, last) {
 // recAdhocSources — sweeps that named no place (a pasted paper, a one-off
 // list) stand as their own source nodes on the graph; here they get a row
 // each, under their own label, so nothing swept is invisible.
+// recRunLabel — the uniform name of the place a run swept (2026-09-21): the
+// seed's display name (LabLabel on the server, or the owner's label), else
+// the subject the sweep stored, else what it read. Every list names a run
+// by its lab, never by the query it happened to use.
+function recRunLabel(run) {
+  const seed = (recCache.seeds || []).find((s) => s.id === run.seed);
+  if (seed && seed.display) return seed.display;
+  const f = (run.scope || {}).fields || {};
+  return run.subject || f.seed_url || f.work || f.repo || f.feed_url || (run.scope || {}).query || run.source;
+}
+
 function recAdhocSources() {
   const seen = new Map();
   recRuns.forEach((r) => {
@@ -1362,7 +1373,7 @@ function paintPlacesView(main) {
   const body = () => {
     host.innerHTML = "";
     const q = recPlaceQuery.trim().toLowerCase();
-    const match = (p) => !q || [p.name, p.org, p.url, p.class].join(" ").toLowerCase().includes(q);
+    const match = (p) => !q || [p.display, p.name, p.org, p.url, p.class].join(" ").toLowerCase().includes(q);
     const all = (recCache.seeds || []).filter((p) => p.class !== "person").filter(match);
     const adhoc = recAdhocSources().filter(match);
     if (!all.length && !adhoc.length) {
@@ -1452,13 +1463,16 @@ function recPlaceRow(p) {
   const hue = el("span", "rec-place-hue");
   hue.title = "its colour on the graph — the source node and every member link";
   top.append(hue);
+  const shown = p.display || p.name;
   if (p.url) {
-    const a = linkEl(p.name, p.url);
+    const a = linkEl(shown, p.url);
     a.className = "rec-place-name";
-    a.title = p.url;
+    a.title = (shown !== p.name ? p.name + " · " : "") + p.url;
     top.append(a);
   } else {
-    top.append(el("span", "rec-place-name", p.name));
+    const name = el("span", "rec-place-name", shown);
+    if (shown !== p.name) name.title = p.name;
+    top.append(name);
   }
   if (p.org) top.append(el("span", "rec-place-sub", p.org));
   if (!p.adhoc) top.append(el("span", "rec-place-class-chip", p.class));
@@ -1550,7 +1564,7 @@ function recPlaceRow(p) {
 
 function recPlaceEditor(p, row) {
   row.classList.add("editing");
-  const draft = { name: p.name || "", org: p.org || "", url: p.url || "", class: p.class || "" };
+  const draft = { name: p.name || "", org: p.org || "", url: p.url || "", class: p.class || "", label: p.label || "" };
   const feedNow = ((p.unknown || []).find((f) => f.key === "feed") || {}).value || "";
   draft.feed = feedNow;
 
@@ -1568,6 +1582,7 @@ function recPlaceEditor(p, row) {
     return wrap;
   };
   grid.append(field("name", "name"));
+  grid.append(field("shown as", "label", p.display || "derived from the name"));
   grid.append(field("org", "org"));
   grid.append(field("link", "url", "https://…"));
   if (p.class === "media") grid.append(field("feed", "feed", "the RSS this show publishes"));
@@ -1585,7 +1600,7 @@ function recPlaceEditor(p, row) {
   const cancel = () => { recPlaceEdit = null; if (recPaint) recPaint(); };
   const save = async () => {
     const body = {};
-    ["name", "org", "url", "class"].forEach((k) => { if (draft[k] !== (p[k] || "")) body[k] = draft[k]; });
+    ["name", "org", "url", "class", "label"].forEach((k) => { if (draft[k] !== (p[k] || "")) body[k] = draft[k]; });
     if (p.class === "media" && draft.feed !== feedNow) body.feed = draft.feed;
     if (!Object.keys(body).length) { cancel(); return; }
     await recWrite("/api/aion/recruiting/place/" + encodeURIComponent(p.id), body, "POST", draft.name + " saved");
@@ -4318,8 +4333,11 @@ function paintSourceReview(main) {
       group.open = recRunOpen[id] === undefined ? id === entries[0].run.id : !!recRunOpen[id];
       group.ontoggle = () => { recRunOpen[id] = group.open; };
       const summary = el("summary", "rec-review-run-heading");
-      summary.append(el("span", "rec-background-text", scope.query || fields.seed_url || fields.work || fields.repo || fields.feed_url || run.source));
-      summary.append(el("span", "micro-label", [run.source, fmtWhen(run.startedAt), items.length + (items.length === 1 ? " result" : " results")].filter(Boolean).join(" · ")));
+      const heading = el("span", "rec-background-text", recRunLabel(run));
+      if (scope.query) heading.title = scope.query;
+      summary.append(heading);
+      const query = (scope.query || "").trim();
+      summary.append(el("span", "micro-label", [run.source, query ? "“" + (query.length > 48 ? query.slice(0, 47).trimEnd() + "…" : query) + "”" : "", fmtWhen(run.startedAt), items.length + (items.length === 1 ? " result" : " results")].filter(Boolean).join(" · ")));
       group.append(summary);
       const body = el("div", "rec-review-run-body");
       let limit = 20;

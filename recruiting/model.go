@@ -299,6 +299,8 @@ type Seed struct {
 	Source  string  `json:"source,omitempty"`
 	Consent string  `json:"consent,omitempty"`
 	Cadence string  `json:"cadence,omitempty"` // "", weekly, monthly, quarterly — see SeedCadences
+	Label   string  `json:"label,omitempty"`   // owner override of the uniform display name (LabLabel)
+	Display string  `json:"display"`           // the uniform display name — derived, never stored
 	Unknown []Field `json:"unknown,omitempty"`
 }
 

@@ -478,7 +478,7 @@ func (r *RunStore) sourceNode(req RunRequest, scope sources.Scope, runID string)
 	if want := strings.TrimSpace(req.Seed); want != "" {
 		for _, s := range seeds {
 			if s.ID == want {
-				return s.ID, s.Name
+				return s.ID, s.Display
 			}
 		}
 	}
@@ -495,7 +495,7 @@ func (r *RunStore) sourceNode(req RunRequest, scope sources.Scope, runID string)
 		}
 		for _, w := range urls {
 			if w == u {
-				return s.ID, s.Name
+				return s.ID, s.Display
 			}
 		}
 	}
@@ -518,6 +518,7 @@ func (r *RunStore) sourceNode(req RunRequest, scope sources.Scope, runID string)
 func (r *RunStore) Projection() Projection {
 	out := Projection{People: []BridgePerson{}, Edges: []Edge{}, Sources: map[string]string{}}
 	now := time.Now().UTC()
+	labels := r.seedLabels()
 	seenPerson := map[string]bool{}
 	seenEdge := map[string]int{} // edgeKey → index in out.Edges, so a second work merges
 	for _, id := range r.ids() {
@@ -528,6 +529,9 @@ func (r *RunStore) Projection() Projection {
 		seed, subject := run.Seed, run.Subject
 		if seed == "" {
 			seed, subject = "source/"+run.ID, firstNonEmpty(run.Scope.Query, run.ID)
+		}
+		if l := labels[seed]; l != "" {
+			subject = l
 		}
 		out.Sources[seed] = subject
 		swept := run.StartedAt.UTC().Format("2006-01-02")
@@ -601,6 +605,11 @@ func (r *RunStore) project(run Run, f *PathFinder) Run {
 	if run.Seed == "" {
 		run.Seed, run.Subject = r.sourceNode(RunRequest{}, run.Scope, run.ID)
 	}
+	// the subject follows the seed's CURRENT display name (LabLabel, or an
+	// owner label set after the sweep), never the name the sweep stored
+	if l := f.seedLabels[run.Seed]; l != "" {
+		run.Subject = l
+	}
 	for i := range run.Drafts {
 		d := &run.Drafts[i]
 		targets := []string{d.CandidateID}
@@ -652,7 +661,18 @@ func topicsFromEvidence(d sources.CandidateDraft) []string {
 }
 
 func (r *RunStore) pathFinder() *PathFinder {
-	return NewPathFinder(r.store.LoadNetworkPeople().People(), r.store.LoadEdges().Edges())
+	f := NewPathFinder(r.store.LoadNetworkPeople().People(), r.store.LoadEdges().Edges())
+	f.seedLabels = r.seedLabels()
+	return f
+}
+
+// seedLabels maps every seed id to its uniform display name (LabLabel).
+func (r *RunStore) seedLabels() map[string]string {
+	out := map[string]string{}
+	for _, s := range r.store.LoadSeeds().Seeds() {
+		out[s.ID] = s.Display
+	}
+	return out
 }
 
 // triage stamps the D14 clock once nothing is left to decide — for every run

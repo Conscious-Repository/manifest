@@ -66,7 +66,7 @@ func (d *SeedsDoc) Update(id string, set map[string]string) (Seed, error) {
 				return Seed{}, errf("class must be one of %s", strings.Join(SeedClasses, ", "))
 			}
 			row.Set("class", val)
-		case "org", "url", "feed":
+		case "org", "url", "feed", "label":
 			// an emptied field is REMOVED, not written blank: a row carrying
 			// `[url:: ]` reads as "has a url" to everything downstream
 			if val == "" {

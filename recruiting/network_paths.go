@@ -131,6 +131,9 @@ func DerivePaths(people []NetworkPerson, edges []Edge, target string, seeds []st
 type PathFinder struct {
 	people []NetworkPerson
 	g      *graph.Graph
+	// seedLabels: seed id → its uniform display name (LabLabel), read once
+	// per listing so every projected run names its place the same way
+	seedLabels map[string]string
 }
 
 // NewPathFinder builds the traversal graph over the network's claims.
