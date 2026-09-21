@@ -17,9 +17,9 @@ const tick=()=>new Promise(r=>setTimeout(r,0));
   document:{getElementById:()=>({dataset:{}}),querySelector:()=>null,querySelectorAll:()=>[]},
   chatMountHeader:h=>calls.heads.push(h),chatStagePrime:()=>{calls.prime++;},loadChatSession:id=>calls.loads.push(id),
   renderChatComposer:()=>calls.composer++,renderChatRail:()=>calls.rail++,renderChatLanding(){},
-  loadChatRoster:()=>new Promise(r=>releaseRoster=r),loadChatSessions:async()=>{},loadChatTermSessions:async()=>{},
+  chatLoadInbox:()=>new Promise(r=>releaseRoster=r),chatInboxAt:0,chatInboxFresh:15000,chatRestoreInboxSnapshot(){},
   chatRosterEntry:name=>ctx.chatRoster.find(a=>a.name===name)||null,chatCurrentSessions:()=>[],chatRecall:()=>'',chatRemember(){},
-  requestAnimationFrame(){},window:{addEventListener(){}},chatFitShell(){},clearInterval(){},
+  requestAnimationFrame(){},window:{addEventListener(){}},chatFitShell(){},clearInterval(){},setTimeout,
   els:{chatView:{hidden:false}},chatIsTerm:name=>(name===undefined?ctx.chatAgent:name)==='claude',chatTermFind:()=>null,
   chatRoster:[{name:'alfred',enabled:true}],chatPollTimer:null,chatRouteVersion:0,chatLanding:false,chatOpenId:'',chatAgent:'',
   chatReadingGestureUntil:0,chatDraftKey:'',chatPendingFiles:[],chatFitBound:true,
@@ -27,28 +27,35 @@ const tick=()=>new Promise(r=>setTimeout(r,0));
  vm.runInContext(slice('function chatRouteSegments(h)','\ndocument.addEventListener("pointerdown"'),ctx);
  vm.runInContext(slice('function chatPrivateCreationAgent(agent)','\nfunction chatNewHash'),ctx);
  vm.runInContext(slice('function showChat(h) {','\nlet chatTaskID'),ctx);
- // warm section: the stage primes and the thread fetch starts before the roster answers
+ // warm section, stale inbox: the stage primes and the thread fetch starts before the inbox answers
  ctx.showChat('#/chat/a/alfred/b');
  assert.equal(calls.prime,1,'the stage turns over synchronously');
- assert.deepEqual(calls.loads,['b'],'the thread fetch starts alongside the list refresh');
+ assert.deepEqual(calls.loads,['b'],'the thread fetch starts alongside the inbox refresh');
  assert.equal(ctx.chatOpenId,'b');assert.equal(ctx.chatAgent,'alfred');
+ assert.equal(calls.rail,1,'a known roster paints the rail at once, before the inbox answers');
  releaseRoster();await tick();await tick();
- assert.deepEqual(calls.loads,['b'],'the list refresh does not re-request the thread');
- assert.equal(calls.composer,0,'the list refresh leaves the primed composer alone');
- assert.equal(calls.rail,1,'the rail still repaints after the lists load');
- // cold page: no roster yet → prime still clears the stage, the load waits for the lists
+ assert.deepEqual(calls.loads,['b'],'the inbox refresh does not re-request the thread');
+ assert.equal(calls.composer,0,'the inbox refresh leaves the primed composer alone');
+ assert.equal(calls.rail,2,'the rail repaints after the inbox lands');
+ // fresh inbox: no wait on the network at all; the revalidation runs after the paint
+ ctx.chatInboxAt=Date.now();let revalidated=0;ctx.chatLoadInbox=async()=>{revalidated++;};
+ ctx.showChat('#/chat/a/alfred/d');await tick();await tick();
+ assert.deepEqual(calls.loads,['b','d'],'a fresh inbox still fetches the thread eagerly');
+ assert.equal(revalidated,1,'a paint from memory revalidates after the stage is up');
+ ctx.chatInboxAt=0;ctx.chatLoadInbox=()=>new Promise(r=>releaseRoster=r);
+ // cold page: no roster yet → prime still clears the stage, the load waits for the inbox
  ctx.chatRoster=[];ctx.showChat('#/chat/a/alfred/c');
- assert.equal(calls.prime,2);assert.deepEqual(calls.loads,['b'],'no eager fetch before the roster is known');
+ assert.equal(calls.prime,3);assert.deepEqual(calls.loads,['b','d'],'no eager fetch before the roster is known');
  releaseRoster();await tick();await tick();
- assert.deepEqual(calls.loads,['b','c']);assert.equal(calls.composer,1,'the serial path still renders the composer');
+ assert.deepEqual(calls.loads,['b','d','c']);assert.equal(calls.composer,1,'the serial path still renders the composer');
  // a terminal thread the registry has not listed yet is never fetched early
  ctx.chatRoster=[{name:'alfred',enabled:true}];ctx.showChat('#/chat/a/claude/deadbeef');
- assert.equal(calls.prime,3);assert.deepEqual(calls.loads,['b','c'],'an unlisted terminal thread waits for the registry');
+ assert.equal(calls.prime,4);assert.deepEqual(calls.loads,['b','d','c'],'an unlisted terminal thread waits for the registry');
  releaseRoster();await tick();await tick();
- assert.deepEqual(calls.loads,['b','c','deadbeef']);
+ assert.deepEqual(calls.loads,['b','d','c','deadbeef']);
  // a section route (landing) primes nothing and clears the head
  const headsBefore=calls.heads.length;ctx.showChat('#/chat/a/alfred');
- assert.equal(calls.prime,3,'a landing route does not prime a thread');assert.equal(calls.heads[headsBefore],null);
+ assert.equal(calls.prime,4,'a landing route does not prime a thread');assert.equal(calls.heads[headsBefore],null);
  console.log('A. router: synchronous prime, eager thread fetch, single load');
 }
 

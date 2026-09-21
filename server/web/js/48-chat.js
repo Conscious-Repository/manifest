@@ -163,6 +163,9 @@ function chatComposerShape(host, ta) {
 function chatMountHeader(head) {
   const transcript = document.getElementById("chatTranscript");
   if (!transcript) return;
+  // on a phone the way back to the list is chrome, not content: a thread
+  // route with no head yet (loading, failed, empty) still gets "‹ Chats"
+  if (!head && (chatOpenId || chatTaskID) && typeof mf !== "undefined" && mf?.phone?.() && mf.openChats) head = el("div", "sprt-head chat-head chat-head-bare");
   let slot = document.getElementById("chatThreadHeader");
   if (!slot) { slot = el("div", "chat-thread-header"); slot.id = "chatThreadHeader"; transcript.before(slot); }
   if(head && typeof chatWorkspaceHeader === "function")chatWorkspaceHeader(head);
@@ -342,6 +345,7 @@ function chatStagePrime() {
 }
 
 function showChat(h) {
+  chatRestoreInboxSnapshot();
   chatCloseTerminalDock();
   chatCloseWorkspace();
   chatSaveDraft();
@@ -395,7 +399,12 @@ function showChat(h) {
   const eager = !!chatOpenId && !restore && chatRoster.length > 0 && (!chatIsTerm() || !!chatTermFind(chatOpenId));
   if (eager) loadChatSession(chatOpenId);
   renderChatHeadActions();
-  loadChatRoster().then(async () => {
+  // the lists paint from memory when they came back whole recently (or from
+  // the last page-life's snapshot) and revalidate after the paint; only a
+  // cold section waits on the network
+  const fresh = chatInboxAt > 0 && Date.now() - chatInboxAt < chatInboxFresh && chatRoster.length > 0;
+  if (!fresh && chatRoster.length && !restore) renderChatRail(); // the snapshot's rail, at once
+  (fresh ? Promise.resolve() : chatLoadInbox(false)).then(async () => {
     if (routeVersion !== chatRouteVersion || els.chatView.hidden) return;
     if(!restore && chatLanding && chatPrivateCreationAgent(chatAgent)!==chatAgent){
       location.replace("#/chat/a/"+encodeURIComponent(chatPrivateCreationAgent(chatAgent))+"/new");return;
@@ -409,10 +418,6 @@ function showChat(h) {
       else if (remembered && (chatRosterEntry(remembered) || chatIsTerm(remembered))) chatAgent = remembered;
       else chatAgent = alfred && alfred.enabled ? "alfred" : "";
     }
-    // the terminal registry feeds the CLAUDE CODE / CODEX section heads
-    // whatever section is open, so it loads alongside the section's own list
-    await Promise.all([loadChatSessions(), loadChatTermSessions(false)]);
-    if (routeVersion !== chatRouteVersion || els.chatView.hidden) return;
     ensureTerminalEvents();
     const list = chatCurrentSessions();
     if (restore) {
@@ -425,6 +430,8 @@ function showChat(h) {
     if (!eager) renderChatComposer(); // the eager path's composer already stands for the thread
     if (chatOpenId) { if (!eager) loadChatSession(chatOpenId); }
     else renderChatLanding();
+    // a paint from memory owes the network a look — after the stage is up
+    if (fresh) setTimeout(() => { chatLoadInbox(true).then(() => { if (routeVersion === chatRouteVersion) renderChatRail(); }); }, 0);
   });
   requestAnimationFrame(chatFitShell);
   if (!chatFitBound) { window.addEventListener("resize", chatFitShell); chatFitBound = true; }
@@ -620,8 +627,11 @@ function chatFitShell() {
   if (phone && vv && vv.scale !== 1) return;
   const transcript = shell.querySelector(".chat-transcript");
   const atBottom = transcript && transcript.scrollHeight - transcript.scrollTop - transcript.clientHeight < 8;
-  const top = shell.getBoundingClientRect().top;
-  const height = phone && vv ? vv.height + vv.offsetTop : window.innerHeight;
+  // with the app shell following the visual viewport (98-mobile.js follow),
+  // the fit is against the visible window: its height, less the shell's top
+  // measured from the visible top edge
+  const top = shell.getBoundingClientRect().top - (phone && vv && document.getElementById("appShell")?.classList.contains("mf-keyboard") ? vv.offsetTop : 0);
+  const height = phone && vv ? (document.getElementById("appShell")?.classList.contains("mf-keyboard") ? vv.height : vv.height + vv.offsetTop) : window.innerHeight;
   const fitted = Math.max(phone ? 180 : 320, height - top - 14) + "px";
   if (shell.style.height !== fitted) shell.style.height = fitted;
   if (atBottom) transcript.scrollTop = transcript.scrollHeight; // keep the latest turn pinned above the keyboard
@@ -638,6 +648,79 @@ async function loadChatRoster() {
     // the section vanished (profile deleted / runner off) → fall back
     chatAgentSessions[chatAgent] = chatAgentSessions[chatAgent] || [];
   }
+}
+
+// ---- the inbox in one request (2026-09-21) ----
+// Every list the rail needs — roster, each agent's sessions, spirits, the
+// terminal registry, the four inbox state slots, review counts, task
+// conversations — comes back from GET /api/chat/inbox in one round trip and
+// is applied with the same appliers the per-list loaders use. The old
+// fan-out stays as the fallback for an older server. The rail paints from
+// memory (or from the last page-life's snapshot) before it revalidates, and
+// a thread switch never waits on the lists.
+let chatInboxAt = 0;             // when the inbox last came back whole
+const chatInboxFresh = 15000;    // a switch within this window paints from memory and revalidates after
+const chatInboxSnapshotKey = "manifest.chatInbox.v1";
+function chatApplyTerminalList(d, quiet) {
+  chatTermSessions = (d.sessions || []).map(chatTermApplyState);
+  chatTermEnabled = d.enabled !== false;
+  const payload = JSON.stringify(chatTermSessions) + "|" + chatTermEnabled;
+  const changed = payload !== chatTermPayload;
+  chatTermPayload = payload;
+  if (quiet && changed) { renderChatRail(); chatTermSyncOpen(); }
+  return changed;
+}
+function chatApplyInbox(d, quiet) {
+  if (!d || typeof d !== "object") return false;
+  if (d.roster?.agents) {
+    chatRoster = d.roster.agents;
+    if (chatAgent && !chatRosterEntry(chatAgent)) chatAgentSessions[chatAgent] = chatAgentSessions[chatAgent] || [];
+  }
+  for (const [agent, body] of Object.entries(d.agents || {})) if (body?.sessions) chatAgentSessions[agent] = body.sessions;
+  if (d.spirits?.sessions) chatSessions = d.spirits.sessions;
+  if (d.terminal) { ensureTerminalEvents(); chatApplyTerminalList(d.terminal, quiet); }
+  const st = d.state || {};
+  if (st.pins) chatApplyPins(st.pins);
+  if (st.lifecycle) chatLifecycle = st.lifecycle.value?.items || {};
+  if (st.workstreams) chatApplyWorkstreams(st.workstreams);
+  if (st.seen && Number.isSafeInteger(st.seen.revision) && st.seen.revision >= chatSeenRevision) { chatSeenRevision = st.seen.revision; chatSeen = st.seen.value?.seen || {}; }
+  if (d.review) { chatReviewTicket++; chatReviewStatus = d.review.by_scope || {}; chatReviewTaskStatus = d.review.by_task || {}; }
+  if (Array.isArray(d.taskThreads?.threads)) chatTaskThreads = d.taskThreads.threads;
+  return true;
+}
+let chatInboxInflight = null;
+async function chatLoadInbox(quiet) {
+  if (chatInboxInflight) return chatInboxInflight;
+  chatInboxInflight = (async () => {
+    try {
+      const res = await fetch("/api/chat/inbox", { cache: "no-store" });
+      if (res.ok) {
+        const d = await res.json();
+        if (chatApplyInbox(d, quiet)) {
+          chatInboxAt = Date.now();
+          try { localStorage.setItem(chatInboxSnapshotKey, JSON.stringify(d)); } catch (e) {}
+          return true;
+        }
+      }
+    } catch (e) {}
+    // an older server: the per-list loaders, as before
+    await loadChatRoster();
+    await Promise.all([loadChatSessions(), loadChatTermSessions(quiet)]);
+    chatInboxAt = Date.now();
+    return true;
+  })().finally(() => { chatInboxInflight = null; });
+  return chatInboxInflight;
+}
+// the last page-life's inbox paints the rail before the network answers —
+// applied on the first route, once every module's state exists
+let chatInboxRestored = false;
+function chatRestoreInboxSnapshot() {
+  if (chatInboxRestored) return;
+  chatInboxRestored = true;
+  try {
+    const raw = localStorage.getItem(chatInboxSnapshotKey);
+    if (raw) chatApplyInbox(JSON.parse(raw), false);
+  } catch (e) {}
 }
 
 // chatLoadTaskThreads — the task conversations the rail lists as rows: a
@@ -1030,6 +1113,7 @@ function renderChatInboxRows() {
   if (!entries.length) host.append(emptyRow(chatSearchQuery || chatWorkstreamFilter!=="all" || chatInboxFilter!=="all" || chatAttentionFilter!=="all" ? "No matching conversations" : "No conversations yet"));
   const rows=entries.map(entry => {
     const row = entry.taskThread ? chatTaskRow(entry.session) : entry.terminal ? chatTermRow(entry.session) : chatRailRow(entry.session, entry.agent);
+    row.addEventListener("pointerdown", () => chatPrefetchEntry(entry), { passive: true });
     row.classList.toggle("open", entry.taskThread ? entry.session.id === chatTaskID : entry.agent === chatAgent && entry.session.id === chatOpenId);
     const meta = row.querySelector(".chat-rail-meta");
     if (meta) meta.prepend(el("span", "chat-inbox-agent", entry.taskThread ? (entry.agent ? chatAgentLabel(entry.agent) + " · task" : "Task") : entry.terminal ? chatTermKinds[entry.agent] : entry.agent ? chatAgentLabel(entry.agent) : entry.session.spirit || "Spirits"));
@@ -2626,13 +2710,7 @@ async function loadChatTermSessions(quiet) {
   ensureTerminalEvents();
   let d;
   try { d = await (await fetch("/api/terminal/sessions")).json(); } catch (e) { return false; }
-  chatTermSessions = (d.sessions || []).map(chatTermApplyState);
-  chatTermEnabled = d.enabled !== false;
-  const payload = JSON.stringify(chatTermSessions) + "|" + chatTermEnabled;
-  const changed = payload !== chatTermPayload;
-  chatTermPayload = payload;
-  if (quiet && changed) { renderChatRail(); chatTermSyncOpen(); }
-  return changed;
+  return chatApplyTerminalList(d, quiet);
 }
 
 function ensureTerminalEvents() {
@@ -2911,20 +2989,7 @@ async function loadChatTermSession(id) {
   if (main) main.classList.remove("landing");
   chatTermSurface(true);
   chatRemember(chatAgent, id);
-  const next = {
-    conversation:d.conversation,
-    sharedConversation:d.sharedConversation,
-    planningTimeline:d.planningTimeline,
-    planningRecipients:d.planningRecipients||[],
-    planRevisions:d.planRevisions||{},
-    questions:d.questions||[],
-    proposals:d.proposals||[],
-    codingRecipients:d.codingRecipients||[],
-    planningOperations:d.planningOperations||[],
-    related:d.related||[],
-    id, se, turns: d.turns || [], offset: d.offset || 0, title: d.title || "", cost: d.cost || 0,
-    live: se.backend === "herdr" ? !!chatTermApplyState(se).live : !!d.live, screen: [], screenSig: "",
-  };
+  const next = chatTermOpenFrom(id, se, d);
   // the stage already shows this thread from the cache and nothing moved:
   // keep the painted object (its tail keeps it current) and refresh only
   // the row-bound state
@@ -2949,6 +3014,50 @@ async function loadChatTermSession(id) {
   }
   if (chatTermOpen.live) chatTermScreenFetch();
   ensureChatTermFast();
+}
+
+// chatTermOpenFrom — the open-thread object for a terminal transcript payload,
+// built the same way by the loader and by a prefetch (2026-09-21).
+function chatTermOpenFrom(id, se, d) {
+  return {
+    conversation:d.conversation,
+    sharedConversation:d.sharedConversation,
+    planningTimeline:d.planningTimeline,
+    planningRecipients:d.planningRecipients||[],
+    planRevisions:d.planRevisions||{},
+    questions:d.questions||[],
+    proposals:d.proposals||[],
+    codingRecipients:d.codingRecipients||[],
+    planningOperations:d.planningOperations||[],
+    related:d.related||[],
+    id, se, turns: d.turns || [], offset: d.offset || 0, title: d.title || "", cost: d.cost || 0,
+    live: se.backend === "herdr" ? !!chatTermApplyState(se).live : !!d.live, screen: [], screenSig: "",
+  };
+}
+
+// ---- prefetch on intent (2026-09-21): pointer-down on a rail row fetches
+// that thread into the stage cache, so the tap that follows paints from
+// memory. One fetch per thread per page-life; a cached thread is left alone.
+const chatPrefetching = new Set();
+function chatPrefetchEntry(entry) {
+  if (!entry || entry.taskThread) return;
+  const agent = entry.agent || "", id = entry.session.id, key = chatStageKey(agent, id);
+  if (chatStageCache.has(key) || chatPrefetching.has(key)) return;
+  chatPrefetching.add(key);
+  const done = () => chatPrefetching.delete(key);
+  if (entry.terminal) {
+    fetch(chatTermBase(id) + "/transcript").then((r) => r.ok ? r.json() : null).then((d) => {
+      const se = d && chatTermFind(id);
+      if (!se) return;
+      const row = chatTermApplyState(se);
+      row.run = d.run || null; row.activityOffset = d.offset || 0;
+      chatStageRemember(key, { kind: "term", o: chatTermOpenFrom(id, row, d) });
+    }).catch(() => {}).finally(done);
+    return;
+  }
+  fetch(chatBaseFor(agent) + "/" + encodeURIComponent(id)).then((r) => r.ok ? r.json() : null).then((d) => {
+    if (d && d.session && !d.sharedConversation?.route) chatStageRemember(key, { kind: "agent", d });
+  }).catch(() => {}).finally(done);
 }
 
 // chatTermLeave — the stage moved to another section/thread (or the landing):

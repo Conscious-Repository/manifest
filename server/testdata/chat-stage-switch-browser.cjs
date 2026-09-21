@@ -7,7 +7,7 @@
 //      and the revalidating fetch, finding nothing changed, leaves that paint
 //      (its DOM nodes) untouched.
 // Run: NODE_PATH=<node_modules with playwright> node server/testdata/chat-stage-switch-browser.cjs
-const {chromium}=require('playwright'),fs=require('node:fs'),path=require('node:path'),http=require('node:http'),assert=require('node:assert/strict');
+const {chromium,devices}=require('playwright'),fs=require('node:fs'),path=require('node:path'),http=require('node:http'),assert=require('node:assert/strict');
 const web=path.join(__dirname,'../web');
 const types={'.html':'text/html','.js':'text/javascript','.css':'text/css','.svg':'image/svg+xml','.png':'image/png','.woff2':'font/woff2','.json':'application/json'};
 const LIST_DELAY=300,THREAD_DELAY=400;
@@ -23,6 +23,7 @@ const server=http.createServer((req,res)=>{
   if(p==='/api/agents/chat/roster')return json(res,200,{agents:[{name:'alfred',label:'Alfred',enabled:true,model:'claude-x'}]});
   if(p==='/api/agents/chat/alfred/sessions')return json(res,200,{sessions:[thread('a').session,thread('b').session]},LIST_DELAY);
   const m=p.match(/^\/api\/agents\/chat\/alfred\/sessions\/([ab])$/);if(m)return json(res,200,thread(m[1]),THREAD_DELAY);
+  if(p==='/api/agents/chat/alfred/sessions/missing')return json(res,404,{});
   if(p==='/api/chat/sessions')return json(res,200,{sessions:[]});
   if(p==='/api/terminal/sessions')return json(res,200,{sessions:[],enabled:true},LIST_DELAY);
   if(p==='/api/chat/review-status')return json(res,200,{by_scope:{},by_task:{}});
@@ -66,6 +67,12 @@ const server=http.createServer((req,res)=>{
   const aFetches=(await (await fetch(base+'/__log')).json()).filter(r=>r.p==='/api/agents/chat/alfred/sessions/a').length;
   assert.equal(aFetches,2,'A was fetched on first open and once to revalidate');
   assert.deepEqual(errors.filter(e=>!/EventSource|terminal\/events/.test(e)),[]);
+  // 3. on a phone the way back is chrome: a thread that fails to load still shows "‹ Chats" (2026-09-21)
+  const phone=await browser.newContext({...devices['iPhone 13']});const pp=await phone.newPage();
+  await pp.goto(base+'/#/chat/a/alfred/missing',{waitUntil:'networkidle'}).catch(()=>{});await pp.waitForTimeout(600);
+  assert.equal(await pp.locator('.chat-load-error').count()>0,true,'the missing thread paints its error state');
+  assert.equal(await pp.locator('#chatThreadHeader .mf-chat-back').isVisible(),true,'the back control stands on a bare head when the thread failed');
+  await phone.close();
   console.log('PASS: switching threads turns the stage over synchronously (unseen: empty stage + provisional head, eager fetch; seen: cached paint kept by an unchanged revalidation).');
  }finally{await browser.close();server.close();}
 })().catch(e=>{console.error(e);process.exit(1);});

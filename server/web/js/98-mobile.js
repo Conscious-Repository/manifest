@@ -45,14 +45,36 @@
       if (mqPhone.matches && event.target.closest(".chat-rail-row, .chat-rail-task, .chat-rail-new")) setOpen(false);
     });
     // Keyboard resize and pan are coalesced into one idempotent layout pass.
-    // Fitting follows viewport offsets without forcing the page to scroll.
+    // The app FOLLOWS the visual viewport while a keyboard is up (2026-09-21):
+    // iOS never shrinks the layout viewport for its keyboard, it pans the
+    // visible window over the page just far enough to show the focused
+    // field — so a composer sitting at the bottom of a 100dvh shell fell
+    // under the keyboard on focus and only came back once the shell was
+    // refitted. Pinning the shell to the visual viewport's own top and height
+    // keeps the composer at the bottom of what is visible through the whole
+    // keyboard animation, and nothing here scrolls the page.
     let fitFrame = 0;
+    const follow = () => {
+      const vv = window.visualViewport;
+      const root = document.documentElement.style;
+      const keyboard = mqPhone.matches && vv && vv.scale === 1 && window.innerHeight - vv.height > 120;
+      if (keyboard) {
+        root.setProperty("--mf-vv-top", Math.round(vv.offsetTop) + "px");
+        root.setProperty("--mf-vv-height", Math.round(vv.height) + "px");
+        shell.classList.add("mf-keyboard");
+      } else if (shell.classList.contains("mf-keyboard")) {
+        shell.classList.remove("mf-keyboard");
+        root.removeProperty("--mf-vv-top");
+        root.removeProperty("--mf-vv-height");
+      }
+    };
     const refit = () => {
       if (!mqPhone.matches || fitFrame) return;
-      fitFrame = requestAnimationFrame(() => { fitFrame = 0; if (typeof chatFitShell === "function") chatFitShell(); });
+      fitFrame = requestAnimationFrame(() => { fitFrame = 0; follow(); if (typeof chatFitShell === "function") chatFitShell(); });
     };
     window.visualViewport?.addEventListener("resize", refit);
     window.visualViewport?.addEventListener("scroll", refit);
+    window.mf.follow = follow;
   }
 
   // ---- scrim (shared by the drawer; the sheet has its own) ----

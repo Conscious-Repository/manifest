@@ -35,7 +35,7 @@ const slice=(src,start,end)=>{const s=src.indexOf(start);assert.ok(s>=0,'missing
   await page.evaluate(()=>{
    window.el=(tag,cls,text)=>{const e=document.createElement(tag);e.className=cls||'';if(text!==undefined)e.textContent=text;return e;};
    window.els={chatView:document.getElementById('chatView'),aionView:{hidden:true}};
-   window.chatMarkViewed=()=>{};window.chatRestoreWorkspace=()=>{};window.chatPolishComposer=()=>{};window.chatEmbedded=false;window.chatWorkspaceTabs=null;
+   window.chatMarkViewed=()=>{};window.chatRestoreWorkspace=()=>{};window.chatPolishComposer=()=>{};window.chatEmbedded=false;window.chatWorkspaceTabs=null;window.chatOpenId='';window.chatTaskID='';
    window.opened=0;window.chatEnsureWorkspace=()=>{window.opened++;};
   });
   await page.addScriptTag({content:slice(chat,'function chatFocusKey','\nconst chatDrafts')});

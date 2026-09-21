@@ -49,6 +49,10 @@
 
   /* ---- chrome ---- */
   .app-shell { height: 100dvh; min-height: 100dvh; }   /* not 100vh — iOS toolbars */
+  /* while a keyboard is up the shell is the visual viewport, exactly
+     (98-mobile.js follow): its top and height come from visualViewport, so
+     the composer stays at the bottom of what is visible */
+  .app-shell.mf-keyboard { position: fixed; left: 0; right: 0; top: var(--mf-vv-top, 0); height: var(--mf-vv-height, 100dvh); min-height: 0; }
   /* iOS Safari zooms the page into any focused field set under 16px and
      never zooms back out (2026-09-17: the Reject reason box left the whole
      app zoomed). Every text control on the phone band reads at 16px at
