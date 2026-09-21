@@ -101,21 +101,18 @@ func (s *Server) taskThreads() []taskThreadRow {
 	return out
 }
 
-// taskThreadGrace: a checked-off task keeps its conversation in the rail
-// this long after the last comment — the owner often keeps talking on a
-// task after ticking it (the plan lands, the result is discussed).
-const taskThreadGrace = 14 * 24 * time.Hour
-
 // keepTaskThread is the rail's rule for one conversation: a task the record
-// knows stays while it is open, while an agent turn is in flight, or while
-// its last comment is within the grace; a task no record knows (deleted,
-// archived, a QA probe) is no conversation — unless its store could not be
-// read, in which case the thread is the only evidence and it stays.
+// knows is listed whether open or ticked off — the rail files a done task's
+// conversation under Archived on its own (owner rule 2026-09-21), and the
+// row reports Open so it can; a task no record knows (deleted, archived, a
+// QA probe) is no conversation — unless its store could not be read, in
+// which case the thread is the only evidence and it stays.
 func keepTaskThread(known, open, active bool, updated, now time.Time) bool {
+	_, _, _ = active, updated, now
 	if !known {
 		return open // open doubles as "store unavailable" for an unknown id
 	}
-	return open || active || now.Sub(updated) <= taskThreadGrace
+	return true
 }
 
 // resolveTaskThread reads the task behind a thread: its words, whether it is

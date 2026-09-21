@@ -720,6 +720,13 @@ let chatPins={};
 let chatPinsRevision=-1;
 const chatPinURL="/api/chat/state/inbox/pins";
 function chatInboxKey(entry){return (entry.taskThread?"task":entry.terminal?"terminal":entry.agent?"agent":"spirit")+":"+entry.agent+"/"+entry.session.id;}
+// chatEntryLifecycle — where a row files: what the owner set, else the
+// default. A task ticked off in its record archives its conversation on
+// its own (owner rule 2026-09-21) — unless an agent turn is still in flight
+// on it, in which case the thread stays in Chats until the turn lands.
+// "Restore to chats" on such a row writes an explicit active.
+function chatTaskAutoArchived(entry){return !!(entry.taskThread&&entry.session.done&&!['running','plan-running','queued','plan-queued','go-queued'].includes(entry.session.taskState||''));}
+function chatEntryLifecycle(entry){return chatLifecycle[chatInboxKey(entry)]||(chatTaskAutoArchived(entry)?"archived":"active");}
 // chatTaskEntry — a task conversation as an inbox entry: the assignee is
 // its agent, the task's words its title, the newest comment its time.
 function chatTaskEntry(t){
@@ -754,7 +761,8 @@ async function chatSetLifecycle(entry,status){
   for(let attempt=0;attempt<3;attempt++){
     const r=await fetch(chatLifecycleURL,{cache:"no-store"});if(!r.ok)throw Error("Could not load conversation organization.");
     const state=await r.json(),items={...state.value?.items};
-    if(status==="active")delete items[key];else items[key]=status;
+    // an auto-archived task row needs an explicit active to come back
+    if(status==="active"&&!chatTaskAutoArchived(entry))delete items[key];else items[key]=status;
     const saved=await fetch(chatLifecycleURL,{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify({revision:state.revision,value:{items}})});
     if(saved.status===409)continue;if(!saved.ok)throw Error("Conversation change was not saved.");
     chatLifecycle=(await saved.json()).value?.items||{};
@@ -764,7 +772,7 @@ async function chatSetLifecycle(entry,status){
   throw Error("Conversations changed on another device. Try again.");
 }
 function chatLifecycleActions(entry){
-  const fragment=document.createDocumentFragment(),status=chatLifecycle[chatInboxKey(entry)]||"active";
+  const fragment=document.createDocumentFragment(),status=chatEntryLifecycle(entry);
   const action=(label,next)=>{const b=el("button","sprt-quiet",label);b.onclick=async e=>{e.stopPropagation();b.disabled=true;try{await chatSetLifecycle(entry,next);}catch(err){showToast(err.message);}finally{b.disabled=false;}};fragment.append(b);};
   if(status!=="active")action("Restore to chats","active");
   if(status==="active")action("Archive","archived");
@@ -952,9 +960,9 @@ function chatEntryState(entry){
   else if(['queued','plan-queued','go-queued'].includes(st)){execution='queued';label='Queued'+phase;}
   else if(st==='plan-ready'||st==='proposed'){execution='waiting_user';label=st==='plan-ready'?'Plan ready · review':'Proposed · review';}
   else if(st==='failed'){execution='failed';label='Run failed';}
+  else if(session.done){execution='completed';label='Done'+(session.lastAuthor?' · last '+session.lastAuthor:'');}
   else if(st==='done'){execution='completed';label='Run finished';}
   else if(!session.turns){execution='draft';label='Not started';}
-  else if(session.done){execution='completed';label='Done · '+(session.lastAuthor?session.lastAuthor+' · ':'')+'thread open';}
   else label=(session.lastAuthor?session.lastAuthor+' · ':'')+'Idle';
  }else if(entry.terminal){
   const ob=typeof terminalStates!=='undefined'&&terminalStates.get(session.id)||session;
@@ -1003,7 +1011,7 @@ function chatInboxEntries() {
   if (chatTermEnabled) Object.keys(chatTermKinds).forEach(agent => chatTermList(agent).filter(session=>!chatHasCanonicalParent(session)&&!chatHasNativeParent(session)).forEach(session => entries.push({agent, session, terminal: true})));
   (chatTaskThreads || []).forEach(t => entries.push(chatTaskEntry(t)));
   const query = chatSearchQuery.trim().toLowerCase();
-  return entries.filter(chatEntryMatchesAttention).filter(entry => (chatLifecycle[chatInboxKey(entry)]||"active")===chatLifecycleFilter).filter(entry => (chatWorkstreamFilter==="all"||(chatWorkstreamFilter==="standalone"?!chatWorkstreamMember(chatInboxKey(entry)):chatWorkstreamMember(chatInboxKey(entry))===chatWorkstreamFilter)) && (chatInboxFilter === "all" || entry.agent === chatInboxFilter || (entry.terminal&&[...(chatAgentSessions[chatInboxFilter]||[]),...chatTermSessions.filter(s=>s.kind===chatInboxFilter)].some(s=>s.origin?.mode==="continue"&&s.origin?.backend==="terminal"&&s.origin?.id===entry.session.id&&s.origin?.agent===entry.agent)))
+  return entries.filter(chatEntryMatchesAttention).filter(entry => chatEntryLifecycle(entry)===chatLifecycleFilter).filter(entry => (chatWorkstreamFilter==="all"||(chatWorkstreamFilter==="standalone"?!chatWorkstreamMember(chatInboxKey(entry)):chatWorkstreamMember(chatInboxKey(entry))===chatWorkstreamFilter)) && (chatInboxFilter === "all" || entry.agent === chatInboxFilter || (entry.terminal&&[...(chatAgentSessions[chatInboxFilter]||[]),...chatTermSessions.filter(s=>s.kind===chatInboxFilter)].some(s=>s.origin?.mode==="continue"&&s.origin?.backend==="terminal"&&s.origin?.id===entry.session.id&&s.origin?.agent===entry.agent)))
     && [entry.session.title, entry.session.name, entry.session.cwd, chatAgentLabel(entry.agent), entry.session.spirit].filter(Boolean).join(" ").toLowerCase().includes(query))
     .sort((a, b) => {
       const pinned=Number(chatPins[chatInboxKey(b)]===true)-Number(chatPins[chatInboxKey(a)]===true);if(pinned)return pinned;

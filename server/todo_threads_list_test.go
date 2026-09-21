@@ -72,9 +72,9 @@ func TestKeepTaskThread(t *testing.T) {
 		want                bool
 	}{
 		{true, true, false, stale, true},     // open: always
-		{true, false, false, recent, true},   // ticked off two days ago, still talking
-		{true, false, true, stale, true},     // ticked off, but an agent turn is in flight
-		{true, false, false, stale, false},   // ticked off a month ago: gone from the rail
+		{true, false, false, recent, true},   // ticked off: listed, filed under Archived by the rail
+		{true, false, true, stale, true},     // ticked off with an agent turn in flight: listed, stays in Chats
+		{true, false, false, stale, true},    // ticked off long ago: still the archive's
 		{false, true, false, stale, true},    // unknown id, store unavailable: the thread is the evidence
 		{false, false, false, recent, false}, // unknown id, store readable: deleted / QA probe
 	}
