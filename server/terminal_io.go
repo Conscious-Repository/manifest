@@ -664,7 +664,7 @@ func termPromptShowing(lines []string) bool {
 func termBlockingDialog(lines []string) string {
 	joined := strings.ToLower(strings.Join(lines, "\n"))
 	switch {
-	case strings.Contains(joined, "update available") && strings.Contains(joined, "skip until next version") && strings.Contains(joined, "press enter to continue"):
+	case termUpdatePrompt(lines):
 		return "Codex is waiting on an update choice — open the session in TERMINAL and choose an option; nothing was sent"
 	case strings.Contains(joined, "do you trust the files in this folder") ||
 		strings.Contains(joined, "yes, i trust this folder") ||
@@ -674,6 +674,14 @@ func termBlockingDialog(lines []string) string {
 		return "the session is waiting on a dialog — open it in TERMINAL and answer it; nothing was sent"
 	}
 	return ""
+}
+
+// termUpdatePrompt is the Codex CLI's "Update available" chooser — the one
+// modal that is not a decision: the runtime answers it itself with "Skip
+// until next version" (dismissUpdatePrompt) so a send never stalls on it.
+func termUpdatePrompt(lines []string) bool {
+	joined := strings.ToLower(strings.Join(lines, "\n"))
+	return strings.Contains(joined, "update available") && strings.Contains(joined, "skip until next version") && strings.Contains(joined, "press enter to continue")
 }
 
 // sendText delivers a message and presses Enter. One line → send-keys -l;

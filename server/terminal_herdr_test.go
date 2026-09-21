@@ -134,23 +134,31 @@ func TestHerdrRuntimeDialogRefusesPrompt(t *testing.T) {
 		"codex-update": "Update available! 0.153.4 -> 0.154.0\n1. Update now\n2. Skip\n3. Skip until next version\nPress enter to continue",
 	} {
 		t.Run(name, func(t *testing.T) {
-			var writes atomic.Int32
+			var prompts, skips atomic.Int32
 			h := herdrFixture(t, func(c net.Conn, r herdrFixtureRequest) {
 				switch r.Method {
 				case "session.snapshot":
 					herdrFixtureSnapshot(c, "idle", 1)
 				case "pane.read":
 					herdrFixtureReply(c, map[string]any{"read": map[string]any{"text": screen}})
+				case "pane.send_keys":
+					// the update chooser is answered by the runtime; the screen
+					// here never changes, so the send must still hold
+					skips.Add(1)
+					herdrFixtureReply(c, map[string]any{})
 				default:
-					writes.Add(1)
+					prompts.Add(1)
 					herdrFixtureReply(c, map[string]any{})
 				}
 			})
 			if err := h.SendText(context.Background(), herdrFixtureID(t, h), "hello"); err == nil {
 				t.Fatal("accepted dialog")
 			}
-			if writes.Load() != 0 {
+			if prompts.Load() != 0 {
 				t.Fatal("prompted dialog")
+			}
+			if want := map[string]int32{"trust": 0, "codex-update": 1}[name]; skips.Load() != want {
+				t.Fatalf("skip keys sent %d times, want %d", skips.Load(), want)
 			}
 		})
 	}

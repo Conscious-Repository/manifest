@@ -309,10 +309,34 @@ func (h *herdrTerminalRuntime) guardPrompt(ctx context.Context, id terminalIdent
 	if err != nil {
 		return err
 	}
+	if termUpdatePrompt(lines) {
+		// not a question for the owner: skip this version and read again
+		if lines, err = h.dismissUpdatePrompt(ctx, id); err != nil {
+			return err
+		}
+	}
 	if why := termBlockingDialog(lines); why != "" {
 		return errors.New(why)
 	}
 	return nil
+}
+
+// dismissUpdatePrompt answers the Codex update chooser with its third option
+// ("Skip until next version": down, down, enter), gives the TUI a moment to
+// redraw, and returns the screen that follows. The owner's message is still
+// held until that screen shows a plain prompt.
+func (h *herdrTerminalRuntime) dismissUpdatePrompt(ctx context.Context, id terminalIdentity) ([]string, error) {
+	if _, err := h.callGeneration(ctx, "pane.send_keys", map[string]any{"pane_id": id.Pane, "keys": []string{"down", "down", "enter"}}, id.Generation); err != nil {
+		return nil, err
+	}
+	timer := time.NewTimer(600 * time.Millisecond)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	case <-timer.C:
+	}
+	return h.Screen(ctx, id)
 }
 func (h *herdrTerminalRuntime) SendText(ctx context.Context, id terminalIdentity, text string) error {
 	if err := h.guardPrompt(ctx, id); err != nil {

@@ -372,6 +372,16 @@ func (s *Server) herdrPromptReady(ctx context.Context, se termSession) error {
 		if err != nil {
 			return err
 		}
+		if termUpdatePrompt(lines) {
+			// the CLI's update chooser is not the owner's decision: skip this
+			// version and judge readiness from the screen that follows
+			if lines, err = s.terminal.herdr.dismissUpdatePrompt(ctx, se.Runtime); err != nil {
+				return err
+			}
+			if ob, err = s.observeTerm(ctx, se); err != nil {
+				return err
+			}
+		}
 		if why := termBlockingDialog(lines); why != "" {
 			return errors.New(why)
 		}
