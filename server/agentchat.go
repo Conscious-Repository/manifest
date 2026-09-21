@@ -710,7 +710,11 @@ func (s *Server) runAgentChatTurn(agent, id, requestID string) error {
 	if reply == "" {
 		reply = "(no reply)"
 	}
-	if err := st.Finish(agent, id, requestID, recipient.Agent, "### Step 1 — say\n\n"+reply, agentchat.DeliveryCompleted, "", res.SpentUSD, res.SessionID); err != nil {
+	recordedReply := "### Step 1 — say\n\n" + reply
+	if res.ReasoningTokens > 0 {
+		recordedReply = fmt.Sprintf("### Step 1 — thinking\n\n- tokens: %d\n\nHermes reported %d reasoning tokens at completion; reasoning text is unavailable.\n\n### Step 2 — say\n\n%s", res.ReasoningTokens, res.ReasoningTokens, reply)
+	}
+	if err := st.Finish(agent, id, requestID, recipient.Agent, recordedReply, agentchat.DeliveryCompleted, "", res.SpentUSD, res.SessionID); err != nil {
 		return err
 	}
 	s.ledger(ledger.Entry{Source: "chat", Kind: "chat.assistant", Actor: who, Object: obj, Session: id, Harness: "hermes",

@@ -7,7 +7,7 @@
 // what differs per section is the BACKEND — a base URL and whether an SSE
 // stream exists:
 //   spirits          /api/chat/sessions               engine writes, SSE + poll
-//   alfred/profiles  /api/agents/chat/<agent>/sessions manifest writes, poll only
+//   alfred/profiles  /api/agents/chat/<agent>/sessions manifest writes, SSE + poll
 //   kairos/zeck      /api/agents/chat/<agent>/sessions portal store + spool; the
 //                    reply returns via the server's chatSweep on read; poll only;
 //                    one order at a time (a send while one runs is a 409)
@@ -1526,34 +1526,31 @@ async function loadChatSession(id) {
   ensureChatPoll(d.session, (d.queued || []).length);
 }
 
-// ---- live stream layer (A2): EventSource over the engine's event log ----
-// SPIRITS ONLY — the Hermes-family backends have no event log; their turn
-// paints from the file poll. The transcript render covers history from the
-// session file; this layer paints the CURRENT turn as it happens — tool chips
-// lighting up, thinking, and (once the engine streams deltas) the reply typing
-// out with constant-speed reveal. On turn.completed the session refetches and
-// the layer clears.
+// ---- live stream layer: spirit events or Hermes session-file projection ----
+// History comes from the session GET; current-turn events reuse one renderer.
+// Hermes one-shot currently records progress only when its reply lands.
 let chatES = null, chatESFor = "";
 let chatLive = null; // {tools:[], thinking:"", thinkTok:0, say:"", revealed:0, open:true}
 let chatRevealTimer = null, chatLastMd = 0;
 
 function ensureChatStream(session) {
-  if (chatAgent) { // no SSE for Hermes-family sessions: close any spirit stream
+  if (chatAgent && (chatIsPortal() || chatIsTerm())) {
     if (chatES) { chatES.close(); chatES = null; chatESFor = ""; }
     chatLive = null;
     return;
   }
-  if (chatESFor === session.id && chatES) return;
+  const streamAgent = chatAgent, streamKey = chatAgent ? chatAgent + "/" + session.id : session.id;
+  if (chatESFor === streamKey && chatES) return;
   if (chatES) { chatES.close(); chatES = null; }
-  chatESFor = session.id;
+  chatESFor = streamKey;
   chatLive = null;
   let es;
-  try { es = new EventSource("/api/chat/sessions/" + encodeURIComponent(session.id) + "/stream?after=-1"); }
+  try { es = new EventSource(chatBase() + "/" + encodeURIComponent(session.id) + "/stream?after=-1"); }
   catch (e) { return; }
   chatES = es;
-  const refetch = () => { if (chatOpenId === session.id) { loadChatSessions().then(renderChatRail); refetchChatSession(session.id); } };
+  const refetch = () => { if (chatAgent === streamAgent && chatOpenId === session.id) { loadChatSessions().then(renderChatRail); refetchChatSession(session.id); } };
   const on = (type, fn) => es.addEventListener(type, (ev) => {
-    if (chatOpenId !== session.id) return;
+    if (chatAgent !== streamAgent || chatES !== es || chatOpenId !== session.id) return;
     let d = {};
     try { d = (JSON.parse(ev.data).data) || {}; } catch (e) {}
     fn(d);
@@ -1941,6 +1938,7 @@ function chatTurnBlocks(t) {
   if (!steps.length) return t.text ? [{ t: "say", text: t.text, plain: true }] : [];
   return steps.map((st) => {
     if (st.cast === "say") return { t: "say", text: st.body || "" };
+    if (chatAgent && !chatIsPortal() && st.cast === "thinking") return { t: "think", text: st.body.replace(/^- tokens: \d+\s*/m, ""), tokens: Number(st.body.match(/^- tokens: (\d+)$/m)?.[1] || 0) };
     const mres = (st.body || "").match(/^- (?:result|rationale): (.*)$/m);
     return { t: "step", cast: st.cast, input: mres ? mres[1] : "" };
   });
@@ -1961,7 +1959,7 @@ function chatBlockEl(b) {
     const det = document.createElement("details");
     det.className = "chat-thinking-block";
     const sum = document.createElement("summary");
-    sum.textContent = "▸ thinking";
+    sum.textContent = "▸ thinking" + (b.tokens ? " · " + b.tokens + " tok" : "");
     det.append(sum, el("div", "chat-thinking-text", b.text || ""));
     return det;
   }

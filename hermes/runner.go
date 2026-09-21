@@ -149,6 +149,7 @@ type Request struct {
 
 // Result is a completed turn.
 type Result struct {
+	ReasoningTokens int // reported by the one-shot usage file; never estimated
 	Extraction      *ExtractionExecution
 	CostPolicy      string
 	CostTelemetry   string
@@ -281,6 +282,7 @@ func (r *Runner) Run(ctx context.Context, req Request) (Result, error) {
 	res := Result{Reply: strings.TrimSpace(out.String())}
 	if usageFile != "" {
 		u := parseUsage(usageFile)
+		res.ReasoningTokens = u.ReasoningTokens
 		res.SpentUSD, res.Model, res.SessionID = u.usd(), u.Model, strings.TrimSpace(u.SessionID)
 		if u.Failed {
 			return res, errors.New("hermes reported that the turn failed")
@@ -319,13 +321,14 @@ func createUsageFile(tempRoot, cacheRoot string) (string, error) {
 // (v0.20.0 writes estimated_cost_usd, token counts, model, provider,
 // session_id, completed, failed — hermes_cli/oneshot.py.)
 type usageReport struct {
-	Provider      string  `json:"provider"`
-	CostUSD       float64 `json:"cost_usd"`
-	EstimatedCost float64 `json:"estimated_cost_usd"`
-	Model         string  `json:"model"`
-	SessionID     string  `json:"session_id"`
-	Failed        bool    `json:"failed"`
-	Completed     *bool   `json:"completed"`
+	ReasoningTokens int     `json:"reasoning_tokens"`
+	Provider        string  `json:"provider"`
+	CostUSD         float64 `json:"cost_usd"`
+	EstimatedCost   float64 `json:"estimated_cost_usd"`
+	Model           string  `json:"model"`
+	SessionID       string  `json:"session_id"`
+	Failed          bool    `json:"failed"`
+	Completed       *bool   `json:"completed"`
 }
 
 // usd picks the reported cost: an exact figure wins over the estimate.
