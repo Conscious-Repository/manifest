@@ -1306,6 +1306,12 @@
               "cadence": {
                 "type": "string"
               },
+              "label": {
+                "type": "string"
+              },
+              "display": {
+                "type": "string"
+              },
               "unknown": {
                 "type": [
                   "null",
@@ -1332,7 +1338,8 @@
             "required": [
               "id",
               "class",
-              "name"
+              "name",
+              "display"
             ],
             "additionalProperties": false
           }
