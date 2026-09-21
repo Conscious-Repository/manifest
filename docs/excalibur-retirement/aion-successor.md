@@ -11,7 +11,7 @@ The existing `aion-successor-config.json` pins `lab-sparks`,
 fallback. Historical Claude/subscription 56,000-byte input and 64,000-byte helper
 limits remain unchanged. Only this separately capacity-checked transport bypasses
 them. No proxy, redirects, credentials, streaming, retries or alternate provider
-are used. Overall timeout is 120 seconds; response headers are bounded to 30
+are used. Overall timeout is 420 seconds (120 until 2026-09-21); response headers are bounded to 30
 seconds and response bodies to 1 MiB. Unexpected response fields fail closed.
 
 ## Evidence before invocation

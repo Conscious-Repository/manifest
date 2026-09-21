@@ -168,7 +168,7 @@ func TestExtractionResultFenceTolerance(t *testing.T) {
 func TestExtractionAuthorityBounds(t *testing.T) {
 	for _, mutate := range []func(*DutyAuthority){
 		func(a *DutyAuthority) { a.Provider = "claude-sub" }, func(a *DutyAuthority) { a.Model = "other" },
-		func(a *DutyAuthority) { a.MaxSteps = 2 }, func(a *DutyAuthority) { a.TimeoutSeconds = 121 },
+		func(a *DutyAuthority) { a.MaxSteps = 2 }, func(a *DutyAuthority) { a.TimeoutSeconds = ExtractionTimeoutCap + 1 },
 		func(a *DutyAuthority) { a.TimeoutSeconds = 0 }, func(a *DutyAuthority) { a.MCP = "manifest" },
 		func(a *DutyAuthority) { a.Tools = []string{"file"} }, func(a *DutyAuthority) { b := 5.0; a.CeilingUSD = &b },
 	} {

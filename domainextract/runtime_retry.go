@@ -30,7 +30,8 @@ func runtimeRetryEligible(j Job) bool {
 	switch j.Reason {
 	case "bounded execution not verified; owner review required",
 		"bounded execution not verified; owner review required: bounded Hermes execution failed",
-		"bounded execution not verified; owner review required: Hermes agent initialization denied by filesystem boundary":
+		"bounded execution not verified; owner review required: Hermes agent initialization denied by filesystem boundary",
+		"bounded execution not verified; owner review required: bounded Hermes timeout or cancellation": // a run the 120 s cap cut short (2026-09-21)
 	default:
 		return false
 	}

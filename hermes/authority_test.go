@@ -110,7 +110,7 @@ func TestLocalPolicyExactAuthority(t *testing.T) {
 		"cloud":              func(a *DutyAuthority) { a.Provider = "openai" },
 		"subscription":       func(a *DutyAuthority) { a.Provider = "claude-sub" },
 		"steps":              func(a *DutyAuthority) { a.MaxSteps = 2 },
-		"timeout":            func(a *DutyAuthority) { a.TimeoutSeconds = 121 },
+		"timeout":            func(a *DutyAuthority) { a.TimeoutSeconds = ExtractionTimeoutCap + 1 },
 		"ceiling":            func(a *DutyAuthority) { n := 1.0; a.CeilingUSD = &n },
 	} {
 		t.Run(name, func(t *testing.T) {

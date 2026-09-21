@@ -50,7 +50,7 @@ func extractionDutyAllowed(duty string, a DutyAuthority) bool {
 	default:
 		return false
 	}
-	return a.Validate() == nil && a.Provider == "lab-sparks" && a.Model == "deepseek-v4.1-flash" && *a.CeilingUSD <= ceiling && a.MaxSteps == 1 && a.TimeoutSeconds <= 120 && len(a.Tools) == 1 && a.Tools[0] == "none" && a.MCP == "no_mcp"
+	return a.Validate() == nil && a.Provider == "lab-sparks" && a.Model == "deepseek-v4.1-flash" && *a.CeilingUSD <= ceiling && a.MaxSteps == 1 && a.TimeoutSeconds <= ExtractionTimeoutCap && len(a.Tools) == 1 && a.Tools[0] == "none" && a.MCP == "no_mcp"
 }
 
 func defaultExtractionDuties() map[string]DutyAuthority {
@@ -60,7 +60,7 @@ func defaultExtractionDuties() map[string]DutyAuthority {
 		if ritual == "ooda-email" {
 			budget = 2
 		}
-		duties["extractor/"+ritual] = DutyAuthority{Provider: "lab-sparks", Model: "deepseek-v4.1-flash", Tools: []string{"none"}, MCP: "no_mcp", TimeoutSeconds: 120, MaxSteps: 1, CeilingUSD: &budget}
+		duties["extractor/"+ritual] = DutyAuthority{Provider: "lab-sparks", Model: "deepseek-v4.1-flash", Tools: []string{"none"}, MCP: "no_mcp", TimeoutSeconds: ExtractionTimeoutCap, MaxSteps: 1, CeilingUSD: &budget}
 	}
 	return duties
 }

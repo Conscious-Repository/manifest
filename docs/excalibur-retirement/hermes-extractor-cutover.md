@@ -11,7 +11,7 @@ behind `/home/benjamin/.local/bin/hermes`), with an embedded isolation launcher.
 It constructs process-local argv with `chat -Q`,
 `-m sparks --provider lab-sparks --safe-mode -t none --max-turns 1`. Each call has
 a private `HERMES_HOME` and working directory, no inherited credentials, MCP,
-rules, tools or fallback chain, a maximum 120-second timeout and bounded output.
+rules, tools or fallback chain, a maximum 420-second timeout (raised from 120 on 2026-09-21 — 50 KB transcripts at the endpoint's ~32 tok/s could not fit) and bounded output.
 Landlock and seccomp are mandatory: only scratch is writable, caller home and
 state are unreadable, and subprocess execution is denied. Missing OS support or
 runtime dependencies refuse with no fallback. Runtime Python packages are read-only;

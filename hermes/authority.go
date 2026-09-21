@@ -11,6 +11,15 @@ import (
 
 // These are exact local authority declarations, not endpoint discovery.
 const LocalEndpoint = "http://192.168.87.11:8000/v1"
+
+// ExtractionTimeoutCap bounds one tool-free extraction turn on the local
+// lab endpoint. 120 s fitted short notes; a 50 KB meeting transcript is
+// ~13k tokens of prefill plus a JSON answer of a few thousand tokens at the
+// endpoint's ~32 tok/s, plus the CLI's start-up — every such run timed out
+// (2026-09-18 → 09-21, "bounded Hermes timeout or cancellation"). Seven
+// minutes fits the largest notes seen with headroom; local compute has no
+// marginal charge, so the bound guards liveness, not spend.
+const ExtractionTimeoutCap = 420
 const LocalCostPolicy = "local-zero-marginal"
 const LocalProviderBinding = "fixed-local-endpoint"
 
@@ -65,7 +74,7 @@ func (a DutyAuthority) Validate() error {
 		if a.Provider != "deepseek-local" || a.Model != "deepseek-v4.1-flash" || a.CostPolicy != LocalCostPolicy || a.ProviderBinding != LocalProviderBinding || a.Endpoint != LocalEndpoint {
 			return refuse("invalid local cost policy or endpoint binding")
 		}
-		if *a.CeilingUSD != 0 || a.MaxSteps != 1 || a.TimeoutSeconds > 120 || len(a.Tools) != 1 || a.Tools[0] != "none" || a.MCP != "no_mcp" {
+		if *a.CeilingUSD != 0 || a.MaxSteps != 1 || a.TimeoutSeconds > ExtractionTimeoutCap || len(a.Tools) != 1 || a.Tools[0] != "none" || a.MCP != "no_mcp" {
 			return refuse("invalid bounded local authority")
 		}
 	}
