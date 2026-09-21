@@ -2358,7 +2358,9 @@ async function recDraftLookup(run, d) {
   try { out = await recSourcesPost("/api/aion/recruiting/sources/lookup/" + run.id + "/" + d.id, {}); }
   finally { recEnhancing.delete(key); if (recPaint) recPaint(); }
   if (!out) return;
-  showToast(recLookupMessage(out.lookup || {}));
+  const updated = (out.run?.drafts || []).find((entry) => entry.id === d.id);
+  const summaryNote = updated?.summaryError || (updated?.summary ? "Kairos summary ready." : "");
+  showToast(recLookupMessage(out.lookup || {}) + (summaryNote ? " · " + summaryNote : ""));
 }
 
 function recLookupMessage(r) {
@@ -2515,7 +2517,9 @@ function recDraftTrail(dr) {
   const found = (note.match(/found on\s+(\S+)/i) || [])[1] || "";
   const from = (note.match(/discovered from\s+(\S+)/i) || [])[1] || "";
   const depth = (note.match(/depth\s+(\d+)/i) || [])[1] || "";
-  return { found: found.replace(/[·,]$/, ""), from: from.replace(/[·,]$/, ""), depth };
+  const cleanFrom = from.replace(/[·,]$/, "");
+  const sourceURL = /^https?:\/\//i.test(cleanFrom) ? cleanFrom : "";
+  return { found: found.replace(/[·,]$/, ""), from: sourceURL, startingPage: cleanFrom === "seed" || depth === "0", depth };
 }
 
 // recTopicEvidence — the rows behind one chip: evidence whose verbatim
@@ -2770,7 +2774,26 @@ function recDraftCard(run, d) {
   // provenance and path (owner, 2026-09-05).
   recDraftTopics(run, d, dr, key).forEach((n) => card.append(n));
 
-  card.append(recBackgroundBrief(dr));
+  if (d.summary) {
+    const summary = el("section", "rec-kairos-summary");
+    summary.append(el("div", "micro-label", "Kairos · candidate summary"));
+    summary.append(el("p", "rec-summary-text", d.summary.text));
+    const support = el("details", "rec-brief-citation");
+    support.append(el("summary", "rec-linkish", "Summary sources · " + (d.summary.evidence || []).length));
+    (d.summary.evidence || []).forEach((e) => {
+      const row = el("div", "rec-ev-row");
+      row.append(linkEl(recHost(e.urlOrFile) + " ↗", e.urlOrFile), el("blockquote", "rec-ev-quote", e.snippet));
+      support.append(row);
+    });
+    summary.append(support, el("div", "rec-card-coverage", "Kairos · private · " + fmtWhen(d.summary.generatedAt)));
+    card.append(summary);
+  }
+  if (d.summaryError) card.append(el("p", "rec-card-coverage", d.summaryError));
+  if (dr.brief) {
+    const detail = el("details", "rec-research-details");
+    detail.append(el("summary", "rec-linkish", "Enhanced research · experience, education & public work"));
+    detail.append(recBackgroundBrief(dr)); card.append(detail);
+  } else card.append(recBackgroundBrief(dr));
   if (d.enhancement) {
     const coverage = d.enhancement;
     const missing = [];
@@ -2851,7 +2874,7 @@ function recDraftCard(run, d) {
     if (trail) {
       const row = el("div", "rec-ev-row");
       row.append(el("span", "micro-label rec-ev-kind", "found on"));
-      const a = linkEl(trail.found, trail.found);
+      const a = linkEl(recHost(trail.found) + " ↗", trail.found);
       a.className = "rec-draft-link";
       row.append(a);
       if (trail.from) {
@@ -2861,7 +2884,8 @@ function recDraftCard(run, d) {
         b.title = trail.from;
         row.append(b);
       }
-      if (trail.depth) row.append(el("span", "rec-ev-when", trail.depth + " hop" + (trail.depth === "1" ? "" : "s") + " from the seed"));
+      if (trail.startingPage) row.append(el("span", "rec-ev-when", "Starting page"));
+      else if (trail.depth) row.append(el("span", "rec-ev-when", trail.depth + " hop" + (trail.depth === "1" ? "" : "s") + " from the seed"));
       body.append(row);
     }
     cites.forEach((e) => {
@@ -2906,10 +2930,10 @@ function recDraftCard(run, d) {
     const look = el("button", "pill light", d.lookedUpAt ? "Enhance again" : "Enhance");
     look.title = "Collect public profile evidence and generate a cited brief with DeepSeek. This can take several minutes; you can keep reviewing other candidates.";
     look.disabled = recEnhancing.has(key);
-    if (look.disabled) look.textContent = "Enhancing…";
+    if (look.disabled) look.textContent = "DeepSeek → Kairos…";
     look.onclick = () => {
       look.disabled = true;
-      look.textContent = "Enhancing…";
+      look.textContent = "DeepSeek → Kairos…";
       recDraftLookup(run, d);
     };
     const laterBtn = el("button", "pill light", "Later this session");
@@ -4627,7 +4651,7 @@ function paintFocusedSourceReview(main) {
   const context = el("h2", "rec-focused-title", (draft.draft || {}).name || "Candidate");
   context.tabIndex = -1;
   main.append(context, el("p", "micro-label", recRunLabel(run) + " · " + recRoleTitle((draft.draft || {}).role || (run.scope || {}).role)));
-  recDraftOpen[run.id + "#" + draft.id] = true;
+  // Full provenance is one disclosure away; do not reopen it on every repaint.
   const panel = el("article", "rec-focused-candidate");
   panel.append(recDraftCard(run, draft)); main.append(panel);
   if (previousKey && previousKey !== recFocusedKey) requestAnimationFrame(() => { if (context.isConnected) context.focus(); });

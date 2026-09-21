@@ -717,3 +717,14 @@ a.rec-place-name:hover { text-decoration: underline; }
 .rec-brief-citation { margin: var(--sp-4) 0; overflow-wrap: anywhere; }
 .rec-brief-citation summary { cursor: pointer; }
 .rec-brief-citation .rec-ev-quote { white-space: pre-wrap; }
+
+/* Read the brief first; inspect research and raw provenance on demand. */
+.rec-kairos-summary { padding: var(--sp-7) 0; border-bottom: 1px solid var(--line); }
+.rec-summary-text { max-width: var(--measure); font-size: var(--fs-xl); line-height: 1.65; color: var(--text); margin: var(--sp-6) 0; overflow-wrap: anywhere; }
+.rec-research-details { margin: var(--sp-7) 0; }
+.rec-research-details > summary { cursor: pointer; padding: var(--sp-4) 0; }
+.rec-focused-candidate .rec-draft-name { display: none; }
+.rec-focused-candidate .rec-background-text { max-width: var(--measure); font-size: var(--fs-xl); line-height: 1.6; }
+.rec-focused-candidate .rec-ev-quote { max-width: var(--measure); font-size: var(--fs-lg); line-height: 1.6; }
+.rec-focused-candidate .rec-draft-actions { margin-top: 0; }
+.rec-focused-candidate .rec-ev-top { display: flex; flex-wrap: wrap; gap: var(--sp-4); }

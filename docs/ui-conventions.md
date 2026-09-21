@@ -474,3 +474,11 @@ the debounce interval. Only the latest request may change results, errors or loa
 state. A failed lookup must not masquerade as an empty result. Polls must not overlap,
 run while hidden, or repaint a screen the user has left. Preserve armed actions on
 unchanged rows. Growing writing fields use the shared offscreen measurement helper.
+
+### Candidate enhancement summary (owner, 2026-09-21)
+
+After Enhance, Kairos's standard three-sentence candidate summary leads: competencies,
+AION relevance, then recorded location and possible mutual connections. Detailed
+DeepSeek research and raw provenance use disclosures; the overview is readable
+prose at the normal body scale. Do not repeat the candidate's headline in focused
+review. A crawler marker such as `seed` is provenance text, never a destination.

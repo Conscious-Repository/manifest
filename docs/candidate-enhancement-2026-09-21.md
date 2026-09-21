@@ -104,3 +104,42 @@ Temperature zero does not make inference byte-reproducible. Generated briefs
 remain in the source-run cache under its normal retention policy; accepted
 records retain the underlying evidence. Commit/push/deployment outcomes are
 recorded in the work order's durable result rather than predicted here.
+
+## Follow-up: legibility and Kairos summary
+
+The owner requested a standard 2–3 sentence summary after enhancement. The UI
+pipeline is now Enhance → DeepSeek evidence brief → Kairos private AION summary.
+The second pass loads the existing `kairos-private` Hermes profile's provider
+configuration and SOUL through the bounded completion transport. It never starts
+an agent tool loop or writes a shared team conversation. Missing profile or failed
+inference is reported; Alfred is not a fallback.
+
+Standard output has three sentences:
+1. **Competencies:** evidence-backed skills/work.
+2. **AION relevance:** potential relevance to the candidate's actual role posting
+   and criteria; explicitly unestablished when no role context exists.
+3. **Location and connections:** application-composed recorded location (current
+   location unverified) or unknown, followed by the best recorded introduction
+   path or no mutual connections recorded. An inferred route retains its label
+   and oldest evidence date; the model cannot invent the route or location.
+
+The two generated sentences use a fixed JSON schema, short output budget,
+zero temperature and validated evidence indexes. Input fingerprints include the
+brief, quoted evidence, role context, location and graph paths, excluding fetch
+and generation timestamps. Identical packets reuse their saved summary. Changed
+inputs regenerate it; failures remain visible without destroying DeepSeek's
+research. A decision made during either pass invalidates that pass's stale result.
+This improves repeatability; model sentence semantics still require human review.
+
+The summary is the leading reading surface, with larger body text, a readable
+line length and expandable supporting sources. Detailed research and raw
+provenance start collapsed. Candidate names appear once in focused review. The
+crawler's `discovered from seed` sentinel now renders as **Starting page**, never
+an `href="seed"` link; real HTTP(S) parent URLs remain clickable.
+
+Verification includes fixed-format/citation validation, stable-input cache reuse,
+missing-profile refusal, private profile routing, no-tools model payload, failure
+preservation, concurrent decisions, the real HTTP DeepSeek→Kairos chain, and
+browser checks in both themes at desktop/tablet/phone widths. A fictional-candidate
+live completion succeeded through the actual Kairos profile and returned the
+required structured competencies/relevance fields with source indexes.

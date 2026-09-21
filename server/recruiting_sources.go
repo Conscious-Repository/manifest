@@ -260,12 +260,26 @@ func (s *Server) handleRecruitingSourceLookup(w http.ResponseWriter, r *http.Req
 	if !s.recruitingRunsReady(w) {
 		return
 	}
-	ctx, cancel := context.WithTimeout(r.Context(), 330*time.Second)
+	ctx, cancel := context.WithTimeout(r.Context(), 500*time.Second)
 	defer cancel()
 	run, res, err := s.recruitingRuns.Lookup(ctx, r.PathValue("run"), r.PathValue("draft"), time.Now())
 	if err != nil {
 		httpError(w, err)
 		return
+	}
+	if res.Brief {
+		var complete recruiting.SummaryComplete
+		if s.hermes != nil && s.hermes.runner.AnnotationEnabled() {
+			complete = func(ctx context.Context, packet recruiting.SummaryPacket) (string, string, error) {
+				result, err := s.hermes.runner.KairosSummary(ctx, packet)
+				return result.Reply, result.Model, err
+			}
+		}
+		run, err = s.recruitingRuns.Summarize(ctx, run.ID, r.PathValue("draft"), complete, time.Now())
+		if err != nil {
+			httpError(w, err)
+			return
+		}
 	}
 	out := s.runsPayload(false)
 	out["run"] = run

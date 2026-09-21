@@ -44,6 +44,19 @@ class AnnotationTests(unittest.TestCase):
         return json.loads(output.getvalue())
     def test_bounded_completion_without_tools(self):
         self.assertEqual(self.run_reply({'content': 'An inert answer.'})['reply'], 'An inert answer.')
+    def test_kairos_uses_private_soul_and_fixed_output_contract(self):
+        def response(request, timeout):
+            body = json.loads(request.data)
+            self.assertEqual(body['temperature'], 0)
+            self.assertEqual(body['max_tokens'], 650)
+            self.assertEqual(body['response_format'], {'type':'json_object'})
+            self.assertNotIn('tools',body)
+            self.assertIn('PRIVATE_KAIROS_SOUL',body['messages'][0]['content'])
+            self.assertNotIn('You are Alfred',body['messages'][0]['content'])
+            return io.BytesIO(json.dumps({'choices':[{'message':{'content':'{}'}}]}).encode())
+        with patch.object(sys,'argv',['helper','--kairos-summary']), patch.dict(a.os.environ,{'HERMES_HOME':'/private/profile'}), patch.object(pathlib.Path,'read_text',return_value='PRIVATE_KAIROS_SOUL'), patch.object(sys,'stdin',io.StringIO('{}')), patch.object(a.urllib.request,'urlopen',response), redirect_stdout(io.StringIO()):
+            a.main()
+
     def test_tool_calls_cannot_execute(self):
         with self.assertRaises(a.CompletionFailure):
             self.run_reply({'content': 'execute', 'tool_calls': [{'function': {'name': 'shell', 'arguments': '{}'}}]})

@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"time"
 )
 
@@ -71,6 +72,16 @@ func (r *Runner) AnnotationEnabled() bool {
 // through `hermes -z` (which loads tools and auto-approves them). The fixed
 // helper has no dispatch loop: even a returned tool call cannot execute.
 func (r *Runner) Annotate(ctx context.Context, packet any) (AnnotationResult, error) {
+	return r.annotate(ctx, packet, false)
+}
+
+// KairosSummary uses the real private Kairos provider and SOUL, without tools,
+// shared chat, team memory or a publication side effect.
+func (r *Runner) KairosSummary(ctx context.Context, packet any) (AnnotationResult, error) {
+	return r.annotate(ctx, packet, true)
+}
+
+func (r *Runner) annotate(ctx context.Context, packet any, kairos bool) (AnnotationResult, error) {
 	var result AnnotationResult
 	if !r.AnnotationEnabled() {
 		return result, ErrNotEnabled
@@ -81,7 +92,25 @@ func (r *Runner) Annotate(ctx context.Context, packet any) (AnnotationResult, er
 	}
 	ctx, cancel := context.WithTimeout(ctx, 160*time.Second)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, r.annotationPython(), "-c", annotationScript)
+	args := []string{"-c", annotationScript}
+	if kairos {
+		args = append(args, "--kairos-summary")
+	}
+	cmd := exec.CommandContext(ctx, r.annotationPython(), args...)
+	if kairos {
+		home, _ := os.UserHomeDir()
+		profile := filepath.Join(home, ".hermes", "profiles", "kairos-private")
+		if _, err := os.Stat(filepath.Join(profile, "config.yaml")); err != nil {
+			return result, errors.New("Kairos private profile is unavailable")
+		}
+		for _, entry := range os.Environ() {
+			key, _, _ := strings.Cut(entry, "=")
+			if key != "HERMES_HOME" && key != "HERMES_PROFILE" && key != "HERMES_CONFIG" && key != "HERMES_ENV" {
+				cmd.Env = append(cmd.Env, entry)
+			}
+		}
+		cmd.Env = append(cmd.Env, "HERMES_HOME="+profile, "HERMES_CONFIG="+filepath.Join(profile, "config.yaml"), "HERMES_ENV="+filepath.Join(profile, ".env"))
+	}
 	cmd.Stdin = bytes.NewReader(input)
 	var output, diagnostic bytes.Buffer
 	cmd.Stdout = &output

@@ -15,3 +15,11 @@ assert.equal(vm.runInContext('recFocusedSelection(entries)',ctx),undefined);
 ctx.entries=[row('new')];
 assert.equal(vm.runInContext('recFocusedSelection(entries).draft.id',ctx),'new');
 console.log('PASS stable review selection, new results, decision advancement, empty and refill.');
+
+vm.runInContext(source.slice(source.indexOf('function recDraftTrail('),source.indexOf('// recTopicEvidence')),ctx);
+const trail=note=>ctx.recDraftTrail({note});
+assert.equal(trail('found on https://example.org/people · discovered from seed · depth 0').from,'');
+assert.equal(trail('found on https://example.org/people · discovered from seed · depth 0').startingPage,true);
+assert.equal(trail('found on https://example.org/person · discovered from https://example.org/people · depth 1').from,'https://example.org/people');
+assert.equal(trail('found on https://example.org/person · discovered from javascript:alert(1) · depth 1').from,'');
+console.log('PASS seed marker and unsafe provenance values are never links; real parent URLs remain links.');

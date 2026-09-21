@@ -16,7 +16,7 @@ await page.addScriptTag({content:fs.readFileSync(root+'/js/96-aion-recruiting.js
 await page.evaluate(()=>{
 recCache={roles:[],candidates:[]};recFocusedReview=true;
 const evidence={sourceId:'web',urlOrFile:'https://ada.example/bio',kind:'page',snippet:'Ada Example earned a PhD at Example University and worked at Example Lab.',retrievedAt:'2026-09-21'};
-recRuns=[{id:'r1',source:'web',scope:{query:'Example Lab'},drafts:['Ada Example','Bea Example','Cia Example'].map((name,i)=>({id:'d'+i,status:'new',draft:{name,evidence:[evidence],brief:{model:'DeepSeek',generatedAt:'2026-09-21',items:[{section:'education',text:'PhD at Example University',quote:'earned a PhD at Example University',url:evidence.urlOrFile}],evidence:[evidence]},linkedin:'https://linkedin.com/in/example'}}))}];
+recRuns=[{id:'r1',source:'web',scope:{query:'Example Lab'},drafts:['Ada Example','Bea Example','Cia Example'].map((name,i)=>({id:'d'+i,status:'new',summary:{text:'Competencies: MRI reconstruction. AION relevance: supports instrumentation. Current location not established; no mutual connections recorded.',generatedAt:'2026-09-21',evidence:[evidence]},draft:{name,note:'found on https://ada.example/bio · discovered from seed · depth 0',evidence:[evidence],brief:{model:'DeepSeek',generatedAt:'2026-09-21',items:[{section:'education',text:'PhD at Example University',quote:'earned a PhD at Example University',url:evidence.urlOrFile}],evidence:[evidence]},linkedin:'https://linkedin.com/in/example'}}))}];
 recPaint=()=>{const main=document.getElementById('review');main.replaceChildren();paintFocusedSourceReview(main);};recPaint();
 });
 await page.getByRole('button',{name:'Next',exact:true}).click();assert.equal(await page.locator('.rec-focused-title').textContent(),'Bea Example');
@@ -24,8 +24,12 @@ assert.equal(await page.getByRole('button',{name:'Next',exact:true}).evaluate(e=
 await page.keyboard.press('Enter');assert.equal(await page.locator('.rec-focused-title').textContent(),'Cia Example');
 await page.getByRole('button',{name:'Previous',exact:true}).click();
 await page.getByRole('button',{name:'Later this session',exact:true}).click();assert.equal(await page.locator('.rec-focused-title').textContent(),'Cia Example');
+await page.getByText('Enhanced research · experience, education & public work',{exact:true}).click();
 await page.getByText('Supporting quote · ada.example',{exact:true}).click();assert.equal(await page.locator('.rec-brief-citation[open] blockquote').first().textContent(),'earned a PhD at Example University');
 assert.equal(await page.getByRole('button',{name:'Enhance',exact:true}).count(),1);
+assert.equal(await page.locator('a[href="seed"]').count(),0);
+assert.match(await page.locator('.rec-summary-text').textContent(),/Competencies:.*AION relevance:.*location/);
+assert.equal(await page.locator('.rec-draft-name').isVisible(),false);
 assert.match(await page.locator('#review').textContent(),/Not established by the collected evidence/);
 for(const theme of ['light','jarvis'])for(const width of [1280,1000,390]){
  await page.setViewportSize({width,height:900});await page.evaluate(t=>document.documentElement.dataset.theme=t,theme);

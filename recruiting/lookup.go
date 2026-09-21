@@ -286,6 +286,10 @@ func (r *RunStore) Lookup(ctx context.Context, runID, draftID string, now time.T
 
 	d.LookedUpAt = now.UTC()
 	d.Enhancement = &res
+	if !res.Brief {
+		d.Summary = nil
+		d.SummaryError = "DeepSeek did not produce an updated brief; Kairos summary was not run."
+	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	latest, err := r.load(runID)
