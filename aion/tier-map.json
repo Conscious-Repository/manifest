@@ -1148,5 +1148,10 @@
   "bytes": 47975,
   "reason": "internal ops",
   "tier": "internal"
+ },
+ "2026-09-21 andy bromberg.md": {
+  "bytes": 34468,
+  "reason": "owner · approvals inbox (granola)",
+  "tier": "internal"
  }
 }

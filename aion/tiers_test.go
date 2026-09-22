@@ -76,12 +76,16 @@ func TestTierMapCompleteness(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(tm) != 230 {
-		t.Fatalf("tier map has %d entries, want 230", len(tm))
+	// The census is NOT frozen: the approvals card legitimately grows this map when the
+	// owner accepts a suggested tier (2026-09-21 onward). What must hold is that every
+	// entry carries exactly one valid tier and a reason, and that the known HELD set is
+	// intact — not that the totals match a snapshot from the day it was authored.
+	if len(tm) < 230 {
+		t.Fatalf("tier map has %d entries, want at least the 230 originally classified", len(tm))
 	}
 	c := tm.Counts()
-	if c.Open != 83 || c.Internal != 131 || c.Held != 16 {
-		t.Fatalf("census = %+v, want open 83 · internal 131 · held 16", c)
+	if c.Open < 83 || c.Internal < 131 || c.Held < 16 {
+		t.Fatalf("census shrank: %+v (want open >=83 · internal >=131 · held >=16)", c)
 	}
 	if c.Open+c.Internal+c.Held != len(tm) {
 		t.Fatal("an entry carries no tier — Validate should have refused it")
@@ -150,8 +154,8 @@ func TestWriteTierMapEntry(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(m) != 231 {
-		t.Fatalf("entries = %d, want 231", len(m))
+	if want := tierMapBaseCount(t) + 1; len(m) != want {
+		t.Fatalf("entries = %d, want %d", len(m), want)
 	}
 	if e := m[name]; e.Tier != TierHeld || e.Reason != "owner · approvals inbox (granola)" || e.Bytes != 12 {
 		t.Fatalf("entry = %+v", e)
@@ -165,7 +169,7 @@ func TestWriteTierMapEntry(t *testing.T) {
 	}
 	raw, _ = os.ReadFile(p)
 	m, _ = ParseTierMap(raw)
-	if len(m) != 231 || m[name].Tier != TierOpen {
+	if want := tierMapBaseCount(t) + 1; len(m) != want || m[name].Tier != TierOpen {
 		t.Fatalf("override failed: %d entries, tier %q", len(m), m[name].Tier)
 	}
 	if strings.Contains(string(raw), "\\u0026") || !strings.Contains(string(raw), "heye & benjamin") {
@@ -205,4 +209,16 @@ func TestTierMapRefusesUnknownTier(t *testing.T) {
 	if _, err := ParseTierMap([]byte(`{"2026-01-01 x.md": {"tier": "held", "reason": "r", "bytes": 1}}`)); err != nil {
 		t.Fatal(err)
 	}
+}
+
+// tierMapBaseCount is the entry count of the embedded fixture the write tests seed from.
+// The census is not frozen (the approvals card legitimately grows the map), so the tests
+// derive their expectation from the fixture rather than a number that goes stale.
+func tierMapBaseCount(t *testing.T) int {
+	t.Helper()
+	m, err := ParseTierMap([]byte(tierMapJSON))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return len(m)
 }

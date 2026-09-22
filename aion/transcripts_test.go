@@ -325,7 +325,7 @@ func fixtureEmailThreads() []EmailThread {
 		{Name: "2026-09-10 lab supplies quote 1a04e57870972dba", ThreadID: "1a04e57870972dba", Date: "2026-09-10",
 			Subject: "lab supplies quote", Senders: []string{"Maria Lopez"}, Mapped: true, Tier: TierInternal,
 			Actions: []EmailAction{{Kind: "task", Title: "Approve the transducer order"}, {Kind: "decision", Title: "Buy the Olympus V303 first"}},
-			Text: "BODYCANARY-ONE the quote for the transducers is attached, thanks"},
+			Text:    "BODYCANARY-ONE the quote for the transducers is attached, thanks"},
 		{Name: "2026-09-09 - 2026-09-10 intro to the robotics group", ThreadID: "abc", Date: "2026-09-09", EndDate: "2026-09-10",
 			Subject: "intro to the robotics group", Senders: []string{"Omar Haddad", "Maria Lopez"}, Mapped: false,
 			Text: "BODYCANARY-TWO would love to connect you two"},
