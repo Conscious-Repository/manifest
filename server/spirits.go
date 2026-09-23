@@ -752,10 +752,17 @@ func (s *Server) handleSpiritsRunNow(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "connector owned by Manifest; use Settings → Portals → poll", http.StatusConflict)
 		return
 	}
-	if reason := s.spirits.RetirementReason(b.Spirit, b.Ritual); reason != "" {
-		w.WriteHeader(http.StatusConflict)
-		writeJSON(w, map[string]any{"retired": true, "error": reason})
-		return
+	// a duty the successor owns is dispatched by the successor: the legacy
+	// engine's retirement says nothing about it (2026-09-23: "run now" on
+	// extractor/aion answered 409 "engine retired" while the in-app extractor
+	// was the one meant to run)
+	successor := s.domainExtraction != nil && b.Spirit == "extractor" && s.domainExtraction.Config.Enabled(b.Ritual)
+	if !successor {
+		if reason := s.spirits.RetirementReason(b.Spirit, b.Ritual); reason != "" {
+			w.WriteHeader(http.StatusConflict)
+			writeJSON(w, map[string]any{"retired": true, "error": reason})
+			return
+		}
 	}
 	spool := s.spirits.SpoolRunNow
 	if s.domainExtraction != nil {
