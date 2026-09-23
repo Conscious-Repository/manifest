@@ -55,6 +55,9 @@ type Job struct {
 	// Summary is the model's own explanation for the batch. It is retained so an
 	// empty (non-publication) outcome can record WHY nothing was proposed.
 	Summary string `json:"summary,omitempty"`
+	// Dropped lists the candidates the contract refused, with the rule each
+	// failed — the diagnosis behind a refused or thinned batch.
+	Dropped []string `json:"dropped,omitempty"`
 }
 
 // replySummary extracts the model's summary from a validated extraction reply.
@@ -306,7 +309,8 @@ func (s *Service) run(path string) {
 		}
 		j.Model = res.Model
 		j.SpentUSD = res.SpentUSD
-		candidates, e := ValidateReply(j.Input, res.Reply)
+		candidates, dropped, e := EvaluateReply(j.Input, res.Reply)
+		j.Dropped = dropped
 		if e != nil {
 			finish("refused", e.Error())
 			return
@@ -394,7 +398,7 @@ func (s *Service) report(j Job) error {
 		finished = j.Finished.Format(time.RFC3339)
 	}
 	execution, _ := json.Marshal(j.Execution)
-	report := (&mdfm.Writer{}).Set("run", "manifest-"+j.ID[:20]).Set("spirit", "extractor").Set("ritual", j.Input.Ritual).Set("executor", "manifest").Set("finished", finished).Set("portal", "lab-sparks").Set("request", strings.Join(names, ", ")).Set("started", j.Started.Format(time.RFC3339)).Set("outcome", outcome).Set("model", j.Model).SetRaw("items_written", fmt.Sprint(j.Published)).SetRaw("charge_spent_usd", fmt.Sprint(j.SpentUSD)).String("## Outcome\n\n" + j.Reason + "\n\nExecution receipt: " + string(execution) + "\n")
+	report := (&mdfm.Writer{}).Set("run", "manifest-"+j.ID[:20]).Set("spirit", "extractor").Set("ritual", j.Input.Ritual).Set("executor", "manifest").Set("finished", finished).Set("portal", "lab-sparks").Set("request", strings.Join(names, ", ")).Set("started", j.Started.Format(time.RFC3339)).Set("outcome", outcome).Set("model", j.Model).SetRaw("items_written", fmt.Sprint(j.Published)).SetRaw("charge_spent_usd", fmt.Sprint(j.SpentUSD)).String("## Outcome\n\n" + j.Reason + droppedSection(j.Dropped) + "\n\nExecution receipt: " + string(execution) + "\n")
 	return atomic(filepath.Join(s.harness, "artifacts", "runs", j.Started.Format("2006-01-02")+"-extractor-manifest-"+j.ID[:20]+".md"), []byte(report))
 }
 
@@ -471,4 +475,17 @@ func ReadInput(vault, ritual string, documents []Document) (Input, error) {
 	}
 
 	return i, i.Validate()
+}
+
+// droppedSection renders the refused candidates under the outcome, one per
+// line, so a thinned or refused batch explains itself in the run report.
+func droppedSection(dropped []string) string {
+	if len(dropped) == 0 {
+		return ""
+	}
+	out := "\n\nDropped candidates (" + fmt.Sprint(len(dropped)) + "):\n"
+	for _, d := range dropped {
+		out += "- " + d + "\n"
+	}
+	return out
 }

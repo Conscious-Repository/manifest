@@ -274,3 +274,40 @@ func TestHermesCompleteInputBound(t *testing.T) {
 		t.Fatal("JSON expansion bypassed bound")
 	}
 }
+
+// The model's habitual deviations no longer refuse a whole batch: a quoted
+// confidence is read as the number it is, an empty summary is fine while
+// candidates exist, and a candidate that fails a rule is dropped with its
+// reason while the rest go through. A batch with nothing valid still refuses.
+func TestBatchSurvivesDroppedCandidates(t *testing.T) {
+	input := inputFixture()
+	quoted := strings.Replace(replyFixture, `"confidence":0.8`, `"confidence":"0.8"`, 1)
+	p, dropped, e := EvaluateReply(input, quoted)
+	if e != nil || len(p) != 1 || len(dropped) != 0 {
+		t.Fatalf("quoted confidence: %v %d %v", e, len(p), dropped)
+	}
+	noSummary := strings.Replace(replyFixture, `"summary":"Jane committed to review."`, `"summary":""`, 1)
+	if p, _, e := EvaluateReply(input, noSummary); e != nil || len(p) != 1 {
+		t.Fatalf("empty summary with candidates: %v %d", e, len(p))
+	}
+	if _, _, e := EvaluateReply(input, `{"candidates":[],"summary":""}`); e == nil {
+		t.Fatal("no candidates and no summary must refuse")
+	}
+	start, end := strings.Index(replyFixture, `"candidates":[`)+len(`"candidates":[`), strings.LastIndex(replyFixture, `]}`)
+	good := replyFixture[start:end]
+	bad := strings.Replace(good, "I will review the draft.", "Invented quote.", 1)
+	mixed := replyFixture[:start] + good + "," + bad + replyFixture[end:]
+	p, dropped, e = EvaluateReply(input, mixed)
+	if e != nil || len(p) != 1 || len(dropped) != 1 || !strings.Contains(dropped[0], "verbatim") {
+		t.Fatalf("mixed batch: %v %d %v", e, len(p), dropped)
+	}
+	onlyBad := replyFixture[:start] + bad + replyFixture[end:]
+	if _, dropped, e := EvaluateReply(input, onlyBad); e == nil || len(dropped) != 1 || !strings.Contains(e.Error(), "every candidate dropped") {
+		t.Fatalf("all dropped must refuse with reasons: %v %v", e, dropped)
+	}
+	// duplicate keys in a payload are still refused even with a quoted confidence
+	dup := strings.Replace(quoted, `"kind":"task"`, `"kind":"task","Kind":"task"`, 1)
+	if _, _, e := EvaluateReply(input, dup); e == nil {
+		t.Fatal("case-aliased payload key accepted")
+	}
+}
