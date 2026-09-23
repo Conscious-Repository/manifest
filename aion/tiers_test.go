@@ -100,13 +100,21 @@ func TestTierMapCompleteness(t *testing.T) {
 		}
 	}
 	sort.Strings(held)
-	want := append([]string(nil), heldNotes2026_09_21...)
-	sort.Strings(want)
-	if strings.Join(held, "\n") != strings.Join(want, "\n") {
-		t.Fatalf("held set differs from the owner's list:\n got %v\nwant %v", held, want)
+	// The owner's original HELD set must remain held — a note that was private must never
+	// silently become eligible. New notes MAY become held later (the approvals card lets the
+	// owner set a tier at intake, which is the point of the feature), so this asserts
+	// containment, not equality: the original list must still be a subset of what is held.
+	heldSet := map[string]bool{}
+	for _, name := range held {
+		heldSet[name] = true
 	}
-	for _, name := range want {
-		if tm.KairosEligible(name) || tm.PortalEligible(name) {
+	for _, name := range heldNotes2026_09_21 {
+		if !heldSet[name] {
+			t.Fatalf("%s was held by the owner and is no longer — a private note became eligible", name)
+		}
+	}
+	for name, e := range tm {
+		if e.Tier == TierHeld && (tm.KairosEligible(name) || tm.PortalEligible(name)) {
 			t.Fatalf("%s is held but reads as eligible", name)
 		}
 	}

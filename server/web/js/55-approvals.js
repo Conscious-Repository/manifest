@@ -1199,7 +1199,11 @@ function spiritApprovalAct(id, kind, edits) {
     // inline reason box (no browser prompt); Escape cancels
     askText("Reject — reason (optional)",
       "recorded on the proposal; for warden findings this becomes an accepted exception",
-      (reason) => postApprovalDecision(id, "reject", { reason: reason.trim() || "rejected from dashboard" }));
+      // An empty box records NOTHING — the field is a deliberate-reason channel, not a
+      // click log. The old default ("rejected from dashboard") made up 334 of 399 reasons
+      // in the archive, which buried the 65 that actually said something. The rejection
+      // itself is still recorded (status + moved file); only the noise is gone.
+      (reason) => postApprovalDecision(id, "reject", { reason: reason.trim() }));
     return;
   }
   let body = {};
