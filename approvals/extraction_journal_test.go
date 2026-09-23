@@ -26,6 +26,18 @@ func journalFixture(t *testing.T) (*Store, Proposal, string, string) {
 	}
 	return s, p, vault, data
 }
+
+// holdFixture is journalFixture with the source note changed after extraction:
+// the one condition that holds a single-file candidate under the bounded gate
+// (2026-09-23), so the journal's refusal paths still have a refusal to record.
+func holdFixture(t *testing.T) (*Store, Proposal, string, string) {
+	t.Helper()
+	s, p, vault, data := journalFixture(t)
+	if err := os.WriteFile(filepath.Join(vault, "source.md"), []byte("source changed after extraction"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	return s, p, vault, data
+}
 func journalRecord(t *testing.T, data string) (string, ExtractionTransaction) {
 	t.Helper()
 	files, err := filepath.Glob(filepath.Join(data, "extraction-transactions", "*.json"))
@@ -43,7 +55,7 @@ func journalRecord(t *testing.T, data string) (string, ExtractionTransaction) {
 	return files[0], r
 }
 func TestExtractionJournalRefusalAndDuplicate(t *testing.T) {
-	s, p, vault, data := journalFixture(t)
+	s, p, vault, data := holdFixture(t)
 	before := extractionTree(t, vault)
 	pending := extractionTree(t, s.dir)
 	for n := 0; n < 3; n++ {
@@ -75,7 +87,7 @@ func TestExtractionJournalRefusalAndDuplicate(t *testing.T) {
 func TestExtractionJournalInterruptedRecovery(t *testing.T) {
 	for _, scenario := range []string{"prepare", "committing", "partial-write", "all-after-audit-missing", "approval-settlement-crash", "committed", "replay"} {
 		t.Run(scenario, func(t *testing.T) {
-			s, p, vault, data := journalFixture(t)
+			s, p, vault, data := holdFixture(t)
 			if err := s.Confirm(p.ID); err == nil {
 				t.Fatal("confirmed")
 			}
@@ -134,7 +146,18 @@ func TestExtractionJournalInterruptedRecovery(t *testing.T) {
 func TestExtractionJournalFailureStaysHeld(t *testing.T) {
 	for _, scenario := range []string{"unavailable", "inside-vault", "symlink", "corrupt", "audit-failure", "dependency-missing", "expected-absent-added", "category-identity", "index-identity", "artifact-store-identity"} {
 		t.Run(scenario, func(t *testing.T) {
-			s, p, vault, data := journalFixture(t)
+			// journal robustness is exercised under a real hold (a changed source);
+			// the identity scenarios add unrelated files, which the bounded gate
+			// accepts — the candidate applies and no receipt is needed
+			identity := scenario == "expected-absent-added" || scenario == "category-identity" || scenario == "index-identity" || scenario == "artifact-store-identity"
+			var s *Store
+			var p Proposal
+			var vault, data string
+			if identity {
+				s, p, vault, data = journalFixture(t)
+			} else {
+				s, p, vault, data = holdFixture(t)
+			}
 			switch scenario {
 			case "unavailable":
 				s.WithExtractionJournal(filepath.Join(data, "missing"))
@@ -170,6 +193,12 @@ func TestExtractionJournalFailureStaysHeld(t *testing.T) {
 			}
 			before, decisions := extractionTree(t, vault), extractionTree(t, s.dir)
 			err := s.Confirm(p.ID)
+			if identity {
+				if err != nil || len(s.List("approved")) != 1 {
+					t.Fatalf("an unrelated added file must not hold a fresh candidate: %v", err)
+				}
+				return
+			}
 			if err == nil || !strings.Contains(err.Error(), "replay=false") {
 				t.Fatal(err)
 			}

@@ -109,6 +109,11 @@ type approvalRow struct {
 	Allowed bool   `json:"allowed"`
 	Current string `json:"current"`
 	Harness string `json:"harness,omitempty"` // federation source tag
+	// ExtractionHold says why an in-app extraction candidate cannot be applied
+	// right now (source changed, unverifiable dependency, contract lane);
+	// empty when it can. The card blocks Confirm on this, not on the mere
+	// presence of a snapshot.
+	ExtractionHold string `json:"extractionHold,omitempty"`
 	// AionPayload is the parsed structured payload of an aion proposal (nil
 	// otherwise) — the editable card renders a form over it. Secret spans in
 	// the body are masked display-side before it reaches the client.
@@ -178,6 +183,9 @@ func (s *Server) harnessApprovalRowsMatching(h Harness, exclude map[string]bool,
 			continue
 		}
 		rr := approvalRow{Proposal: p, Harness: s.harnessTag(h.Name)}
+		if p.ExtractionSnapshot != "" {
+			rr.ExtractionHold = store.ExtractionHold(p)
+		}
 		if p.ApplyPath != "" {
 			switch p.Type {
 			case approvals.TypeManifestOperation:

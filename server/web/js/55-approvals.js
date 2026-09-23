@@ -250,7 +250,13 @@ function approvalCardEl(a) {
     card.append(cardActions([pillLight("Dismiss", () => postApprovalDecision(a.id, "dismiss", {}))]));
     return card;
   }
-  if (a.extractionSnapshot) {
+  if (a.extractionHold) {
+    // an in-app extraction candidate that cannot be applied right now: the
+    // server names the reason (source changed, unverifiable dependency, the
+    // contract lane); a fresh candidate carries no hold and confirms normally
+    blocked = true;
+    blockMsg = a.extractionHold + " Reject or leave pending; replay is disabled.";
+  } else if (false) {
     blocked = true;
     blockMsg = "Extraction is on hold. A refusal/recovery journal substrate is available; it does not commit transactions. Interrupted records require uncertain recovery review. Complete dependency checks and write/audit/approval settlement remain blocked. Semantic review and final decommission are separate pending gates. Reject or leave pending; replay is disabled.";
   }

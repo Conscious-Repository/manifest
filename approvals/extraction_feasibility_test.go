@@ -18,7 +18,9 @@ import (
 )
 
 func TestExtractionBoundaryReceipt(t *testing.T) {
-	s, p, vault, data := journalFixture(t)
+	// a refusal receipt needs a refusal: the bounded gate (2026-09-23) holds a
+	// candidate whose source note changed, and journals that
+	s, p, vault, data := holdFixture(t)
 	before, decisions := extractionTree(t, vault), extractionTree(t, s.dir)
 	if err := s.Confirm(p.ID); err == nil || !strings.Contains(err.Error(), ExtractionCommitUnavailable) {
 		t.Fatal(err)
@@ -76,18 +78,17 @@ func TestExtractionBoundarySettlement(t *testing.T) {
 			if err := s.Confirm(p.ID); err == nil {
 				t.Fatal("expected failure")
 			}
-			changed := !reflect.DeepEqual(before, extractionTree(t, vault))
-			if changed == snapshot {
+			// under the bounded gate (2026-09-23) a fresh snapshot candidate applies
+			// like a legacy one: the line lands, then settlement fails the same way
+			if changed := !reflect.DeepEqual(before, extractionTree(t, vault)); !changed {
 				t.Fatalf("vault changed=%v snapshot=%v", changed, snapshot)
 			}
 			if !reflect.DeepEqual(decisions, extractionTree(t, s.dir)) {
 				t.Fatal("decision history changed")
 			}
-			if !snapshot {
-				raw, err := os.ReadFile(filepath.Join(vault, AionBacklogPath))
-				if err != nil || !strings.Contains(string(raw), "Settlement witness") {
-					t.Fatalf("apply did not land: %s %v", raw, err)
-				}
+			raw, err := os.ReadFile(filepath.Join(vault, AionBacklogPath))
+			if err != nil || !strings.Contains(string(raw), "Settlement witness") {
+				t.Fatalf("apply did not land: %s %v", raw, err)
 			}
 		})
 	}
@@ -159,19 +160,21 @@ func TestExtractionBoundaryIndependentProjections(t *testing.T) {
 	if err != nil || next.Artifact.Head == first.Artifact.Head {
 		t.Fatalf("artifact did not advance: %v", err)
 	}
-	before, decisions := extractionTree(t, vault), extractionTree(t, s.dir)
-	if err = s.Confirm(p.ID); err == nil {
-		t.Fatal("confirmed with unbound stores")
+	// The index and the artifact registry drifted, but the declared source did
+	// not: under the bounded gate (2026-09-23) that candidate applies — those
+	// stores are projections of the vault, never the evidence a backlog append
+	// depends on — and neither store is touched by the apply.
+	if err = s.Confirm(p.ID); err != nil {
+		t.Fatalf("fresh candidate held by unrelated store drift: %v", err)
 	}
-	_, r := journalRecord(t, data)
-	if r.DependenciesComplete || r.Feasibility == nil || r.Feasibility.State != ExtractionCommitUnavailable {
-		t.Fatalf("receipt: %+v", r)
+	if len(s.List("approved")) != 1 {
+		t.Fatal("apply did not settle")
 	}
-	if !reflect.DeepEqual(before, extractionTree(t, vault)) || !reflect.DeepEqual(decisions, extractionTree(t, s.dir)) {
-		t.Fatal("refusal changed state")
+	if files, _ := filepath.Glob(filepath.Join(data, "extraction-transactions", "*.json")); len(files) != 0 {
+		t.Fatal("an apply must not leave a refusal receipt")
 	}
 	head, ok := reg.Get(first.Artifact.ID)
 	if !ok || head.Head != next.Artifact.Head {
-		t.Fatal("refusal rewrote artifact")
+		t.Fatal("apply rewrote artifact")
 	}
 }

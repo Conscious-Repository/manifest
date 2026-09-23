@@ -30,62 +30,88 @@ func EncodeExtractionSnapshot(files map[string]string, p Proposal) string {
 	b, _ := json.Marshal(ExtractionSnapshot{Version: 1, Files: files, Proposal: extractionProposalHash(p)})
 	return base64.RawURLEncoding.EncodeToString(b)
 }
-func (s *Store) checkExtractionSnapshot(p Proposal) error {
+
+// ExtractionHold says why a snapshot-bearing proposal cannot be applied right
+// now ("" = it can). Pure: no journal, no writes — the approval card shows it
+// instead of a blanket banner, and Confirm journals it when it refuses.
+//
+// The rule (2026-09-23, replacing the 2026-09-16 blanket hold that kept even
+// a fresh, matching proposal pending forever): a source document must still
+// carry the exact bytes the candidate was extracted from — that is what the
+// quote and the owner's review were made against; a system record the
+// extraction read for context (backlog, heuristics, people) must still exist
+// but may have moved on, because a backlog append does not depend on the
+// backlog's bytes and a resolve refuses on its own when its title is gone.
+// Single-file appends and resolves apply under that rule. The multi-file
+// contract lane stays held, and artifact/portal dependencies this snapshot
+// version cannot revalidate stay held. An owner edit through the card no
+// longer invalidates the evidence: the edit is the review.
+func (s *Store) ExtractionHold(p Proposal) string {
 	if p.ExtractionSnapshot == "" {
-		return nil
-	}
-	blocked := func(reason string) error {
-		status := "journal unavailable (not configured)"
-		if s.extractionDataDir != "" {
-			receipt, err := s.journalExtractionRefusal(p, reason)
-			if err != nil {
-				status = "journal unavailable: " + err.Error()
-			} else {
-				status = receipt
-			}
-		}
-		return fmt.Errorf("extraction uncertain/stale: %s; %s; %s; pending, replay=false", reason, ExtractionCommitUnavailable, status)
+		return ""
 	}
 	switch p.Type {
 	case TypeAionBacklog, TypeAionResolve, TypeAionHeuristic, TypeReBacklog, TypeReResolve, TypeReContract:
 	default:
-		return blocked("snapshot on unsupported proposal type")
+		return "snapshot on unsupported proposal type"
 	}
 	b, err := base64.RawURLEncoding.DecodeString(p.ExtractionSnapshot)
 	var snap ExtractionSnapshot
-	if err != nil || json.Unmarshal(b, &snap) != nil || snap.Version != 1 || snap.Replay || len(snap.Files) == 0 || snap.Proposal != extractionProposalHash(p) {
-		return blocked("invalid or edited snapshot")
+	if err != nil || json.Unmarshal(b, &snap) != nil || snap.Version != 1 || snap.Replay || len(snap.Files) == 0 {
+		return "invalid snapshot"
 	}
-	// This is diagnostic validation only. V1 cannot express absence predicates,
-	// a category namespace revision, or artifact store identity. Never interpret
-	// matching declared files as evidence that the complete read set is stable.
 	for name, hash := range snap.Files {
 		if len(hash) != 64 || strings.Trim(hash, "0123456789abcdef") != "" {
-			return blocked("invalid dependency hash")
+			return "invalid dependency hash"
 		}
 		if strings.HasPrefix(name, "sha256:") || name == "portal-records" {
-			return blocked("artifact or portal dependency cannot be revalidated by this snapshot version")
+			return "artifact or portal dependency cannot be revalidated by this snapshot version"
 		}
 		if !fs.ValidPath(name) || name == "." || strings.Contains(name, "\\") {
-			return blocked("invalid dependency path")
+			return "invalid dependency path"
 		}
 	}
 	root, err := os.OpenRoot(s.vaultRoot)
 	if err != nil {
-		return blocked("vault unavailable")
+		return "vault unavailable"
 	}
 	defer root.Close()
 	for name, hash := range snap.Files {
 		raw, err := root.ReadFile(name)
-		if err != nil || EvidenceHash(string(raw)) != hash {
-			return blocked("source or context changed")
+		if err != nil {
+			return "source or context missing: " + name
+		}
+		if strings.HasPrefix(name, "system/") {
+			continue // context may move on; the apply lane judges the live record
+		}
+		if EvidenceHash(string(raw)) != hash {
+			return "source changed since extraction: " + name + " — reject and re-run the extraction"
 		}
 	}
-	// The existing applies perform independent reads/writes, and contract apply
-	// may mutate several files. A preflight is not an atomic compare-and-swap.
-	// Until the writer can commit the complete read/write set, refuse even a
-	// matching snapshot. In particular, never turn this check into a retry.
-	return blocked("atomic dependency CAS and artifact revalidation not implemented (complete dependency manifest and write/audit/decision transaction unavailable; external editors do not honor application locks)")
+	if p.Type == TypeReContract {
+		return "contract intake writes several records and is not yet transactional — held; reject or leave pending"
+	}
+	return ""
+}
+
+func (s *Store) checkExtractionSnapshot(p Proposal) error {
+	if p.ExtractionSnapshot == "" {
+		return nil
+	}
+	reason := s.ExtractionHold(p)
+	if reason == "" {
+		return nil
+	}
+	status := "journal unavailable (not configured)"
+	if s.extractionDataDir != "" {
+		receipt, err := s.journalExtractionRefusal(p, reason)
+		if err != nil {
+			status = "journal unavailable: " + err.Error()
+		} else {
+			status = receipt
+		}
+	}
+	return fmt.Errorf("extraction uncertain/stale: %s; %s; %s; pending, replay=false", reason, ExtractionCommitUnavailable, status)
 }
 
 // ValidateExtractionContractReferences accepts only exact canonical slugs and

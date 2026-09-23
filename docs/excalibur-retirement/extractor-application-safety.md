@@ -107,3 +107,38 @@ tests continue to require canonical approved-proposal audit lines.
 
 Validation for this phase: gofmt, `go test ./...`, `go build ./...`,
 `go vet ./...`, `go test -race ./...`, and `git diff --check` passed locally.
+
+## Bounded gate — 2026-09-23
+
+The blanket hold above kept every snapshot-bearing candidate pending forever,
+including a fresh one whose every declared dependency still matched: the
+in-app extractor could file candidates but never land a line, and the card
+told the owner only to "reject or leave pending". That is not a safety gain
+over the legacy extractor, whose proposals of the same types apply through the
+same lanes with no snapshot at all, and it left the owner's review with no
+effect.
+
+`Store.ExtractionHold` now names the condition that holds a candidate, and
+Confirm applies when there is none:
+
+- A **source document** (any snapshot dependency not under `system/`) must
+  still carry the exact bytes the candidate was extracted from — that is what
+  the quote and the owner's review were made against. A changed source holds
+  the candidate ("source changed since extraction — reject and re-run").
+- A **context record** (`system/…`: backlog, heuristics, people, RE records)
+  must still exist but may have moved on. A backlog append does not depend on
+  the backlog's bytes, and a resolve refuses on its own when its title is gone.
+  Binding context bytes made every candidate in a batch stale the moment the
+  first one landed.
+- **Owner edits ride Confirm.** An edited payload no longer invalidates the
+  evidence; the edit is the review, made through the card's own endpoint.
+- **Still held:** replay snapshots, malformed hashes or paths, artifact and
+  portal dependencies this snapshot version cannot revalidate, snapshots on
+  unsupported types, and the multi-file `re-contract` lane, which is not
+  transactional.
+
+The approval card blocks Confirm only on a reported hold and shows the reason
+(`approvalRow.extractionHold`). Refusals still journal as before; a successful
+apply leaves no refusal receipt. The remaining gates listed above stay open for
+the contract lane and for a transactional multi-file writer; single-file
+appends and resolves no longer wait on them.

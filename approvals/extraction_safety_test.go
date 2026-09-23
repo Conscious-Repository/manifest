@@ -13,140 +13,125 @@ import (
 	"manifest/aion"
 )
 
-func TestExtractionConfirmFailsClosed(t *testing.T) {
-	for _, drift := range []string{"none", "source", "context", "proposal", "replay"} {
-		t.Run(drift, func(t *testing.T) {
-			vault := t.TempDir()
-			s := NewStore(t.TempDir())
-			s.vaultRoot = vault
-			files := map[string]string{"source.md": "original category and source", "context.md": "original context"}
-			hashes := map[string]string{}
-			for name, raw := range files {
-				if err := os.WriteFile(filepath.Join(vault, name), []byte(raw), 0600); err != nil {
+// The gate is bounded, not blanket (2026-09-23): a fresh candidate applies,
+// a candidate whose source note changed is held with the reason, a moved-on
+// context record does not hold an append, an owner edit rides Confirm, and
+// replay/artifact/portal/contract snapshots stay held.
+func TestExtractionGateAppliesFreshAndHoldsStale(t *testing.T) {
+	for _, tc := range []struct{ scenario, want string }{
+		{"fresh", ""},
+		{"edited", ""},
+		{"context-moved", ""},
+		{"source", "source changed"},
+		{"context-missing", "context missing"},
+		{"replay", "invalid snapshot"},
+		{"artifact", "cannot be revalidated"},
+		{"portal", "cannot be revalidated"},
+	} {
+		t.Run(tc.scenario, func(t *testing.T) {
+			s, vault, data := aionTestStore(t)
+			source := "---\ncategories: [aion]\n---\nOwner said capture this task.\n"
+			if err := os.WriteFile(filepath.Join(vault, "source.md"), []byte(source), 0600); err != nil {
+				t.Fatal(err)
+			}
+			hashes := map[string]string{"source.md": EvidenceHash(source)}
+			for _, name := range []string{"backlog.md", "heuristics.md", "people.md"} {
+				raw, err := os.ReadFile(filepath.Join(vault, "system", "aion", name))
+				if err != nil {
 					t.Fatal(err)
 				}
-				hashes[name] = EvidenceHash(raw)
+				hashes["system/aion/"+name] = EvidenceHash(string(raw))
 			}
-			p := Proposal{ID: "abcdef123456abcdef123456", Action: "Review extraction", Agent: "extractor", Ritual: "aion", Type: TypeAionBacklog, ApplyPath: AionBacklogPath, Body: "exact provenance"}
+			p := aionProposal(aion.ProposalPayload{Kind: "task", Title: "Capture this task", Status: "open", Sources: []string{"source.md"}, Captured: "2026-09-16", Quote: "capture this task"})
+			p.ID = "abcdef123456"
 			p.ExtractionSnapshot = EncodeExtractionSnapshot(hashes, p)
-			if drift == "source" || drift == "context" {
-				os.WriteFile(filepath.Join(vault, drift+".md"), []byte("changed"), 0600)
-			}
-			if drift == "proposal" {
-				p.Body += " edited"
-			}
-			if drift == "replay" {
+			switch tc.scenario {
+			case "edited":
+				p.Body += "\nowner reviewed and edited"
+			case "context-moved":
+				if err := os.WriteFile(filepath.Join(vault, "system", "aion", "backlog.md"), []byte("# Backlog\n\n- [ ] something else landed meanwhile [kind:: task]\n"), 0600); err != nil {
+					t.Fatal(err)
+				}
+			case "source":
+				if err := os.WriteFile(filepath.Join(vault, "source.md"), []byte("changed"), 0600); err != nil {
+					t.Fatal(err)
+				}
+			case "context-missing":
+				if err := os.Remove(filepath.Join(vault, "system", "aion", "heuristics.md")); err != nil {
+					t.Fatal(err)
+				}
+			case "replay":
 				b, _ := base64.RawURLEncoding.DecodeString(p.ExtractionSnapshot)
 				var snap ExtractionSnapshot
 				json.Unmarshal(b, &snap)
 				snap.Replay = true
 				b, _ = json.Marshal(snap)
 				p.ExtractionSnapshot = base64.RawURLEncoding.EncodeToString(b)
-			}
-			if _, err := s.ProposeOnce(p); err != nil {
-				t.Fatal(err)
-			}
-			if err := s.Confirm(p.ID); err == nil || !strings.Contains(err.Error(), "replay=false") {
-				t.Fatal(err)
-			}
-			pending := s.List("pending")
-			if len(pending) != 1 || pending[0].ExtractionSnapshot != p.ExtractionSnapshot {
-				t.Fatal(pending)
-			}
-			if len(s.List("approved")) != 0 {
-				t.Fatal("approved blocked proposal")
-			}
-			if _, err := os.Stat(filepath.Join(vault, AionBacklogPath)); !os.IsNotExist(err) {
-				t.Fatal("vault mutated")
-			}
-		})
-	}
-}
-
-// Pin the bounded hold with a fully configured writer: absence of a writer
-// must not be what prevents a mutation. Snapshot the entire tree, including
-// sidecars and audit files, rather than checking only the expected target.
-func TestExtractionHoldWithWriterAndRestart(t *testing.T) {
-	for _, scenario := range []string{"unchanged", "source", "context", "category", "files-index", "missing-property", "missing-contract", "added-ambiguous-property", "added-contract", "audit-unavailable", "artifact", "portal", "stale-approval"} {
-		t.Run(scenario, func(t *testing.T) {
-			s, vault, data := aionTestStore(t)
-			files := map[string]string{
-				"source.md":                            "---\ncategories: [aion]\n---\nOwner said capture this task.\n",
-				"context.md":                           "context",
-				"system/realestate/properties/home.md": "---\ncategories: [property]\n---\n",
-				"system/realestate/contracts/bid.md":   "---\ncategories: [contract]\n---\n",
-				"system/realestate/files/files.json":   "{}\n",
-			}
-			write := func(name, raw string) {
-				t.Helper()
-				full := filepath.Join(vault, name)
-				if err := os.MkdirAll(filepath.Dir(full), 0700); err != nil {
-					t.Fatal(err)
-				}
-				if err := os.WriteFile(full, []byte(raw), 0600); err != nil {
-					t.Fatal(err)
-				}
-			}
-			hashes := map[string]string{}
-			for name, raw := range files {
-				write(name, raw)
-				hashes[name] = EvidenceHash(raw)
-			}
-			p := aionProposal(aion.ProposalPayload{Kind: "task", Title: "Capture this task", Status: "open", Sources: []string{"source.md"}, Captured: "2026-09-16", Quote: "capture this task"})
-			p.ID = "abcdef123456"
-			switch scenario {
-			case "source", "context":
-				write(scenario+".md", "changed")
-			case "category":
-				write("source.md", strings.ReplaceAll(files["source.md"], "[aion]", "[real-estate]"))
-			case "files-index":
-				write("system/realestate/files/files.json", "{\"changed\":true}\n")
-			case "missing-property", "missing-contract":
-				name := "system/realestate/properties/home.md"
-				if scenario == "missing-contract" {
-					name = "system/realestate/contracts/bid.md"
-				}
-				if err := os.Remove(filepath.Join(vault, name)); err != nil {
-					t.Fatal(err)
-				}
-			case "added-ambiguous-property":
-				write("elsewhere/home.md", files["system/realestate/properties/home.md"])
-			case "added-contract":
-				write("system/realestate/contracts/bid-2.md", files["system/realestate/contracts/bid.md"])
-			case "audit-unavailable":
-				if err := os.Mkdir(filepath.Join(data, "write-audit.log"), 0700); err != nil {
-					t.Fatal(err)
-				}
 			case "artifact":
 				hashes["sha256:"+EvidenceHash("email")] = EvidenceHash("email")
+				p.ExtractionSnapshot = EncodeExtractionSnapshot(hashes, p)
 			case "portal":
-				hashes["portal-records"] = EvidenceHash("portal summary")
-			}
-			p.ExtractionSnapshot = EncodeExtractionSnapshot(hashes, p)
-			if scenario == "stale-approval" {
-				p.Body += "\nchanged after review"
+				hashes["portal-records"] = EvidenceHash("summary")
+				p.ExtractionSnapshot = EncodeExtractionSnapshot(hashes, p)
 			}
 			if _, err := s.ProposeOnce(p); err != nil {
 				t.Fatal(err)
 			}
+			if hold := s.ExtractionHold(p); (tc.want == "") != (hold == "") || !strings.Contains(hold, tc.want) {
+				t.Fatalf("hold %q, want %q", hold, tc.want)
+			}
 			before, auditBefore := extractionTree(t, vault), extractionTree(t, data)
-			for attempt := 0; attempt < 3; attempt++ {
-				if err := s.Confirm(p.ID); err == nil || !strings.Contains(err.Error(), "replay=false") {
-					t.Fatalf("confirm: %v", err)
+			err := s.Confirm(p.ID)
+			if tc.want == "" {
+				if err != nil {
+					t.Fatalf("fresh candidate refused: %v", err)
 				}
+				raw, _ := os.ReadFile(filepath.Join(vault, AionBacklogPath))
+				if !strings.Contains(string(raw), "Capture this task") || len(s.List("approved")) != 1 || len(s.List("pending")) != 0 {
+					t.Fatalf("apply did not land: approved=%d pending=%d\n%s", len(s.List("approved")), len(s.List("pending")), raw)
+				}
+				return
+			}
+			if err == nil || !strings.Contains(err.Error(), tc.want) || !strings.Contains(err.Error(), "replay=false") {
+				t.Fatalf("hold: %v", err)
+			}
+			// a refusal changes nothing, and survives reopening the store
+			for attempt := 0; attempt < 2; attempt++ {
 				if !reflect.DeepEqual(before, extractionTree(t, vault)) || !reflect.DeepEqual(auditBefore, extractionTree(t, data)) {
 					t.Fatal("refusal changed vault or audit")
 				}
 				if len(s.List("pending")) != 1 || len(s.List("approved")) != 0 {
 					t.Fatal("refusal settled proposal")
 				}
-				if _, err := s.ProposeOnce(p); err != nil {
-					t.Fatal(err)
-				}
-				// Simulate reopening after interruption without refreshing evidence.
 				s = NewStore(filepath.Dir(s.dir)).WithVaultRoot(vault).WithVaultWriter(s.vw).WithAionCapability("aion-approved")
+				if err := s.Confirm(p.ID); err == nil {
+					t.Fatal("held proposal applied after reopen")
+				}
 			}
 		})
+	}
+}
+
+// The multi-file contract lane stays held even when every dependency matches.
+func TestExtractionContractLaneStaysHeld(t *testing.T) {
+	vault := t.TempDir()
+	s := NewStore(t.TempDir()).WithVaultRoot(vault)
+	if err := os.WriteFile(filepath.Join(vault, "source.md"), []byte("email"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	p := Proposal{ID: "abcdef123456", Type: TypeReContract, Ritual: "ooda-email", Action: "re: contract — Bid", ApplyPath: "system/realestate/contracts/bid.md", Body: "evidence"}
+	p.ExtractionSnapshot = EncodeExtractionSnapshot(map[string]string{"source.md": EvidenceHash("email")}, p)
+	if hold := s.ExtractionHold(p); !strings.Contains(hold, "not yet transactional") {
+		t.Fatalf("contract hold: %q", hold)
+	}
+	if _, err := s.ProposeOnce(p); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Confirm(p.ID); err == nil || !strings.Contains(err.Error(), "replay=false") {
+		t.Fatal(err)
+	}
+	if len(s.List("pending")) != 1 || len(s.List("approved")) != 0 {
+		t.Fatal("held contract settled")
 	}
 }
 
