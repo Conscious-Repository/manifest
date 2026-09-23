@@ -225,7 +225,11 @@ func (s *Server) harnessApprovalRowsMatching(h Harness, exclude map[string]bool,
 				}
 				if payload, ok := approvals.AionPayload(p); ok {
 					rr.AionPayload = &payload
-					rr.AionLine = aion.RenderItemLine(payload)
+					if payload.Kind == aion.KindHeuristic {
+						rr.AionLine = aion.RenderHeuristicPreview(payload) // heuristics.md format, not a backlog line
+					} else {
+						rr.AionLine = aion.RenderItemLine(payload)
+					}
 				} else {
 					rr.Allowed = false
 				}

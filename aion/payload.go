@@ -244,6 +244,28 @@ func AppendBacklogItem(current string, p ProposalPayload) (string, error) {
 	return SerializeBacklog(doc), nil
 }
 
+// RenderHeuristicPreview is the exact heuristics.md text Confirm would land
+// for a heuristic payload — a new statement with its first reinforcement, or
+// the reinforced target with the new source child — so the card's "line to be
+// written" shows the heuristics format, not a backlog item line.
+func RenderHeuristicPreview(p ProposalPayload) string {
+	current := ""
+	if p.Heuristic.Mode == HeuristicModeReinforce {
+		current = "- " + strings.TrimSpace(p.Heuristic.Target) + "\n"
+	}
+	out, err := ApplyHeuristic(current, p)
+	if err != nil {
+		return "(cannot render: " + err.Error() + ")"
+	}
+	lines := strings.Split(strings.TrimRight(out, "\n"), "\n")
+	for i, l := range lines {
+		if strings.HasPrefix(l, "- ") {
+			return strings.Join(lines[i:], "\n")
+		}
+	}
+	return strings.TrimSpace(out)
+}
+
 // ApplyHeuristic is the pure accept transform for heuristics: mode new
 // appends a fresh statement (with [first::] and one reinforcement per
 // source); mode reinforce locates the target by normalized statement and

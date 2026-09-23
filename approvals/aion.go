@@ -113,11 +113,15 @@ func (s *Store) SetAionPayload(id string, payload aion.ProposalPayload) error {
 		p.Body = body
 		return os.WriteFile(src, []byte(serialize(p)), 0o644)
 	}
-	// a kind flip may change which file the accept writes — keep them in sync
+	// a kind flip may change which file the accept writes — keep them in sync,
+	// and keep the card's label ("aion: <kind> — <title>") telling the truth
 	if payload.Kind == aion.KindHeuristic {
 		p.Type, p.ApplyPath = TypeAionHeuristic, AionHeuristicPath
 	} else {
 		p.Type, p.ApplyPath = TypeAionBacklog, AionBacklogPath
+	}
+	if strings.HasPrefix(p.Action, "aion: ") {
+		p.Action = "aion: " + payload.Kind + " — " + strings.TrimSpace(payload.Title)
 	}
 	body, ok := aion.ReplacePayloadFence(p.Body, payload)
 	if !ok {

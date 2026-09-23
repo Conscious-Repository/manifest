@@ -144,6 +144,9 @@ func TestAionEditKeepsIDAndFlipsType(t *testing.T) {
 	if !ok || re.Kind != aion.KindHeuristic || re.Heuristic.Mode != aion.HeuristicModeNew {
 		t.Fatalf("payload not persisted: %+v", re)
 	}
+	if got.Action != "aion: heuristic — Morale is the most valuable resource" {
+		t.Fatalf("card label still names the old kind: %q", got.Action)
+	}
 }
 
 func TestAionSecretsRefusedAtEveryGate(t *testing.T) {
