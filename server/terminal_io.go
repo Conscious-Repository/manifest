@@ -198,6 +198,10 @@ func (s *Server) handleTermInput(w http.ResponseWriter, r *http.Request) {
 		httpError(w, err)
 		return
 	}
+	if b.ExplicitArtifacts && (b.RequestID == "" || b.Text == "" || b.Key != "" || b.Command || len(b.QuestionAnswers) > 0 || len(b.Artifacts) == 0 || shared != nil || s.terminalSharedConversation(se) != nil) {
+		http.Error(w, "explicit artifact selection requires an identified private message", 400)
+		return
+	}
 	if b.Command && (shared != nil || se.backend() != "herdr" || (se.Kind != "codex" && se.Kind != "claude") || b.RequestID == "" || !validNativeCommand(b.Text) || b.Key != "" || b.Task != "" || len(b.Files) > 0 || len(b.Artifacts) > 0 || len(b.QuestionAnswers) > 0 || b.ConversationID != "" || b.ConversationAgent != "" || b.Steer || b.AfterRun || b.Supervise) {
 		httpError(w, errBadRequest("native commands require a private coding session, a request ID and one command without attachments"))
 		return
@@ -254,7 +258,7 @@ func (s *Server) handleTermInput(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 		}
-		if shared != nil && (!agentchat.ValidRequestID(b.RequestID) || b.Task != "" || b.ConversationAgent != "" || b.ConversationID != "" || (b.Text != "" && b.Key != "") || (b.Key != "" && (len(b.Artifacts) != 0 || len(b.Files) != 0))) {
+		if shared != nil && (b.ExplicitArtifacts || !agentchat.ValidRequestID(b.RequestID) || b.Task != "" || b.ConversationAgent != "" || b.ConversationID != "" || (b.Text != "" && b.Key != "") || (b.Key != "" && (len(b.Artifacts) != 0 || len(b.Files) != 0))) {
 			http.Error(w, "shared input requires a request ID and one message or key; private task/session selectors are not accepted", http.StatusBadRequest)
 			return
 		}
@@ -404,7 +408,7 @@ func (s *Server) handleTermInput(w http.ResponseWriter, r *http.Request) {
 				if se.Origin != nil {
 					handed = se.Origin.Artifacts
 				}
-				context, err := s.scopedArtifactContext(b.Task, s.runtimeArtifactScope(se), b.Artifacts, handed)
+				context, err := s.selectedArtifactContext(b.ExplicitArtifacts, b.Task, s.runtimeArtifactScope(se), b.Artifacts, handed)
 				if err != nil {
 					httpError(w, err)
 					return
@@ -445,7 +449,7 @@ func (s *Server) handleTermInput(w http.ResponseWriter, r *http.Request) {
 		var receipt *terminalInputReceipt
 		var err error
 		prepareReceipt := func() error {
-			receipt = &terminalInputReceipt{QuestionAnswers: b.QuestionAnswers, ID: b.RequestID, Fingerprint: fingerprint, State: "unconfirmed", Updated: time.Now().UTC().Format(time.RFC3339Nano), Runtime: se.Runtime, Task: b.Task, Artifacts: b.Artifacts, SubmittedHash: hashTerminalText(b.Text)}
+			receipt = &terminalInputReceipt{QuestionAnswers: b.QuestionAnswers, ID: b.RequestID, Fingerprint: fingerprint, State: "unconfirmed", Updated: time.Now().UTC().Format(time.RFC3339Nano), Runtime: se.Runtime, Task: b.Task, Artifacts: b.Artifacts, ExplicitArtifacts: b.ExplicitArtifacts, SubmittedHash: hashTerminalText(b.Text)}
 			if shared != nil {
 				receipt.SharedAgent, receipt.SharedThread = shared.Agent.Name, shared.Thread
 				receipt.ActorEmail, receipt.ActorName = shared.Email, shared.Name

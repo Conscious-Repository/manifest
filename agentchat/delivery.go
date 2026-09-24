@@ -60,11 +60,12 @@ type Recipient struct {
 }
 
 type MessageContext struct {
-	Recipient    *Recipient          `json:"recipient,omitempty"`
-	Conversation string              `json:"conversation"`
-	Task         string              `json:"task,omitempty"`
-	Agent        string              `json:"agent"`
-	Artifacts    []ArtifactReference `json:"artifacts,omitempty"`
+	ExplicitArtifacts bool                `json:"explicitArtifacts,omitempty"`
+	Recipient         *Recipient          `json:"recipient,omitempty"`
+	Conversation      string              `json:"conversation"`
+	Task              string              `json:"task,omitempty"`
+	Agent             string              `json:"agent"`
+	Artifacts         []ArtifactReference `json:"artifacts,omitempty"`
 }
 
 func deliveryFingerprint(text string, context *MessageContext) string {

@@ -904,6 +904,7 @@ function artifactWorkspace(mount, options) {
       };
       controls.append(discuss);
     }
+    if(opts.onUseContext&&!binary){const use=el('button','sprt-quiet','use in this private chat');use.onclick=()=>opts.onUseContext({id:current.id,revision:selected,title:current.title||'Artifact',version:selectedNumber});controls.append(use);}
     if (opts.save && !binary && (!opts.canEdit || opts.canEdit(current))) {
       const edit = el("button", "sprt-quiet artifact-primary-action", selected === current.head ? "Edit" : "Restore this version");
       edit.onclick = () => editVersion(selected !== current.head);

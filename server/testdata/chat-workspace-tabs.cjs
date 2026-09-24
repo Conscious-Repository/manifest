@@ -5,7 +5,7 @@ const {chromium}=require('playwright'),fs=require('fs'),path=require('path'),ass
  for(const f of ['00-core','05-primitives','48-chat'])await p.addStyleTag({content:fs.readFileSync(path.join(root,'css',f+'.css'),'utf8')});
  await p.evaluate(()=>{
   window.el=(tag,cls,text)=>{const e=document.createElement(tag);e.className=cls||'';e.textContent=text||'';return e;};window.renderMarkdown=t=>el('pre','',t);window.chatRenderStateNotice=()=>{};
-  window.chatDraftKey='codex/abcdef12';window.chatSyncedDrafts=new Map();window.chatWorkspace=null;window.chatTaskID='';window.chatCurrentProject=()=>'';window.chatOpenId='abcdef12';window.chatAgent='codex';window.chatIsTerm=()=>true;window.chatIsPortal=()=>false;window.chatRosterEntry=()=>({durableSend:true});window.chatTermOpen={se:{id:'abcdef12',kind:'codex',name:'Parent',model:'gpt-6-astra',cwd:'/project'}};window.chatRoster=[{name:'alfred',label:'Alfred',enabled:true,durableSend:true,model:'selected'}];window.chatTermKinds={codex:'Codex',claude:'Claude'};window.chatTermEnabled=true;window.chatRecipients=new Map();window.chatArtifactSelections=new Map();window.chatRenderArtifactContext=()=>{};window.chatCaptureSyncedDraft=()=>{};window.chatLoadWorkstreams=async()=>{};window.chatWorkstreamMember=key=>key==='terminal:codex/abcdef12'?'work-1':'';window.chatSaveWorkstream=async(...args)=>{window.savedWorkstream=args;};window.chatBaseFor=()=>'/api/agents/chat/alfred/sessions';window.postJSONOk=async(endpoint,payload)=>{window.created={endpoint,payload};return {id:'side1234',agent:payload.agent,conversation:{route:'#/chat/a/'+payload.agent+'/side1234'}};};
+  window.chatCurSession=null;window.chatDraftKey='codex/abcdef12';window.chatSyncedDrafts=new Map();window.chatWorkspace=null;window.chatTaskID='';window.chatCurrentProject=()=>'';window.chatOpenId='abcdef12';window.chatAgent='codex';window.chatIsTerm=()=>true;window.chatIsPortal=()=>false;window.chatRosterEntry=()=>({durableSend:true});window.chatTermOpen={se:{id:'abcdef12',kind:'codex',name:'Parent',model:'gpt-6-astra',cwd:'/project'}};window.chatRoster=[{name:'alfred',label:'Alfred',enabled:true,durableSend:true,model:'selected'}];window.chatTermKinds={codex:'Codex',claude:'Claude'};window.chatTermEnabled=true;window.chatRecipients=new Map();window.chatArtifactSelections=new Map();window.chatRenderArtifactContext=()=>{};window.chatCaptureSyncedDraft=()=>{};window.chatLoadWorkstreams=async()=>{};window.chatWorkstreamMember=key=>key==='terminal:codex/abcdef12'?'work-1':'';window.chatSaveWorkstream=async(...args)=>{window.savedWorkstream=args;};window.chatBaseFor=()=>'/api/agents/chat/alfred/sessions';window.postJSONOk=async(endpoint,payload)=>{window.created={endpoint,payload};return {id:'side1234',agent:payload.agent,conversation:{route:'#/chat/a/'+payload.agent+'/side1234'}};};
   window.a={id:'plan',title:'Plan',ref:'plan.md',content:'original',head:'a'.repeat(64),revisions:[{n:1,hash:'a'.repeat(64)}]};window.fetch=async()=>({ok:true,json:async()=>structuredClone(a)});
  });
  const components=fs.readFileSync(path.join(root,'js/05-components.js'),'utf8');await p.addScriptTag({content:components.slice(components.indexOf('function artifactLineChanges'),components.indexOf('// A compact, keyboard-accessible'))});
@@ -171,6 +171,7 @@ const {chromium}=require('playwright'),fs=require('fs'),path=require('path'),ass
  await p.getByLabel('Filter files').fill('');
  await p.evaluate(()=>{
   const prior=fetch;window.fetch=async(url,opts)=>{
+   if(url.startsWith('/api/artifacts/get?id=other-output'))return {ok:true,json:async()=>({...a,id:'other-output',ref:'archive/report.md',head:'c'.repeat(64),content:'Selected prior output',revisions:[{n:1,hash:'c'.repeat(64)}]})};
    if(url.startsWith('/api/artifacts?')&&!url.includes('conversation_id=')){
     fileQueries.push(url);return {ok:true,json:async()=>({artifacts:[{id:'other-output',title:'Earlier report',ref:'archive/report.md',head:'c'.repeat(64),kind:'report',provenance:{session:'other-conversation',task:'aion:foreign-task'},sources:[{kind:'conversation',route:'#/chat/a/claude/other123',label:'Original source'}]}],contentSkipped:2})};
    }return prior(url,opts);
@@ -194,7 +195,7 @@ const {chromium}=require('playwright'),fs=require('fs'),path=require('path'),ass
   try{chatOpenWorkingArtifact({id:'other-output',task:'aion:foreign-task',contextDisabled:true});}finally{chatEnsureWorkspace=ensure;artifactWorkspace=workspaceFactory;}
   return capture;
  });
- assert.equal(browse.discuss,'object');assert.equal(browse.spec.task,'');assert.equal(browse.spec.contextDisabled,true);assert.equal(browse.key,'artifact:other-output:browse');assert.match(browse.notice,/not selected as message context/);
+ assert.equal(browse.discuss,'object');assert.equal(browse.spec.task,'');assert.equal(browse.spec.contextDisabled,true);assert.equal(browse.key,'artifact:other-output:browse');assert.match(browse.notice,/Browsing does not add message context/);
 
  await p.evaluate(async()=>{chatWorkspaceTabs.close();await Promise.all([...chatWorkspaceStates.values()].map(s=>s.flush()));chatWorkspaceStates.clear();await chatRestoreWorkspace();});
  await p.getByRole('button',{name:'Earlier report',exact:true}).waitFor();
@@ -207,6 +208,14 @@ const {chromium}=require('playwright'),fs=require('fs'),path=require('path'),ass
  await p.evaluate(async()=>{chatWorkspaceTabs.close();await Promise.all([...chatWorkspaceStates.values()].map(s=>s.flush()));chatWorkspaceStates.clear();await chatRestoreWorkspace();});
  await p.getByText('Opened from all registered files.',{exact:false}).waitFor();
  assert.equal(await p.locator('.artifact-workspace:visible').getByRole('button',{name:'Discuss',exact:true}).count(),0);
+ await p.evaluate(()=>{window.chatConversationTasks=new Map();window.chatPendingFiles=[];});
+ await p.addScriptTag({content:chat.slice(chat.indexOf('function chatCaptureSyncedDraft('),chat.indexOf('function chatRenderDraftNotice('))});
+ await p.addScriptTag({content:chat.slice(chat.indexOf('function chatRenderArtifactContext('),chat.indexOf('function chatArtifactActions('))});
+ await p.getByRole('button',{name:'use in this private chat',exact:true}).click();
+ const explicit=await p.evaluate(()=>[...chatArtifactSelections.values()].find(ref=>ref.id==='other-output'));
+ assert.equal(explicit.revision,'c'.repeat(64));assert.equal(explicit.explicitArtifacts,true);assert.equal(explicit.task,'');
+ assert.equal(await p.getByRole('button',{name:'Discussing: Plan · v1',exact:true}).count(),1);
+ const restored=await p.evaluate(async()=>{await chatSyncedDrafts.get(chatDraftKey).flush();const next=new ChatDraftState(chatSyncedDrafts.get(chatDraftKey).key);await next.refresh();return next.value.selection;});assert.equal(restored.explicitArtifacts,true);assert.equal(restored.revision,explicit.revision);
  assert.deepEqual(errors,[]);
  console.log('PASS: real artifact draft survives pane and tab switches, scoped model defaults, keyboard tabs, mobile return, route disposal.');
 }finally{await b.close()}})().catch(e=>{console.error(e);process.exit(1)});

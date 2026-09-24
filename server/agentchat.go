@@ -442,12 +442,13 @@ func (s *Server) handleAgentChatMessage(w http.ResponseWriter, r *http.Request) 
 	}
 	agent, id := r.PathValue("agent"), r.PathValue("id")
 	var b struct {
-		RequestID string               `json:"requestId"`
-		Text      string               `json:"text"`
-		Files     []threads.FileRef    `json:"files"`
-		Artifacts []artifactContextRef `json:"artifacts"`
-		Task      string               `json:"task"`
-		Recipient *agentchat.Recipient `json:"recipient"`
+		ExplicitArtifacts bool                 `json:"explicitArtifacts,omitempty"`
+		RequestID         string               `json:"requestId"`
+		Text              string               `json:"text"`
+		Files             []threads.FileRef    `json:"files"`
+		Artifacts         []artifactContextRef `json:"artifacts"`
+		Task              string               `json:"task"`
+		Recipient         *agentchat.Recipient `json:"recipient"`
 	}
 	if err := decode(r, &b); err != nil {
 		httpError(w, err)
@@ -457,7 +458,7 @@ func (s *Server) handleAgentChatMessage(w http.ResponseWriter, r *http.Request) 
 		http.Error(w, "no such session", http.StatusNotFound)
 		return
 	}
-	receipt, err := s.agentChatSendTo(agent, id, b.RequestID, b.Text, b.Files, b.Task, b.Artifacts, b.Recipient)
+	receipt, err := s.agentChatSendTo(agent, id, b.RequestID, b.Text, b.Files, b.Task, b.Artifacts, b.Recipient, b.ExplicitArtifacts)
 	if err != nil {
 		if errors.Is(err, agentchat.ErrRequestConflict) {
 			http.Error(w, err.Error(), http.StatusConflict)
@@ -535,7 +536,7 @@ func (s *Server) agentChatSendRequest(agent, id, requestID, text string, files [
 func (s *Server) agentChatSendRequestForTask(agent, id, requestID, text string, files []threads.FileRef, selectedTask string, refs []artifactContextRef) (agentchat.Delivery, error) {
 	return s.agentChatSendTo(agent, id, requestID, text, files, selectedTask, refs, nil)
 }
-func (s *Server) agentChatSendTo(agent, id, requestID, text string, files []threads.FileRef, selectedTask string, refs []artifactContextRef, target *agentchat.Recipient) (agentchat.Delivery, error) {
+func (s *Server) agentChatSendTo(agent, id, requestID, text string, files []threads.FileRef, selectedTask string, refs []artifactContextRef, target *agentchat.Recipient, explicitSelection ...bool) (agentchat.Delivery, error) {
 	text = strings.TrimSpace(text)
 	if text == "" && len(files) == 0 {
 		return agentchat.Delivery{}, errBadRequest("empty message")
@@ -556,7 +557,11 @@ func (s *Server) agentChatSendTo(agent, id, requestID, text string, files []thre
 	if !ok {
 		return agentchat.Delivery{}, errBadRequest("conversation unavailable")
 	}
-	ctx := &agentchat.MessageContext{Conversation: agentConversation("hermes", agent, id, "private", "").Key, Task: sess.Task, Agent: agent, Artifacts: refs}
+	explicit := len(explicitSelection) > 0 && explicitSelection[0]
+	if explicit && (requestID == "" || len(refs) == 0 || sess.Sharing != nil) {
+		return agentchat.Delivery{}, errBadRequest("explicit artifact selection requires an identified private message")
+	}
+	ctx := &agentchat.MessageContext{ExplicitArtifacts: explicit, Conversation: agentConversation("hermes", agent, id, "private", "").Key, Task: sess.Task, Agent: agent, Artifacts: refs}
 	if selectedTask != "" {
 		ctx.Task = selectedTask
 	}
@@ -609,7 +614,7 @@ func (s *Server) agentChatSendTo(agent, id, requestID, text string, files []thre
 		if sess.Origin != nil {
 			handed = sess.Origin.Artifacts
 		}
-		if _, err := s.scopedArtifactContext(ctx.Task, privateArtifactScope(sess), refs, handed); err != nil {
+		if _, err := s.selectedArtifactContext(explicit, ctx.Task, privateArtifactScope(sess), refs, handed); err != nil {
 			return agentchat.Delivery{}, err
 		}
 		if _, err := s.ownedChatContext("agent:"+agent+"/"+id, text); err != nil {

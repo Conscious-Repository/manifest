@@ -275,3 +275,12 @@ func (s *Server) handleArtifactContent(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "private, no-cache")
 	w.Write(b)
 }
+
+// Only private owner message acceptance may opt into unlinked exact versions.
+// The opt-in is part of the durable message fingerprint, not a reusable grant.
+func (s *Server) selectedArtifactContext(explicit bool, task, scope string, refs, handed []artifactContextRef) (string, error) {
+	if explicit {
+		return s.retainedArtifactContext(refs)
+	}
+	return s.scopedArtifactContext(task, scope, refs, handed)
+}

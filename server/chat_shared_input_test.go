@@ -131,7 +131,7 @@ func TestSharedInputAttributionAndLostResponseRecovery(t *testing.T) {
 
 func TestSharedInputRejectsUnsharedContextBeforeRuntime(t *testing.T) {
 	s, se, thread, sends := sharedInputFixture(t, false)
-	for _, body := range []string{`{"text":"read this","requestId":"private-file-001","artifacts":[{"id":"private-file","revision":"unshared"}]}`, `{"text":"read this","requestId":"private-file-001","conversationId":"other-private-session"}`} {
+	for _, body := range []string{`{"text":"read this","requestId":"explicit-private-001","explicitArtifacts":true,"artifacts":[{"id":"private-file","revision":"unshared"}]}`, `{"text":"read this","requestId":"private-file-001","artifacts":[{"id":"private-file","revision":"unshared"}]}`, `{"text":"read this","requestId":"private-file-001","conversationId":"other-private-session"}`} {
 		w := postSharedInput(s, se, thread, "member@aion.bio", body)
 		if w.Code < 400 || sends.Load() != 0 {
 			t.Fatal("unshared context reached terminal", w.Code, sends.Load())

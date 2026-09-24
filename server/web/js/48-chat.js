@@ -2532,7 +2532,7 @@ function renderChatComposer(session) {
       try{
         const target=chosenRecipient;
         const url=chatBaseFor(target.agent)+"/"+encodeURIComponent(target.id)+"/messages";
-        await chatDeliverRemembered(chatRememberDelivery(draftKey,target.agent,url,{text:messageText,files:sendFiles,recipient:{agent:target.agent,model:target.model},task:session?.shared?"":selected?.task||session?.task||"",artifacts:selected?[{id:selected.id,revision:selected.revision}]:[]}));
+        await chatDeliverRemembered(chatRememberDelivery(draftKey,target.agent,url,{text:messageText,files:sendFiles,recipient:{agent:target.agent,model:target.model},task:session?.shared?"":selected?.task||session?.task||"",artifacts:selected?[{id:selected.id,revision:selected.revision}]:[],explicitArtifacts:selected?.explicitArtifacts||undefined}));
         acceptedDraft();
         if(sendRoute===chatRouteVersion&&chatTermOpen)await chatTermRequestFinalTail(chatTermOpen);
       }catch(e){showToast(e.message||"Send not confirmed. Your draft is retained.");}
@@ -2543,7 +2543,7 @@ function renderChatComposer(session) {
       try{
         if(sendFiles.length&&!session?.shared)throw new Error("File uploads are not supported by this coding continuation yet. Remove the attachment or choose a planning agent.");
         const url=chatTermBase(chosenRecipient.id)+"/input";
-        const input={text:messageText,...(sendFiles.length?{files:sendFiles.map(f=>f.hash)}:{}),conversationAgent:sendAgent,conversationId:sendSession,task:session?.shared?"":selected?.task||session?.task||"",artifacts:selected?[{id:selected.id,revision:selected.revision}]:[]};
+        const input={text:messageText,...(sendFiles.length?{files:sendFiles.map(f=>f.hash)}:{}),conversationAgent:sendAgent,conversationId:sendSession,task:session?.shared?"":selected?.task||session?.task||"",artifacts:selected?[{id:selected.id,revision:selected.revision}]:[],explicitArtifacts:selected?.explicitArtifacts||undefined};
         if(chatTermFind(chosenRecipient.id)?.agentState==='working')await chatStageMessage(draftKey,chosenRecipient.agent,url,input);
         else{
           const remembered=chatRememberDelivery(draftKey,chosenRecipient.agent,url,input);
@@ -2559,12 +2559,12 @@ function renderChatComposer(session) {
     if(durable){
       payload.recipient=chatRecipients.get(draftKey)||{agent:sendAgent,model:session?.model||""};
       payload.task=selected?.task||chatConversationTasks.get("chat:"+draftKey)||session?.task||"";
-      if(selected)payload.artifacts=[{id:selected.id,revision:selected.revision}];
+      if(selected){payload.artifacts=[{id:selected.id,revision:selected.revision}];if(selected.explicitArtifacts)payload.explicitArtifacts=true;}
     }
     if (chatIsTerm()) {
       // claude/codex: runtime input (explicitly resuming an ended session first); a
       // landing send creates the registry row, then delivers
-      try { if (!await chatTermSend(initialText,selected?{task:selected.task,artifacts:[{id:selected.id,revision:selected.revision}]}:{})) {
+      try { if (!await chatTermSend(initialText,selected?{task:selected.task,artifacts:[{id:selected.id,revision:selected.revision}],explicitArtifacts:selected.explicitArtifacts||undefined}:{})) {
         showToast("Send not confirmed. Your draft is retained.");
       }else acceptedDraft(); }
       finally { chatSending = false; renderChatComposer(chatCurSession); }
@@ -3834,13 +3834,8 @@ function chatOpenWorkingArtifact(spec) {
     const path = spec.plan ? "/api/tasks/plan/workspace?id="+encodeURIComponent(taskID) : "/api/artifacts/get?id="+encodeURIComponent(spec.id);
     const r=await fetch(path); if(!r.ok)throw new Error(await r.text());return r.json();
   };
-  w.tab(tabKey,spec.plan?"Plan":"Review",(host,drop)=>artifactWorkspace(host,{
-    load, revision:spec.revision,proposal:spec.proposal,review:!chatIsPortal(),receiptSave:!spec.plan,contextNotice:spec.contextDisabled?"Opened from all registered files. This file is not selected as message context. Source links, when available, are listed in Files.":"",
-    save:spec.plan ? (text,expectedRevision)=>postJSONOk("/api/tasks/plan",{id:taskID,text,expectedRevision}):(text,expectedRevision,requestID)=>postJSONOk("/api/artifacts/text",{id:spec.id,content:text,expectedRevision,requestID}),
-    canEdit:spec.plan ? null : a=>/\.(md|txt|json|csv|tsv|yaml|yml|toml|js|jsx|ts|tsx|py|go|html|css|sql|sh|xml|svg)$/i.test(a.ref||"") && a.provenance?.source!=="task-plan",
-    saveNotice:spec.plan ? null : "Saved as a new artifact version. Use Discuss this version to ask the agent to apply it to working files.",
-    onClose:drop,
-    onDiscuss: !spec.contextDisabled && (key.startsWith("chat:")||key.startsWith("task:")) && (key.startsWith("task:") || chatRosterEntry(chatAgent)?.durableSend || chatIsTerm()) ? ref=>{
+  const canUsePrivate=spec.contextDisabled&&key.startsWith('chat:')&&!chatIsPortal()&&(chatIsTerm()?!chatTermOpen?.sharedConversation:!chatCurSession?.shared)&&(chatRosterEntry(chatAgent)?.durableSend||chatIsTerm());
+  const selectContext=ref=>{
       chatArtifactSelections.set(key,{...ref,task:taskID,discuss:!!spec.discuss});
       if(ref.reviewNote){const input=document.querySelector('#chatComposer textarea');if(input){const request='Please revise '+ref.title+' (version '+ref.version+(ref.reviewStart?', '+(ref.reviewLineKind==='snapshot'?'snapshot lines ':'lines ')+ref.reviewStart+'–'+ref.reviewEnd:'')+'):\n'+ref.reviewNote;input.value=(input.value.trim()?input.value+'\n\n':'')+request;input.dispatchEvent(new Event('input',{bubbles:true}));}}
       if(key.startsWith("chat:"))chatRenderArtifactContext(taskID,key);
@@ -3848,7 +3843,15 @@ function chatOpenWorkingArtifact(spec) {
       else if(key.startsWith("task:"))todoSaveArtifactSelection(taskID);
       if(window.matchMedia("(max-width: 900px)").matches)w.show(false);
       document.querySelector("#chatComposer textarea")?.focus();
-    }:null
+      };
+  w.tab(tabKey,spec.plan?"Plan":"Review",(host,drop)=>artifactWorkspace(host,{
+    load, revision:spec.revision,proposal:spec.proposal,review:!chatIsPortal(),receiptSave:!spec.plan,contextNotice:spec.contextDisabled?(canUsePrivate?"Opened from all registered files. Browsing does not add message context. Use in this private chat selects this exact version for your next message.":"Opened from all registered files. This file is not selected as message context. Source links, when available, are listed in Files."):"",
+    save:spec.plan ? (text,expectedRevision)=>postJSONOk("/api/tasks/plan",{id:taskID,text,expectedRevision}):(text,expectedRevision,requestID)=>postJSONOk("/api/artifacts/text",{id:spec.id,content:text,expectedRevision,requestID}),
+    canEdit:spec.plan ? null : a=>/\.(md|txt|json|csv|tsv|yaml|yml|toml|js|jsx|ts|tsx|py|go|html|css|sql|sh|xml|svg)$/i.test(a.ref||"") && a.provenance?.source!=="task-plan",
+    saveNotice:spec.plan ? null : "Saved as a new artifact version. Use Discuss this version to ask the agent to apply it to working files.",
+    onClose:drop,
+    onDiscuss: !spec.contextDisabled && (key.startsWith("chat:")||key.startsWith("task:")) && (key.startsWith("task:") || chatRosterEntry(chatAgent)?.durableSend || chatIsTerm()) ? selectContext:null,
+    onUseContext:canUsePrivate?ref=>selectContext({...ref,explicitArtifacts:true}):null
   }),{kind:"artifact",id:spec.id,plan:!!spec.plan,task:taskID,revision:spec.revision,selectionKey:spec.selectionKey,discuss:!!spec.discuss,contextDisabled:!!spec.contextDisabled});
 }
 function chatRenderArtifactContext(taskID,key,host){
@@ -3860,7 +3863,7 @@ function chatRenderArtifactContext(taskID,key,host){
  const row=el("div","chat-artifact-context");
  const open=el("button","sprt-quiet","Discussing: "+ref.title+" · v"+ref.version);
  open.onclick=()=>{
-   const spec={id:ref.id,revision:ref.revision,task:taskID,discuss:ref.discuss,selectionKey:key};
+   const spec={id:ref.id,revision:ref.revision,task:taskID,discuss:ref.discuss,selectionKey:key,contextDisabled:!!ref.explicitArtifacts};
    if(key.startsWith("task:")&&!location.hash.startsWith("#/chat/task/")){chatPendingWorkspace=spec;location.hash=chatTaskThreadHash(taskID);}
    else chatOpenWorkingArtifact(spec);
  };
