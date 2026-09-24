@@ -948,20 +948,29 @@ function artifactWorkspace(mount, options) {
       if(editState?.conflict){notice.textContent="Resolve the draft conflict before discarding.";return;}
       if(editState){editState.set(null);await editState.flush();}render();
     };
+    let saving=false;
     save.onclick = async () => {
+      if(saving)return;
       remember();
       if(editState?.conflict){notice.textContent="Resolve the draft conflict before saving a version.";return;}
       const submitted=editState?.value||{...started,text:input.value};
       if(submitted.artifact!==current.id || !/^[0-9a-f]{64}$/.test(submitted.baseRevision||"")){notice.textContent="This draft has no valid starting revision. Keep its text and review the latest version before saving.";return;}
-      save.disabled = true;input.disabled=true;discard.disabled=true;review.disabled=true;
+      saving=true;save.disabled = true;input.disabled=true;discard.disabled=true;review.disabled=true;cancel.disabled=true;
       try {
+        if(editState){
+          const synced=await editState.flush();
+          if(!synced||editState.conflict||editState.error||editState.dirty||!chatStateEqual(editState.value,submitted)){
+            notice.textContent="The edit has not been confirmed in draft storage. Resolve draft recovery before saving a file version.";return;
+          }
+        }
+        if(!pane.isConnected)return;
         await opts.save(submitted.text, submitted.baseRevision);
         if(editState&&chatStateEqual(editState.value,submitted)){editState.set(null);await editState.flush();}
         const a = await opts.load();
         await show(a,a.head);
         notice.textContent = opts.saveNotice || "New version saved. Execution has not started.";
       } catch(e) { notice.textContent = e.message; }
-      finally { save.disabled = false;input.disabled=false;discard.disabled=false;review.disabled=false; }
+      finally { saving=false;save.disabled = false;input.disabled=false;discard.disabled=false;review.disabled=false;cancel.disabled=false; }
     };
     controls.append(save,review,cancel,discard); chatRenderStateNotice(recovery,editState);if(focus)input.focus();
   }
