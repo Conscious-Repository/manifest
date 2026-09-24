@@ -539,8 +539,8 @@ function chatOpenRecords(){
  return chatEnsureWorkspace().tab('notes','Records',(host,drop)=>{
   const pane=el('section','chat-notes-inspector'),kind=document.createElement('select'),status=el('p','chat-workspace-hint'),preview=el('div','chat-notes-preview');
   kind.setAttribute('aria-label','Record kind');
-  for(const [value,label] of [['note','knowledge notes'],['task','open tasks'],['goal','goals and stages'],['person','people']]){const o=el('option','',label);o.value=value;kind.append(o);}
-  const hints={person:'Search existing contacts by name, key or profile alias. Preview includes the profile, relationship references and meeting evidence. Linked note contents, recruiting records and fundraising summaries are excluded.',note:'Search authored knowledge notes by name, path or alias. System and imported notes are excluded.',task:'Search open tasks by title, container or exact ID. Preview includes fields, description and plan; comments, run state and linked file contents are excluded.',goal:'Search current goals and stages by title, ancestry, ID or alias. Preview includes the selected branch and its ancestry; archived goals are excluded.'};
+  for(const [value,label] of [['note','knowledge notes'],['task','open tasks'],['goal','goals and stages'],['person','people'],['project','projects']]){const o=el('option','',label);o.value=value;kind.append(o);}
+  const hints={project:'Search saved projects by name or exact ID. Preview includes saved instructions, conversation references and folder associations; member transcripts and folder contents are excluded.',person:'Search existing contacts by name, key or profile alias. Preview includes the profile, relationship references and meeting evidence. Linked note contents, recruiting records and fundraising summaries are excluded.',note:'Search authored knowledge notes by name, path or alias. System and imported notes are excluded.',task:'Search open tasks by title, container or exact ID. Preview includes fields, description and plan; comments, run state and linked file contents are excluded.',goal:'Search current goals and stages by title, ancestry, ID or alias. Preview includes the selected branch and its ancestry; archived goals are excluded.'};
   status.setAttribute('role','status');status.textContent=hints.note;preview.tabIndex=0;
   let closed=false,ticket=0,selected=null;
   const current=()=>!closed&&key==='chat:'+chatAgent+'/'+chatOpenId&&chatCanSelectNoteContext();
@@ -574,6 +574,23 @@ function chatOpenRecords(){
   }});ta.input.setAttribute('aria-label','Find a record');
   kind.onchange=()=>{++ticket;selected=null;ta.setValue('');preview.replaceChildren();status.textContent=hints[kind.value];ta.focus();};
   pane.append(kind,ta.el,status,preview);host.append(pane);
-  return {element:pane,close:()=>{closed=true;++ticket;pane.remove();drop();},getView:()=>({query:ta.value(),kind:kind.value,id:selected?.record.id,revision:selected?.revision,scrollTop:preview.scrollTop}),restoreView:async view=>{kind.value=['note','task','goal','person'].includes(view.kind)?view.kind:'note';ta.setValue(view.query||'');status.textContent=hints[kind.value];if(view.id||view.path)await load(view.id||view.path,view.revision);preview.scrollTop=Math.max(0,Number(view.scrollTop)||0);return true;}};
+  return {element:pane,close:()=>{closed=true;++ticket;pane.remove();drop();},getView:()=>({query:ta.value(),kind:kind.value,id:selected?.record.id,revision:selected?.revision,scrollTop:preview.scrollTop}),restoreView:async view=>{kind.value=['note','task','goal','person','project'].includes(view.kind)?view.kind:'note';ta.setValue(view.query||'');status.textContent=hints[kind.value];if(view.id||view.path)await load(view.id||view.path,view.revision);preview.scrollTop=Math.max(0,Number(view.scrollTop)||0);return true;}};
  },{kind:'records'});
+}
+
+// A stable project source route opens the existing record, never a new chat.
+async function chatShowProjectRecord(id,routeVersion){
+ const host=document.getElementById('chatTranscript'),composer=document.getElementById('chatComposer');
+ composer?.replaceChildren();host.replaceChildren(el('p','chat-workspace-hint','Loading project…'));
+ const current=()=>routeVersion===chatRouteVersion&&!els.chatView.hidden;
+ const back=el('a','sprt-quiet','back to chats');back.href='#/chat';host.prepend(back);
+ chatLoadInbox(false).then(()=>{if(current())renderChatRail();});
+ try{
+  if(chatIsPortal())throw Error('Project records are private.');
+  const response=await fetch('/api/chat/records/preview?kind=project&id='+encodeURIComponent(id),{cache:'no-store'});
+  if(!response.ok)throw Error(await response.text());
+  const snapshot=await response.json();if(!current())return;
+  const view=el('section','chat-project-record'),title=el('h2','',snapshot.record.title),identity=el('p','chat-workspace-hint','Project · '+snapshot.record.id),content=el('pre','chat-activity-text',snapshot.content),edit=el('button','sprt-quiet','edit project');
+  edit.onclick=()=>chatEditProject(id);view.append(back,title,identity,edit,content);host.replaceChildren(view);
+ }catch(e){if(current()){const error=el('p','chat-workspace-hint',e.message||'Could not load project.');error.setAttribute('role','status');host.replaceChildren(back,error);}}
 }

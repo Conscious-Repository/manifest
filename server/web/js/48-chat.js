@@ -360,6 +360,15 @@ function showChat(h) {
   const seg = chatRouteSegments(h);
   const head = seg[0] || "";
   const rest = seg.slice(1).join("/"); // one id, whether it was encoded or raw
+  if (head === "project") {
+    leaveTaskChat();chatTermLeave();chatOpenId="";chatLanding=false;chatCurSession=null;
+    if(chatES){chatES.close();chatES=null;chatESFor="";}
+    document.querySelector(".chat-main")?.classList.remove("landing");
+    renderChatHeadActions();
+    chatShowProjectRecord(rest,routeVersion);
+    requestAnimationFrame(chatFitShell);
+    return;
+  }
   if (head === "cmp") {
     leaveTaskChat();
     renderCompare(rest.split(",").filter(Boolean));
@@ -3869,7 +3878,7 @@ function chatOpenWorkingArtifact(spec) {
   w.tab(tabKey,spec.plan?"Plan":"Review",(host,drop)=>artifactWorkspace(host,{
     load, revision:spec.revision,proposal:spec.proposal,review:!chatIsPortal(),receiptSave:!spec.plan,contextNotice:spec.contextDisabled?(canUsePrivate?"Browsing does not add message context. Use in this private chat selects this exact version for your next message.":"This file is not selected as message context. Source links, when available, are listed in Files."):"",
     save:spec.plan ? (text,expectedRevision)=>postJSONOk("/api/tasks/plan",{id:taskID,text,expectedRevision}):(text,expectedRevision,requestID)=>postJSONOk("/api/artifacts/text",{id:spec.id,content:text,expectedRevision,requestID}),
-    canEdit:spec.plan ? null : a=>/\.(md|txt|json|csv|tsv|yaml|yml|toml|js|jsx|ts|tsx|py|go|html|css|sql|sh|xml|svg)$/i.test(a.ref||"") && !["task-plan","knowledge-context","task-context","goal-context","person-context"].includes(a.provenance?.source),
+    canEdit:spec.plan ? null : a=>/\.(md|txt|json|csv|tsv|yaml|yml|toml|js|jsx|ts|tsx|py|go|html|css|sql|sh|xml|svg)$/i.test(a.ref||"") && !["task-plan","knowledge-context","task-context","goal-context","person-context","project-context"].includes(a.provenance?.source),
     saveNotice:spec.plan ? null : "Saved as a new artifact version. Use Discuss this version to ask the agent to apply it to working files.",
     onClose:drop,
     onDiscuss: !spec.contextDisabled && (key.startsWith("chat:")||key.startsWith("task:")) && (key.startsWith("task:") || chatRosterEntry(chatAgent)?.durableSend || chatIsTerm()) ? selectContext:null,

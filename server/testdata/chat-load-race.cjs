@@ -47,5 +47,14 @@ vm.runInContext(source.slice(source.indexOf('async function loadChatSession(id)'
  assert.equal(captured.payload.hash,'original-hash');assert.equal(captured.url,'/agents/alfred/source/coding-result');
  ctx.chatRouteVersion=2;ctx.chatOpenId='other';finishSnapshot({id:'artifact',revision:'original-hash',task:'task-1'});await opening;
  assert.equal(opened,0,'snapshot completion opened in unrelated chat');
+ // A project source route must not load or create a same-named conversation.
+ let projectRoute,terminalLeft=0,streamClosed=0;
+ Object.assign(ctx,{chatRestoreInboxSnapshot(){},chatCloseTerminalDock(){},chatCloseWorkspace(){},chatSaveDraft(){},chatMountHeader(){},chatPollTimer:null,chatRouteVersion:10,
+  chatES:{close(){streamClosed++;}},chatESFor:'old',leaveTaskChat(){},chatTermLeave(){terminalLeft++;},renderChatHeadActions(){},chatFitShell(){},requestAnimationFrame(){},
+  chatShowProjectRecord:(id,version)=>{projectRoute={id,version};},chatOpenId:'old-conversation',chatCurSession:{id:'old-conversation'}});
+ vm.runInContext(source.slice(source.indexOf('function chatRouteSegments('),source.indexOf('document.addEventListener("pointerdown"')),ctx);
+ vm.runInContext(source.slice(source.indexOf('function showChat(h)'),source.indexOf('let chatTaskID =')),ctx);
+ ctx.showChat('#/chat/project/project%2Ftwo');
+ assert.deepEqual(projectRoute,{id:'project/two',version:11});assert.equal(ctx.chatOpenId,'');assert.equal(ctx.chatCurSession,null);assert.equal(terminalLeft,1);assert.equal(streamClosed,1);
  console.log('Artifact handoff navigation race passed');
 })().catch(e=>{console.error(e);process.exitCode=1});

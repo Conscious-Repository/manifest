@@ -31,6 +31,7 @@ type chatContextRecord struct {
 	ambiguousProfile bool
 	task             *unifiedRow
 	goal             *goalContextBranch
+	project          *projectContextRecord
 }
 type goalContextBranch struct {
 	Area      string
@@ -55,6 +56,8 @@ func (s *Server) chatContextRecords(kind string, q string) ([]chatContextRecord,
 		for _, n := range notes {
 			out = append(out, chatContextRecord{Kind: kind, ID: n.Path, Title: n.Name, Detail: n.Path, Route: "#/note/" + url.PathEscape(n.Path)})
 		}
+	case "project":
+		return s.chatProjectRecords()
 	case "person":
 		return s.chatPersonRecords()
 	case "task":
@@ -99,7 +102,7 @@ func (s *Server) chatContextRecords(kind string, q string) ([]chatContextRecord,
 			walk(area.Rocks, "Rock", nil)
 		}
 	default:
-		return nil, errBadRequest("choose note, task, goal or person")
+		return nil, errBadRequest("choose note, task, goal, person or project")
 	}
 	return out, nil
 }
@@ -195,7 +198,9 @@ func (s *Server) chatContextRecordPreview(kind, id string) (chatContextRecord, [
 	}
 	var out strings.Builder
 	fmt.Fprintf(&out, "# %s\n\nRecord type: %s\nRecord ID: %s\n", selected.Title, kind, id)
-	if selected.Kind == "person" {
+	if selected.project != nil {
+		s.renderProjectContext(&out, *selected)
+	} else if selected.Kind == "person" {
 		if err := s.renderPersonContext(&out, *selected); err != nil {
 			return *selected, nil, err
 		}
@@ -317,7 +322,7 @@ func contextSnapshotSource(a artifacts.Artifact) (kind, id, route string) {
 	if path := knowledgeContextPath(a); path != "" {
 		return "note", path, "#/note/" + url.PathEscape(path)
 	}
-	if a.Harness != "manifest" || (a.Provenance.Source != "task-context" && a.Provenance.Source != "goal-context" && a.Provenance.Source != "person-context") {
+	if a.Harness != "manifest" || (a.Provenance.Source != "task-context" && a.Provenance.Source != "goal-context" && a.Provenance.Source != "person-context" && a.Provenance.Source != "project-context") {
 		return "", "", ""
 	}
 	i := strings.LastIndex(a.Ref, "#context-")
@@ -327,6 +332,9 @@ func contextSnapshotSource(a artifacts.Artifact) (kind, id, route string) {
 	kind = strings.TrimSuffix(a.Provenance.Source, "-context")
 	id = a.Ref[:i]
 	route = "#/" + kind + "s/" + url.PathEscape(id)
+	if kind == "project" {
+		route = "#/chat/project/" + url.PathEscape(id)
+	}
 	if kind == "person" {
 		route = "#/contacts/" + url.PathEscape(id)
 	}

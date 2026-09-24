@@ -9,7 +9,7 @@ const {chromium}=require('playwright'),fs=require('fs'),path=require('path'),ass
   window.chatRenderArtifactContext=(task,key)=>{window.rendered={task,key,ref:chatArtifactSelections.get(key)};};window.chatCaptureSyncedDraft=key=>{window.saved={key,ref:chatArtifactSelections.get('chat:'+key)};};
   window.chatEnsureWorkspace=()=>({tab:(key,title,build)=>{window.api=build(document.getElementById('host'),()=>{});return api;}});
   window.previewRevision='a'.repeat(64);window.retainRequests=[];window.failRetain=false;
-  window.fetch=async url=>{const params=new URL(url,location.href).searchParams,kind=params.get('kind');const ids=kind==='note'?['one/same.md','two/same.md']:kind==='task'?['inbox/first','work/second']:kind==='person'?['alice','crm/alice']:['work/annual','work/stage'];const record=id=>({kind,id,title:kind==='note'?id:'Same title',detail:id,route:'#/'+(kind==='note'?'note':kind==='person'?'contacts':kind+'s')+'/'+encodeURIComponent(id)});return {ok:true,json:async()=>url.includes('/preview?')?{record:record(params.get('id')),content:'Exact literal <script>source</script>\n'.repeat(35),revision:previewRevision}:{records:ids.map(record)}};};
+  window.fetch=async url=>{const params=new URL(url,location.href).searchParams,kind=params.get('kind');const ids=kind==='note'?['one/same.md','two/same.md']:kind==='task'?['inbox/first','work/second']:kind==='person'?['alice','crm/alice']:kind==='project'?['project/one','project/two']:['work/annual','work/stage'];const record=id=>({kind,id,title:kind==='note'?id:'Same title',detail:id,route:'#/'+(kind==='note'?'note':kind==='person'?'contacts':kind==='project'?'chat/project':kind+'s')+'/'+encodeURIComponent(id)});return {ok:true,json:async()=>url.includes('/preview?')?{record:record(params.get('id')),content:'Exact literal <script>source</script>\n'.repeat(35),revision:previewRevision}:{records:ids.map(record)}};};
   window.postJSONOk=async(url,payload)=>{retainRequests.push({url,payload});if(failRetain)throw Error('note changed; review its current text before selecting it');return {id:'retained-note',title:'same',revision:payload.revision,version:1,explicitArtifacts:true};};
  });
  const chat=fs.readFileSync(path.join(root,'js/48-chat.js'),'utf8');await p.addScriptTag({content:chat.slice(chat.indexOf('function chatSelectedArtifacts('),chat.indexOf('function chatOpenWorkingArtifact('))});
@@ -32,17 +32,35 @@ const {chromium}=require('playwright'),fs=require('fs'),path=require('path'),ass
 
  // Kind changes clear the previous preview and use the selected record ID,
  // independently of equal titles and whatever note was selected before.
- for(const kind of ['task','goal','person']){
+ for(const kind of ['task','goal','person','project']){
   await p.getByLabel('Record kind').selectOption(kind);assert.equal(await p.locator('.chat-notes-preview h3').count(),0);
   await p.getByRole('combobox',{name:'Find a record'}).fill('same');await p.locator('[role=option]').nth(1).waitFor();await p.getByRole('combobox',{name:'Find a record'}).press('ArrowUp');await p.getByRole('combobox',{name:'Find a record'}).press('Enter');
   await p.getByRole('heading',{name:'Same title'}).waitFor();await p.getByRole('button',{name:'use in this private chat'}).click();await p.getByRole('status').filter({hasText:'Selected exact'}).waitFor();
+  if(kind==='project'){await p.locator('.chat-notes-preview').evaluate(e=>e.scrollTop=0);await p.screenshot({path:'/tmp/manifest-project-context-phone.png'});}
   if(kind==='person'){await p.locator('.chat-notes-preview').evaluate(e=>e.scrollTop=0);await p.screenshot({path:'/tmp/manifest-person-context-phone.png'});}
-  const id=kind==='task'?'work/second':kind==='person'?'crm/alice':'work/stage';assert.deepEqual(await p.evaluate(()=>retainRequests.at(-1).payload),{kind,id,revision:'b'.repeat(64)});
-  await p.evaluate(async()=>{const view=api.getView();api.close();chatOpenRecords();await api.restoreView(view);});assert.equal(await p.getByLabel('Record kind').inputValue(),kind);assert.equal(await p.getByRole('link',{name:'open source '+kind}).getAttribute('href'),'#/'+(kind==='person'?'contacts':kind+'s')+'/'+encodeURIComponent(id));
+  const id=kind==='task'?'work/second':kind==='person'?'crm/alice':kind==='project'?'project/two':'work/stage';assert.deepEqual(await p.evaluate(()=>retainRequests.at(-1).payload),{kind,id,revision:'b'.repeat(64)});
+  await p.evaluate(async()=>{const view=api.getView();api.close();chatOpenRecords();await api.restoreView(view);});assert.equal(await p.getByLabel('Record kind').inputValue(),kind);assert.equal(await p.getByRole('link',{name:'open source '+kind}).getAttribute('href'),'#/'+(kind==='person'?'contacts':kind==='project'?'chat/project':kind+'s')+'/'+encodeURIComponent(id));
  }
  // An older-kind search must not repopulate the picker after switching kinds.
  await p.evaluate(()=>{window.realFetch=fetch;window.fetch=url=>url.includes('&q=delayed')?new Promise(resolve=>{window.finishDelayed=()=>resolve({ok:true,json:async()=>({records:[{kind:'person',id:'old-kind',title:'stale result',detail:'old'}]})});}):realFetch(url);});
  await p.getByRole('combobox',{name:'Find a record'}).fill('delayed');await p.waitForFunction(()=>typeof finishDelayed==='function');await p.getByLabel('Record kind').selectOption('task');await p.evaluate(()=>finishDelayed());await p.waitForTimeout(50);assert.equal(await p.locator('[role=option]').count(),0,'stale kind options stay hidden');
  await p.evaluate(()=>{api.close();chatCurSession={shared:true};chatOpenNotes();});assert.equal(await p.locator('.chat-notes-inspector').count(),0,'shared target hides note selection');
+ // The canonical source page opens the exact project, with no chat creation.
+ await p.evaluate(async()=>{
+  window.chatCurSession={};window.chatRouteVersion=1;window.els={chatView:{hidden:false}};
+  window.chatLoadInbox=async()=>{};window.renderChatRail=()=>{};window.chatEditProject=id=>window.editedProject=id;
+  document.getElementById('host').id='chatTranscript';window.fetch=realFetch;
+  await chatShowProjectRecord('project/two',1);
+ });
+ await p.getByRole('heading',{name:'Same title'}).waitFor();
+ assert.equal(await p.locator('.chat-project-record').textContent().then(s=>s.includes('Project · project/two')),true);
+ await p.getByRole('button',{name:'edit project',exact:true}).click();assert.equal(await p.evaluate(()=>editedProject),'project/two');
+ assert.equal(await p.locator('#chatComposer textarea').count(),0,'source page has no send composer');
+ for(const theme of ['light','jarvis'])for(const width of [320,390,1440]){await p.setViewportSize({width,height:844});await p.evaluate(theme=>document.documentElement.dataset.theme=theme,theme);assert.equal(await p.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);}
+ await p.evaluate(async()=>{window.fetch=async()=>({ok:false,text:async()=>'Project no longer available'});await chatShowProjectRecord('removed',1);});
+ await p.getByRole('status').filter({hasText:'Project no longer available'}).waitFor();
+ await p.evaluate(()=>{window.fetch=()=>new Promise(resolve=>window.finishProject=()=>resolve({ok:true,json:async()=>({record:{id:'old',title:'stale project'},content:'stale'})}));window.pendingProject=chatShowProjectRecord('old',1);});
+ await p.evaluate(async()=>{chatRouteVersion=2;document.getElementById('chatTranscript').textContent='New destination';finishProject();await pendingProject;});
+ assert.equal(await p.locator('#chatTranscript').textContent(),'New destination','late source preview cannot overwrite another route');
  assert.deepEqual(errors,[]);console.log('Record identity, keyboard selection, explicit retention, stale preview, kind restoration, stale search and responsive bounds passed');
 }finally{await browser.close();}})().catch(e=>{console.error(e);process.exitCode=1;});

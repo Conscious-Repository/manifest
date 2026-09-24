@@ -853,3 +853,6 @@ label.chat-artifact-handoff{display:flex;flex-direction:row;align-items:flex-sta
 .chat-artifact-context-item > button:first-child{min-width:0;flex:1;white-space:normal;overflow-wrap:anywhere;text-align:left;}
 .chat-artifact-context-item > button{min-height:44px;}
 .chat-artifact-handoff span{white-space:pre-wrap;}
+.chat-project-record{padding:var(--sp-6);min-width:0;}
+.chat-project-record > h2{font-size:var(--fs-md);font-weight:500;overflow-wrap:anywhere;}
+.chat-project-record > pre{white-space:pre-wrap;overflow-wrap:anywhere;}
