@@ -46,3 +46,11 @@ Owner requested a faster, clearer chat workspace inspired by Codex, while keepin
 - Disposable native Codex 0.154.0 session: `/status` returned a sent receipt and displayed the native status panel. `/goal` submitted through the deployed browser composer cleared the accepted draft, opened the connected terminal drawer, and displayed “No goal is currently set.”
 - Disposable Claude Code 2.1.281 session: `/status` returned a sent receipt and opened the native Settings/Status panel. No model work or goal was started.
 - Both disposable sessions were removed after verification. Existing sessions were not steered, resumed, stopped or replayed.
+
+## Owner screenshot correction
+
+The first release's existing-conversation picker reused large action cards without container padding. Replaced it with a padded searchable list with agent labels and an empty state. Existing embedded conversations now use their tab title and compact runtime controls; the duplicate context-title bar and mobile Chats link are removed. Open-full-chat remains a labeled tab action. Actual side-chat context disclosure is retained. Idle process Stop moved into More; active runs retain Stop. Main and embedded composer spacing is closer, with consistent inset margins.
+
+Focused chat/CSS/native UI regressions, build, and the conversation rendering fixture passed. Live-data preview checked Default/Jarvis themes, search, existing conversation reuse, and 390px bounds. No existing messages were sent.
+
+Found the current plan incorrectly archived as `2026-09-11-manifest-agent-workbench 1.md` while the active README link was broken. Restored active canonical `system/workbench/plans/2026-09-11-manifest-agent-workbench.md`, corrected the index, added explicit remaining work, resume instructions and archive-on-completion policy. Verified the active copy on Metis at `/private/consciousrepo/system/workbench/plans/2026-09-11-manifest-agent-workbench.md`. Historical evidence stays archived; unrelated archived plans were not certified complete by this pass.

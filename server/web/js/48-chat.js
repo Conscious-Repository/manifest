@@ -3205,7 +3205,7 @@ function chatTermHead(o) {
     head.append(chatChangesButton(reviewRuntime));
   }
   const kill = chatTermEndIsKill(se);
-  if (kill) { const stop=armedDelete("Stop", "Confirm stop", () => chatTermEnd(se));stop.classList.add("chat-stop-agent");stop.title="Stop "+(se.name||se.kind)+" · Ctrl+Alt+X";stop.setAttribute("aria-keyshortcuts","Control+Alt+x");head.append(stop); }
+  if (kill) { const stop=armedDelete("Stop", "Confirm stop", () => chatTermEnd(se));stop.classList.add("chat-stop-agent");stop.title="Stop "+(se.name||se.kind)+" · Ctrl+Alt+X";stop.setAttribute("aria-keyshortcuts","Control+Alt+x");(se.agentState==="working"?head:details).append(stop); }
   acts.append(chatLifecycleActions({terminal:true,agent:se.kind,session:se}));
   details.append(acts);
   head.append(details);

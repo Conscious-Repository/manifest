@@ -45,12 +45,21 @@ document.addEventListener('keydown',e=>{if(e.ctrlKey&&e.altKey&&e.key.toLowerCas
 function chatWorkspaceExistingChat(){
  const w=chatEnsureWorkspace();
  w.tab('choose-existing','Open conversation',host=>{
-  const label=el('p','chat-workspace-hint','Open an existing conversation beside this one.');host.append(label);
-  for(const entry of chatInboxEntries()){
-   const se=entry.session;if(entry.taskThread)continue;
-   const route=entry.terminal?'#/chat/a/'+encodeURIComponent(se.kind)+'/'+encodeURIComponent(se.id):entry.agent?'#/chat/a/'+encodeURIComponent(entry.agent)+'/'+encodeURIComponent(se.id):'#/chat/'+encodeURIComponent(se.id);
-   if(route===location.hash)continue;
-   const b=el('button','chat-workspace-option',se.title||se.name||'Conversation');b.onclick=()=>{const spec={kind:'side',route,title:se.title||se.name||'Conversation',existing:true};w.tab('conversation:'+route,spec.title,h=>chatMountSideFrame(h,spec),spec);w.drop('choose-existing');};host.append(b);
-  }
+  const picker=el('div','chat-conversation-picker'),search=el('input','chat-conversation-search'),list=el('div','chat-conversation-list');
+  search.type='search';search.placeholder='Find a conversation…';search.setAttribute('aria-label','Find a conversation');
+  const entries=chatInboxEntries().filter(entry=>!entry.taskThread);
+  const paint=()=>{
+   list.replaceChildren();const query=search.value.trim().toLowerCase();
+   for(const entry of entries){
+    const se=entry.session,title=se.title||se.name||'Conversation';
+    const agent=entry.terminal?se.kind:entry.agent||'Spirits';
+    const route=entry.terminal?'#/chat/a/'+encodeURIComponent(se.kind)+'/'+encodeURIComponent(se.id):entry.agent?'#/chat/a/'+encodeURIComponent(entry.agent)+'/'+encodeURIComponent(se.id):'#/chat/'+encodeURIComponent(se.id);
+    if(route===location.hash||!(title+' '+agent).toLowerCase().includes(query))continue;
+    const b=el('button','chat-conversation-choice');b.type='button';b.append(el('span','chat-conversation-name',title),el('span','chat-conversation-agent',agent));
+    b.onclick=()=>{const spec={kind:'side',route,title,existing:true};w.tab('conversation:'+route,title,h=>chatMountSideFrame(h,spec),spec);w.drop('choose-existing');};list.append(b);
+   }
+   if(!list.children.length)list.append(el('p','chat-workspace-hint','No matching conversations.'));
+  };
+  search.addEventListener('input',paint);picker.append(search,list);host.append(picker);paint();queueMicrotask(()=>search.focus());
  });
 }

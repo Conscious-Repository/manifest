@@ -941,3 +941,9 @@
   .sched-board .sched-identity .sprt-spirit { min-height: var(--control-min); }
   .sched-board .sched-details > summary { min-height: var(--control-touch); display: list-item; align-content: center; }
 }
+
+/* An embedded conversation is a workspace pane, not the phone navigation shell. */
+.chat-embedded .mf-chat-back { display:none!important; }
+.chat-embedded .chat-main .chat-composer { padding:var(--sp-5); border-radius:var(--radius-message); gap:var(--sp-4); }
+.chat-embedded .chat-main .chat-composer:not(.has-ritual) > textarea.chat-input { flex:1 0 100%; width:100%; min-height:56px; max-height:none; order:0; padding:var(--sp-2); overflow:auto; }
+.chat-embedded .chat-main .chat-composer > .chat-attach { order:1; }

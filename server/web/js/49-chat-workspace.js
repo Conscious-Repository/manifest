@@ -160,7 +160,7 @@ function chatMountSideFrame(host,spec){
  info.append(el('summary','',spec.existing?spec.title:'Context from '+spec.title),el('p','',spec.existing?'This is the original conversation, with its own draft, history and agent.': 'Snapshot of recent complete turns at creation. Older history may be omitted; tool traces and attachment contents are excluded. Selected artifact versions are included separately. This is a saved private conversation; closing its tab does not delete it.'));
  const link=el('a','sprt-quiet','Open full chat ↗');link.href=spec.route;link.target='_blank';link.rel='noopener';strip.append(info,link);
  const frame=document.createElement('iframe');frame.title='Side chat · '+spec.title;frame.className='chat-side-frame';frame.src=location.pathname+'?chatPane=1'+spec.route;
- host.append(strip,frame);
+ if(spec.existing){const tab=[...chatWorkspaceTabs.entries.values()].find(t=>t.host===host);link.textContent='↗';link.title='Open full conversation';link.setAttribute('aria-label','Open full conversation');link.classList.add('chat-tab-open');tab?.row.insertBefore(link,tab.row.lastChild);host.append(frame);}else{info.querySelector('summary').textContent='Context';info.title='Context from '+spec.title;host.append(strip,frame);}
  const accepted=new Set();
  const receive=e=>{
   if(e.origin!==location.origin||e.source!==frame.contentWindow||!host.isConnected||e.data?.type!=='manifest-side-finding')return;
