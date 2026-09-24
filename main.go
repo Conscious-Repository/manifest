@@ -437,6 +437,14 @@ func main() {
 	frRoot := filepath.ToSlash(filepath.Join(cfg.SystemRoot, "crm", "fundraising"))
 	frRegistry := filepath.ToSlash(filepath.Join(cfg.SystemRoot, "crm", "contacts.md"))
 	frStore := fundraising.NewStore(cfg.VaultPath, frRoot, frRegistry, vw.BindAbs("fundraising"), vw.BindAbs("crm-contacts"))
+	// The registry file goes once every pending name has become a note.
+	frStore.UseRegistryRemover(func(abs string) error {
+		rel, err := filepath.Rel(cfg.VaultPath, abs)
+		if err != nil {
+			return err
+		}
+		return vw.RemoveCap("crm-contacts", filepath.ToSlash(rel), nil)
+	})
 	if err := frStore.Ensure(); err != nil {
 		log.Printf("fundraising CRM registry unavailable: %v", err)
 	}
@@ -602,6 +610,44 @@ func main() {
 			contactsSvc = contacts.New(vix, cstore, vw, calAdapter{calClient}, nil)
 			srv.UseContacts(contactsSvc)
 			log.Printf("contacts: enabled (people layer over the vault index)")
+			// The person note is the one identity: names on the pipeline that
+			// already have a note adopt it now; the rest wait in the review list.
+			if res, err := srv.SweepFundraisingPeople(); err != nil {
+				log.Printf("fundraising people sweep failed: %v", err)
+			} else if res.Adopted+res.Relinked+res.AutoLinks > 0 || res.Pending > 0 {
+				log.Printf("fundraising people: %d registry rows adopted their note, %d links gained a path, %d opportunities auto-linked, %d names pending review", res.Adopted, res.Relinked, res.AutoLinks, res.Pending)
+			}
+			// Mail as a touch: the one configured read-only mailbox, asked in
+			// the background about the addresses linked to the pipeline.
+			if acct := strings.ToLower(strings.TrimSpace(cfg.FundraisingMail.Account)); acct != "" {
+				if src, err := gmailClient.ReadSource(ctx, acct); err != nil {
+					log.Printf("fundraising mail signal off (%s): %v", acct, err)
+				} else {
+					loc, _ := time.LoadLocation(cfg.Timezone)
+					if loc == nil {
+						loc = time.Local
+					}
+					reader := mailTouchAdapter{c: gmailsync.NewMailboxClient(src, acct), lookback: time.Duration(cfg.FundraisingMail.LookbackDays) * 24 * time.Hour, loc: loc}
+					contactsSvc.UseMail(reader, filepath.Join(cfg.DataDir, "contacts", "mail-touch.json"))
+					go func() {
+						wait := 20 * time.Second
+						for {
+							select {
+							case <-ctx.Done():
+								return
+							case <-time.After(wait):
+							}
+							wait = 30 * time.Minute
+							if n, err := contactsSvc.RefreshMail(ctx, srv.FundraisingLinkedEmails()); err != nil {
+								log.Printf("fundraising mail touch refresh: %d refreshed, then: %v", n, err)
+							} else if n > 0 {
+								log.Printf("fundraising mail touch: %d address(es) refreshed", n)
+							}
+						}
+					}()
+					log.Printf("fundraising mail touch: enabled (%s, %d-day lookback)", acct, cfg.FundraisingMail.LookbackDays)
+				}
+			}
 		}
 		// READING — the book shelf over the extrinsic zone (reading-plan §3).
 		srv.UseReading(reading.New(vix), cfg.ExtrinsicRoot)
@@ -1329,6 +1375,23 @@ func orNone(s string) string {
 
 // calAdapter adapts the calendar client to the contacts CalendarReader interface
 // (future, non-declined events with their non-self attendees).
+// mailTouchAdapter reads one connected mailbox for the newest message
+// exchanged with an address — the read-only Gmail client behind the contacts
+// layer's MailReader. Dates are the owner's local day.
+type mailTouchAdapter struct {
+	c        *gmailsync.Client
+	lookback time.Duration
+	loc      *time.Location
+}
+
+func (a mailTouchAdapter) LatestExchange(ctx context.Context, address string) (contacts.MailTouch, bool, error) {
+	m, ok, err := a.c.LatestMessageWith(ctx, address, time.Now().Add(-a.lookback))
+	if err != nil || !ok {
+		return contacts.MailTouch{}, false, err
+	}
+	return contacts.MailTouch{Date: m.Internal.In(a.loc).Format("2006-01-02"), Subject: m.Subject, Sent: m.Sent}, true, nil
+}
+
 type calAdapter struct{ c *calendar.Client }
 
 func (a calAdapter) Upcoming(now time.Time, days int) []contacts.Event {

@@ -29,9 +29,12 @@ type Store struct {
 	vaultRoot   string
 	root        string
 	registryRel string
-	writeRecord func(string, []byte) error
-	writePeople func(string, []byte) error
-	writeMu     sync.Mutex
+	// removePeople deletes the registry file once every pending name is
+	// settled (pending.go); nil leaves an empty heading behind.
+	removePeople func(abs string) error
+	writeRecord  func(string, []byte) error
+	writePeople  func(string, []byte) error
+	writeMu      sync.Mutex
 }
 
 func NewStore(vaultRoot, root, registryRel string, writeRecord, writePeople func(string, []byte) error) *Store {
@@ -42,17 +45,12 @@ func (s *Store) Root() string          { return s.root }
 func (s *Store) RegistryRel() string   { return s.registryRel }
 func (s *Store) abs(rel string) string { return filepath.Join(s.vaultRoot, filepath.FromSlash(rel)) }
 
+// Ensure runs the record migrations. The registry is no longer seeded: a
+// person is a vault note, and the registry only ever holds names still
+// waiting to become one (pending.go).
 func (s *Store) Ensure() error {
 	s.writeMu.Lock()
 	defer s.writeMu.Unlock()
-	if _, err := os.Stat(s.abs(s.registryRel)); errors.Is(err, os.ErrNotExist) {
-		if s.writePeople == nil {
-			return errors.New("fundraising: CRM contacts writer unavailable")
-		}
-		if err := s.writePeople(s.abs(s.registryRel), []byte(registrySeed)); err != nil {
-			return err
-		}
-	}
 	return s.migrateLegacyIntroVia()
 }
 
@@ -622,7 +620,7 @@ func (s *Store) Delete(id string) error {
 		return err
 	}
 	category := "[fundraising-deleted]"
-	deleted := q(Touch().UTC().Format(time.RFC3339))
+	deleted := q(Now().UTC().Format(time.RFC3339))
 	return s.writeRecord(s.abs(op.Path), patchFrontmatter(b, map[string]*string{
 		"categories": &category,
 		"deleted":    &deleted,
@@ -1012,6 +1010,6 @@ func patchFrontmatter(src []byte, updates map[string]*string) []byte {
 	return []byte(strings.Join(out, "\n"))
 }
 
-// Touch is used by callers/tests to provide a deterministic updated timestamp
+// Now is used by callers/tests to provide a deterministic deletion timestamp
 // without storing one in the record schema.
-var Touch = time.Now
+var Now = time.Now

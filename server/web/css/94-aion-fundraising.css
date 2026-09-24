@@ -63,3 +63,11 @@ textarea.fr-in { min-height: calc(var(--sp-9) + var(--sp-9) + var(--sp-9) + var(
   .fr-table { min-width: var(--fr-phone-min); }
   .fr-toolbar { position: sticky; left: 0; width: calc(100vw - (var(--sp-9) + var(--sp-6))); }
 }
+/* touches (2026-09-25): kind · date · person, one quiet line per touch */
+.fr-touch { display: inline-flex; align-items: baseline; gap: var(--sp-2); min-width: 0; }
+.fr-touch-kind { font-size: var(--fs-2xs); color: var(--base-50); }
+.fr-touch-date { font-variant-numeric: tabular-nums; }
+.fr-touch-person { color: var(--base-50); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fr-person-pending { border: 0; background: none; padding: 0; cursor: pointer; text-align: left; color: var(--base-50); border-bottom: 1px dotted var(--base-40); }
+.fr-touch-editor { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: var(--sp-2); }
+.fr-touch-editor-row { display: flex; align-items: center; gap: var(--sp-2); }

@@ -91,9 +91,9 @@ func TestDeleteTombstonesOpportunityWithoutErasingRecord(t *testing.T) {
 	if err := os.WriteFile(path, b, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	oldTouch := Touch
-	Touch = func() time.Time { return time.Date(2026, 8, 17, 20, 0, 0, 0, time.UTC) }
-	defer func() { Touch = oldTouch }()
+	oldNow := Now
+	Now = func() time.Time { return time.Date(2026, 8, 17, 20, 0, 0, 0, time.UTC) }
+	defer func() { Now = oldNow }()
 	if err := s.Delete(op.ID); err != nil {
 		t.Fatal(err)
 	}

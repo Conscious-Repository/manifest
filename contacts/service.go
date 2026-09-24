@@ -70,9 +70,10 @@ type Service struct {
 	granola   TranscriptSource // nil → vault-only transcripts
 	directory CRMDirectory     // nil → vault/index contacts only
 
-	mu       sync.Mutex     // guards the two calendar caches below
+	mu       sync.Mutex     // guards the two calendar caches below and mail
 	meetings *meetingIndex  // email→past-meetings projection, TTL-cached
 	upcoming *upcomingIndex // future-events pull, TTL-cached (same reason)
+	mail     *mailCache     // newest exchange per address (touch.go); nil → no mail signal
 }
 
 // CRMContact is an explicit system-CRM person. Unlike ordinary system-zone
@@ -87,11 +88,13 @@ type CRMContact struct {
 
 // FundraisingSummary is the private CRM context appended to a contact page.
 type FundraisingSummary struct {
-	ID       string  `json:"id"`
-	Firm     string  `json:"firm"`
-	Status   string  `json:"status"`
-	Amount   float64 `json:"amount,omitempty"`
-	NextStep string  `json:"nextStep"`
+	ID        string  `json:"id"`
+	Firm      string  `json:"firm"`
+	Status    string  `json:"status"`
+	Amount    float64 `json:"amount,omitempty"`
+	NextStep  string  `json:"nextStep"`
+	LastTouch *Touch  `json:"lastTouch,omitempty"`
+	NextTouch *Touch  `json:"nextTouch,omitempty"`
 }
 
 // CRMDirectory is the narrow bridge implemented by the private fundraising

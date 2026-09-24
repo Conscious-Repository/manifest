@@ -289,3 +289,45 @@ func findPart(p gmailPart, mime string) (string, bool) {
 	}
 	return "", false
 }
+
+// MessageBrief is the metadata of one message — enough to date an exchange
+// without reading its body.
+type MessageBrief struct {
+	ID       string
+	Internal time.Time
+	Subject  string
+	Sent     bool // provider SENT label: the mailbox owner wrote it
+}
+
+// LatestMessageWith returns the newest message exchanged with the address
+// (sent to it, received from it, or copied to it) since `after`. Two GETs at
+// most: a one-result search, then the message's metadata. Read-only.
+func (c *Client) LatestMessageWith(ctx context.Context, address string, after time.Time) (MessageBrief, bool, error) {
+	address = strings.ToLower(strings.TrimSpace(address))
+	if address == "" || strings.ContainsAny(address, " \"()") {
+		return MessageBrief{}, false, errors.New("gmail: address required")
+	}
+	q := fmt.Sprintf("(from:%s OR to:%s OR cc:%s) after:%d -in:chats", address, address, address, after.Unix())
+	mailbox := c.mailbox
+	if mailbox == "" {
+		mailbox = "me"
+	}
+	base := "https://gmail.googleapis.com/gmail/v1/users/" + url.PathEscape(mailbox) + "/messages"
+	var list struct {
+		Messages []struct {
+			ID string `json:"id"`
+		} `json:"messages"`
+	}
+	if err := c.get(ctx, base+"?maxResults=1&q="+url.QueryEscape(q), &list); err != nil {
+		return MessageBrief{}, false, err
+	}
+	if len(list.Messages) == 0 {
+		return MessageBrief{}, false, nil
+	}
+	var m gmailMessage
+	if err := c.get(ctx, base+"/"+url.PathEscape(list.Messages[0].ID)+"?format=metadata&metadataHeaders=Subject", &m); err != nil {
+		return MessageBrief{}, false, err
+	}
+	ms, _ := strconv.ParseInt(m.InternalDate, 10, 64)
+	return MessageBrief{ID: m.ID, Internal: time.UnixMilli(ms), Subject: m.header("Subject"), Sent: slices.Contains(m.LabelIDs, "SENT")}, true, nil
+}

@@ -40,17 +40,20 @@ type Opportunity struct {
 	People  []PersonRef `json:"people"`
 	// UnlinkedPeople are opportunity-local display names entered by external
 	// collaborators. They deliberately do not create or mutate CRM contacts.
-	UnlinkedPeople         []string   `json:"unlinkedPeople,omitempty"`
-	Source                 *SourceRef `json:"source,omitempty"`
-	LastTouchpoint         string     `json:"lastTouchpoint"`
-	LastTouchpointDate     string     `json:"lastTouchpointDate"`
-	ComputedLastTouchpoint string     `json:"computedLastTouchpoint,omitempty"`
-	NextStep               string     `json:"nextStep"`
-	NextStepDue            string     `json:"nextStepDue"`
-	Notes                  string     `json:"notes"`
-	Archived               bool       `json:"archived"`
-	SourceRows             []int      `json:"sourceRows,omitempty"`
-	ImportReview           bool       `json:"importReview"`
+	UnlinkedPeople     []string   `json:"unlinkedPeople,omitempty"`
+	Source             *SourceRef `json:"source,omitempty"`
+	LastTouchpoint     string     `json:"lastTouchpoint"`
+	LastTouchpointDate string     `json:"lastTouchpointDate"` // typed by hand; one source among the touches
+	NextStep           string     `json:"nextStep"`
+	NextStepDue        string     `json:"nextStepDue"` // typed by hand; one source among the touches
+	// LastTouch and NextTouch are the winning touches after "latest wins":
+	// computed by the people layer per request, never stored in the record.
+	LastTouch    *Touch `json:"lastTouch,omitempty"`
+	NextTouch    *Touch `json:"nextTouch,omitempty"`
+	Notes        string `json:"notes"`
+	Archived     bool   `json:"archived"`
+	SourceRows   []int  `json:"sourceRows,omitempty"`
+	ImportReview bool   `json:"importReview"`
 }
 
 // RegistryPerson is a row in system/crm/contacts.md.

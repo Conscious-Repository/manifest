@@ -342,6 +342,10 @@ func (s *Server) fundraisingConnectionRow() panelRow {
 	if s.fundraisingSync != nil {
 		row.Extra["status"] = s.fundraisingSync.Status()
 	}
+	if s.contacts != nil {
+		attached, cached := s.contacts.MailStatus()
+		row.Extra["mail"] = map[string]any{"attached": attached, "addresses": cached}
+	}
 	return row
 }
 

@@ -493,6 +493,9 @@ func (s *Server) Handler() http.Handler {
 		mux.HandleFunc("GET /api/aion/fundraising/sync", s.handleFundraisingSyncStatus)
 		mux.HandleFunc("POST /api/aion/fundraising/sync", s.handleFundraisingSyncNow)
 		mux.HandleFunc("POST /api/aion/fundraising/sync/resolve", s.handleFundraisingSyncResolve)
+		mux.HandleFunc("GET /api/contacts/people-review", s.handlePeopleReview)
+		mux.HandleFunc("POST /api/contacts/people-review/create", s.handlePeopleReviewCreate)
+		mux.HandleFunc("POST /api/contacts/people-review/link", s.handlePeopleReviewLink)
 		// RECRUITING — the private scout board. Same shape as fundraising: a
 		// private domain on the AION surface, wired ONLY when the recruiting
 		// store is present. {id...} multi-segment wildcards throughout,

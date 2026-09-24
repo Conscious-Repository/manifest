@@ -53,6 +53,7 @@ function showContactList() {
   loadContactList();
   loadContactTriage();
   loadContactEmailReview();
+  loadContactPeopleReview();
 }
 
 async function loadContactList() {
@@ -119,10 +120,11 @@ function setNearbyMode(on) {
   els.contactNearbyToggle.textContent = _nearbyMode ? "◎ Nearby on" : "◎ Nearby";
   els.contactTriage.hidden = _nearbyMode;
   els.contactEmailReview.hidden = _nearbyMode;
+  if (els.contactPeopleReview) els.contactPeopleReview.hidden = _nearbyMode;
   if (_nearbyMode) renderNearbyPanel();
   else {
     renderContactList(window._contacts || [], els.contactSearch.value);
-    loadContactTriage(); loadContactEmailReview();
+    loadContactTriage(); loadContactEmailReview(); loadContactPeopleReview();
   }
 }
 
@@ -244,6 +246,98 @@ function renderTriage(items) {
     rows.append(r);
   });
   host.append(head, rows);
+}
+
+// ---- pipeline names waiting to become contacts (2026-09-25) ----
+// A name on a fundraising opportunity that is not a person note yet: a
+// legacy registry row, or one a collaborator typed into the Sheet. Nothing
+// is created until the owner clicks — link it to an existing contact, or
+// create the note with a full name (email and location optional).
+let _peopleReviewOpen = false;
+async function loadContactPeopleReview() {
+  if (!els.contactPeopleReview) return;
+  let d = { pending: [] };
+  try { d = await (await fetch("/api/contacts/people-review")).json(); } catch (e) {}
+  renderPeopleReview(d.pending || []);
+}
+
+function renderPeopleReview(items) {
+  const host = els.contactPeopleReview; host.innerHTML = "";
+  if (_nearbyMode || !items.length) { host.hidden = true; return; }
+  host.hidden = false;
+  const head = el("div", "triage-head");
+  const sheet = items.filter((p) => p.origin === "sheet").length;
+  const label = el("span", "triage-label", "Pipeline — " + items.length + " name" + (items.length === 1 ? "" : "s") + " waiting to become " + (items.length === 1 ? "a contact" : "contacts") + (sheet ? " (" + sheet + " from the Sheet)" : ""));
+  const rows = el("div", "triage-rows"); rows.hidden = !_peopleReviewOpen;
+  const toggle = pillLight(_peopleReviewOpen ? "Hide ▴" : "Review ▾", () => {
+    _peopleReviewOpen = !_peopleReviewOpen; rows.hidden = !_peopleReviewOpen;
+    toggle.textContent = _peopleReviewOpen ? "Hide ▴" : "Review ▾";
+  });
+  const headActions = el("span", "triage-head-actions"); headActions.append(toggle);
+  head.append(label, headActions);
+  items.forEach((p) => rows.append(peopleReviewRow(p)));
+  host.append(head, rows);
+}
+
+function peopleReviewRow(p) {
+  const r = el("div", "triage-row pr-row");
+  const nm = el("span", "triage-name", p.display);
+  const where = (p.opportunities || []).map((o) => o.firm).filter(Boolean);
+  nm.append(el("span", "triage-hint", (p.origin === "sheet" ? " from the Sheet" : " registry") + (where.length ? " · " + where.join(", ") : "")));
+  r.append(nm);
+  const form = el("span", "pr-form");
+  const name = el("input", "contact-create-input pr-in"); name.type = "text"; name.placeholder = "full name"; name.value = p.display || "";
+  const email = el("input", "contact-create-input pr-in"); email.type = "email"; email.placeholder = "email (optional)"; email.value = (p.emails || [])[0] || "";
+  const loc = el("input", "contact-create-input pr-in"); loc.type = "text"; loc.placeholder = "location (optional)";
+  form.append(name, email, loc);
+  r.append(form);
+  const act = el("span", "triage-actions");
+  const opp = (p.opportunities || [])[0] || {};
+  const done = (msg) => { r.classList.add("er-done"); showFlash(r, msg, false); setTimeout(() => { loadContactPeopleReview(); loadContactList(); }, 400); };
+  act.append(
+    pill("Create", async () => {
+      const full = name.value.trim();
+      if (!full || full.split(/\s+/).length < 2) { showFlash(r, "a full name, please", true); name.focus(); return; }
+      try { await postJSONOk("/api/contacts/people-review/create", { key: p.key, origin: p.origin, opportunityId: opp.id || "", name: full, email: email.value.trim(), location: loc.value.trim() }); }
+      catch (e) { showFlash(r, errMsg(e), true); return; }
+      done("created " + full);
+    }),
+    pillLight("Link…", () => openPeopleReviewLink(r, p, async (key, display) => {
+      try { await postJSONOk("/api/contacts/people-review/link", { key: p.key, origin: p.origin, opportunityId: opp.id || "", contactKey: key }); }
+      catch (e) { showFlash(r, errMsg(e), true); return; }
+      done("linked to " + display);
+    })),
+  );
+  r.append(act);
+  return r;
+}
+
+function openPeopleReviewLink(row, p, doLink) {
+  if (row.querySelector(".er-search")) return;
+  const box = el("div", "er-search");
+  const input = el("input", "contact-create-input"); input.type = "text";
+  input.placeholder = "Link " + p.display + " to an existing contact…";
+  const results = el("div", "contact-create-results");
+  box.append(input, results);
+  row.append(box);
+  input.focus();
+  let timer, version = 0;
+  input.addEventListener("input", () => {
+    clearTimeout(timer); const current = ++version; results.replaceChildren();
+    timer = setTimeout(async () => {
+      const q = input.value.trim();
+      if (!q) return;
+      let d = { results: [] };
+      try { d = await (await fetch("/api/contacts/search?q=" + encodeURIComponent(q))).json(); } catch (e) {}
+      if (current !== version) return;
+      (d.results || []).filter((rf) => rf.isPerson && rf.hasNote).forEach((rf) => {
+        const rr = el("div", "cc-result");
+        rr.append(el("span", "cc-name", rf.display));
+        rr.append(pill("Link", () => { box.remove(); doLink(rf.key, rf.display); }));
+        results.append(rr);
+      });
+    }, 200);
+  });
 }
 
 // ---- email-linking review queue (§4) — mirrors the triage strip ----
@@ -369,6 +463,15 @@ async function showContactPage(key) {
   renderContactPage(p);
 }
 
+// One touch on a contact page's fundraising row: which side, its kind as a
+// micro-label, and the date.
+function cpTouch(side, t) {
+  const s = el("span", "cp-fr-touch-item");
+  s.append(el("span", "micro-label", side + " · " + (t.kind || "")), el("span", "cp-fr-touch-date", t.date || ""));
+  if (t.title || t.ref) s.title = [t.title, t.ref].filter(Boolean).join(" · ");
+  return s;
+}
+
 function cpSection(title, count) {
   const s = el("div", "cp-section");
   const h = el("div", "cp-section-head", title);
@@ -411,6 +514,12 @@ function renderContactPage(p) {
       row.append(el("span", "cp-fr-firm", f.firm), el("span", "cp-fr-status", (f.status || "").toUpperCase()));
       if (f.amount) row.append(el("span", "cp-fr-amount", money(f.amount)));
       if (f.nextStep) row.append(el("span", "cp-fr-next", f.nextStep));
+      if (f.lastTouch || f.nextTouch) {
+        const touch = el("span", "cp-fr-touch");
+        if (f.lastTouch) touch.append(cpTouch("last", f.lastTouch));
+        if (f.nextTouch) touch.append(cpTouch("next", f.nextTouch));
+        row.append(touch);
+      }
       row.onclick = () => { if (typeof frSel !== "undefined") frSel = f.id; location.hash = "#/aion/fundraising"; };
       crm.append(row);
     });

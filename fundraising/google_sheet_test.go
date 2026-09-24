@@ -7,26 +7,37 @@ import (
 	"testing"
 )
 
-// Schemas 2 and 3 dropped the Interest and Currency columns: a record must
-// survive the cell round trip in fourteen columns with the Sync flag last,
-// and only the Sync column is ignored when deciding whether a row carries
-// content.
-func TestSheetCellsRoundTripSchemaThree(t *testing.T) {
-	if len(sheetHeaders) != sheetColumnCount || sheetColumnCount != 14 {
+// Schemas 2–4 dropped Interest, Currency and the computed touch column: a
+// record must survive the cell round trip in thirteen columns with the Sync
+// flag last, the migration chain must walk 1 → 4, and only the Sync column
+// is ignored when deciding whether a row carries content.
+func TestSheetCellsRoundTripSchemaFour(t *testing.T) {
+	if len(sheetHeaders) != sheetColumnCount || sheetColumnCount != 13 {
 		t.Fatalf("headers=%d columns=%d", len(sheetHeaders), sheetColumnCount)
 	}
 	for _, h := range sheetHeaders {
-		if h == "Interest" || h == "Currency" {
+		if h == "Interest" || h == "Currency" || h == "Computed Last Touchpoint" {
 			t.Fatalf("%s column is still in the schema", h)
 		}
 	}
-	if sheetMigrations["1"].Next != "2" || sheetMigrations["2"].Next != sheetSchemaValue {
-		t.Fatalf("migration chain does not reach %s: %+v", sheetSchemaValue, sheetMigrations)
+	version, hops := "1", 0
+	for version != sheetSchemaValue {
+		step, ok := sheetMigrations[version]
+		if !ok || hops > 10 {
+			t.Fatalf("migration chain breaks at %q: %+v", version, sheetMigrations)
+		}
+		version, hops = step.Next, hops+1
+	}
+	if hops != 3 {
+		t.Fatalf("expected three migration steps, walked %d", hops)
+	}
+	if got := sheetMigrations["3"].Rename[7]; got != "Last Touch Date" {
+		t.Fatalf("schema 4 header rename = %q", got)
 	}
 	record := SharedOpportunity{
 		Firm: "Fund", Website: "https://fund.example", People: []string{"A Person"}, Source: "DM",
 		Status: StatusActive, Amount: 250000, LastTouchpoint: "call", LastTouchpointDate: "2026-09-01",
-		ComputedLastTouchpoint: "2026-09-02", NextStep: "follow up", NextStepDue: "2026-09-10", Notes: "n", Archived: true,
+		NextStep: "follow up", NextStepDue: "2026-09-10", Notes: "n", Archived: true,
 	}
 	cells := sharedCells(record, "synced")
 	if len(cells) != sheetColumnCount {
@@ -49,7 +60,7 @@ func TestSheetCellsRoundTripSchemaThree(t *testing.T) {
 	}
 	// Date cells travel as serials; feed the formatted strings back the way
 	// the Values API renders them.
-	row[7], row[8], row[10] = "2026-09-01", "2026-09-02", "2026-09-10"
+	row[7], row[9] = "2026-09-01", "2026-09-10"
 	got := sharedFromCells(row)
 	if !sharedEqual(got, record) {
 		t.Fatalf("round trip\n got=%+v\nwant=%+v", got, record)
@@ -62,7 +73,7 @@ func TestSheetCellsRoundTripSchemaThree(t *testing.T) {
 	if cellsHaveContent(blank) {
 		t.Fatal("a row with only a Sync flag counts as content")
 	}
-	blank[12] = false
+	blank[11] = false
 	if !cellsHaveContent(blank) {
 		t.Fatal("an Archived flag is content")
 	}

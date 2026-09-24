@@ -13,20 +13,19 @@ import (
 // by Google Sheets. It contains no contact emails, note paths, vault paths, or
 // import metadata.
 type SharedOpportunity struct {
-	ID                     string   `json:"id"`
-	Firm                   string   `json:"firm"`
-	Website                string   `json:"website,omitempty"`
-	People                 []string `json:"people"`
-	Source                 string   `json:"source,omitempty"`
-	Status                 string   `json:"status"`
-	Amount                 float64  `json:"amount,omitempty"`
-	LastTouchpoint         string   `json:"lastTouchpoint,omitempty"`
-	LastTouchpointDate     string   `json:"lastTouchpointDate,omitempty"`
-	ComputedLastTouchpoint string   `json:"computedLastTouchpoint,omitempty"`
-	NextStep               string   `json:"nextStep,omitempty"`
-	NextStepDue            string   `json:"nextStepDue,omitempty"`
-	Notes                  string   `json:"notes,omitempty"`
-	Archived               bool     `json:"archived"`
+	ID                 string   `json:"id"`
+	Firm               string   `json:"firm"`
+	Website            string   `json:"website,omitempty"`
+	People             []string `json:"people"`
+	Source             string   `json:"source,omitempty"`
+	Status             string   `json:"status"`
+	Amount             float64  `json:"amount,omitempty"`
+	LastTouchpoint     string   `json:"lastTouchpoint,omitempty"`
+	LastTouchpointDate string   `json:"lastTouchpointDate,omitempty"` // the WINNING last-touch date (manual or computed)
+	NextStep           string   `json:"nextStep,omitempty"`
+	NextStepDue        string   `json:"nextStepDue,omitempty"` // the WINNING next-touch date
+	Notes              string   `json:"notes,omitempty"`
+	Archived           bool     `json:"archived"`
 }
 
 func SharedFromOpportunity(op Opportunity) SharedOpportunity {
@@ -50,10 +49,18 @@ func SharedFromOpportunity(op Opportunity) SharedOpportunity {
 	return SharedOpportunity{
 		ID: op.ID, Firm: op.Firm, Website: op.Website, People: people, Source: source,
 		Status: op.Status, Amount: op.Amount,
-		LastTouchpoint: op.LastTouchpoint, LastTouchpointDate: op.LastTouchpointDate,
-		ComputedLastTouchpoint: op.ComputedLastTouchpoint, NextStep: op.NextStep,
-		NextStepDue: op.NextStepDue, Notes: op.Notes, Archived: op.Archived,
+		LastTouchpoint: op.LastTouchpoint, LastTouchpointDate: touchDate(op.LastTouch, op.LastTouchpointDate),
+		NextStep: op.NextStep, NextStepDue: touchDate(op.NextTouch, op.NextStepDue), Notes: op.Notes, Archived: op.Archived,
 	}
+}
+
+// touchDate is the winning date when the projection computed one, else the
+// hand-typed date the record holds.
+func touchDate(t *Touch, manual string) string {
+	if t != nil && t.Date != "" {
+		return t.Date
+	}
+	return manual
 }
 
 var sharedEditableFields = []string{

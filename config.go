@@ -161,6 +161,10 @@ type Config struct {
 	// FundraisingSheets enables the private Markdown↔Google Sheet collaboration
 	// bridge. It remains disabled unless Enabled is explicitly true.
 	FundraisingSheets FundraisingSheetsConfig `json:"fundraisingSheets"`
+	// FundraisingMail names the one read-only mailbox whose sent and received
+	// mail counts as a touch on fundraising contacts (the AION account). Off
+	// when the account is empty.
+	FundraisingMail FundraisingMailConfig `json:"fundraisingMail"`
 	// ErrandTimeoutMinutes kills a hung aside errand (errands-aside §6).
 	// 0 → 15. Guard mode is not configurable — the CLI has no mode flag and
 	// the app defaults new tasks to Guard (§0 probe).
@@ -252,6 +256,15 @@ type FundraisingSheetsConfig struct {
 	SheetID             int64  `json:"sheetId"`
 	CredentialsPath     string `json:"credentialsPath"`
 	SyncIntervalMinutes int    `json:"syncIntervalMinutes"`
+}
+
+// FundraisingMailConfig is the mailbox the touch computation may read. The
+// account must already be connected read-only (Settings › Gmail); no new
+// scope is requested. LookbackDays defaults to 730 to match the calendar's
+// last-met window.
+type FundraisingMailConfig struct {
+	Account      string `json:"account"`
+	LookbackDays int    `json:"lookbackDays"`
 }
 
 // OodaConfig is the OODA portal's block. Domain is the Workspace gate; every
@@ -384,6 +397,9 @@ func LoadConfig(path string) (Config, error) {
 	}
 	if strings.TrimSpace(cfg.Aion.PackDir) == "" {
 		cfg.Aion.PackDir = d.Aion.PackDir
+	}
+	if cfg.FundraisingMail.LookbackDays <= 0 {
+		cfg.FundraisingMail.LookbackDays = 730
 	}
 	if cfg.FundraisingSheets.SyncIntervalMinutes == 0 {
 		cfg.FundraisingSheets.SyncIntervalMinutes = 5

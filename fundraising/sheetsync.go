@@ -296,9 +296,11 @@ func (s *SheetSync) Sync(ctx context.Context) error {
 				writes = append(writes, SheetChange{Row: row.Row, MetadataID: row.MetadataID, ID: id, Record: row.Record, Sync: "error: " + shortError(updateErr)})
 				continue
 			}
-			computed := manifest.ComputedLastTouchpoint
+			// The pulled dates are the owner's manual entries; latest wins
+			// against the touches the projection computed before the pull.
+			updated.LastTouch = MergeLast(op.LastTouch, updated.LastTouchpointDate)
+			updated.NextTouch = MergeNext(op.NextTouch, updated.NextStepDue, now[:10])
 			manifest = SharedFromOpportunity(updated)
-			manifest.ComputedLastTouchpoint = computed
 			manifestFields = sharedFieldMap(manifest)
 			s.audit("edit", id, pull)
 		}
@@ -313,6 +315,10 @@ func (s *SheetSync) Sync(ctx context.Context) error {
 		syncLabel := "synced"
 		if len(conflicts) > 0 {
 			syncLabel = fmt.Sprintf("conflict: %s", strings.Join(sortedKeys(conflicts), ", "))
+		} else if pending := pendingNames(op); len(pending) > 0 {
+			// A name typed into the Sheet waits for the owner to make it a
+			// person; the row says so until then.
+			syncLabel = "pending: " + strings.Join(pending, "; ")
 		}
 		if !sharedEqual(row.Record, out) || row.Sync != syncLabel {
 			writes = append(writes, SheetChange{Row: row.Row, MetadataID: row.MetadataID, ID: id, Record: out, Sync: syncLabel})
@@ -548,6 +554,11 @@ func sortedKeys[T any](m map[string]T) []string {
 }
 
 func sharedEqual(a, b SharedOpportunity) bool {
-	return reflect.DeepEqual(sharedFieldMap(a), sharedFieldMap(b)) &&
-		a.ComputedLastTouchpoint == b.ComputedLastTouchpoint && a.Archived == b.Archived
+	return reflect.DeepEqual(sharedFieldMap(a), sharedFieldMap(b)) && a.Archived == b.Archived
+}
+
+// pendingNames lists the collaborator-typed names an opportunity still holds
+// as plain text, in the order they were typed.
+func pendingNames(op Opportunity) []string {
+	return normalizePlainPeople(op.UnlinkedPeople)
 }

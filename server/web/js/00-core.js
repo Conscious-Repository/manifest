@@ -38,6 +38,7 @@ const els = {
   contactList: document.getElementById("contactList"),
   contactTriage: document.getElementById("contactTriage"),
   contactEmailReview: document.getElementById("contactEmailReview"),
+  contactPeopleReview: document.getElementById("contactPeopleReview"),
   contactSearch: document.getElementById("contactSearch"),
   contactColdToggle: document.getElementById("contactColdToggle"),
   contactNearbyToggle: document.getElementById("contactNearbyToggle"),

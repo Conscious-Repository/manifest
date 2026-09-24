@@ -63,7 +63,7 @@ async function renderAionFundraising(host) {
     const rows = (frCache.opportunities || []).filter(frVisible);
     table.innerHTML = "";
     const head = el("div", "fr-row fr-head");
-    ["FIRM", "PEOPLE", "LAST TOUCHPOINT", "NEXT STEP"].forEach((x) => head.append(el("span", "micro-label", x)));
+    ["FIRM", "PEOPLE", "LAST TOUCH", "NEXT TOUCH"].forEach((x) => head.append(el("span", "micro-label", x)));
     table.append(head);
     if (!rows.length) table.append(emptyRow("No fundraising opportunities match."));
     rows.forEach((op) => table.append(frRow(op, paint)));
@@ -106,16 +106,54 @@ function frRow(op, paint) {
   if (op.importReview) firm.append(el("span", "micro-label fr-review", "REVIEW"));
   const people = el("div", "fr-people");
   (op.people || []).forEach((p) => { const b = el("button", "fr-person-name fr-person", p.display); b.onclick = (e) => { e.stopPropagation(); location.hash = "#/contacts/" + encodeURIComponent(p.key); }; people.append(b); });
-  (op.unlinkedPeople || []).forEach((name) => people.append(el("span", "fr-person-name fr-person-plain", name)));
+  (op.unlinkedPeople || []).forEach((name) => people.append(frPendingPerson(name)));
   if (!people.children.length) people.append(el("span", "fr-person-empty", "—"));
   const touch = el("div", "fr-stack");
   touch.append(el("span", "", op.lastTouchpoint || "—"));
-  if (op.lastTouchpointDate) touch.append(el("span", "fr-sub", "manual · " + op.lastTouchpointDate));
-  if (op.computedLastTouchpoint) touch.append(el("span", "fr-sub", "contacts · " + op.computedLastTouchpoint));
-  const next = el("div", "fr-stack"); next.append(el("span", "", op.nextStep || "—")); if (op.nextStepDue) next.append(el("span", "fr-sub", "due " + op.nextStepDue));
+  if (op.lastTouch) touch.append(frTouchLine(op.lastTouch));
+  const next = el("div", "fr-stack"); next.append(el("span", "", op.nextStep || "—")); if (op.nextTouch) next.append(frTouchLine(op.nextTouch));
   row.append(firm, people, touch, next);
   row.onclick = () => { frSel = frSel === op.id ? null : op.id; (paint || renderAion)(); };
   return row;
+}
+
+// A touch line names its evidence: the kind as a micro-label, the date, and
+// the person it came through. Kind is one of met / email / transcript / note
+// / upcoming / manual; the title or note path rides in the tooltip.
+const FR_TOUCH_KIND = { met: "met", email: "email", transcript: "transcript", note: "note", upcoming: "upcoming", manual: "manual" };
+function frTouchLine(t) {
+  const line = el("span", "fr-sub fr-touch");
+  line.append(el("span", "micro-label fr-touch-kind", FR_TOUCH_KIND[t.kind] || t.kind || ""));
+  line.append(el("span", "fr-touch-date", t.date || ""));
+  if (t.person) line.append(el("span", "fr-touch-person", t.person));
+  const hint = [t.title, t.ref].filter(Boolean).join(" · ");
+  if (hint) line.title = hint;
+  return line;
+}
+
+// A name typed into the Sheet waits for the owner: it reads as a person but
+// is not one yet, and the Contacts page holds the review.
+function frPendingPerson(name) {
+  const b = el("button", "fr-person-name fr-person-pending", name);
+  b.title = "waiting for your review on Contacts";
+  b.onclick = (e) => { e.stopPropagation(); location.hash = "#/contacts"; };
+  return b;
+}
+
+// The touch editor: one date input (the hand-typed date), the winning touch
+// beneath it, and — when the hand-typed date lost — that date shown as
+// "manual" so an override is never hidden. Clearing the input removes it.
+function frTouchField(host, field, patch, label, key, manual, touch) {
+  const wrap = el("div", "fr-touch-editor");
+  const row = el("div", "fr-touch-editor-row");
+  const input = el("input", "pp-in fr-in"); input.type = "date"; input.value = manual || "";
+  input.onchange = () => patch({ [key]: input.value });
+  row.append(input);
+  if (manual) { const clear = el("button", "fr-person-rm", "×"); clear.title = "clear the typed date"; clear.onclick = () => patch({ [key]: "" }); row.append(clear); }
+  wrap.append(row);
+  if (touch) wrap.append(frTouchLine(touch));
+  if (manual && touch && touch.kind !== "manual") wrap.append(frTouchLine({ kind: "manual", date: manual }));
+  field(label, wrap);
 }
 
 function money(v) { try { return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 }).format(v); } catch (_) { return "$" + v; } }
@@ -224,8 +262,8 @@ function renderFundraisingInspector(host, op) {
   const people = el("div", "fr-insp-people");
   (op.people || []).forEach((p) => { const chip = el("span", "fr-person-chip linked"); const open = el("button", "fr-person-name fr-person", p.display); open.onclick = () => { location.hash = "#/contacts/" + encodeURIComponent(p.key); }; const rm = el("button", "fr-person-rm", "×"); rm.title = "unlink from this opportunity"; rm.onclick = () => frPost("/api/aion/fundraising/person-remove/" + op.id, { key: p.key }); chip.append(open, rm); people.append(chip); });
   (op.unlinkedPeople || []).forEach((name) => {
-    const chip = el("span", "fr-person-chip plain"); chip.append(el("span", "fr-person-name fr-person-plain", name));
-    const rm = el("button", "fr-person-rm", "×"); rm.title = "remove plaintext person"; rm.onclick = () => patch({ unlinkedPeople: (op.unlinkedPeople || []).filter((x) => x !== name) });
+    const chip = el("span", "fr-person-chip plain"); chip.append(frPendingPerson(name));
+    const rm = el("button", "fr-person-rm", "×"); rm.title = "remove this pending name"; rm.onclick = () => patch({ unlinkedPeople: (op.unlinkedPeople || []).filter((x) => x !== name) });
     chip.append(rm); people.append(chip);
   });
   const addPerson = typeahead({
@@ -271,10 +309,9 @@ function renderFundraisingInspector(host, op) {
   source.append(sourceInput.el);
   field("source", source);
   text("last touch", "lastTouchpoint", op.lastTouchpoint);
-  const lastDate = el("input", "pp-in fr-in"); lastDate.type = "date"; lastDate.value = op.lastTouchpointDate || ""; lastDate.onchange = () => patch({ lastTouchpointDate: lastDate.value }); field("touch date", lastDate);
-  if (op.computedLastTouchpoint) field("contacts", el("span", "aion-insp-ro", op.computedLastTouchpoint + " · latest linked interaction"));
+  frTouchField(host, field, patch, "last touch date", "lastTouchpointDate", op.lastTouchpointDate, op.lastTouch);
   text("next step", "nextStep", op.nextStep);
-  const due = el("input", "pp-in fr-in"); due.type = "date"; due.value = op.nextStepDue || ""; due.onchange = () => patch({ nextStepDue: due.value }); field("next due", due);
+  frTouchField(host, field, patch, "next touch date", "nextStepDue", op.nextStepDue, op.nextTouch);
   text("notes", "notes", op.notes, true);
   if (op.importReview) { const done = el("button", "pill light", "Mark import reviewed"); done.onclick = () => patch({ importReview: false }); host.append(done); }
   const archive = el("button", "aion-insp-del", op.archived ? "restore opportunity" : "archive opportunity"); archive.onclick = () => frPost("/api/aion/fundraising/archive/" + op.id, { archived: !op.archived }, op.archived ? "Opportunity restored" : "Opportunity archived"); host.append(archive);
