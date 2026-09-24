@@ -211,14 +211,16 @@ func (g *GoogleSheetBackend) schema(ctx context.Context) (schemaMark, error) {
 // migrateSchema walks an older tab forward one version at a time, each step
 // a single batch: the retired column is deleted (Sheets shifts every
 // validation, protection, filter and row-metadata range with it) and the
-// marker is bumped so the step never repeats. A current or unknown version
-// is left alone.
+// marker is bumped so the step never repeats. A version this build does not
+// know is refused: reading a newer layout with this build's column map
+// would pull shifted cells into the records (it happened once, 2026-09-24,
+// when an older binary synced a freshly migrated workbook).
 func (g *GoogleSheetBackend) migrateSchema(ctx context.Context, mark schemaMark) error {
 	version := mark.Version
 	for version != sheetSchemaValue {
 		step, ok := sheetMigrations[version]
 		if !ok {
-			return nil
+			return fmt.Errorf("fundraising sheet is schema %q; this build reads schema %s — refusing to sync a layout it does not know", version, sheetSchemaValue)
 		}
 		var requests []*sheets.Request
 		if step.Delete >= 0 && (step.Delete > 0 || step.Rename == nil) {

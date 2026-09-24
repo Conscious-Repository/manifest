@@ -1,9 +1,11 @@
 package fundraising
 
 import (
+	"context"
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -107,5 +109,17 @@ func TestSheetSyncLoadDropsRetiredFields(t *testing.T) {
 	}
 	if rec.Base["firm"] != "Fund" {
 		t.Fatalf("firm lost: %+v", rec.Base)
+	}
+}
+
+// A workbook at a version this build does not know is never read with this
+// build's column map; the sync refuses instead of pulling shifted cells.
+func TestUnknownSheetSchemaIsRefused(t *testing.T) {
+	g := &GoogleSheetBackend{}
+	if err := g.migrateSchema(context.Background(), schemaMark{Found: true, Version: "99"}); err == nil || !strings.Contains(err.Error(), "schema \"99\"") {
+		t.Fatalf("a newer schema must be refused: %v", err)
+	}
+	if err := g.migrateSchema(context.Background(), schemaMark{Found: true, Version: sheetSchemaValue}); err != nil {
+		t.Fatalf("the current schema needs no step: %v", err)
 	}
 }
