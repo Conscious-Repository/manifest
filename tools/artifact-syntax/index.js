@@ -1,0 +1,13 @@
+import hljs from 'highlight.js/lib/core';
+import javascript from 'highlight.js/lib/languages/javascript';
+import typescript from 'highlight.js/lib/languages/typescript';
+import python from 'highlight.js/lib/languages/python';
+import go from 'highlight.js/lib/languages/go';
+import json from 'highlight.js/lib/languages/json';
+import bash from 'highlight.js/lib/languages/bash';
+import css from 'highlight.js/lib/languages/css';
+import xml from 'highlight.js/lib/languages/xml';
+import sql from 'highlight.js/lib/languages/sql';
+import yaml from 'highlight.js/lib/languages/yaml';
+for (const [name, grammar] of Object.entries({javascript,typescript,python,go,json,bash,css,xml,sql,yaml})) hljs.registerLanguage(name, grammar);
+window.manifestArtifactSyntax=(text,language)=>hljs.highlight(text,{language,ignoreIllegals:true}).value;

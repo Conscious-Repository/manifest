@@ -870,7 +870,7 @@ function artifactWorkspace(mount, options) {
     } else if(ext==='csv'||ext==='tsv'){
       body.append(artifactTablePreview(current.content||'',ext,reviewControls?record=>reviewControls.prepareChange({path:current.ref,...record}):null));
     } else if(ext && !['md','markdown','mdown'].includes(ext)) {
-      const source=el('pre','artifact-source-preview');source.append(el('code','',current.content||''));body.append(source);
+      body.append(artifactCodePreview(current.content||'',ext));
     } else {
       try { body.append(renderMarkdown(current.content || "", "", {readOnly:true})); }
       catch(e) { body.textContent = current.content || ""; }
@@ -993,12 +993,12 @@ function artifactWorkspace(mount, options) {
   } catch(e) { notice.textContent=e.message; title.textContent="Artifact unavailable"; } }
   const ready=refresh(opts.revision,opts.proposal);
   return {element:pane, close:()=>close.click(), isEditing:()=>editing, refresh,
-    getView:()=>({revision:selected,mode:previewMode,scrollTop:body.scrollTop,linkSourceOpen:!!body.querySelector('.artifact-link-source')?.open,table:{scrollLeft:body.querySelector('.artifact-table-scroll')?.scrollLeft||0,sourceOpen:!!body.querySelector('.artifact-table-source')?.open},editor:editing&&editor?{scrollTop:editor.scrollTop,start:editor.selectionStart,end:editor.selectionEnd,direction:editor.selectionDirection}:null,expandedFiles:[...body.querySelectorAll('.working-file[open]')].map(f=>f.dataset.diffFile),collapsedHunks:[...body.querySelectorAll('.working-changes-view')].flatMap(v=>v.getCollapsedHunks?.()||[])}),
+    getView:()=>({revision:selected,mode:previewMode,scrollTop:body.scrollTop,syntaxEnabled:body.querySelector('.artifact-code-preview')?.getHighlight?.(),linkSourceOpen:!!body.querySelector('.artifact-link-source')?.open,table:{scrollLeft:body.querySelector('.artifact-table-scroll')?.scrollLeft||0,sourceOpen:!!body.querySelector('.artifact-table-source')?.open},editor:editing&&editor?{scrollTop:editor.scrollTop,start:editor.selectionStart,end:editor.selectionEnd,direction:editor.selectionDirection}:null,expandedFiles:[...body.querySelectorAll('.working-file[open]')].map(f=>f.dataset.diffFile),collapsedHunks:[...body.querySelectorAll('.working-changes-view')].flatMap(v=>v.getCollapsedHunks?.()||[])}),
     restoreView:async view=>{await ready;if(!pane.isConnected||!body.clientHeight)return false;if((view.mode==="edit"||view.mode==="edit-review")&&opts.save&&editState?.value&&(!opts.canEdit||opts.canEdit(current))){
       editVersion(!!editState.value.restore,true,null,false);
       if(view.editor){editor.setSelectionRange(Math.max(0,Number(view.editor.start)||0),Math.max(0,Number(view.editor.end)||0),view.editor.direction||"none");editor.scrollTop=Math.max(0,Number(view.editor.scrollTop)||0);}
       if(view.mode==="edit-review"&&openDraftReview)await openDraftReview();
-    }else if(view.mode==="compare"&&previewMode!=="compare"&&openComparison)await openComparison();if(!pane.isConnected||!body.clientHeight)return false;if(Array.isArray(view.expandedFiles)){body.querySelectorAll('.working-file').forEach(f=>f.open=view.expandedFiles.includes(f.dataset.diffFile));await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));}if(Array.isArray(view.collapsedHunks)&&(!view.revision||view.revision===selected)){body.querySelectorAll('.working-changes-view').forEach(v=>v.restoreHunks?.(view.collapsedHunks));}if(view.revision===selected&&typeof view.linkSourceOpen==='boolean'){const source=body.querySelector('.artifact-link-source');if(source)source.open=view.linkSourceOpen;}if(view.table&&view.revision===selected){const table=body.querySelector('.artifact-table-scroll'),source=body.querySelector('.artifact-table-source');if(table)table.scrollLeft=Math.max(0,Number(view.table.scrollLeft)||0);if(source)source.open=!!view.table.sourceOpen;}if(Number.isFinite(view.scrollTop))body.scrollTop=Math.max(0,view.scrollTop);return true;}
+    }else if(view.mode==="compare"&&previewMode!=="compare"&&openComparison)await openComparison();if(!pane.isConnected||!body.clientHeight)return false;if(Array.isArray(view.expandedFiles)){body.querySelectorAll('.working-file').forEach(f=>f.open=view.expandedFiles.includes(f.dataset.diffFile));await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));}if(Array.isArray(view.collapsedHunks)&&(!view.revision||view.revision===selected)){body.querySelectorAll('.working-changes-view').forEach(v=>v.restoreHunks?.(view.collapsedHunks));}if(view.revision===selected&&typeof view.syntaxEnabled==='boolean')body.querySelector('.artifact-code-preview')?.setHighlight?.(view.syntaxEnabled);if(view.revision===selected&&typeof view.linkSourceOpen==='boolean'){const source=body.querySelector('.artifact-link-source');if(source)source.open=view.linkSourceOpen;}if(view.table&&view.revision===selected){const table=body.querySelector('.artifact-table-scroll'),source=body.querySelector('.artifact-table-source');if(table)table.scrollLeft=Math.max(0,Number(view.table.scrollLeft)||0);if(source)source.open=!!view.table.sourceOpen;}if(Number.isFinite(view.scrollTop))body.scrollTop=Math.max(0,view.scrollTop);return true;}
   };
 }
 
@@ -1187,4 +1187,34 @@ function artifactLinkPreview(text,format){
   view.append(link,el('p','artifact-review-help','Opens in a new tab. The destination has not been fetched; this review covers the saved link, not the current webpage.'));
  }catch(error){view.append(el('p','artifact-review-help','Link preview unavailable: '+error.message+' The original source is shown below.'));source.open=true;}
  view.append(source);return view;
+}
+
+let artifactSyntaxLoading;
+function artifactLoadSyntax(){
+ if(typeof window.manifestArtifactSyntax==='function')return Promise.resolve(window.manifestArtifactSyntax);
+ if(!artifactSyntaxLoading)artifactSyntaxLoading=new Promise((resolve,reject)=>{
+  const script=document.createElement('script');script.src='/vendor/artifact-syntax.js';
+  script.onload=()=>typeof window.manifestArtifactSyntax==='function'?resolve(window.manifestArtifactSyntax):reject(Error('Highlighter unavailable'));
+  script.onerror=()=>{script.remove();reject(Error('Highlighter unavailable'));};document.head.append(script);
+ }).catch(error=>{artifactSyntaxLoading=null;throw error;});
+ return artifactSyntaxLoading;
+}
+function artifactCodePreview(text,extension){
+ const languages={js:'javascript',mjs:'javascript',cjs:'javascript',jsx:'javascript',ts:'typescript',tsx:'typescript',py:'python',go:'go',json:'json',sh:'bash',bash:'bash',css:'css',html:'xml',htm:'xml',xml:'xml',svg:'xml',sql:'sql',yaml:'yaml',yml:'yaml'};
+ const view=el('section','artifact-code-preview'),source=el('pre','artifact-source-preview'),code=el('code','',text),language=languages[extension];source.append(code);
+ if(!language){view.append(source);return view;}
+ const status=el('p','artifact-review-help',language+' · loading syntax highlighting…');status.setAttribute('role','status');
+ view.append(status,source);
+ if(new TextEncoder().encode(text).length>65536||text.split('\n').length>2000){status.textContent=language+' · plain text (syntax highlighting supports up to 64 KiB and 2,000 lines).';return view;}
+ let enabled=true,highlighted=null;
+ const toggle=el('button','sprt-quiet','syntax highlighting');toggle.setAttribute('aria-pressed','true');view.insertBefore(toggle,source);
+ const render=()=>{toggle.setAttribute('aria-pressed',String(enabled));code.replaceChildren(enabled&&highlighted?highlighted.cloneNode(true):document.createTextNode(text));};
+ view.getHighlight=()=>enabled;view.setHighlight=value=>{enabled=!!value;render();};toggle.onclick=()=>view.setHighlight(!enabled);
+ artifactLoadSyntax().then(highlight=>{
+  if(!view.isConnected)return;
+  const template=document.createElement('template');template.innerHTML=highlight(text,language).replace(/\r/g,'&#13;');
+  if(template.content.textContent!==text||[...template.content.querySelectorAll('*')].some(node=>node.tagName!=='SPAN'||[...node.attributes].some(a=>a.name!=='class')))throw Error('Highlighting changed source text');
+  highlighted=template.content;status.textContent=language+' · exact source text';render();
+ }).catch(()=>{if(view.isConnected){status.textContent=language+' · syntax highlighting unavailable; original text retained.';toggle.disabled=true;}});
+ return view;
 }

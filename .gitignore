@@ -40,3 +40,5 @@ kairos-runner
 /tools/writing-editor/node_modules/
 
 **/__pycache__/
+
+/tools/artifact-syntax/node_modules/
