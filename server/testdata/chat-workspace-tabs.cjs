@@ -172,7 +172,7 @@ const {chromium}=require('playwright'),fs=require('fs'),path=require('path'),ass
  await p.evaluate(()=>{
   const prior=fetch;window.fetch=async(url,opts)=>{
    if(url.startsWith('/api/artifacts?')&&!url.includes('conversation_id=')){
-    fileQueries.push(url);return {ok:true,json:async()=>({artifacts:[{id:'other-output',title:'Earlier report',ref:'archive/report.md',head:'c'.repeat(64),kind:'report',provenance:{session:'other-conversation'},sources:[{kind:'conversation',route:'#/chat/a/claude/other123',label:'Original source'}]}],contentSkipped:2})};
+    fileQueries.push(url);return {ok:true,json:async()=>({artifacts:[{id:'other-output',title:'Earlier report',ref:'archive/report.md',head:'c'.repeat(64),kind:'report',provenance:{session:'other-conversation',task:'aion:foreign-task'},sources:[{kind:'conversation',route:'#/chat/a/claude/other123',label:'Original source'}]}],contentSkipped:2})};
    }return prior(url,opts);
   };
  });
@@ -185,13 +185,28 @@ const {chromium}=require('playwright'),fs=require('fs'),path=require('path'),ass
  assert.ok((await p.locator('.chat-files-inspector > .chat-workspace-hint').textContent()).includes('2 nonmatching files'));
  await p.evaluate(()=>{chatOpenWorkingArtifact=ref=>window.fileOpened=ref;});
  await p.getByRole('button',{name:'Earlier report',exact:true}).click();
- assert.equal(await p.evaluate(()=>fileOpened.revision),'c'.repeat(64));assert.equal(await p.evaluate(()=>fileOpened.task),'','another output does not inherit this conversation task');
+ assert.equal(await p.evaluate(()=>fileOpened.revision),'c'.repeat(64));assert.equal(await p.evaluate(()=>fileOpened.task),'','another output does not retarget the conversation to its producing task');assert.equal(await p.evaluate(()=>fileOpened.contextDisabled),true);
  await p.evaluate(()=>chatOpenWorkingArtifact=fileOriginalOpen);
+ const browse=await p.evaluate(()=>{
+  const ensure=chatEnsureWorkspace,workspaceFactory=artifactWorkspace;let capture;
+  chatEnsureWorkspace=()=>({entries:new Map(),tab:(key,title,build,spec)=>{capture={key,spec};build(document.createElement('div'),()=>{});}});
+  artifactWorkspace=(host,options)=>{capture.discuss=typeof options.onDiscuss;capture.notice=options.contextNotice;return {};};
+  try{chatOpenWorkingArtifact({id:'other-output',task:'aion:foreign-task',contextDisabled:true});}finally{chatEnsureWorkspace=ensure;artifactWorkspace=workspaceFactory;}
+  return capture;
+ });
+ assert.equal(browse.discuss,'object');assert.equal(browse.spec.task,'');assert.equal(browse.spec.contextDisabled,true);assert.equal(browse.key,'artifact:other-output:browse');assert.match(browse.notice,/not selected as message context/);
+
  await p.evaluate(async()=>{chatWorkspaceTabs.close();await Promise.all([...chatWorkspaceStates.values()].map(s=>s.flush()));chatWorkspaceStates.clear();await chatRestoreWorkspace();});
  await p.getByRole('button',{name:'Earlier report',exact:true}).waitFor();
  assert.equal(await p.getByLabel('File scope').inputValue(),'all');assert.equal(await p.getByLabel('Filter files').inputValue(),'content-only needle');
  assert.equal(await p.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);
  await p.screenshot({path:'/tmp/manifest-workbench-files-phone.png'});
+ await p.getByRole('button',{name:'Earlier report',exact:true}).click();
+ await p.getByText('Opened from all registered files.',{exact:false}).waitFor();
+ assert.equal(await p.locator('.artifact-workspace:visible').getByRole('button',{name:'Discuss',exact:true}).count(),0);
+ await p.evaluate(async()=>{chatWorkspaceTabs.close();await Promise.all([...chatWorkspaceStates.values()].map(s=>s.flush()));chatWorkspaceStates.clear();await chatRestoreWorkspace();});
+ await p.getByText('Opened from all registered files.',{exact:false}).waitFor();
+ assert.equal(await p.locator('.artifact-workspace:visible').getByRole('button',{name:'Discuss',exact:true}).count(),0);
  assert.deepEqual(errors,[]);
  console.log('PASS: real artifact draft survives pane and tab switches, scoped model defaults, keyboard tabs, mobile return, route disposal.');
 }finally{await b.close()}})().catch(e=>{console.error(e);process.exit(1)});

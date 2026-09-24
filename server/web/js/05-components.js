@@ -802,6 +802,7 @@ function artifactWorkspace(mount, options) {
   const notice = el("div", "artifact-workspace-notice");
   notice.setAttribute("role", "status");
   pane.append(header, controls, notice, body);
+  if(opts.contextNotice)pane.insertBefore(el("p","artifact-workspace-notice",opts.contextNotice),body);
   mount.append(pane);
   let current, selected, selectedNumber, generation = 0, editing = false, editState, editor, previewMode="preview", openComparison=null, openDraftReview=null;
   const recovery = el("div", "artifact-edit-recovery");

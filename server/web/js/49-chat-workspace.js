@@ -450,7 +450,7 @@ function chatOpenFiles(){
    for(const {artifact:a,roles,attachment} of rows){
     if(scope.value==='conversation'&&q&&![a.title,a.ref,a.kind,a.provenance?.run].join(' ').toLowerCase().includes(q))continue;
     const item=el('div','chat-file-row'),open=el('button','chat-file-open',a.title||a.ref||'Untitled file');open.disabled=!!a.unknown||!a.id;
-    open.onclick=()=>attachment?chatOpenAttachment(attachment,"/api/chat/files/"+attachment.id):chatOpenWorkingArtifact({id:a.id,revision:a.head,task:a.provenance?.task||(scope.value==='conversation'?source?.task:'')});
+    open.onclick=()=>attachment?chatOpenAttachment(attachment,"/api/chat/files/"+attachment.id):chatOpenWorkingArtifact({id:a.id,revision:a.head,task:scope.value==='conversation'?(a.provenance?.task||source?.task||''):'',contextDisabled:scope.value==='all'});
     const metadata=[...roles,a.kind,a.revisions?.length?'v'+a.revisions.length:'',a.provenance?.run?'Run '+a.provenance.run:''].filter(Boolean);
     item.append(open,el('div','chat-file-meta',metadata.join(' · ')));if(a.ref)item.append(el('div','chat-file-path',a.ref));
     for(const link of a.sources||[]){
