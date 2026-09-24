@@ -24,7 +24,7 @@ const {chromium}=require('playwright'),fs=require('node:fs'),path=require('node:
    window.el=(tag,cls,text)=>{const e=document.createElement(tag);e.className=cls||'';e.textContent=text||'';return e;};
    window.chatTermOpen={id:'abcdef12',se:{backend:'herdr'},questions:[{revision:'a'.repeat(64),id:'native-question-one',title:'Which approach should I use?',options:['First','Second'],state:'pending',async:true}]};window.chatTermRequestFinalTail=()=>{};window.chatOpenTerminalPane=()=>{};
   });
-  const chat=fs.readFileSync(path.join(root,'js/48-chat.js'),'utf8');await page.addScriptTag({content:chat.slice(chat.indexOf('function chatRenderStateNotice('),chat.indexOf('const chatRecoveryRefreshes'))});
+  const chat=fs.readFileSync(path.join(root,'js/48-chat.js'),'utf8');await page.addScriptTag({content:chat.slice(chat.indexOf('function chatDraftConflictPreview('),chat.indexOf('const chatRecoveryRefreshes'))});
   for(const f of ['47-chat-state','48-chat-questions'])await page.addScriptTag({content:fs.readFileSync(path.join(root,'js',f+'.js'),'utf8')});
   await page.evaluate(()=>chatQuestionPanel(chatTermOpen));await page.waitForFunction(()=>!document.querySelector('.chat-question-fields').disabled||document.querySelector('.chat-question-status').textContent==='Answer sent');
  }

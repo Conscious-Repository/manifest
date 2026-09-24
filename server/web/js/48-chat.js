@@ -215,7 +215,7 @@ function chatApplySyncedDraft(key,value){
   const v=value||{text:"",files:[]};
   chatDrafts.set(key,{text:typeof v.text==="string"?v.text:"",files:Array.isArray(v.files)?v.files:[]});
   if(v.selection)chatArtifactSelections.set("chat:"+key,v.selection);else chatArtifactSelections.delete("chat:"+key);
-  if(v.task)chatConversationTasks.set("chat:"+key,v.task);
+  if(v.task)chatConversationTasks.set("chat:"+key,v.task);else chatConversationTasks.delete("chat:"+key);
   if(v.recipient)chatRecipients.set(key,v.recipient);else chatRecipients.delete(key);
   if(chatDraftKey!==key)return;
   const input=document.querySelector("#chatComposer textarea");
@@ -226,6 +226,27 @@ function chatCaptureSyncedDraft(key){
   if(!state || key!==chatDraftKey || !input)return;
   state.set({text:input.value,files:chatPendingFiles.slice(),selection:chatArtifactSelections.get("chat:"+key)||null,task:chatConversationTasks.get("chat:"+key)||chatCurSession?.task||"",recipient:chatRecipients.get(key)||null});
 }
+// A draft includes its delivery target and reviewed context, even with no text.
+function chatDraftConflictPreview(label,value,conversation=true){
+ const preview=el('details','chat-draft-preview'),v=value||{};
+ preview.append(el('summary','',label));
+ const field=(name,text)=>{const row=el('div','chat-draft-field');row.append(el('strong','',name),el('pre','',text));preview.append(row);};
+ field('Message',typeof v.text==='string'&&v.text?v.text:'No message text');
+ if(!conversation){
+  if(v.artifact)field('Artifact',v.artifact);
+  if(v.baseRevision)field('Base revision',v.baseRevision);
+  if(v.sourceRevision)field('Source revision',v.sourceRevision);
+  return preview;
+ }
+ if(v.recipient)field('Recipient',String(v.recipient.agent||'Default agent')+' · '+String(v.recipient.model||'Default model'));
+ else field('Recipient','Conversation default');
+ field('Selected task',v.selection?.task||v.task||'No draft task selection');
+ const refs=chatSelectedArtifacts(v.selection);
+ if(refs.length)field('Context scope',chatArtifactPayload(v.selection).explicitArtifacts?'Explicit private selection':'Existing conversation scope');
+ field('Selected context',refs.length?refs.map(ref=>(ref.title||ref.id)+'\nID: '+ref.id+'\nRevision: '+ref.revision+(ref.task?'\nTask: '+ref.task:'')+(ref.explicitArtifacts?'\nExplicit private selection':'')).join('\n\n'):'No selected context');
+ field('Attachments',Array.isArray(v.files)&&v.files.length?v.files.map(file=>(file.name||'Attachment')+(file.hash?'\nHash: '+file.hash:'')).join('\n\n'):'No attachments');
+ return preview;
+}
 function chatRenderDraftNotice(host,key){chatRenderStateNotice(host,chatSyncedDrafts.get(key));}
 function chatRenderStateNotice(host,state){
   if(!host)return;host.querySelector(".chat-draft-notice")?.remove();
@@ -233,10 +254,8 @@ function chatRenderStateNotice(host,state){
   const row=el("div","chat-draft-notice");row.setAttribute("role","status");
   row.append(el("span","",state.conflict?"Draft changed on another device. Choose which to keep.":state.error));
   if(state.conflict){
-    const preview=el("details","chat-draft-preview");
-    preview.append(el("summary","","View saved draft"),el("p","",state.conflict.value?.text||"Empty draft"));
-    if(state.conflict.value?.files?.length)preview.append(el("p","",state.conflict.value.files.map(f=>f.name).join(", ")));
-    row.append(preview);
+    row.tabIndex=0;row.setAttribute("aria-label","Draft conflict details");
+    row.append(chatDraftConflictPreview('View saved draft',state.conflict.value,state.slot==='draft'&&!state.question),chatDraftConflictPreview('View this device’s draft',state.value,state.slot==='draft'&&!state.question));
     const saved=el("button","sprt-quiet","Use saved draft"),mine=el("button","sprt-quiet","Keep this draft");
     saved.onclick=()=>state.resolve(true);mine.onclick=()=>state.resolve(false);row.append(saved,mine);
   }else{const retry=el("button","sprt-quiet","Retry sync");retry.onclick=()=>state.refresh();row.append(retry);}
