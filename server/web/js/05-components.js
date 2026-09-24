@@ -734,27 +734,52 @@ function artifactReviewControls(artifact,revision,number,onDiscuss){
  const note=document.createElement('textarea');note.rows=3;note.placeholder='Review notes';note.setAttribute('aria-label','Review notes');
  const range=el('details',''),start=document.createElement('input'),end=document.createElement('input');start.type=end.type='number';start.min=end.min='1';start.placeholder='First line';end.placeholder='Last line';start.setAttribute('aria-label','First reviewed line');end.setAttribute('aria-label','Last reviewed line');range.append(el('summary','','Specific lines'),start,end);range.hidden=artifact.preview?artifact.preview.kind!=='text'||/\.diff$/i.test(artifact.ref||''):/\.(diff|pdf|png|jpe?g|gif|webp)$/i.test(artifact.ref||'');
  const actions=el('div','form-actions'),save=el('button','','record decision');actions.append(save);form.append(choice,note,range,actions,el('p','artifact-review-help',onDiscuss?'Records your review. A change request is placed in the composer for you to send.':'Records your review of this version. No message is sent.'));
- const history=el('div','artifact-review-history');host.append(history);let snapshot=null,recorded=false;
+ const history=el('div','artifact-review-history');host.append(history);let snapshot=null,recorded=false,busy=false,pending=null;
  const endpoint='/api/artifacts/reviews?id='+encodeURIComponent(artifact.id)+'&revision='+encodeURIComponent(revision),storage='manifest.artifactReview.v1.'+artifact.id+'.'+revision;
- try{const draft=JSON.parse(localStorage.getItem(storage+'.draft')||localStorage.getItem(storage)||'null');if(draft){choice.value=draft.state;note.value=draft.note||'';start.value=draft.start||'';end.value=draft.end||'';}}catch(e){}
+ try{pending=JSON.parse(localStorage.getItem(storage)||'null');const draft=pending||JSON.parse(localStorage.getItem(storage+'.draft')||'null');if(draft){choice.value=draft.state;note.value=draft.note||'';start.value=draft.start||'';end.value=draft.end||'';}}catch(e){}
  if(artifact.preview&&artifact.preview.kind!=='text'){start.value='';end.value='';}
  const clearPending=()=>{try{localStorage.removeItem(storage);localStorage.removeItem(storage+'.draft');}catch(e){}};
  const label=value=>({not_requested:'Not reviewed',ready_for_review:'Ready for review',accepted:'Accepted',changes_requested:'Changes requested',comment:'Comment'})[value]||value;
  const show=value=>{if(!value||value.revision!==revision||typeof value.record_version!=='string'||!Array.isArray(value.entries))throw Error('Invalid review response; reload before continuing.');snapshot=value;state.textContent=label(value.state)+' · version '+number;summary.textContent='Review · '+label(value.state);history.replaceChildren();
   for(const item of value.entries.filter(e=>e.revision===revision).slice().reverse()){const row=el('div','artifact-review-entry');row.append(el('small','',label(item.state)+' · '+new Date(item.at).toLocaleString()+(item.start?' · '+(/\.diff$/i.test(artifact.ref||'')?'snapshot lines ':'lines ')+item.start+'–'+item.end:'')));if(item.note)row.append(el('p','',item.note));history.append(row);}
  };
- const load=async()=>{save.disabled=true;try{const r=await fetch(endpoint,{cache:'no-store'});if(!r.ok)throw Error('Reviews could not be loaded.');show(await r.json());}catch(e){state.textContent=e.message;}finally{save.disabled=!snapshot;}};
- const changed=()=>{try{localStorage.setItem(storage+'.draft',JSON.stringify({state:choice.value,note:note.value,start:Number(start.value)||0,end:Number(end.value||start.value)||0}));}catch(e){}recorded=false;save.disabled=!snapshot;save.textContent=choice.value==='changes_requested'&&onDiscuss?'record and draft request':'record decision';};choice.onchange=note.oninput=start.oninput=end.oninput=changed;
- save.onclick=async()=>{if(!snapshot||recorded)return;if(['changes_requested','comment'].includes(choice.value)&&!note.value.trim()){note.focus();return;}
-  const content={state:choice.value,note:note.value,start:Number(start.value)||0,end:Number(end.value||start.value)||0};let request={...content,request_id:crypto.randomUUID(),record_version:snapshot.record_version};
-  try{const previous=JSON.parse(localStorage.getItem(storage)||'null');if(previous&&['state','note','start','end'].every(k=>previous[k]===content[k]))request=previous;localStorage.setItem(storage,JSON.stringify(request));}catch(e){}
-  save.disabled=true;try{const r=await fetch(endpoint,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(request)});
-   if(r.status===409){show(await r.json());clearPending();throw Error('Review changed elsewhere. Check the history, then record your decision again.');}
-   if(!r.ok)throw Error(await r.text());const result=await r.json();if(!result.entries?.some(e=>e.id===request.request_id&&e.revision===revision&&e.state===content.state&&(e.note||'')===content.note&&(e.start||0)===content.start&&(e.end||0)===content.end))throw Error('Review acknowledgement is incomplete. Retry uses the same decision ID.');show(result);recorded=choice.value===content.state&&note.value===content.note&&(Number(start.value)||0)===content.start&&(Number(end.value||start.value)||0)===content.end;if(recorded)clearPending();else{try{localStorage.removeItem(storage);}catch(e){}}save.textContent=recorded?'recorded':'record and draft request';window.dispatchEvent(new CustomEvent('artifact-review-recorded',{detail:{id:artifact.id,revision}}));
-   if(host.isConnected&&content.state==='changes_requested'&&onDiscuss)onDiscuss({id:artifact.id,revision,title:artifact.title||'Artifact',version:number,reviewNote:content.note,reviewStart:content.start,reviewEnd:content.end,reviewLineKind:/\.diff$/i.test(artifact.ref||'')?'snapshot':'file'});
-  }catch(e){state.textContent=e.message||'Review not confirmed. Retry uses the same decision ID.';}finally{save.disabled=!snapshot||recorded;}
+ const content=()=>({state:choice.value,note:note.value,start:Number(start.value)||0,end:Number(end.value||start.value)||0});
+ const receipt=(value,request)=>value.entries?.find(e=>e.id===request.request_id&&e.revision===revision&&e.state===request.state&&(e.note||'')===request.note&&(e.start||0)===request.start&&(e.end||0)===request.end);
+ const lock=()=>{for(const field of [choice,note,start,end])field.disabled=busy||!!pending;save.disabled=busy||!snapshot||recorded;};
+ const draftRequest=request=>onDiscuss?.({id:artifact.id,revision,title:artifact.title||'Artifact',version:number,reviewNote:request.note,reviewStart:request.start,reviewEnd:request.end,reviewLineKind:/\.diff$/i.test(artifact.ref||'')?'snapshot':'file'});
+ const recoveredDraft=el('button','','draft recorded request');recoveredDraft.hidden=true;actions.append(recoveredDraft);
+ const confirmed=(request,recovered)=>{
+  pending=null;recorded=true;save.textContent='recorded';
+  if(recovered&&request.state==='changes_requested'&&onDiscuss){recoveredDraft.hidden=false;recoveredDraft.onclick=()=>{draftRequest(request);clearPending();recoveredDraft.hidden=true;};}
+  else clearPending();
+  lock();
  };
- host.prepareChange=context=>{choice.value='changes_requested';start.value=context.start;end.value=context.end;note.value=(note.value.trim()?note.value+'\n\n':'')+'File: '+context.path+'\n'+(context.record?'Record: '+context.record+'\nSource lines: '+context.start+'–'+context.end+'\n':'')+(context.hunk?'Hunk: '+context.hunk+'\nSnapshot lines: '+context.start+'–'+context.end+'\n':'');host.open=true;changed();note.focus();note.setSelectionRange(note.value.length,note.value.length);};
+ const load=async()=>{
+  busy=true;lock();
+  try{
+   const r=await fetch(endpoint,{cache:'no-store'});if(!r.ok)throw Error('Reviews could not be loaded.');const value=await r.json();show(value);
+   if(pending){if(receipt(value,pending))confirmed(pending,true);else{state.textContent='Previous decision is not confirmed. Retry records the same decision ID.';save.textContent='retry decision';}}
+   else save.textContent=choice.value==='changes_requested'&&onDiscuss?'record and draft request':'record decision';
+  }catch(e){state.textContent=e.message;}finally{busy=false;lock();}
+ };
+ const changed=()=>{if(busy||pending)return;if(recorded)clearPending();try{localStorage.setItem(storage+'.draft',JSON.stringify(content()));}catch(e){}recorded=false;recoveredDraft.hidden=true;save.textContent=choice.value==='changes_requested'&&onDiscuss?'record and draft request':'record decision';lock();};choice.onchange=note.oninput=start.oninput=end.oninput=changed;
+ save.onclick=async()=>{
+  if(busy||!snapshot||recorded)return;
+  if(!pending&&['changes_requested','comment'].includes(choice.value)&&!note.value.trim()){note.focus();return;}
+  const request=pending||{...content(),request_id:crypto.randomUUID(),record_version:snapshot.record_version};
+  try{localStorage.setItem(storage,JSON.stringify(request));}catch(e){state.textContent='Could not preserve the decision for recovery. Nothing was submitted. Allow browser storage and retry.';return;}
+  pending=request;busy=true;lock();
+  try{
+   const r=await fetch(endpoint,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(request)});
+   if(r.status===409){show(await r.json());pending=null;try{localStorage.removeItem(storage);localStorage.setItem(storage+'.draft',JSON.stringify(content()));}catch(e){}throw Error('Review changed elsewhere. Check the history, then record your decision again.');}
+   if(!r.ok){const message=await r.text();if([400,404,428].includes(r.status)){pending=null;try{localStorage.removeItem(storage);localStorage.setItem(storage+'.draft',JSON.stringify(content()));}catch(e){}}throw Error(message);}
+   const result=await r.json();if(!receipt(result,request))throw Error('Review acknowledgement is incomplete. Retry uses the same decision ID.');show(result);confirmed(request,!host.isConnected);
+   window.dispatchEvent(new CustomEvent('artifact-review-recorded',{detail:{id:artifact.id,revision}}));
+   if(host.isConnected&&request.state==='changes_requested'&&onDiscuss)draftRequest(request);
+  }catch(e){state.textContent=e.message||'Review not confirmed. Retry uses the same decision ID.';save.textContent=pending?'retry decision':choice.value==='changes_requested'&&onDiscuss?'record and draft request':'record decision';}
+  finally{busy=false;lock();}
+ };
+ host.prepareChange=context=>{if(busy||pending){host.open=true;state.textContent='Resolve the pending decision before starting another review.';return;}choice.value='changes_requested';start.value=context.start;end.value=context.end;note.value=(note.value.trim()?note.value+'\n\n':'')+'File: '+context.path+'\n'+(context.record?'Record: '+context.record+'\nSource lines: '+context.start+'–'+context.end+'\n':'')+(context.hunk?'Hunk: '+context.hunk+'\nSnapshot lines: '+context.start+'–'+context.end+'\n':'');host.open=true;changed();note.focus();note.setSelectionRange(note.value.length,note.value.length);};
  load();return host;
 }
 
