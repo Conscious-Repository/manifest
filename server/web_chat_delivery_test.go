@@ -138,3 +138,13 @@ func TestArtifactTablePreview(t *testing.T) {
 		t.Fatalf("artifact table: %v\n%s", err, out)
 	}
 }
+
+func TestArtifactLinkPreview(t *testing.T) {
+	node, err := exec.LookPath("node")
+	if err != nil {
+		t.Skip("node unavailable")
+	}
+	if out, err := exec.Command(node, "testdata/artifact-link.cjs").CombinedOutput(); err != nil {
+		t.Fatalf("artifact links: %v\n%s", err, out)
+	}
+}

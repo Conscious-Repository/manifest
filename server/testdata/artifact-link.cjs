@@ -1,0 +1,10 @@
+const assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm'),path=require('node:path');
+const code=fs.readFileSync(path.join(__dirname,'../web/js/05-components.js'),'utf8'),ctx=vm.createContext({URL,TextEncoder});vm.runInContext(code.slice(code.indexOf('function artifactLinkTarget')),ctx);
+const parse=(text,format='')=>ctx.artifactLinkTarget(text,format);
+assert.equal(parse('https://example.com/a?b=1#part').href,'https://example.com/a?b=1#part');
+assert.equal(parse('\ufeff[InternetShortcut]\r\nURL=https://example.com/?a=b\r\nIconFile=https://other.example/icon.ico','url').href,'https://example.com/?a=b');
+assert.equal(parse('https://例え.テスト/').host,'xn--r8jz45g.xn--zckzah');
+for(const text of ['javascript:alert(1)','data:text/html,<script>','file:///etc/passwd','//example.com','https://user:pass@example.com','https://example.com\nhttps://other.com','https://example.com/\u202eevil','https://example.com\\@other.com','https://','x'.repeat(16385)])assert.throws(()=>parse(text));
+assert.throws(()=>parse('[InternetShortcut]\nURL=https://example.com\nURL=https://other.com','url'));
+assert.throws(()=>parse('[Other]\nURL=https://example.com','url'));
+console.log('PASS: explicit link formats, complete destinations, credential/control rejection and unsupported fallback');

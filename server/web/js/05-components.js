@@ -865,6 +865,8 @@ function artifactWorkspace(mount, options) {
       notice.textContent = "Preview only. This file has not been sent to the agent.";
     } else if(ext==="diff"){
       body.append(artifactWorkingChangesView(current.content||"",reviewControls?context=>reviewControls.prepareChange(context):null));
+    } else if(current.kind==='link'||ext==='url'){
+      body.append(artifactLinkPreview(current.content||'',ext));
     } else if(ext==='csv'||ext==='tsv'){
       body.append(artifactTablePreview(current.content||'',ext,reviewControls?record=>reviewControls.prepareChange({path:current.ref,...record}):null));
     } else if(ext && !['md','markdown','mdown'].includes(ext)) {
@@ -991,12 +993,12 @@ function artifactWorkspace(mount, options) {
   } catch(e) { notice.textContent=e.message; title.textContent="Artifact unavailable"; } }
   const ready=refresh(opts.revision,opts.proposal);
   return {element:pane, close:()=>close.click(), isEditing:()=>editing, refresh,
-    getView:()=>({revision:selected,mode:previewMode,scrollTop:body.scrollTop,table:{scrollLeft:body.querySelector('.artifact-table-scroll')?.scrollLeft||0,sourceOpen:!!body.querySelector('.artifact-table-source')?.open},editor:editing&&editor?{scrollTop:editor.scrollTop,start:editor.selectionStart,end:editor.selectionEnd,direction:editor.selectionDirection}:null,expandedFiles:[...body.querySelectorAll('.working-file[open]')].map(f=>f.dataset.diffFile),collapsedHunks:[...body.querySelectorAll('.working-changes-view')].flatMap(v=>v.getCollapsedHunks?.()||[])}),
+    getView:()=>({revision:selected,mode:previewMode,scrollTop:body.scrollTop,linkSourceOpen:!!body.querySelector('.artifact-link-source')?.open,table:{scrollLeft:body.querySelector('.artifact-table-scroll')?.scrollLeft||0,sourceOpen:!!body.querySelector('.artifact-table-source')?.open},editor:editing&&editor?{scrollTop:editor.scrollTop,start:editor.selectionStart,end:editor.selectionEnd,direction:editor.selectionDirection}:null,expandedFiles:[...body.querySelectorAll('.working-file[open]')].map(f=>f.dataset.diffFile),collapsedHunks:[...body.querySelectorAll('.working-changes-view')].flatMap(v=>v.getCollapsedHunks?.()||[])}),
     restoreView:async view=>{await ready;if(!pane.isConnected||!body.clientHeight)return false;if((view.mode==="edit"||view.mode==="edit-review")&&opts.save&&editState?.value&&(!opts.canEdit||opts.canEdit(current))){
       editVersion(!!editState.value.restore,true,null,false);
       if(view.editor){editor.setSelectionRange(Math.max(0,Number(view.editor.start)||0),Math.max(0,Number(view.editor.end)||0),view.editor.direction||"none");editor.scrollTop=Math.max(0,Number(view.editor.scrollTop)||0);}
       if(view.mode==="edit-review"&&openDraftReview)await openDraftReview();
-    }else if(view.mode==="compare"&&previewMode!=="compare"&&openComparison)await openComparison();if(!pane.isConnected||!body.clientHeight)return false;if(Array.isArray(view.expandedFiles)){body.querySelectorAll('.working-file').forEach(f=>f.open=view.expandedFiles.includes(f.dataset.diffFile));await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));}if(Array.isArray(view.collapsedHunks)&&(!view.revision||view.revision===selected)){body.querySelectorAll('.working-changes-view').forEach(v=>v.restoreHunks?.(view.collapsedHunks));}if(view.table&&view.revision===selected){const table=body.querySelector('.artifact-table-scroll'),source=body.querySelector('.artifact-table-source');if(table)table.scrollLeft=Math.max(0,Number(view.table.scrollLeft)||0);if(source)source.open=!!view.table.sourceOpen;}if(Number.isFinite(view.scrollTop))body.scrollTop=Math.max(0,view.scrollTop);return true;}
+    }else if(view.mode==="compare"&&previewMode!=="compare"&&openComparison)await openComparison();if(!pane.isConnected||!body.clientHeight)return false;if(Array.isArray(view.expandedFiles)){body.querySelectorAll('.working-file').forEach(f=>f.open=view.expandedFiles.includes(f.dataset.diffFile));await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));}if(Array.isArray(view.collapsedHunks)&&(!view.revision||view.revision===selected)){body.querySelectorAll('.working-changes-view').forEach(v=>v.restoreHunks?.(view.collapsedHunks));}if(view.revision===selected&&typeof view.linkSourceOpen==='boolean'){const source=body.querySelector('.artifact-link-source');if(source)source.open=view.linkSourceOpen;}if(view.table&&view.revision===selected){const table=body.querySelector('.artifact-table-scroll'),source=body.querySelector('.artifact-table-source');if(table)table.scrollLeft=Math.max(0,Number(view.table.scrollLeft)||0);if(source)source.open=!!view.table.sourceOpen;}if(Number.isFinite(view.scrollTop))body.scrollTop=Math.max(0,view.scrollTop);return true;}
   };
 }
 
@@ -1152,4 +1154,37 @@ function artifactMetadataPreview(artifact,number){
  for(const [label,value] of [['file',artifact.ref||artifact.title||'Unnamed file'],['type',data.mediaType],['size',data.size.toLocaleString()+' bytes'],['revision',data.revision]]){list.append(el('dt','',label),el('dd','',value));}
  view.append(list,el('p','artifact-review-help','Review applies to this exact version. Use Open file to inspect its contents.'));
  return view;
+}
+
+// Only explicit link artifacts and Internet Shortcut files use this surface.
+// Inspection never fetches a destination or embeds remote content.
+function artifactLinkTarget(text,format){
+ if(new TextEncoder().encode(text).length>16384)throw Error('Link previews support source up to 16 KiB.');
+ let target=text.replace(/^\uFEFF/,'').trim();
+ if(format==='url'){
+  let section='',values=[];
+  for(const line of target.split(/\r?\n/)){
+   const value=line.trim();
+   if(!value||value.startsWith(';')||value.startsWith('#'))continue;
+   if(/^\[.*\]$/.test(value)){section=value.toLowerCase();continue;}
+   if(section==='[internetshortcut]'&&/^url\s*=/i.test(value))values.push(value.slice(value.indexOf('=')+1).trim());
+  }
+  if(values.length!==1)throw Error('Internet Shortcut files must contain one URL in [InternetShortcut].');
+  target=values[0];
+ }
+ if(!/^https?:\/\//i.test(target)||/[\s\u0000-\u001f\u007f-\u009f\u202a-\u202e\u2066-\u2069\\]/u.test(target))throw Error('A single HTTP or HTTPS URL is required.');
+ let url;try{url=new URL(target);}catch(e){throw Error('The destination is not a valid URL.');}
+ if(!url.hostname||url.username||url.password)throw Error('Links with embedded credentials are not previewed.');
+ return {href:url.href,host:url.host};
+}
+function artifactLinkPreview(text,format){
+ const view=el('section','artifact-link-preview'),source=el('details','artifact-link-source'),raw=el('pre','artifact-source-preview');
+ raw.append(el('code','',text));source.append(el('summary','','source text'),raw);
+ try{
+  const target=artifactLinkTarget(text,format);
+  view.append(el('h3','',target.host));
+  const link=el('a','artifact-link-destination',target.href);link.href=target.href;link.target='_blank';link.rel='noopener noreferrer';link.referrerPolicy='no-referrer';link.dir='ltr';
+  view.append(link,el('p','artifact-review-help','Opens in a new tab. The destination has not been fetched; this review covers the saved link, not the current webpage.'));
+ }catch(error){view.append(el('p','artifact-review-help','Link preview unavailable: '+error.message+' The original source is shown below.'));source.open=true;}
+ view.append(source);return view;
 }
