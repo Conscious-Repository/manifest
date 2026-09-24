@@ -31,14 +31,13 @@ type SourceRef struct {
 
 // Opportunity is one Markdown record under system/crm/fundraising/.
 type Opportunity struct {
-	ID       string      `json:"id"`
-	Path     string      `json:"path"`
-	Firm     string      `json:"firm"`
-	Website  string      `json:"website,omitempty"`
-	Status   string      `json:"status"`
-	Amount   float64     `json:"amount,omitempty"`
-	Currency string      `json:"currency"`
-	People   []PersonRef `json:"people"`
+	ID      string      `json:"id"`
+	Path    string      `json:"path"`
+	Firm    string      `json:"firm"`
+	Website string      `json:"website,omitempty"`
+	Status  string      `json:"status"`
+	Amount  float64     `json:"amount,omitempty"`
+	People  []PersonRef `json:"people"`
 	// UnlinkedPeople are opportunity-local display names entered by external
 	// collaborators. They deliberately do not create or mutate CRM contacts.
 	UnlinkedPeople         []string   `json:"unlinkedPeople,omitempty"`

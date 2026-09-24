@@ -20,7 +20,6 @@ type SharedOpportunity struct {
 	Source                 string   `json:"source,omitempty"`
 	Status                 string   `json:"status"`
 	Amount                 float64  `json:"amount,omitempty"`
-	Currency               string   `json:"currency"`
 	LastTouchpoint         string   `json:"lastTouchpoint,omitempty"`
 	LastTouchpointDate     string   `json:"lastTouchpointDate,omitempty"`
 	ComputedLastTouchpoint string   `json:"computedLastTouchpoint,omitempty"`
@@ -50,7 +49,7 @@ func SharedFromOpportunity(op Opportunity) SharedOpportunity {
 	}
 	return SharedOpportunity{
 		ID: op.ID, Firm: op.Firm, Website: op.Website, People: people, Source: source,
-		Status: op.Status, Amount: op.Amount, Currency: op.Currency,
+		Status: op.Status, Amount: op.Amount,
 		LastTouchpoint: op.LastTouchpoint, LastTouchpointDate: op.LastTouchpointDate,
 		ComputedLastTouchpoint: op.ComputedLastTouchpoint, NextStep: op.NextStep,
 		NextStepDue: op.NextStepDue, Notes: op.Notes, Archived: op.Archived,
@@ -58,7 +57,7 @@ func SharedFromOpportunity(op Opportunity) SharedOpportunity {
 }
 
 var sharedEditableFields = []string{
-	"firm", "website", "people", "source", "status", "amount", "currency",
+	"firm", "website", "people", "source", "status", "amount",
 	"lastTouchpoint", "lastTouchpointDate", "nextStep", "nextStepDue", "notes",
 }
 
@@ -68,8 +67,8 @@ func sharedFieldMap(op SharedOpportunity) map[string]string {
 	return map[string]string{
 		"firm": strings.TrimSpace(op.Firm), "website": strings.TrimSpace(op.Website),
 		"people": strings.Join(people, "; "), "source": strings.TrimSpace(op.Source),
-		"status": strings.ToLower(strings.TrimSpace(op.Status)),
-		"amount": strconv.FormatFloat(op.Amount, 'f', -1, 64), "currency": strings.ToUpper(strings.TrimSpace(op.Currency)),
+		"status":         strings.ToLower(strings.TrimSpace(op.Status)),
+		"amount":         strconv.FormatFloat(op.Amount, 'f', -1, 64),
 		"lastTouchpoint": strings.TrimSpace(op.LastTouchpoint), "lastTouchpointDate": strings.TrimSpace(op.LastTouchpointDate),
 		"nextStep": strings.TrimSpace(op.NextStep), "nextStepDue": strings.TrimSpace(op.NextStepDue), "notes": strings.TrimSpace(op.Notes),
 	}
@@ -105,11 +104,6 @@ func sharedWithFields(base SharedOpportunity, fields map[string]string) (SharedO
 				return op, errors.New("amount must be a positive number")
 			}
 			op.Amount = amount
-		case "currency":
-			op.Currency = strings.ToUpper(strings.TrimSpace(raw))
-			if len(op.Currency) != 3 {
-				return op, errors.New("currency must be a three-letter code")
-			}
 		case "lastTouchpoint":
 			op.LastTouchpoint = strings.TrimSpace(raw)
 		case "lastTouchpointDate":
@@ -191,13 +185,10 @@ func (s *Store) SharedUpdate(id string, desired SharedOpportunity, fields []stri
 // CreateShared validates and writes a collaborator-created opportunity in one
 // serialized operation so an invalid row cannot leave a partial Markdown file.
 func (s *Store) CreateShared(desired SharedOpportunity) (Opportunity, error) {
-	defaults := SharedOpportunity{Firm: desired.Firm, Status: StatusProspect, Currency: "USD", People: []string{}}
+	defaults := SharedOpportunity{Firm: desired.Firm, Status: StatusProspect, People: []string{}}
 	values := sharedFieldMap(desired)
 	if values["status"] == "" {
 		values["status"] = StatusProspect
-	}
-	if values["currency"] == "" {
-		values["currency"] = "USD"
 	}
 	validated, err := sharedWithFields(defaults, values)
 	if err != nil {
@@ -218,7 +209,6 @@ func (s *Store) CreateShared(desired SharedOpportunity) (Opportunity, error) {
 	op.Website = validated.Website
 	op.Status = validated.Status
 	op.Amount = validated.Amount
-	op.Currency = validated.Currency
 	op.LastTouchpoint = validated.LastTouchpoint
 	op.LastTouchpointDate = validated.LastTouchpointDate
 	op.NextStep = validated.NextStep

@@ -436,10 +436,13 @@ func (s *SheetSync) load() error {
 		state.Records = map[string]syncRecordState{}
 	}
 	for id, rec := range state.Records {
-		// Retired 2026-09-24 with the Interest column; a base written before
-		// then still names it, and a stale key must not read as a conflict.
-		delete(rec.Base, "interest")
-		delete(rec.Conflicts, "interest")
+		// Retired 2026-09-24 with the Interest and Currency columns; a base
+		// written before then still names them, and a stale key must not read
+		// as a conflict.
+		for _, retired := range []string{"interest", "currency"} {
+			delete(rec.Base, retired)
+			delete(rec.Conflicts, retired)
+		}
 		state.Records[id] = rec
 	}
 	s.state = state

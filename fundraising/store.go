@@ -239,7 +239,7 @@ func (s *Store) loadRel(rel string) (Opportunity, bool) {
 	if !containsFold(mdfm.List(fm["categories"]), "fundraising") {
 		return Opportunity{}, false
 	}
-	op := Opportunity{Path: rel, ID: scalar(fm["id"]), Firm: scalar(fm["firm"]), Website: scalar(fm["website"]), Status: strings.ToLower(scalar(fm["status"])), Currency: scalar(fm["currency"]), LastTouchpoint: scalar(fm["last-touchpoint"]), LastTouchpointDate: scalar(fm["last-touchpoint-date"]), NextStep: scalar(fm["next-step"]), NextStepDue: scalar(fm["next-step-due"]), Notes: scalar(fm["notes"]), Archived: parseBool(fm["archived"]), ImportReview: parseBool(fm["import-review"])}
+	op := Opportunity{Path: rel, ID: scalar(fm["id"]), Firm: scalar(fm["firm"]), Website: scalar(fm["website"]), Status: strings.ToLower(scalar(fm["status"])), LastTouchpoint: scalar(fm["last-touchpoint"]), LastTouchpointDate: scalar(fm["last-touchpoint-date"]), NextStep: scalar(fm["next-step"]), NextStepDue: scalar(fm["next-step-due"]), Notes: scalar(fm["notes"]), Archived: parseBool(fm["archived"]), ImportReview: parseBool(fm["import-review"])}
 	if op.ID == "" {
 		op.ID = "fr/" + strings.TrimSuffix(filepath.Base(rel), ".md")
 	}
@@ -248,9 +248,6 @@ func (s *Store) loadRel(rel string) (Opportunity, bool) {
 	}
 	if !validStatus(op.Status) {
 		op.Status = StatusProspect
-	}
-	if op.Currency == "" {
-		op.Currency = "USD"
 	}
 	op.Amount, _ = strconv.ParseFloat(strings.TrimSpace(fm["amount"]), 64)
 	_ = json.Unmarshal([]byte(fm["people"]), &op.People)
@@ -307,7 +304,7 @@ func (s *Store) create(firm string) (Opportunity, error) {
 		}
 		slug = fmt.Sprintf("%s-%d", base, n)
 	}
-	op := Opportunity{ID: "fr/" + slug, Path: s.root + "/" + slug + ".md", Firm: firm, Status: StatusProspect, Currency: "USD", People: []PersonRef{}, UnlinkedPeople: []string{}}
+	op := Opportunity{ID: "fr/" + slug, Path: s.root + "/" + slug + ".md", Firm: firm, Status: StatusProspect, People: []PersonRef{}, UnlinkedPeople: []string{}}
 	if err := s.writeNew(op); err != nil {
 		return Opportunity{}, err
 	}
@@ -332,7 +329,7 @@ func (s *Store) writeNew(op Opportunity) error {
 	if op.Amount > 0 {
 		b.WriteString("amount: " + strconv.FormatFloat(op.Amount, 'f', -1, 64) + "\n")
 	}
-	b.WriteString("currency: " + op.Currency + "\npeople: " + string(people) + "\n")
+	b.WriteString("people: " + string(people) + "\n")
 	if len(op.UnlinkedPeople) > 0 {
 		b.WriteString("people-text: " + string(plainPeople) + "\n")
 	}
@@ -419,10 +416,11 @@ func (s *Store) replaceKnown(op Opportunity) error {
 		vals["website"] = nil
 	}
 	put("status", op.Status)
-	// The interest level was retired 2026-09-24; a record that still carries
-	// one loses it on its next write.
+	// The interest level and currency were retired 2026-09-24 (amounts are
+	// USD by convention); a record that still carries either loses it on its
+	// next write.
 	vals["interest"] = nil
-	put("currency", op.Currency)
+	vals["currency"] = nil
 	put("people", string(people))
 	if len(op.UnlinkedPeople) > 0 {
 		put("people-text", string(plainPeople))
@@ -493,12 +491,6 @@ func (s *Store) update(id string, set map[string]any) (Opportunity, error) {
 				}
 				op.Amount = f
 			}
-		case "currency":
-			v := strings.ToUpper(strings.TrimSpace(fmt.Sprint(raw)))
-			if len(v) != 3 {
-				return op, errors.New("currency must be a three-letter code")
-			}
-			op.Currency = v
 		case "people":
 			people, err := normalizePeople(raw)
 			if err != nil {

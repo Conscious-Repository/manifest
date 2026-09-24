@@ -90,7 +90,7 @@ func NormalizeSheet(rows []SheetRow, exact ExactContactResolver) []Opportunity {
 		if firm == "" {
 			firm = row.Warm
 		}
-		op := Opportunity{Firm: firm, Status: StatusActive, Currency: "USD", LastTouchpoint: row.Touch, NextStep: row.Next, Notes: row.Notes, SourceRows: []int{row.Row}, People: personRefsFromText(row.Warm)}
+		op := Opportunity{Firm: firm, Status: StatusActive, LastTouchpoint: row.Touch, NextStep: row.Next, Notes: row.Notes, SourceRows: []int{row.Row}, People: personRefsFromText(row.Warm)}
 		if row.Section == "hit" {
 			op.Status = StatusProspect
 		}
