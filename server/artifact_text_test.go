@@ -40,3 +40,49 @@ func TestArtifactTextEdit(t *testing.T) {
 		}
 	}
 }
+
+func TestArtifactTextSaveReceipt(t *testing.T) {
+	s, _, _ := artifactFixture(t)
+	a, err := s.artifactReg.Put(artifacts.Put{Ref: "file.txt", Content: []byte("before")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := `{"id":"` + a.Artifact.ID + `","expectedRevision":"` + a.Artifact.Head + `","content":"after","requestID":"request-12345678"}`
+	save := func(body string) *httptest.ResponseRecorder {
+		w := httptest.NewRecorder()
+		s.handleArtifactText(w, httptest.NewRequest("POST", "/api/artifacts/text", strings.NewReader(body)))
+		return w
+	}
+	first := save(body)
+	if first.Code != 200 {
+		t.Fatal(first.Code, first.Body.String())
+	}
+	var receipt struct {
+		SavedRevision, SaveRequestID string
+		SavedVersion                 int
+	}
+	if err := json.Unmarshal(first.Body.Bytes(), &receipt); err != nil {
+		t.Fatal(err)
+	}
+	if receipt.SaveRequestID != "request-12345678" || receipt.SavedRevision != artifacts.Hash([]byte("after")) || receipt.SavedVersion != 2 {
+		t.Fatal(receipt)
+	}
+	newer, err := s.artifactReg.Put(artifacts.Put{ID: a.Artifact.ID, Content: []byte("newer")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	retry := save(body)
+	if retry.Code != 200 {
+		t.Fatal(retry.Code, retry.Body.String())
+	}
+	if !strings.Contains(retry.Body.String(), `"savedRevision":"`+receipt.SavedRevision+`"`) {
+		t.Fatal(retry.Body.String())
+	}
+	current, _ := s.artifactReg.Get(a.Artifact.ID)
+	if current.Head != newer.Artifact.Head || len(current.Revisions) != 3 {
+		t.Fatal(current)
+	}
+	if w := save(strings.Replace(body, `"after"`, `"altered"`, 1)); w.Code != 409 {
+		t.Fatal(w.Code, w.Body.String())
+	}
+}

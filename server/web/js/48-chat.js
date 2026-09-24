@@ -3835,8 +3835,8 @@ function chatOpenWorkingArtifact(spec) {
     const r=await fetch(path); if(!r.ok)throw new Error(await r.text());return r.json();
   };
   w.tab(tabKey,spec.plan?"Plan":"Review",(host,drop)=>artifactWorkspace(host,{
-    load, revision:spec.revision,proposal:spec.proposal,review:!chatIsPortal(),
-    save:spec.plan ? (text,expectedRevision)=>postJSONOk("/api/tasks/plan",{id:taskID,text,expectedRevision}):(text,expectedRevision)=>postJSONOk("/api/artifacts/text",{id:spec.id,content:text,expectedRevision}),
+    load, revision:spec.revision,proposal:spec.proposal,review:!chatIsPortal(),receiptSave:!spec.plan,
+    save:spec.plan ? (text,expectedRevision)=>postJSONOk("/api/tasks/plan",{id:taskID,text,expectedRevision}):(text,expectedRevision,requestID)=>postJSONOk("/api/artifacts/text",{id:spec.id,content:text,expectedRevision,requestID}),
     canEdit:spec.plan ? null : a=>/\.(md|txt|json|csv|tsv|yaml|yml|toml|js|jsx|ts|tsx|py|go|html|css|sql|sh|xml|svg)$/i.test(a.ref||"") && a.provenance?.source!=="task-plan",
     saveNotice:spec.plan ? null : "Saved as a new artifact version. Use Discuss this version to ask the agent to apply it to working files.",
     onClose:drop,

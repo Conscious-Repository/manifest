@@ -34,6 +34,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 	"sync"
@@ -101,19 +102,32 @@ func (p Provenance) merge(q Provenance) Provenance {
 	return p
 }
 
+// PutReceipt is committed in the same object replacement as its revision.
+// Fingerprints bind a request to its original payload; retries never move Head.
+type PutReceipt struct {
+	RequestID   string `json:"requestId"`
+	Fingerprint string `json:"fingerprint"`
+	Version     int    `json:"version"`
+}
+
+var requestIDPattern = regexp.MustCompile(`^[a-zA-Z0-9-]{8,80}$`)
+
+func ValidRequestID(id string) bool { return requestIDPattern.MatchString(id) }
+
 // Artifact is the versioned object. Head is the current revision's hash; the
 // chain is Revisions in order, each naming its parent.
 type Artifact struct {
-	ID         string     `json:"id"`
-	Kind       string     `json:"kind"`
-	Title      string     `json:"title,omitempty"`
-	Harness    string     `json:"harness,omitempty"` // which harness tree Ref is relative to ("" = primary)
-	Ref        string     `json:"ref,omitempty"`     // current harness-relative path (the head's)
-	Created    time.Time  `json:"created"`           // UTC — the first revision's At
-	Actor      string     `json:"actor,omitempty"`   // who created it
-	Provenance Provenance `json:"provenance,omitzero"`
-	Head       string     `json:"head"` // hash of the current revision
-	Revisions  []Revision `json:"revisions"`
+	ID         string       `json:"id"`
+	Kind       string       `json:"kind"`
+	Title      string       `json:"title,omitempty"`
+	Harness    string       `json:"harness,omitempty"` // which harness tree Ref is relative to ("" = primary)
+	Ref        string       `json:"ref,omitempty"`     // current harness-relative path (the head's)
+	Created    time.Time    `json:"created"`           // UTC — the first revision's At
+	Actor      string       `json:"actor,omitempty"`   // who created it
+	Provenance Provenance   `json:"provenance,omitzero"`
+	Head       string       `json:"head"` // hash of the current revision
+	Revisions  []Revision   `json:"revisions"`
+	Receipts   []PutReceipt `json:"saveReceipts,omitempty"`
 }
 
 // Version is the current version number (the revision count).
@@ -217,6 +231,7 @@ func NewRegistry(pool *Store) (*Registry, error) {
 var ErrRevisionConflict = errors.New("artifact changed; review the latest version before saving")
 
 type Put struct {
+	RequestID    string     // optional durable identity for a conditional edit
 	ExpectedHead string     // optional compare-and-swap guard for interactive edits
 	ID           string     // revise THIS artifact; "" resolves by Harness+Ref, else creates
 	Kind         string     // KindFile when empty (ignored on a revision)
@@ -246,6 +261,9 @@ func (r *Registry) Put(p Put) (PutResult, error) {
 	if len(p.Content) == 0 {
 		return PutResult{}, errors.New("artifacts: empty content")
 	}
+	if p.RequestID != "" && (!ValidRequestID(p.RequestID) || !ValidID(p.ID) || !ValidHash(p.ExpectedHead)) {
+		return PutResult{}, errors.New("artifacts: request identity requires an existing artifact and starting revision")
+	}
 	if p.ID != "" && !ValidID(p.ID) {
 		return PutResult{}, errors.New("artifacts: bad id")
 	}
@@ -260,6 +278,13 @@ func (r *Registry) Put(p Put) (PutResult, error) {
 	}
 	p.At = p.At.UTC()
 	hash := Hash(p.Content)
+	fingerprint := ""
+	if p.RequestID != "" {
+		identity := p
+		identity.At = time.Time{}
+		encoded, _ := json.Marshal(identity)
+		fingerprint = Hash(encoded)
+	}
 
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -274,6 +299,25 @@ func (r *Registry) Put(p Put) (PutResult, error) {
 		}
 	case p.Ref != "":
 		cur, have = r.byRef(p.Harness, p.Ref)
+	}
+	if p.RequestID != "" {
+		for _, receipt := range cur.Receipts {
+			if receipt.RequestID != p.RequestID {
+				continue
+			}
+			if receipt.Fingerprint != fingerprint || receipt.Version < 1 || receipt.Version > len(cur.Revisions) {
+				return PutResult{}, ErrRevisionConflict
+			}
+			return PutResult{Artifact: cur, Revision: cur.Revisions[receipt.Version-1]}, nil
+		}
+		if len(cur.Receipts) >= 4096 {
+			return PutResult{}, errors.New("artifact save receipt limit reached")
+		}
+	}
+	recordReceipt := func(a *Artifact, version int) {
+		if p.RequestID != "" {
+			a.Receipts = append(append([]PutReceipt{}, a.Receipts...), PutReceipt{RequestID: p.RequestID, Fingerprint: fingerprint, Version: version})
+		}
 	}
 	if p.ExpectedHead != "" && (!have || cur.Head != p.ExpectedHead) {
 		return PutResult{}, ErrRevisionConflict
@@ -298,6 +342,12 @@ func (r *Registry) Put(p Put) (PutResult, error) {
 		return PutResult{Artifact: a, Revision: rev, Created: true, Changed: true}, nil
 	}
 	if cur.Head == hash { // identical bytes: nothing to version
+		if p.RequestID != "" {
+			recordReceipt(&cur, len(cur.Revisions))
+			if err := r.save(cur); err != nil {
+				return PutResult{}, err
+			}
+		}
 		return PutResult{Artifact: cur, Revision: cur.HeadRevision()}, nil
 	}
 	if err := r.keep(p.Content, orStr(p.Ref, cur.Ref), hash); err != nil {
@@ -309,6 +359,7 @@ func (r *Registry) Put(p Put) (PutResult, error) {
 	}
 	next := cur
 	next.Revisions = append(append([]Revision{}, cur.Revisions...), rev)
+	recordReceipt(&next, rev.N)
 	next.Head = hash
 	next.Ref = rev.Ref
 	if p.Title != "" {

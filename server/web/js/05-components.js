@@ -926,7 +926,7 @@ function artifactWorkspace(mount, options) {
     body.replaceChildren(input);
     controls.replaceChildren();
     const save = el("button", "sprt-quiet artifact-primary-action", restore ? "Save restored version" : "Save new version");
-    const remember=()=>editState?.set({...editState.value||started,text:input.value});
+    const remember=()=>{const prior=editState?.value||started;editState?.set({...prior,text:input.value,saveRequestID:prior.text===input.value?prior.saveRequestID:undefined});};
     input.addEventListener("input",remember);
     const review=el("button","sprt-quiet","Review changes");
     let reviewing=false;
@@ -953,7 +953,11 @@ function artifactWorkspace(mount, options) {
       if(saving)return;
       remember();
       if(editState?.conflict){notice.textContent="Resolve the draft conflict before saving a version.";return;}
-      const submitted=editState?.value||{...started,text:input.value};
+      let submitted=editState?.value||{...started,text:input.value};
+      if(opts.receiptSave){
+        if(!editState){notice.textContent="Draft recovery is unavailable. Keep this edit open and retry after reloading the application.";return;}
+        if(!submitted.saveRequestID){submitted={...submitted,saveRequestID:crypto.randomUUID()};editState.set(submitted);}
+      }
       if(submitted.artifact!==current.id || !/^[0-9a-f]{64}$/.test(submitted.baseRevision||"")){notice.textContent="This draft has no valid starting revision. Keep its text and review the latest version before saving.";return;}
       saving=true;save.disabled = true;input.disabled=true;discard.disabled=true;review.disabled=true;cancel.disabled=true;
       try {
@@ -964,11 +968,12 @@ function artifactWorkspace(mount, options) {
           }
         }
         if(!pane.isConnected)return;
-        await opts.save(submitted.text, submitted.baseRevision);
+        const result=await opts.save(submitted.text, submitted.baseRevision,submitted.saveRequestID);
+        if(opts.receiptSave&&(!result||result.id!==submitted.artifact||result.saveRequestID!==submitted.saveRequestID||!result.revisions?.some(r=>r.hash===result.savedRevision&&r.n===result.savedVersion)))throw new Error("Save receipt is incomplete. Retry retains the original request identity.");
         if(editState&&chatStateEqual(editState.value,submitted)){editState.set(null);await editState.flush();}
         const a = await opts.load();
-        await show(a,a.head);
-        notice.textContent = opts.saveNotice || "New version saved. Execution has not started.";
+        await show(a,opts.receiptSave?result.savedRevision:a.head,opts.receiptSave?result.savedVersion:undefined);
+        notice.textContent = opts.receiptSave&&a.head!==result.savedRevision ? "Saved version recovered. A newer version exists; the current file was not overwritten." : opts.saveNotice || "New version saved. Execution has not started.";
       } catch(e) { notice.textContent = e.message; }
       finally { saving=false;save.disabled = false;input.disabled=false;discard.disabled=false;review.disabled=false;cancel.disabled=false; }
     };

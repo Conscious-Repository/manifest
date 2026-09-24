@@ -15,7 +15,7 @@ func (s *Server) handleArtifactText(w http.ResponseWriter, r *http.Request) {
 	if !s.artifactsOK(w) {
 		return
 	}
-	var b struct{ ID, Content, ExpectedRevision string }
+	var b struct{ ID, Content, ExpectedRevision, RequestID string }
 	if err := decode(r, &b); err != nil {
 		httpError(w, err)
 		return
@@ -30,16 +30,20 @@ func (s *Server) handleArtifactText(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "This file is preview-only", 400)
 		return
 	}
+	if b.RequestID != "" && !artifacts.ValidRequestID(b.RequestID) {
+		http.Error(w, "Invalid save request identity", 400)
+		return
+	}
 	if !artifacts.ValidHash(b.ExpectedRevision) || len(b.Content) == 0 || len(b.Content) > 1024*1024 || !utf8.ValidString(b.Content) || strings.ContainsRune(b.Content, 0) {
 		http.Error(w, "A starting revision and nonempty UTF-8 text up to 1 MB are required", 400)
 		return
 	}
-	prior, err := s.artifactReg.Content(a.Head)
+	prior, err := s.artifactReg.Content(b.ExpectedRevision)
 	if err != nil || !utf8.Valid(prior) || strings.ContainsRune(string(prior), 0) {
 		http.Error(w, "This file is preview-only", 400)
 		return
 	}
-	result, err := s.artifactReg.Put(artifacts.Put{ID: a.ID, ExpectedHead: b.ExpectedRevision, Content: []byte(b.Content), Actor: "owner", Note: "Edited in chat"})
+	result, err := s.artifactReg.Put(artifacts.Put{ID: a.ID, ExpectedHead: b.ExpectedRevision, RequestID: b.RequestID, Content: []byte(b.Content), Actor: "owner", Note: "Edited in chat"})
 	if errors.Is(err, artifacts.ErrRevisionConflict) {
 		http.Error(w, err.Error(), 409)
 		return
@@ -49,5 +53,10 @@ func (s *Server) handleArtifactText(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.artifactEvent(result, "owner")
-	writeJSON(w, result.Artifact)
+	writeJSON(w, struct {
+		artifacts.Artifact
+		SavedRevision string `json:"savedRevision"`
+		SavedVersion  int    `json:"savedVersion"`
+		SaveRequestID string `json:"saveRequestID,omitempty"`
+	}{result.Artifact, result.Revision.Hash, result.Revision.N, b.RequestID})
 }
