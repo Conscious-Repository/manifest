@@ -39,3 +39,10 @@ Owner requested a faster, clearer chat workspace inspired by Codex, while keepin
 - [Codex native commands](https://developers.openai.com/codex/cli/slash-commands)
 - [Claude interactive commands](https://code.claude.com/docs/en/interactive-mode)
 - Canonical owner plan: `system/workbench/plans/2026-09-11-manifest-agent-workbench.md` in the vault.
+
+## Production receipt
+
+- Published `3be450e` on September 24. Autodeploy stamp matched the commit and `manifest.service` was active. The live bytes of `48-chat.js`, `49-chat-controls.js`, `49-chat-workspace.js`, and `48-chat.css` matched the release files.
+- Disposable native Codex 0.154.0 session: `/status` returned a sent receipt and displayed the native status panel. `/goal` submitted through the deployed browser composer cleared the accepted draft, opened the connected terminal drawer, and displayed “No goal is currently set.”
+- Disposable Claude Code 2.1.281 session: `/status` returned a sent receipt and opened the native Settings/Status panel. No model work or goal was started.
+- Both disposable sessions were removed after verification. Existing sessions were not steered, resumed, stopped or replayed.
