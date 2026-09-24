@@ -89,16 +89,19 @@ chatTermPaintTurns = () => {};
  document.hidden=false;
  const beforeTick=reads; await chatTermTick();
  assert.ok(reads>beforeTick,'normal file reconciliation must continue after stop');
+ const afterIdle=reads; await chatTermTick(); assert.equal(reads,afterIdle,'settled conversation must not repeat a tail before its idle interval');
  assert.equal(intervalCount,0,'state updates must never install polling');
  emit('done');
  assert.equal(badge.children[1].textContent,'agent done');
  assert.equal(badge.title,'runtime observation; the run report determines task status');
+ await new Promise(setImmediate); // finish the done-triggered reconciliation before testing another in-flight tail
  // File tails stay serialized: stop during an in-flight read queues a final read.
  let release;
  global.fetch = async (url) => {
    if (url.includes('/transcript')) { reads++; if (!release) await new Promise(resolve => { release=resolve; }); }
    return {json:async()=>({live:true,turns:[],offset:0,lines:[]})};
  };
+ o.lastPollAt=0; // explicit next poll after the adaptive idle interval
  const beforePending=reads; const pending=chatTermTick();
  emit('unknown','stopped');
  release(); await pending; await new Promise(setImmediate);

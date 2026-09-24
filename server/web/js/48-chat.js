@@ -778,6 +778,7 @@ function renderChatHeadActions() {
     });
   });
   host.append(add);
+  if(typeof chatWorkspaceControls==='function')chatWorkspaceControls(host);
 
 }
 
@@ -1054,10 +1055,11 @@ function chatEntryState(entry){
    if(ob.process==='stopped'){label='Process stopped';}
    else if(ob.agentState==='working'){execution='running';label='Working';}
    else if(ob.agentState==='blocked'){execution='waiting_user';label='Needs input';}
-   else if(['idle','done'].includes(ob.agentState)){label='Idle · result unverified';}
+   else if(ob.agentState==='done'){label='Ready';}
+   else if(ob.agentState==='idle'){label='Ready';}
    else label='Connected · checking state';
   }
-  if(execution==='unknown'&&session.run?.state==='completed'&&session.run.evidence){execution='completed';label='Run finished';}
+  if(execution!=='running'&&session.run?.state==='completed'&&session.run.evidence){execution='completed';label=ob.connectivity!=='connected'?'Run finished · disconnected':ob.agentState==='blocked'?'Run finished · input pending':'Run finished';}
   else if(execution==='unknown'&&session.run?.state==='failed'){execution='failed';label='Run failed';}
  }else{
   const deliveries=session.deliveries||[],latest=deliveries.at(-1);
@@ -2485,6 +2487,20 @@ function renderChatComposer(session) {
     const files = chatPendingFiles.slice();
     if (!text && !files.length) return;
     if (send.disabled || chatSending || chatUploads.get(draftKey)) return;
+    if (/^\/[a-zA-Z]/.test(text) && chatIsTerm() && !chatRecipients.get(draftKey)) {
+      if(files.length){showToast('Send attachments separately from a native command.');return;}
+      chatCaptureSyncedDraft(draftKey);
+      const state=chatSyncedDrafts.get(draftKey),sent=state?.value,route=chatRouteVersion;
+      if(state?.conflict){showToast('Resolve the draft conflict before sending.');return;}
+      const ok=await chatTermSend(text,{command:true});
+      if(ok){
+        if(sent)state.clearSent(sent);
+        if(chatDrafts.get(draftKey)?.text.trim()===text)chatDrafts.delete(draftKey);
+        if(chatDraftKey===draftKey&&ta.value.trim()===text){ta.value='';grow();}
+        if(route===chatRouteVersion&&chatTermOpen)chatOpenTerminalPane(chatTermOpen.se);
+      }
+      return;
+    }
     chatCaptureSyncedDraft(draftKey);
     const draftState=chatSyncedDrafts.get(draftKey),sentDraft=draftState?.value;
     if(draftState?.conflict){showToast("Resolve the draft conflict before sending.");return;}
@@ -2607,6 +2623,7 @@ function renderChatComposer(session) {
     }
     if (e.key === "Enter" && !e.shiftKey && (!window.matchMedia("(max-width: 860px)").matches || e.metaKey || e.ctrlKey)) { e.preventDefault(); submit(); }
   });
+  if(typeof chatInstallCommands==='function')chatInstallCommands(host,ta);
   send.onclick = submit;
   host.append(chips, mention, ta, fi, attach, ritual, send);
   chatRenderDeliveryNotice(host,draftKey);
@@ -2756,7 +2773,7 @@ function terminalStateLabel(ob) {
 function terminalStateDot(ob) {
   const label = terminalStateLabel(ob);
   const title = "agent " + label + (ob && ob.observedAt ? " · " + fmtWhen(ob.observedAt) : "");
-  const dot = statusDot(label === "working" || label === "blocked", title);
+  const dot = statusDot(label === "working", title);
   dot.classList.add("terminal-state-dot");
   dot.dataset.agentState = label;
   const id = ob && (ob.id || ob.manifestId);
@@ -2974,7 +2991,8 @@ async function loadChatTermSession(id) {
     try{const r=await fetch("/api/artifacts/get?id="+encodeURIComponent(ref.id));if(r.ok){const a=await r.json();selection.title=a.title||"Artifact";selection.version=a.revisions.find(v=>v.hash===ref.revision)?.n||"?";}}catch(e){}
   }
   if (id !== chatOpenId || !chatIsTerm()) return;
-  await Promise.all([
+  const readingGestureBefore = chatReadingGestureUntil;
+  const preparation = Promise.all([
     chatPrepareDraft(d.conversation,chatAgent+"/"+id,d.draft&&d.origin?{text:d.origin.prompt||"",files:[],task:d.origin.task||"",selection}:null),
     chatPrepareReadingPosition(d.conversation),
   ]);
@@ -3004,6 +3022,9 @@ async function loadChatTermSession(id) {
     renderChatTermTranscript();
   }
   chatStageRemember(chatStageKey(chatAgent, id), { kind: "term", o: chatTermOpen });
+  await preparation;
+  if(id!==chatOpenId||!chatIsTerm())return;
+  if(!onStage && readingGestureBefore===chatReadingGestureUntil){const host=document.getElementById("chatTranscript");if(host)chatRestoreReadingPosition(host,chatReadingStates.get(d.conversation?.key)?.value);}
   renderChatComposer(chatTermComposerSession());
   // the CLI's own title names a row still wearing its minted placeholder
   // (the autoName path — an owner-typed name is never overwritten)
@@ -3099,9 +3120,10 @@ function chatTermSyncOpen() {
     location.hash = chatSectionHash(chatAgent);
     return true;
   }
-  const wasLive = o.live, wasProcess = o.se.process;
+  const wasLive = o.live, wasProcess = o.se.process, wasAgent=o.se.agentState;
   o.se = se;
   o.live = !!se.live;
+  if(wasAgent!==se.agentState){o.lastPollAt=0;chatTermRequestFinalTail(o);}
   const painted = chatTermRepaintHead();
   renderChatComposer(chatTermComposerSession());
   if (o.live !== wasLive) {
@@ -3128,7 +3150,10 @@ function chatTermHead(o) {
   const stateDot=terminalStateDot(se);
   const status = el("span", "sprt-sub chat-head-sub", chatTermKinds[se.kind] + " · " + (se.backend === "herdr" ? terminalStateLabel(se) : o.live ? "running" : "stopped"));
   status.title = sub.join(" · ");
-  head.append(stateDot);
+  const execution=chatEntryState({terminal:true,session:se});
+  const badge=el('span','chat-execution-state',execution.label);badge.dataset.state=execution.execution;
+  badge.title='Run status · task acceptance is separate';
+  head.append(badge);
   if(o.sharedConversation){const shared=el("a","sprt-quiet",o.sharedConversation.scope==="team:ooda"?"OODA team conversation":"AION team conversation");shared.href=o.sharedConversation.route;shared.title="This session's history and future messages are shared with the team.";head.append(shared);}
   if(se.backend==="herdr"&&se.origin?.mode!=="continue"&&(chatTermEnabled||chatRoster.some(a=>a.enabled&&a.durableSend))){
     const recipient=chatRecipients.get(se.kind+"/"+se.id);
@@ -3261,7 +3286,11 @@ function chatTermActivity(blocks, key) {
   details.open=chatActivityOpen.get(key)||false;
   const errors=blocks.filter(b=>b.error).length;
   const summary=document.createElement("summary");
-  summary.textContent="Activity · "+blocks.length+" step"+(blocks.length===1?"":"s")+(errors?" · "+errors+" failed":"");
+  const tools=blocks.filter(b=>b.t==='step'),pending=tools.filter(b=>!b.done&&!b.result&&!b.error);
+  const latest=tools.at(-1),working=chatTermOpen?.se?.agentState==='working'&&pending.length;
+  summary.textContent=(working?'Working':'Activity')+' · '+blocks.length+' step'+(blocks.length===1?'':'s')+(errors?' · '+errors+' failed':'')+(latest?' · '+(latest.cast||'tool'):'');
+  details.classList.toggle('is-working',!!working);
+  if(latest)summary.title=latest.input||latest.cast||'';
   if(errors)summary.classList.add("has-error");
   details.append(summary);
   blocks.forEach(b=>details.append(chatTermBlockEl(b)));
@@ -3355,7 +3384,10 @@ function chatTermBlockEl(b) {
     return det;
   }
   const ln = el("div", "chat-term-step" + (b.error ? " err" : ""));
-  ln.append(el("span", "chat-term-glyph", chatTermStepGlyph));
+  const done=b.done||!!b.result;
+  const glyph=b.error?'!':done?'✓':chatTermStepGlyph;
+  ln.append(el("span", "chat-term-glyph", glyph));
+  ln.setAttribute('aria-label',(b.error?'Failed':done?'Completed':'Started')+' · '+(b.cast||'step'));
   ln.append(el("span", "chat-term-cast", b.cast || "step"));
   ln.append(el("span", "chat-term-step-input", b.input || ""));
   if (!b.result) return ln;
@@ -3463,7 +3495,7 @@ async function chatTermKey(label) {
 
 function ensureChatTermFast() {
   if (chatTermFast) return;
-  chatTermFast = setInterval(chatTermTick, 1500);
+  chatTermFast = setInterval(chatTermTick, 750);
 }
 
 // one tail in flight: a slow inventory reply must not
@@ -3474,7 +3506,11 @@ let chatTermTailing = false;
 async function chatTermTick() {
   const o = chatTermOpen;
   if (!o || !chatIsTerm() || chatOpenId !== o.id) { chatTermLeave(); return; }
-  if (!els.chatView || els.chatView.hidden || document.hidden || chatTermTailing) return; // file reconciliation also reads the final records after stop
+  if (!els.chatView || els.chatView.hidden || document.hidden || (window.frameElement && !window.frameElement.getClientRects().length) || chatTermTailing) return; // file reconciliation also reads the final records after stop
+  const active=o.se.agentState==='working'||o.turns.some(t=>t.pending);
+  const interval=active?750:10000;
+  if(o.lastPollAt&&Date.now()-o.lastPollAt<interval)return;
+  o.lastPollAt=Date.now();
   chatTermTailing = true;
   try {
     await chatTermTail(o);
@@ -3536,7 +3572,7 @@ async function chatTermTail(o) {
     o.offset = d.offset; // records that projected to nothing (cost-state, …)
   }
   if(planningChanged)chatTermPaintTurns();
-  let headDirty = false;
+  let headDirty = runChanged;
   if(JSON.stringify(o.sharedConversation)!==JSON.stringify(d.sharedConversation)){o.sharedConversation=d.sharedConversation;headDirty=true;}
   if(JSON.stringify(o.planningRecipients)!==JSON.stringify(d.planningRecipients||[])){o.planningRecipients=d.planningRecipients||[];headDirty=true;}
   if(JSON.stringify(o.codingRecipients)!==JSON.stringify(d.codingRecipients||[])){o.codingRecipients=d.codingRecipients||[];headDirty=true;}
@@ -3544,7 +3580,7 @@ async function chatTermTail(o) {
   if (d.cost && d.cost !== o.cost) { o.cost = d.cost; headDirty = true; }
   if (o.se.backend !== "herdr" && !!d.live !== o.live) { o.live = !!d.live; headDirty = true; renderChatComposer(chatTermComposerSession()); chatTermPaintStrip(); }
   if (headDirty) chatTermRepaintHead();
-  if (o.live) chatTermScreenFetch();
+  if (o.live && (o.se.agentState==='blocked'||document.querySelector('.chat-terminal-workspace:not([hidden])'))) chatTermScreenFetch();
 }
 
 // chatTermMerge — a tail's first assistant turn continues the last painted
@@ -3572,7 +3608,7 @@ function chatTermPairResult(turns, b) {
   for (let ti = turns.length - 1; ti >= 0; ti--) {
     if (turns[ti].who !== "assistant") continue;
     const st = (turns[ti].blocks || []).find((x) => x.t === "step" && x.id === b.id && x.cast !== "result");
-    if (st) { st.result = b.result; st.error = !!b.error; return true; }
+    if (st) { st.result = b.result; st.error = !!b.error; st.done = true; return true; }
   }
   return false;
 }
@@ -3587,6 +3623,7 @@ async function chatTermSend(text,context={}) {
   if (!text) return true;
   if (chatTermSending) return false;
   const current=chatTermFind(chatOpenId);
+  if(context.command&&current?.agentState==='working'){showToast('Wait for this run to finish before running a native command.');return false;}
   if(current?.agentState==='working'){
     try{await chatStageMessage(chatAgent+'/'+chatOpenId,chatAgent,chatTermBase(chatOpenId)+'/input',{text,...context});return true;}
     catch(e){showToast(e.message);return false;}
@@ -3619,14 +3656,14 @@ async function chatTermSend(text,context={}) {
       const remembered=chatRememberDelivery(agent+"/"+id,agent,url,payload,sourceScope);
       try { r = await chatDeliverRemembered(remembered); }
       catch (e) {
-        if (!chatAgentBusy(e)) throw e;
+        if (context.command || !chatAgentBusy(e)) throw e;
         // the agent is mid-turn and the server sent nothing: hold the message
         // as a pending row (Steer sends it now) instead of failing the send
         await chatHoldAfterBusy(remembered,agent+"/"+id,agent,url,payload);
         return true;
       }
     } else r = await postJSONOk(url,payload);
-    chatTermEcho(id,text,r,since);
+    if(!context.command)chatTermEcho(id,text,r,since);
     // a draft row's first send starts its process — that is a start, not a relaunch
     if (r.relaunched && !created && !wasDraft) showToast("Session relaunched — " + ((chatTermFind(id) || {}).name || id), null, "info");
     await loadChatTermSessions(true);
@@ -4270,7 +4307,7 @@ function chatInstallPaneResize(shell){
   const pane=shell.querySelector('.artifact-workspace'),has=!!pane&&shell.classList.contains('has-artifact');
   rail=clamp(rail,180,Math.max(180,Math.min(420,bounds.width-380)));
   shell.style.setProperty('--rail-w',rail+'px');
-  list.hidden=phone||has;artifact.hidden=phone||!has;
+  list.hidden=phone||has||shell.classList.contains('chat-list-hidden');artifact.hidden=phone||!has;
   const main=shell.querySelector('.chat-main');
   if(main&&(!has||phone))main.style.removeProperty('flex');
   if(pane){

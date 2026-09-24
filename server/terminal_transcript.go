@@ -48,6 +48,7 @@ type termTurn struct {
 // "result" and the same id, so the tailing client can pair it with the chip
 // it already painted.
 type termBlock struct {
+	Done   bool   `json:"done,omitempty"`
 	T      string `json:"t"`
 	Text   string `json:"text,omitempty"`
 	Cast   string `json:"cast,omitempty"`
@@ -103,8 +104,9 @@ type claudeRecord struct {
 }
 
 type claudeMessage struct {
-	Role    string          `json:"role"`
-	Content json.RawMessage `json:"content"` // string | []block
+	StopReason string          `json:"stop_reason"`
+	Role       string          `json:"role"`
+	Content    json.RawMessage `json:"content"` // string | []block
 }
 
 type claudeBlock struct {
@@ -168,6 +170,7 @@ func (b *transcriptBuilder) result(ts, id, text string, isErr bool) {
 			if t.Blocks[bi].T == "step" && t.Blocks[bi].ID == id {
 				t.Blocks[bi].Result = clip(text, termStepResultMax)
 				t.Blocks[bi].Error = isErr
+				t.Blocks[bi].Done = true
 				return
 			}
 		}
@@ -175,7 +178,7 @@ func (b *transcriptBuilder) result(ts, id, text string, isErr bool) {
 	// a result whose call fell before ?after= — still worth a chip; the id
 	// lets a tailing client pair it with the step it already holds
 	t := b.assistant(ts)
-	t.Blocks = append(t.Blocks, termBlock{T: "step", Cast: "result", Result: clip(text, termStepResultMax), Error: isErr, ID: id})
+	t.Blocks = append(t.Blocks, termBlock{T: "step", Cast: "result", Done: true, Result: clip(text, termStepResultMax), Error: isErr, ID: id})
 }
 
 func (b *transcriptBuilder) text(ts, kind, text string) {
@@ -221,6 +224,13 @@ func parseClaudeTranscript(r io.Reader, base ...int64) termTranscript {
 				return
 			}
 			blocks, text := claudeContent(m.Content, rec.Type == "user")
+			if rec.Type == "assistant" {
+				state := "running"
+				if m.StopReason == "end_turn" {
+					state = "completed"
+				}
+				b.out.Run = &terminalRunEvidence{ID: b.recordID, State: state, At: rec.Timestamp, Evidence: b.recordID}
+			}
 			if rec.Type == "user" && rec.PromptSource == "system" {
 				// the harness speaking in the user's slot (a background task's
 				// notification, a scheduled wake-up): a system line, not a bubble.
@@ -242,6 +252,7 @@ func parseClaudeTranscript(r io.Reader, base ...int64) termTranscript {
 			if rec.Type == "user" {
 				if strings.TrimSpace(text) != "" && !claudeNoiseRe.MatchString(text) {
 					b.user(rec.Timestamp, text)
+					b.out.Run = &terminalRunEvidence{ID: b.recordID, State: "running", At: rec.Timestamp, Evidence: b.recordID}
 				}
 				for _, bl := range blocks {
 					if bl.Type == "tool_result" {
@@ -249,6 +260,7 @@ func parseClaudeTranscript(r io.Reader, base ...int64) termTranscript {
 						b.result(rec.Timestamp, bl.ToolUseID, rt, bl.IsError)
 					} else if bl.Type == "text" && strings.TrimSpace(bl.Text) != "" && !claudeNoiseRe.MatchString(bl.Text) {
 						b.user(rec.Timestamp, bl.Text)
+						b.out.Run = &terminalRunEvidence{ID: b.recordID, State: "running", At: rec.Timestamp, Evidence: b.recordID}
 					}
 				}
 				return

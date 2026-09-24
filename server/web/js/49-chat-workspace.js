@@ -24,7 +24,7 @@ async function chatRestoreWorkspace(){
   else if(tab.spec?.kind==='side-setup'&&tab.spec.source?.id)chatWorkspaceSideSetup(tab.spec.source,{key:tab.key,view:tab.view});
   else if(tab.spec?.kind==='local-file'&&typeof tab.spec.path==='string')chatOpenLocalFile(tab.spec.path);
   else if(tab.spec?.kind==='attachment'&&typeof tab.spec.file?.name==='string'&&typeof tab.spec.href==='string'&&tab.spec.href.startsWith('/api/'))chatOpenAttachment(tab.spec.file,tab.spec.href);
-  else if(tab.spec?.kind==='side'&&/^#\/chat\//.test(tab.spec.route||''))w.tab(tab.key,'Side chat',host=>chatMountSideFrame(host,tab.spec),tab.spec);
+  else if(tab.spec?.kind==='side'&&/^#\/chat\//.test(tab.spec.route||''))w.tab(tab.key,tab.spec.existing?tab.spec.title:'Side chat',host=>chatMountSideFrame(host,tab.spec),tab.spec);
   else if(tab.spec?.kind==='activity')chatOpenActivity();
   else if(tab.spec?.kind==='context')chatOpenContext();
   else if(tab.spec?.kind==='files')chatOpenFiles();
@@ -32,7 +32,7 @@ async function chatRestoreWorkspace(){
   const opened=w.entries.get(tab.key);if(opened?.api?.restoreView&&tab.view)opened.restoreView=tab.view;
  }
  if(w.entries.has(saved.active))w.select(saved.active);
- w.show(saved.open===true);w.restoring=false;
+ w.show(saved.open===true);w.restoring=false;if(typeof chatApplyWorkspaceLayout==='function')chatApplyWorkspaceLayout();
 }
 window.addEventListener('pagehide',()=>{chatWorkspaceTabs?.save?.();for(const state of chatWorkspaceStates.values())if(state.dirty)state.flush();});
 function chatWorkspaceSource(){
@@ -93,8 +93,8 @@ function chatEnsureWorkspace(restoring=false){
  const w={pane,body,entries,restoring,
   save(){if(disposed||w.restoring||!savedState)return;for(const t of entries.values())if(!pane.hidden&&!t.host.hidden)t.view=t.api?.getView?.()||t.view;savedState.set({open:!pane.hidden,active,tabs:[...entries].filter(([,t])=>t.spec).map(([key,t])=>({key,spec:t.spec,view:t.restoreView||t.view||{}}))});},
   show(open=true){w.save();pane.hidden=!open;shell.classList.toggle('has-artifact',open);shell._refreshPaneWidths?.();document.querySelectorAll('.chat-workspace-toggle').forEach(b=>b.setAttribute('aria-expanded',String(open)));if(!open)document.querySelector('#chatComposer textarea')?.focus();if(open){revealActive();const t=entries.get(active);if(t?.restoreView){const view=t.restoreView;Promise.resolve(t.api?.restoreView?.(view)).then(ok=>{if(ok&&t.restoreView===view)t.restoreView=null;});}}w.save();},
-  select(key){w.save();clearChooser();active=key;for(const [id,t] of entries){t.host.hidden=id!==key;t.button.setAttribute('aria-selected',String(id===key));t.button.tabIndex=id===key?0:-1;}w.show();},
-  drop(key){const t=entries.get(key);if(!t)return;t.host.remove();t.row.remove();entries.delete(key);if(!disposed&&active===key){const next=Array.from(entries.keys()).at(-1);if(next)w.select(next);else w.chooser();}w.save();},
+  select(key){w.save();clearChooser();active=key;for(const [id,t] of entries){t.host.hidden=id!==key;t.button.setAttribute('aria-selected',String(id===key));t.button.tabIndex=id===key?0:-1;}w.show();if(typeof chatApplyWorkspaceLayout==='function')chatApplyWorkspaceLayout();},
+  drop(key){const t=entries.get(key);if(!t)return;t.host.remove();t.row.remove();entries.delete(key);if(!disposed&&active===key){const next=Array.from(entries.keys()).at(-1);if(next)w.select(next);else w.chooser();}if(typeof chatApplyWorkspaceLayout==='function')chatApplyWorkspaceLayout();w.save();},
   tab(key,title,build,spec=null){if(entries.has(key)){w.select(key);return entries.get(key);}
    const row=el('div','chat-workspace-tab'),button=el('button','sprt-quiet',chatWorkspaceTabLabel(title)),close=el('button','sprt-quiet','×'),host=el('div','chat-workspace-tabbody');
    button.setAttribute('role','tab');button.title=title;button.setAttribute('aria-label',title);host.setAttribute('role','tabpanel');
@@ -150,13 +150,14 @@ function chatWorkspaceChooser(host){
    if(files.length){const list=el('details','chat-workspace-files');const summary=el('summary','');summary.append(chatWorkspaceIcon('file'),el('span','','Files'),el('span','chat-workspace-count',String(files.length)));list.append(summary);for(const a of files){const button=el('button','chat-workspace-file',a.title||a.ref||'File');button.title=a.ref||a.title;button.onclick=()=>chatOpenWorkingArtifact({id:a.id,task});list.append(button);}chooser.append(list);}
   }).catch(()=>{const retry=el('button','sprt-quiet','Retry loading files');retry.onclick=()=>{host.replaceChildren();chatWorkspaceChooser(host);};chooser.append(retry);});
  }
+ if(typeof chatWorkspaceExistingChat==='function')action('Open conversation','Show an existing chat in another pane','chat',chatWorkspaceExistingChat);
  if(source)action('Side chat','Start with this conversation’s context','chat',()=>chatWorkspaceSideSetup(source));
  const keys=el('details','chat-workspace-shortcuts');keys.append(el('summary','','Keyboard shortcuts'),el('p','','Ctrl+Alt: N new chat · F search · M composer · I workspace · ↑/↓ switch chat · J next needing attention · X request stop (Enter confirms)'));chooser.append(keys);
  host.append(chooser);
 }
 function chatMountSideFrame(host,spec){
  const strip=el('div','chat-side-context'),info=el('details','');
- info.append(el('summary','','Context from '+spec.title),el('p','','Snapshot of recent complete turns at creation. Older history may be omitted; tool traces and attachment contents are excluded. Selected artifact versions are included separately. This is a saved private conversation; closing its tab does not delete it.'));
+ info.append(el('summary','',spec.existing?spec.title:'Context from '+spec.title),el('p','',spec.existing?'This is the original conversation, with its own draft, history and agent.': 'Snapshot of recent complete turns at creation. Older history may be omitted; tool traces and attachment contents are excluded. Selected artifact versions are included separately. This is a saved private conversation; closing its tab does not delete it.'));
  const link=el('a','sprt-quiet','Open full chat ↗');link.href=spec.route;link.target='_blank';link.rel='noopener';strip.append(info,link);
  const frame=document.createElement('iframe');frame.title='Side chat · '+spec.title;frame.className='chat-side-frame';frame.src=location.pathname+'?chatPane=1'+spec.route;
  host.append(strip,frame);

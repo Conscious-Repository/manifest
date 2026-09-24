@@ -14,6 +14,7 @@ import (
 )
 
 type terminalInput struct {
+	Command         bool                     `json:"command,omitempty"` // native CLI input; never augment with conversation context
 	QuestionAnswers []terminalQuestionAnswer `json:"questionAnswers,omitempty"`
 	Files           []string                 `json:"files,omitempty"`
 	Text            string                   `json:"text"`

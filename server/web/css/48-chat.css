@@ -794,3 +794,24 @@ button.chat-attach-chip { min-height: 44px; max-width: 100%; background: transpa
 .chat-attachment-size { color: var(--muted); }
 .chat-attachment-card .chat-attach-x { position: absolute; top: var(--sp-1); right: var(--sp-1); min-width: var(--control-min); min-height: var(--control-min); border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface-overlay); color: var(--text); cursor: pointer; }
 .chat-composer.chat-drop-active { outline: var(--focus-width) dashed var(--accent); outline-offset: calc(-1 * var(--focus-width)); }
+
+/* September workspace controls: shared tokens, distinct execution and connection. */
+.chat-execution-state { font: var(--fs-xs) var(--mono); color:var(--base-50); white-space:nowrap; }
+.chat-execution-state[data-state="running"] {color:var(--accent);}
+.chat-execution-state[data-state="running"]::before {content:"";display:inline-block;width:6px;height:6px;border-radius:50%;background:currentColor;margin-right:7px;animation:chat-working 1.8s ease-in-out infinite;}
+.chat-execution-state[data-state="failed"] {color:var(--danger);}
+@keyframes chat-working {50%{opacity:.35}}
+@media(prefers-reduced-motion:reduce){.chat-execution-state::before{animation:none!important;}}
+.chat-layout-select {font:inherit;font-size:var(--fs-xs);background:transparent;color:var(--base-60);border:1px solid var(--line);border-radius:var(--radius);padding:6px 8px;max-width:180px;}
+@media(min-width:861px){.chat-shell.chat-list-hidden > .chat-rail {display:none!important;} .chat-shell.chat-list-hidden > .list-resizer{display:none!important;}}
+.chat-command-picker {position:absolute;bottom:calc(100% + 8px);left:0;right:0;max-height:min(330px,45vh);overflow:auto;background:var(--surface-field);border:1px solid var(--line);border-radius:var(--radius-lg);padding:8px;z-index:30;box-shadow:0 8px 24px #0002;}
+.chat-command-option {display:flex;align-items:baseline;gap:16px;width:100%;text-align:left;padding:8px 10px;border:0;background:transparent;color:var(--base-100);border-radius:var(--radius);}
+.chat-command-option[aria-selected="true"] {background:var(--base-10);}
+.chat-command-option > span:first-child {min-width:110px;font-family:var(--mono);}
+.chat-command-description,.chat-command-hint {color:var(--base-50);font-size:var(--fs-xs);}
+.chat-command-hint {margin:8px 10px;line-height:1.5;}
+.chat-workspace-tiled {display:grid!important;grid-template-rows:repeat(2,minmax(0,1fr));gap:1px;background:var(--line);}
+.chat-workspace-tiled[data-panes="1"] {grid-template-rows:minmax(0,1fr);}
+.chat-workspace-tiled[data-panes="3"] {grid-template-rows:repeat(3,minmax(0,1fr));}
+.chat-workspace-tiled > .chat-workspace-tabbody {min-height:0;overflow:auto;background:var(--surface-field);}
+@media(max-width:860px){.chat-layout-select{display:none;} .chat-execution-state{font-size:11px;}.chat-sidebar-toggle{display:none;}}

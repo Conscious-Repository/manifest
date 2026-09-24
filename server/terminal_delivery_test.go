@@ -12,7 +12,7 @@ import (
 	"testing"
 )
 
-func terminalReceiptFixture(t *testing.T, uncertain bool) (*Server, termSession, *atomic.Int32) {
+func terminalReceiptFixture(t *testing.T, uncertain bool, inspect ...func(string)) (*Server, termSession, *atomic.Int32) {
 	t.Helper()
 	s := &Server{terminal: &termCfg{regPath: filepath.Join(t.TempDir(), "terminals.json"), defaultWd: t.TempDir()}}
 	var prompts atomic.Int32
@@ -27,6 +27,9 @@ func terminalReceiptFixture(t *testing.T, uncertain bool) (*Server, termSession,
 		case "pane.read":
 			herdrFixtureReply(c, map[string]any{"read": map[string]any{"text": "❯"}})
 		case "agent.prompt":
+			for _, check := range inspect {
+				check(r.Params["text"].(string))
+			}
 			prompts.Add(1)
 			rows := s.terminal.load()
 			receipt, err := s.terminal.readInputReceipt(rows[0].ID, "receipt-input-001")

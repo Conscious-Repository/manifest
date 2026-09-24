@@ -13,3 +13,6 @@ ctx.chatAttentionFilter='waiting_user';assert.equal(ctx.chatEntryMatchesAttentio
 const finished=native('idle');finished.session.run={state:'completed',evidence:'record-one'};assert.equal(ctx.chatEntryState(finished).execution,'completed');finished.session.agentState='working';assert.equal(ctx.chatEntryState(finished).execution,'running','active work supersedes earlier completion');
 const linked=planning('idle','completed');linked.session.task='task-one';linked.session.conversation.links=[{kind:'task',id:'task-one'}];ctx.chatReviewTaskStatus['task-one']={ready:2};assert.equal(ctx.chatEntryState(linked).review.ready,2,'one linked task is counted once');
 console.log('PASS attention projection: durable receipts, advisory terminal states, independent review counts, filters.');
+
+finished.session.agentState='blocked';assert.equal(ctx.chatEntryState(finished).label,'Run finished · input pending');
+finished.session.connectivity='unavailable';assert.equal(ctx.chatEntryState(finished).label,'Run finished · disconnected');

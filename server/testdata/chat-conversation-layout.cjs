@@ -11,7 +11,7 @@ const root=path.join(__dirname,'../web');
  await page.evaluate(()=>{
   window.el=(tag,cls,text)=>{const e=document.createElement(tag);e.className=cls||'';if(text)e.textContent=text;return e;};
   window.chatTermOpen={id:'fixture',planRevisions:{}};window.chatOpenId='fixture';window.chatEmbedded=false;window.fmtWhen=()=> '10:42 AM';
-  window.chatProposalBlocks=t=>t.blocks||[];window.chatQuestionReplyDisplay=t=>t;
+  window.chatSplitUserMessage=text=>({text,files:[]});window.chatProposalBlocks=t=>t.blocks||[];window.chatQuestionReplyDisplay=t=>t;
   window.renderMarkdown=text=>{const p=el('p','md-p',text);return p;};
  });
  const source=fs.readFileSync(path.join(root,'js/48-chat.js'),'utf8');
@@ -27,7 +27,7 @@ const root=path.join(__dirname,'../web');
  });
  await page.getByRole('button',{name:'Copy response',exact:true}).click();assert.equal(await page.evaluate(()=>copied),await page.evaluate(()=>turns[1].blocks.at(-1).text));
  assert.equal(await page.locator('.chat-term-activity').getAttribute('open'),null);
- await page.getByText('Activity · 2 steps · 1 failed',{exact:true}).click();
+ await page.getByText('Activity · 2 steps · 1 failed · test',{exact:true}).click();
  await page.locator('.chat-term-step-details').first().locator('summary').click();
  await page.getByText('original file',{exact:true}).waitFor();
  await page.evaluate(()=>{window.originalRow=document.querySelector('.chat-term-out');window.originalDetails=document.querySelector('.chat-term-step-details');originalDetails.querySelector('summary').focus();chatTermPaintLines(document.getElementById('transcript'),turns);});
