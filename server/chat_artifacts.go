@@ -237,7 +237,11 @@ func (s *Server) retainedArtifactContext(refs []artifactContextRef) (string, err
 		if strings.IndexByte(string(b), 0) >= 0 || !utf8.Valid(b) || (!strings.HasPrefix(mime, "text/") && mime != "application/json") {
 			return "", errBadRequest("this artifact needs a supported text extraction before discussing it")
 		}
-		fmt.Fprintf(&out, "\n\n<referenced-artifact id=%q revision=%q version=%q>\n%s\n</referenced-artifact>", ref.ID, ref.Revision, fmt.Sprint(rev.N), string(b))
+		source := ""
+		if rel := knowledgeContextPath(a); rel != "" {
+			source = fmt.Sprintf(" source-note=%q", rel)
+		}
+		fmt.Fprintf(&out, "\n\n<referenced-artifact id=%q revision=%q version=%q%s>\n%s\n</referenced-artifact>", ref.ID, ref.Revision, fmt.Sprint(rev.N), source, string(b))
 	}
 	return out.String(), nil
 }

@@ -203,10 +203,10 @@ const {chromium}=require('playwright'),fs=require('fs'),path=require('path'),ass
  assert.equal(await p.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);
  await p.screenshot({path:'/tmp/manifest-workbench-files-phone.png'});
  await p.getByRole('button',{name:'Earlier report',exact:true}).click();
- await p.getByText('Opened from all registered files.',{exact:false}).waitFor();
+ await p.getByText('Browsing does not add message context.',{exact:false}).waitFor();
  assert.equal(await p.locator('.artifact-workspace:visible').getByRole('button',{name:'Discuss',exact:true}).count(),0);
  await p.evaluate(async()=>{chatWorkspaceTabs.close();await Promise.all([...chatWorkspaceStates.values()].map(s=>s.flush()));chatWorkspaceStates.clear();await chatRestoreWorkspace();});
- await p.getByText('Opened from all registered files.',{exact:false}).waitFor();
+ await p.getByText('Browsing does not add message context.',{exact:false}).waitFor();
  assert.equal(await p.locator('.artifact-workspace:visible').getByRole('button',{name:'Discuss',exact:true}).count(),0);
  await p.evaluate(()=>{window.chatConversationTasks=new Map();window.chatPendingFiles=[];});
  await p.addScriptTag({content:chat.slice(chat.indexOf('function chatCaptureSyncedDraft('),chat.indexOf('function chatRenderDraftNotice('))});

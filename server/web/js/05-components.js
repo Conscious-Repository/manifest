@@ -446,6 +446,7 @@ function diffView(unifiedText) {
 //   opts.onEnter      Enter key with a value (free-text commit)
 //   opts.onEscape     Escape key
 //   opts.onChange     input change event (committed free text)
+//   opts.keyboard    opt into combobox ArrowUp/Down, Enter and Escape navigation
 //   opts.onBlurGone   after blur, INSTEAD of just hiding the drop
 //                     (personInput cancels the whole affordance)
 //
@@ -458,32 +459,52 @@ function typeahead(opts) {
   const drop = el("div", "ta-drop");
   drop.hidden = true;
   let seq = 0;
+  let active = -1, choices = [];
+  const setActive = n => {
+    active = n;
+    [...drop.children].forEach((row,i)=>row.setAttribute('aria-selected',String(i===n)));
+    if(n>=0){input.setAttribute('aria-activedescendant',drop.children[n].id);drop.children[n].scrollIntoView({block:'nearest'});}
+    else input.removeAttribute('aria-activedescendant');
+  };
+  const hide = () => {drop.hidden=true;if(opts.keyboard){input.setAttribute('aria-expanded','false');setActive(-1);}};
+  if(opts.keyboard){
+    drop.id='ta-'+crypto.randomUUID();drop.setAttribute('role','listbox');
+    input.setAttribute('role','combobox');input.setAttribute('aria-autocomplete','list');input.setAttribute('aria-controls',drop.id);input.setAttribute('aria-expanded','false');
+    input.addEventListener('keydown',e=>{
+      if(!drop.hidden&&(e.key==='ArrowDown'||e.key==='ArrowUp')){e.preventDefault();setActive(active<0?(e.key==='ArrowDown'?0:choices.length-1):(active+(e.key==='ArrowDown'?1:-1)+choices.length)%choices.length);}
+      else if(!drop.hidden&&e.key==='Enter'&&active>=0){e.preventDefault();e.stopImmediatePropagation();choices[active].pick();hide();}
+      else if(e.key==='Escape'&&!drop.hidden){e.preventDefault();e.stopPropagation();++seq;hide();}
+    });
+  }
   const ta = {
     el: wrap,
     input,
     value: () => input.value.trim(),
     setValue: (v) => { input.value = v; },
     focus: () => input.focus(),
-    commit: (v) => { input.value = v; drop.hidden = true; },
+    commit: (v) => { input.value = v; ++seq; hide(); },
   };
   const refresh = async () => {
     const q = input.value.toLowerCase().trim();
-    if (opts.minChars && q.length < opts.minChars) { drop.hidden = true; return; }
+    if (opts.minChars && q.length < opts.minChars) { ++seq; hide(); return; }
     const mySeq = ++seq;
     const items = [];
     const add = (label, kind, pick) => items.push({ label, kind: kind || "", pick });
     await opts.suggest(q, add, ta);
     if (mySeq !== seq) return; // a newer keystroke superseded this fetch
     drop.innerHTML = "";
-    items.forEach(({ label, kind, pick }) => {
+    choices=items;active=-1;
+    items.forEach(({ label, kind, pick },i) => {
       let it;
       if (kind === "create") it = el("div", "ta-item ta-create", label);
       else if (kind) { it = el("div", "ta-item"); it.append(el("span", "", label), el("span", "ta-kind", kind)); }
       else it = el("div", "ta-item", label);
+      if(opts.keyboard){it.id=drop.id+'-'+i;it.setAttribute('role','option');it.setAttribute('aria-selected','false');}
       it.onmousedown = (e) => { e.preventDefault(); pick(); };
       drop.append(it);
     });
     drop.hidden = !drop.children.length;
+    if(opts.keyboard){input.setAttribute('aria-expanded',String(!drop.hidden));input.removeAttribute('aria-activedescendant');}
   };
   input.addEventListener("input", refresh);
   if (!opts.minChars) input.addEventListener("focus", refresh);
@@ -497,7 +518,7 @@ function typeahead(opts) {
   if (opts.onBlurGone) {
     input.addEventListener("blur", () => setTimeout(() => { if (wrap.parentNode) opts.onBlurGone(); }, 200));
   } else {
-    input.addEventListener("blur", () => setTimeout(() => { drop.hidden = true; }, 150));
+    input.addEventListener("blur", () => setTimeout(() => { ++seq; hide(); }, 150));
   }
   wrap.append(input, drop);
   return ta;

@@ -2139,7 +2139,7 @@ function chatPaintTurns(host, turns, ctx) {
     if (t.who === "user") {
       const row=chatUserTurn(chatQuestionReplyDisplay(t.text));
       row.dataset.chatReadTurn=String(t.n);
-      const receipt=t.delivery||(t.submission?{context:{recipient:{agent:t.native.agent,model:t.native.model},task:t.submission.task,artifacts:t.submission.artifacts},historyOmitted:t.submission.historyOmitted}:ctx?.deliveries?.find(d=>d.userTurn===t.n));
+      const receipt=t.delivery||(t.submission?{context:{recipient:{agent:t.native.agent,model:t.native.model},task:t.submission.task,artifacts:t.submission.artifacts,explicitArtifacts:t.submission.explicitArtifacts},historyOmitted:t.submission.historyOmitted}:ctx?.deliveries?.find(d=>d.userTurn===t.n));
       if(receipt?.context?.recipient){
         const target=receipt.context.recipient;
         row.append(el("div","chat-context-attribution","To "+chatAgentLabel(target.agent)+(target.model?" · "+shortModel(target.model):"")+(receipt.historyOmitted?" · "+receipt.historyOmitted+" earlier turns omitted":"")));
@@ -2147,7 +2147,7 @@ function chatPaintTurns(host, turns, ctx) {
       for(const ref of receipt?.context?.artifacts||[]){
         const open=el("button","sprt-quiet","Referenced plan / file");
         open.title="Open the exact version discussed in this message";
-        open.onclick=()=>chatOpenWorkingArtifact({id:ref.id,revision:ref.revision,task:receipt.context.task,selectionKey:"chat:"+chatAgent+"/"+chatOpenId});
+        open.onclick=()=>chatOpenWorkingArtifact({id:ref.id,revision:ref.revision,task:receipt.context.task,contextDisabled:!!receipt.context.explicitArtifacts,selectionKey:"chat:"+chatAgent+"/"+chatOpenId});
         row.append(open);
       }
       for(const file of t.submission?.files||[]){
@@ -3845,9 +3845,9 @@ function chatOpenWorkingArtifact(spec) {
       document.querySelector("#chatComposer textarea")?.focus();
       };
   w.tab(tabKey,spec.plan?"Plan":"Review",(host,drop)=>artifactWorkspace(host,{
-    load, revision:spec.revision,proposal:spec.proposal,review:!chatIsPortal(),receiptSave:!spec.plan,contextNotice:spec.contextDisabled?(canUsePrivate?"Opened from all registered files. Browsing does not add message context. Use in this private chat selects this exact version for your next message.":"Opened from all registered files. This file is not selected as message context. Source links, when available, are listed in Files."):"",
+    load, revision:spec.revision,proposal:spec.proposal,review:!chatIsPortal(),receiptSave:!spec.plan,contextNotice:spec.contextDisabled?(canUsePrivate?"Browsing does not add message context. Use in this private chat selects this exact version for your next message.":"This file is not selected as message context. Source links, when available, are listed in Files."):"",
     save:spec.plan ? (text,expectedRevision)=>postJSONOk("/api/tasks/plan",{id:taskID,text,expectedRevision}):(text,expectedRevision,requestID)=>postJSONOk("/api/artifacts/text",{id:spec.id,content:text,expectedRevision,requestID}),
-    canEdit:spec.plan ? null : a=>/\.(md|txt|json|csv|tsv|yaml|yml|toml|js|jsx|ts|tsx|py|go|html|css|sql|sh|xml|svg)$/i.test(a.ref||"") && a.provenance?.source!=="task-plan",
+    canEdit:spec.plan ? null : a=>/\.(md|txt|json|csv|tsv|yaml|yml|toml|js|jsx|ts|tsx|py|go|html|css|sql|sh|xml|svg)$/i.test(a.ref||"") && !["task-plan","knowledge-context"].includes(a.provenance?.source),
     saveNotice:spec.plan ? null : "Saved as a new artifact version. Use Discuss this version to ask the agent to apply it to working files.",
     onClose:drop,
     onDiscuss: !spec.contextDisabled && (key.startsWith("chat:")||key.startsWith("task:")) && (key.startsWith("task:") || chatRosterEntry(chatAgent)?.durableSend || chatIsTerm()) ? selectContext:null,

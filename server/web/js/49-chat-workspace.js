@@ -28,6 +28,7 @@ async function chatRestoreWorkspace(){
   else if(tab.spec?.kind==='activity')chatOpenActivity();
   else if(tab.spec?.kind==='context')chatOpenContext();
   else if(tab.spec?.kind==='files')chatOpenFiles();
+  else if(tab.spec?.kind==='notes')chatOpenNotes();
   else if(tab.spec?.kind==='project'&&chatWorkstreams.groups[tab.spec.id])chatEditProject(tab.spec.id);
   const opened=w.entries.get(tab.key);if(opened?.api?.restoreView&&tab.view)opened.restoreView=tab.view;
  }
@@ -134,6 +135,7 @@ function chatWorkspaceChooser(host){
  const source=chatWorkspaceSource(),chooser=el('div','chat-workspace-chooser');
  const action=(name,description,icon,fn)=>{const b=el('button','chat-workspace-option');b.title=description;b.append(chatWorkspaceIcon(icon),el('span','',name));b.onclick=fn;chooser.append(b);};
  action('Files','Browse outputs and referenced files','file',()=>chatOpenFiles());
+ if(chatCanSelectNoteContext())action('Notes','Find and review knowledge notes for this private chat','file',()=>chatOpenNotes());
  if(source)action('Activity','Inspect recorded instructions, narration and tool output','review',()=>chatOpenActivity());
  const project=chatCurrentProject();
  if(source)action('Context','Inspect recorded inputs and project instructions','folder',()=>chatOpenContext());
@@ -400,7 +402,7 @@ function chatContextInputs(data){
  return (data?.turns||[]).filter(t=>t.who==='user').map((turn,index)=>{
   const receipt=turn.delivery||(turn.n!==undefined?(data.context?.deliveries||[]).find(d=>d.userTurn===turn.n):null);
   const context=receipt?.context||{};
-  return {id:String(turn.id??turn.n??index),text:turn.text||'',recipient:context.recipient||turn.native||null,task:context.task||turn.submission?.task||'',artifacts:context.artifacts||turn.submission?.artifacts||[],files:turn.submission?.files||[],omitted:receipt?.historyOmitted||turn.submission?.historyOmitted||0};
+  return {id:String(turn.id??turn.n??index),text:turn.text||'',recipient:context.recipient||turn.native||null,task:context.task||turn.submission?.task||'',artifacts:context.artifacts||turn.submission?.artifacts||[],explicitArtifacts:!!(context.explicitArtifacts||turn.submission?.explicitArtifacts),files:turn.submission?.files||[],omitted:receipt?.historyOmitted||turn.submission?.historyOmitted||0};
  });
 }
 function chatOpenContext(){
@@ -428,7 +430,7 @@ function chatOpenContext(){
    if(input.omitted)section.append(el('p','chat-workspace-hint',input.omitted+' earlier turns omitted from this submission.'));
    if(input.task&&input.task!==source.task){const task=el('button','sprt-quiet','open task supplied with this instruction');task.onclick=()=>openTodoPanel(input.task);section.append(task);}
    const instruction=el('details','chat-context-instruction');instruction.open=instructionOpen;instruction.append(el('summary','','Instruction text'),el('pre','chat-activity-text',input.text));instruction.addEventListener('toggle',()=>{if(instruction.isConnected)instructionOpen=instruction.open;});section.append(instruction);
-   for(const artifact of input.artifacts){const open=el('button','chat-context-reference','open referenced artifact');open.title='Revision '+artifact.revision;open.onclick=()=>chatOpenWorkingArtifact({id:artifact.id,revision:artifact.revision,task:input.task});section.append(open,el('span','chat-workspace-hint','Revision '+artifact.revision?.slice(0,12)));}
+   for(const artifact of input.artifacts){const open=el('button','chat-context-reference','open referenced artifact');open.title='Revision '+artifact.revision;open.onclick=()=>chatOpenWorkingArtifact({id:artifact.id,revision:artifact.revision,task:input.task,contextDisabled:input.explicitArtifacts});section.append(open,el('span','chat-workspace-hint','Revision '+artifact.revision?.slice(0,12)));}
    for(const file of input.files){const open=el('button','chat-context-reference',file.name||'Attached file');open.onclick=()=>chatOpenAttachment(file,chatFileHref(file.hash));section.append(open);}
    const origin=data?.context?.origin;
    if(origin?.context){const parent=el('details','chat-context-instruction');parent.append(el('summary','','Parent context snapshot'),el('pre','chat-activity-text',origin.context));body.append(parent);}
@@ -458,7 +460,7 @@ function chatOpenFiles(){
     item.append(open,el('div','chat-file-meta',metadata.join(' · ')));if(a.ref)item.append(el('div','chat-file-path',a.ref));
     for(const link of a.sources||[]){
      if(!/^#\/(chat|terminal|artifact)\//.test(link.route||''))continue;
-     const anchor=el('a','sprt-quiet chat-file-source',link.kind==='conversation'?'source conversation':link.kind==='execution'?'producing execution':'producing run');anchor.href=link.route;anchor.title=link.label||link.id;item.append(anchor);
+     const anchor=el('a','sprt-quiet chat-file-source',link.kind==='conversation'?'source conversation':link.kind==='execution'?'producing execution':link.kind==='note'?'source note':'producing run');anchor.href=link.route;anchor.title=link.label||link.id;item.append(anchor);
     }
     if((a.provenance?.session||a.provenance?.run)&&!a.sources?.length)item.append(el('div','chat-file-meta','Source unavailable; recorded identity retained.'));
     list.append(item);
@@ -525,3 +527,47 @@ document.addEventListener('click',event=>{
  const path=chatLocalFilePath(link.getAttribute('href'),base);if(!path)return;
  event.preventDefault();chatOpenLocalFile(path);
 });
+
+
+function chatCanSelectNoteContext(){
+ return !!chatOpenId&&!chatIsPortal()&&(chatIsTerm()?!chatTermOpen?.sharedConversation:!chatCurSession?.shared)&&(chatRosterEntry(chatAgent)?.durableSend||chatIsTerm());
+}
+function chatOpenNotes(){
+ if(!chatCanSelectNoteContext())return;
+ const key='chat:'+chatAgent+'/'+chatOpenId;
+ return chatEnsureWorkspace().tab('notes','Notes',(host,drop)=>{
+  const pane=el('section','chat-notes-inspector'),status=el('p','chat-workspace-hint','Search authored knowledge notes by name, path or alias. Up to 50 matches. System and imported records are excluded.'),preview=el('div','chat-notes-preview');
+  status.setAttribute('role','status');preview.tabIndex=0;
+  let closed=false,ticket=0,selected=null;
+  const current=()=>!closed&&key==='chat:'+chatAgent+'/'+chatOpenId&&chatCanSelectNoteContext();
+  const load=async(path,expected)=>{
+   const turn=++ticket;selected=null;preview.replaceChildren();status.textContent='Loading note…';
+   try{
+    const r=await fetch('/api/chat/notes/preview?path='+encodeURIComponent(path),{cache:'no-store'});if(!r.ok)throw Error(await r.text());const note=await r.json();
+    if(!current()||turn!==ticket)return;selected=note;
+    const title=el('h3','',note.path),source=el('a','sprt-quiet','open source note'),text=el('pre','chat-activity-text',note.content),use=el('button','sprt-quiet','use in this private chat');source.href=note.route;source.target='_blank';source.rel='noopener';
+    const revision=el('p','chat-workspace-hint','Revision '+note.revision);
+    status.textContent=expected&&expected!==note.revision?'The source changed since your last preview. Review this version before selecting it.':'Review the full note. Selecting retains these exact bytes for your next message and replaces any selected artifact. Send delivers it.';
+    use.onclick=async()=>{
+     if(!current()||selected!==note)return;use.disabled=true;status.textContent='Retaining reviewed version…';
+     try{
+      const ref=await postJSONOk('/api/chat/notes/retain',{path:note.path,revision:note.revision});
+      if(!current()||selected!==note)return;
+      chatArtifactSelections.set(key,{...ref,explicitArtifacts:true});chatRenderArtifactContext('',key);chatCaptureSyncedDraft(key.slice(5));
+      status.textContent='Selected exact note version. Send delivers it.';
+     }catch(e){if(current()&&selected===note)status.textContent=e.message;}
+     finally{use.disabled=false;}
+    };
+    preview.append(title,source,revision,text,use);
+   }catch(e){if(current()&&turn===ticket){status.textContent=e.message;const retry=el('button','sprt-quiet','retry preview');retry.onclick=()=>load(path,expected);preview.append(retry);}}
+  };
+  const ta=typeahead({placeholder:'Find a knowledge note',minChars:1,keyboard:true,suggest:async(q,add)=>{
+   try{const r=await fetch('/api/chat/notes?q='+encodeURIComponent(q),{cache:'no-store'});if(!r.ok)throw Error(await r.text());const data=await r.json();if(!current())return;
+    for(const note of data.notes||[])add(note.Path,'note',()=>{ta.commit(note.Path);load(note.Path);});
+    if(ta.value().toLowerCase()===q)status.textContent=data.notes?.length?data.notes.length+' matches · select a path to review its full text.':'No matching knowledge notes.';
+   }catch(e){if(current()&&ta.value().toLowerCase()===q)status.textContent=e.message;}
+  }});ta.input.setAttribute('aria-label','Find a knowledge note');
+  pane.append(ta.el,status,preview);host.append(pane);
+  return {element:pane,close:()=>{closed=true;++ticket;pane.remove();drop();},getView:()=>({query:ta.value(),path:selected?.path,revision:selected?.revision,scrollTop:preview.scrollTop}),restoreView:async view=>{ta.setValue(view.query||'');if(view.path)await load(view.path,view.revision);preview.scrollTop=Math.max(0,Number(view.scrollTop)||0);return true;}};
+ },{kind:'notes'});
+}

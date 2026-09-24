@@ -88,6 +88,12 @@ func (s *Server) artifactSourceLinks(rows []artifacts.Artifact) map[string][]art
 		}
 	}
 	for _, a := range rows {
+		if a.Provenance.Source == "knowledge-context" && a.Harness == "vault" && s.index != nil {
+			rel := knowledgeContextPath(a)
+			if rel != "" && s.index.ContextNote(rel) {
+				out[a.ID] = append(out[a.ID], artifactSourceLink{"note", rel, "#/note/" + url.PathEscape(rel), rel})
+			}
+		}
 		if link, ok := conversations[a.Provenance.Session]; ok {
 			out[a.ID] = append(out[a.ID], link)
 		}

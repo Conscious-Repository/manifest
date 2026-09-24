@@ -836,3 +836,12 @@ label.chat-artifact-handoff{display:flex;flex-direction:row;align-items:flex-sta
 .chat-side-setup label.chat-artifact-handoff{flex-direction:row;}
 .chat-artifact-handoff span{min-width:0;}
 .chat-artifact-handoff input[type=checkbox]{flex:none;width:20px;min-width:20px;min-height:20px;height:20px;margin:2px 0;padding:0;}
+
+.chat-notes-inspector{display:flex;flex-direction:column;gap:10px;min-height:0;height:100%;padding:12px;}
+.chat-notes-inspector .ta-wrap{display:block;width:100%;}
+.chat-notes-inspector .ta-in{width:100%;min-height:44px;}
+.chat-notes-inspector .ta-drop{max-width:100%;max-height:240px;overflow:auto;}
+.chat-notes-inspector .ta-item{min-height:44px;overflow-wrap:anywhere;}
+.chat-notes-inspector .ta-item[aria-selected=true]{background:var(--base-20);outline:1px solid var(--base-50);outline-offset:-1px;}
+.chat-notes-preview{min-height:0;overflow:auto;overflow-wrap:anywhere;}
+.chat-notes-preview button{min-height:44px;}
