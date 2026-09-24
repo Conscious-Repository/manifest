@@ -1263,6 +1263,7 @@ async function postApprovalDecision(id, kind, body) {
   if (typeof chatOpenId !== "undefined" && chatOpenId && chatAgent) refetchChatSession(chatOpenId);
   if (typeof chatTaskID !== "undefined" && chatTaskID) renderTaskChat(chatTaskID, true);
   if (typeof loadTodos === "function") loadTodos();
+  window.dispatchEvent(new CustomEvent("manifest-approval-updated",{detail:{id}}));
   loadFeed(); // each surface converges to the same decision
 }
 

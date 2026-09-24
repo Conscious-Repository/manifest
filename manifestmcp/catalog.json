@@ -267,6 +267,29 @@
       "inputSchema": {
         "type": "object",
         "properties": {
+          "sourceRecord": {
+            "type": [
+              "null",
+              "object"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string"
+              },
+              "id": {
+                "type": "string"
+              },
+              "revision": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "kind",
+              "id",
+              "revision"
+            ],
+            "additionalProperties": false
+          },
           "monitorReplies": {
             "type": "boolean"
           },

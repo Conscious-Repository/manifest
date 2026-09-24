@@ -3738,6 +3738,8 @@ function recNetworkBody(c) {
 // ---- approval-gated Gmail outreach ----
 let recOutreachProbe = null;
 let recOutreachLog = { id: null };
+let recOutreachLogTicket=0;
+if(typeof window!=="undefined")window.addEventListener("manifest-approval-updated",()=>{if(aionMode==="recruiting"&&recSel&&recOutreachLog.id===recSel)recOutreachLoadLog(recSel);});
 let recOutreachReady = {};
 let recOutreachForm = {};
 
@@ -3752,12 +3754,15 @@ async function recOutreachLoadProbe() {
 }
 
 async function recOutreachLoadLog(id) {
+  const ticket=++recOutreachLogTicket;
   recOutreachLog = { id, entries: [], loading: true };
   try {
     const r = await fetch("/api/aion/recruiting/outreach/" + id, { cache: "no-store" });
     if (!r.ok) throw new Error(await r.text());
-    recOutreachLog = { id, entries: (await r.json()).entries || [] };
+    const data=await r.json();if(ticket!==recOutreachLogTicket)return;
+    recOutreachLog = { id, entries: data.entries || [],draftRevision:data.draftRevision,operations:data.operations||[] };
   } catch (e) {
+    if(ticket!==recOutreachLogTicket)return;
     recOutreachLog = { id, entries: [], error: String(e.message || e) };
   }
   if (recSel === id && aionMode === "recruiting") renderAion();
@@ -3781,7 +3786,7 @@ async function recOutreachDraft(c, body) {
   try {
     const out = await recOutreachCall("/api/aion/recruiting/outreach/draft/" + c.id, body);
     if (out.view) recCache = out.view;
-    if (out.entry && recOutreachLog.id === c.id) recOutreachLog.entries = (recOutreachLog.entries || []).concat([out.entry]);
+    if (out.entry && recOutreachLog.id === c.id) await recOutreachLoadLog(c.id);
     delete recOutreachReady[c.id];
     showToast(body.subject || body.body ? "draft captured" : "draft written");
     renderAion();
@@ -3827,6 +3832,10 @@ function recOutreachSection(c) {
     sec.append(row);
   });
   if (!entries.length) sec.append(emptyRow("no outreach yet"));
+  const operations=recOutreachLog.operations||[];
+  for(const item of operations)sec.append(manifestOperationCard(item));
+  if(operations.length){const refresh=el('button','pill light','refresh approval status');refresh.onclick=()=>recOutreachLoadLog(c.id);sec.append(refresh);}
+
   if (c.stage === "archived") return sec;
 
   const form = recOutreachForm[c.id] || (recOutreachForm[c.id] = { kind: "direct", via: "" });
@@ -3858,12 +3867,14 @@ function recOutreachSection(c) {
   sec.append(draftBtn);
 
   const draft = recOutreachCurrentDraft(entries);
+  let draftEdited=()=>false;
   if (draft) {
     const subject = el("input", "pp-in rec-in");
     subject.type = "text";
     subject.value = draft.subject || "";
     const body = el("textarea", "pp-in rec-in rec-quote");
     body.value = draft.body || "";
+    draftEdited=()=>subject.value!==(draft.subject||"")||body.value!==(draft.body||"");
     const capture = () => {
       if (subject.value === (draft.subject || "") && body.value === (draft.body || "")) return;
       recOutreachDraft(c, { kind: draft.kind, via: draft.via || "", to: draft.to || [], subject: subject.value, body: body.value });
@@ -3891,36 +3902,21 @@ function recOutreachSection(c) {
   }
 
   if (!capable || !draft) return sec;
-  const send = el("button", "rec-quiet-btn rec-send-btn", "send as " + (probe.sender || "sender"));
-  send.onclick = () => {
-    const armed = el("button", "rec-quiet-btn rec-send-btn armed", "confirm send?");
-    armed.onclick = async () => {
-      if (armed.disabled) return;
-      armed.disabled = true;
-      armed.textContent = "sending…";
-      try {
-        const out = await recOutreachCall("/api/aion/recruiting/outreach/send/" + c.id, { approve: true });
-        if (out.readiness && !out.send) {
-          recOutreachReady[c.id] = out.readiness;
-          showToast(out.error || "send refused");
-          renderAion();
-          return;
-        }
-        if (out.view) recCache = out.view;
-        if ((out.send || {}).entry && recOutreachLog.id === c.id) recOutreachLog.entries = entries.concat([out.send.entry]);
-        delete recOutreachReady[c.id];
-        showToast("sent · message " + ((out.send || {}).messageId || ""));
-        renderAion();
-      } catch (e) {
-        showToast(String(e.message || e).slice(0, 140), null, "error");
-        armed.disabled = false;
-        armed.textContent = "confirm send?";
-      }
-    };
-    send.replaceWith(armed);
-    armed.focus();
+  const revision=recOutreachLog.draftRevision;
+  const existing=operations.find(item=>item.record.input?.sourceRecord?.revision===revision);
+  const propose=el('button','rec-quiet-btn rec-send-btn',existing?'view saved approval':'prepare approval');
+  propose.disabled=!revision;
+  propose.onclick=async()=>{
+    if(draftEdited()){showToast('Finish saving these edits, then review the saved draft before preparing approval.');return;}
+    propose.disabled=true;
+    try{
+      const out=await recOutreachCall('/api/aion/recruiting/outreach/propose/'+c.id,{revision});
+      if(!out.operationId){if(out.readiness)recOutreachReady[c.id]=out.readiness;throw Error(out.error||'Approval was not prepared. Review readiness first.');}
+      if(recSel===c.id&&aionMode==='recruiting')await recOutreachLoadLog(c.id);
+      showToast('Saved approval · review the exact email below or in Feed.');
+    }catch(e){showToast(String(e.message||e).slice(0,180),null,'error');propose.disabled=false;}
   };
-  sec.append(send);
+  sec.append(el('p','rec-next','Preparing saves a review request. Only approval of the exact email sends it.'),propose);
   return sec;
 }
 

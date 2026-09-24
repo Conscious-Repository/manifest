@@ -14,8 +14,8 @@ import (
 // Approval-gated Gmail outreach (Phase 5, plan §4.8). Every route here is a
 // user action, mounted inside server.go's `if s.recruiting != nil` block and
 // never on the portal listener. Nothing sends without POST …/send carrying
-// approve:true, and that handler is the ONLY caller of the sender: there is
-// no poller, no queue, no goroutine, no retry.
+// approve:true on the legacy endpoint, or an owner decision on the canonical
+// email proposal. The board prepares the latter and projects its durable receipt.
 //
 // Route naming mirrors recruiting_ashby_private.go:
 //
@@ -122,7 +122,11 @@ func (s *Server) handleRecruitingOutreach(w http.ResponseWriter, r *http.Request
 		httpError(w, err)
 		return
 	}
-	writeJSON(w, map[string]any{"entries": entries})
+	revision := ""
+	if len(entries) > 0 {
+		revision = outreachDraftRevision(entries[len(entries)-1])
+	}
+	writeJSON(w, map[string]any{"entries": entries, "draftRevision": revision, "operations": s.recruitingOutreachOperations(strings.TrimSpace(r.PathValue("id")))})
 }
 
 // POST …/outreach/draft/{id} {kind, to?, via?, subject?, body?} → {entry,

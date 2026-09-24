@@ -192,6 +192,67 @@ func TestWorkbenchSourcedCandidateToCanonicalOutreach(t *testing.T) {
 	if got.ID != receipt.ID || got.Result["threadId"] != receipt.Result["threadId"] {
 		t.Fatal("receipt changed across restart")
 	}
+	// The board bridge prepares and recovers the same canonical approval directly.
+	bridgeDraft := recruitingPost(t, s, s.handleRecruitingOutreachDraft, "/", candidate.ID, `{"kind":"direct","subject":"Bridge review","body":"BRIDGE_REVIEWED"}`)
+	if bridgeDraft.Code != 200 {
+		t.Fatal(bridgeDraft.Code, bridgeDraft.Body.String())
+	}
+	var bridge struct {
+		Entry recruiting.OutreachEntry `json:"entry"`
+	}
+	json.Unmarshal(bridgeDraft.Body.Bytes(), &bridge)
+	propose := func(revision string) *httptest.ResponseRecorder {
+		b, _ := json.Marshal(map[string]string{"revision": revision})
+		return recruitingPost(t, s, s.handleRecruitingOutreachPropose, "/", candidate.ID, string(b))
+	}
+	if w := propose(strings.Repeat("0", 64)); w.Code != 409 {
+		t.Fatal("stale bridge review accepted", w.Code)
+	}
+	revision := outreachDraftRevision(bridge.Entry)
+	w := propose(revision)
+	if w.Code != 200 {
+		t.Fatal(w.Code, w.Body.String())
+	}
+	var bridged struct {
+		ID string `json:"operationId"`
+	}
+	json.Unmarshal(w.Body.Bytes(), &bridged)
+	if len(s.feedProposals()) != 1 || sends.Load() != 1 {
+		t.Fatal("bridge sent without approval")
+	}
+	projected := s.recruitingOutreachOperations(candidate.ID)
+	if len(projected) != 1 || projected[0]["record"].(*manifestmcp.OperationRecord).ID != bridged.ID || len(s.recruitingOutreachOperations("cand/other")) != 0 {
+		t.Fatal("bridge identity projection", projected)
+	}
+	later := recruitingPost(t, s, s.handleRecruitingOutreachDraft, "/", candidate.ID, `{"kind":"direct","subject":"Later","body":"LATER_NOT_APPROVED"}`)
+	if later.Code != 200 {
+		t.Fatal(later.Code)
+	}
+	w = propose(revision)
+	var recovered struct {
+		ID string `json:"operationId"`
+	}
+	json.Unmarshal(w.Body.Bytes(), &recovered)
+	if w.Code != 200 || recovered.ID != bridged.ID {
+		t.Fatal("bridge retry lost frozen identity", w.Code, w.Body.String())
+	}
+	r := httptest.NewRequest("POST", "/", strings.NewReader("{}"))
+	r.SetPathValue("id", manifestmcp.ProposalID(bridged.ID))
+	decision := httptest.NewRecorder()
+	s.handleSpiritsApprovalConfirm(decision, r)
+	if decision.Code != 200 || sends.Load() != 2 {
+		t.Fatal(decision.Code, decision.Body.String(), sends.Load())
+	}
+	if body, _ := deliveredBody.Load().(string); !strings.Contains(body, "BRIDGE_REVIEWED") || strings.Contains(body, "LATER_NOT_APPROVED") {
+		t.Fatal("bridge payload changed", body)
+	}
+	projected = s.recruitingOutreachOperations(candidate.ID)
+	if len(projected) != 1 || projected[0]["record"].(*manifestmcp.OperationRecord).Status != "succeeded" {
+		t.Fatal("board lost canonical outcome", projected)
+	}
+	if w = propose(revision); w.Code != 200 || sends.Load() != 2 {
+		t.Fatal("bridge replay after completion", w.Code, sends.Load())
+	}
 	entries, err := s.recruiting.Outreach(candidate.ID)
 	if err != nil || len(entries) < 2 || entries[0].Body != draft.Body || entries[0].Subject != draft.Subject {
 		t.Fatal("original reviewed draft history changed", entries, err)

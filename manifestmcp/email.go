@@ -17,25 +17,35 @@ type EmailAttachment struct {
 	Hash string `json:"hash"`
 	Name string `json:"name"`
 }
+type EmailSourceRecord struct {
+	Kind     string `json:"kind"`
+	ID       string `json:"id"`
+	Revision string `json:"revision"`
+}
+
 type EmailInput struct {
-	MonitorReplies bool              `json:"monitorReplies,omitempty"`
-	Domain         string            `json:"domain"`
-	To             []string          `json:"to"`
-	Cc             []string          `json:"cc,omitempty"`
-	Subject        string            `json:"subject"`
-	Body           string            `json:"body"`
-	InReplyTo      string            `json:"inReplyTo,omitempty"`
-	References     string            `json:"references,omitempty"`
-	Attachments    []EmailAttachment `json:"attachments,omitempty"`
-	Conversation   string            `json:"conversation,omitempty"`
-	Turn           string            `json:"turn,omitempty"`
-	IdempotencyKey string            `json:"idempotencyKey"`
+	SourceRecord   *EmailSourceRecord `json:"sourceRecord,omitempty"`
+	MonitorReplies bool               `json:"monitorReplies,omitempty"`
+	Domain         string             `json:"domain"`
+	To             []string           `json:"to"`
+	Cc             []string           `json:"cc,omitempty"`
+	Subject        string             `json:"subject"`
+	Body           string             `json:"body"`
+	InReplyTo      string             `json:"inReplyTo,omitempty"`
+	References     string             `json:"references,omitempty"`
+	Attachments    []EmailAttachment  `json:"attachments,omitempty"`
+	Conversation   string             `json:"conversation,omitempty"`
+	Turn           string             `json:"turn,omitempty"`
+	IdempotencyKey string             `json:"idempotencyKey"`
 }
 
 func (a *Adapter) mailStore() gmailsend.DeliveryStore {
 	return gmailsend.DeliveryStore{Dir: filepath.Join(a.Data, "email-deliveries")}
 }
 func (a *Adapter) emailPrepare(q EmailInput) (Object, error) {
+	if q.SourceRecord != nil && (q.SourceRecord.Kind != "recruiting-outreach" || q.SourceRecord.ID == "" || len(q.SourceRecord.ID) > 512 || !artifacts.ValidHash(q.SourceRecord.Revision)) {
+		return nil, fmt.Errorf("invalid email source record")
+	}
 	if strings.TrimSpace(q.IdempotencyKey) == "" {
 		return nil, fmt.Errorf("email preparation requires an idempotency key")
 	}
@@ -88,6 +98,9 @@ func (a *Adapter) emailPrepare(q EmailInput) (Object, error) {
 		return nil, err
 	}
 	preview := Object{"monitorReplies": q.MonitorReplies, "domain": domain, "deliveryId": d.ID, "envelopeHash": d.Hash, "email": Object{"from": d.Message.From, "to": d.Message.To, "cc": d.Message.Cc, "subject": d.Message.Subject, "body": d.Message.Body, "inReplyTo": d.Message.InReplyTo, "references": d.Message.References, "attachments": q.Attachments}}
+	if q.SourceRecord != nil {
+		preview["sourceRecord"] = q.SourceRecord
+	}
 	return prepared("email.prepare", "human_approval", preview), nil
 }
 
