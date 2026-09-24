@@ -753,7 +753,7 @@ function artifactReviewControls(artifact,revision,number,onDiscuss){
    if(host.isConnected&&content.state==='changes_requested'&&onDiscuss)onDiscuss({id:artifact.id,revision,title:artifact.title||'Artifact',version:number,reviewNote:content.note,reviewStart:content.start,reviewEnd:content.end,reviewLineKind:/\.diff$/i.test(artifact.ref||'')?'snapshot':'file'});
   }catch(e){state.textContent=e.message||'Review not confirmed. Retry uses the same decision ID.';}finally{save.disabled=!snapshot||recorded;}
  };
- host.prepareChange=context=>{choice.value='changes_requested';start.value=context.start;end.value=context.end;note.value=(note.value.trim()?note.value+'\n\n':'')+'File: '+context.path+'\n';host.open=true;changed();note.focus();note.setSelectionRange(note.value.length,note.value.length);};
+ host.prepareChange=context=>{choice.value='changes_requested';start.value=context.start;end.value=context.end;note.value=(note.value.trim()?note.value+'\n\n':'')+'File: '+context.path+'\n'+(context.hunk?'Hunk: '+context.hunk+'\nSnapshot lines: '+context.start+'–'+context.end+'\n':'');host.open=true;changed();note.focus();note.setSelectionRange(note.value.length,note.value.length);};
  load();return host;
 }
 
@@ -945,12 +945,12 @@ function artifactWorkspace(mount, options) {
   } catch(e) { notice.textContent=e.message; title.textContent="Artifact unavailable"; } }
   const ready=refresh(opts.revision,opts.proposal);
   return {element:pane, close:()=>close.click(), isEditing:()=>editing, refresh,
-    getView:()=>({revision:selected,mode:previewMode,scrollTop:body.scrollTop,editor:editing&&editor?{scrollTop:editor.scrollTop,start:editor.selectionStart,end:editor.selectionEnd,direction:editor.selectionDirection}:null,expandedFiles:[...body.querySelectorAll('.working-file[open]')].map(f=>f.dataset.diffFile)}),
+    getView:()=>({revision:selected,mode:previewMode,scrollTop:body.scrollTop,editor:editing&&editor?{scrollTop:editor.scrollTop,start:editor.selectionStart,end:editor.selectionEnd,direction:editor.selectionDirection}:null,expandedFiles:[...body.querySelectorAll('.working-file[open]')].map(f=>f.dataset.diffFile),collapsedHunks:[...body.querySelectorAll('.working-changes-view')].flatMap(v=>v.getCollapsedHunks?.()||[])}),
     restoreView:async view=>{await ready;if(!pane.isConnected||!body.clientHeight)return false;if((view.mode==="edit"||view.mode==="edit-review")&&opts.save&&editState?.value&&(!opts.canEdit||opts.canEdit(current))){
       editVersion(!!editState.value.restore,true,null,false);
       if(view.editor){editor.setSelectionRange(Math.max(0,Number(view.editor.start)||0),Math.max(0,Number(view.editor.end)||0),view.editor.direction||"none");editor.scrollTop=Math.max(0,Number(view.editor.scrollTop)||0);}
       if(view.mode==="edit-review"&&openDraftReview)await openDraftReview();
-    }else if(view.mode==="compare"&&previewMode!=="compare"&&openComparison)await openComparison();if(!pane.isConnected||!body.clientHeight)return false;if(Array.isArray(view.expandedFiles)){body.querySelectorAll('.working-file').forEach(f=>f.open=view.expandedFiles.includes(f.dataset.diffFile));await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));}if(Number.isFinite(view.scrollTop))body.scrollTop=Math.max(0,view.scrollTop);return true;}
+    }else if(view.mode==="compare"&&previewMode!=="compare"&&openComparison)await openComparison();if(!pane.isConnected||!body.clientHeight)return false;if(Array.isArray(view.expandedFiles)){body.querySelectorAll('.working-file').forEach(f=>f.open=view.expandedFiles.includes(f.dataset.diffFile));await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));}if(Array.isArray(view.collapsedHunks)&&(!view.revision||view.revision===selected)){body.querySelectorAll('.working-changes-view').forEach(v=>v.restoreHunks?.(view.collapsedHunks));}if(Number.isFinite(view.scrollTop))body.scrollTop=Math.max(0,view.scrollTop);return true;}
   };
 }
 
@@ -969,12 +969,11 @@ function reviewDialog(title,build){
 
 // Presentation only: immutable snapshot bytes remain available through Open file.
 function artifactWorkingChangesView(text,onReview=null){
- const view=el("div","working-changes-view");
- const marker="\nUntracked files (contents not included):\n",cut=text.indexOf(marker);
- const tracked=cut<0?text:text.slice(0,cut),untracked=cut<0?[]:text.slice(cut+marker.length).trim().split("\n");
- const starts=[...tracked.matchAll(/^diff --git /gm)].map(m=>m.index);
- const files=starts.map((start,i)=>{const content=tracked.slice(start,starts[i+1]??tracked.length);const path=content.match(/^\+\+\+ b\/(.+)$/m)?.[1]||content.match(/^--- a\/(.+)$/m)?.[1]||content.split("\n")[0].replace("diff --git ","");return {path,content,start:tracked.slice(0,start).split("\n").length,end:tracked.slice(0,start+content.trimEnd().length).split("\n").length};});
- view.append(el("p","working-changes-summary",files.length?files.length+" changed "+(files.length===1?"file":"files"):"No tracked changes"));
+ const view=el("div","working-changes-view"),parsed=artifactWorkingDiffFiles(text),{files,untracked}=parsed;
+ let collapsed=new Set();
+ view.getCollapsedHunks=()=>{view.querySelectorAll('.working-hunk').forEach(h=>{if(h.open)collapsed.delete(h.dataset.diffHunk);else collapsed.add(h.dataset.diffHunk);});return [...collapsed];};
+ view.restoreHunks=keys=>{collapsed=new Set(keys);view.querySelectorAll('.working-hunk').forEach(h=>h.open=!collapsed.has(h.dataset.diffHunk));};
+ view.append(el("p","working-changes-summary",files.length?files.length+" changed "+(files.length===1?"file":"files"):!text.trim()||text.includes("No tracked changes against HEAD.")?"No tracked changes":"No supported file diff headers; inspect Snapshot details."));
  if(files.length){
   const tools=el('div','working-file-actions');
   const expand=el('button','sprt-quiet','expand all'),collapse=el('button','sprt-quiet','collapse all');
@@ -984,26 +983,64 @@ function artifactWorkingChangesView(text,onReview=null){
    section.dataset.diffFile=file.path;name.title=file.path;
    const state=/^new file mode /m.test(file.content)?'added':/^deleted file mode /m.test(file.content)?'deleted':/^rename (from|to) /m.test(file.content)?'renamed':'modified';
    const binary=/^(Binary files |GIT binary patch)/m.test(file.content);
-   let added=0,removed=0,inHunk=false;
-   for(const line of file.content.split('\n')){if(line.startsWith('@@ '))inHunk=true;else if(inHunk&&line.startsWith('+'))added++;else if(inHunk&&line.startsWith('-'))removed++;}
-   const stats=el('span','working-file-stats',state+(binary?' · binary':' · +'+added+' −'+removed));
-   heading.append(name,stats);section.append(heading);view.append(section);
+   const added=file.hunks.reduce((n,h)=>n+h.lines.filter(l=>l.startsWith('+')).length,0),removed=file.hunks.reduce((n,h)=>n+h.lines.filter(l=>l.startsWith('-')).length,0);
+   heading.append(name,el('span','working-file-stats',state+(binary?' · binary':file.combined?' · combined diff':' · +'+added+' −'+removed)));section.append(heading);view.append(section);
    let rendered=false;
-   const render=()=>{if(rendered||!section.open)return;rendered=true;if(onReview){const review=el('button','sprt-quiet working-file-review','request changes');review.setAttribute('aria-label','Request changes to '+file.path);review.onclick=()=>onReview({path:file.path,start:file.start,end:file.end});section.append(review);}const content=el('pre','working-file-diff');content.tabIndex=0;content.setAttribute('aria-label','Diff for '+file.path);
-    let before=null,after=null;for(const line of file.content.split('\n')){
-     const hunk=line.match(/^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@/);
-     if(hunk){before=Number(hunk[1]);after=Number(hunk[2]);content.append(artifactDiffLine('context',line,null,null,'working-diff-'));continue;}
-     const cls=line.startsWith('+')&&(before!==null||!line.startsWith('+++'))?'added':line.startsWith('-')&&(before!==null||!line.startsWith('---'))?'removed':'context';
-     const numbered=before!==null&&after!==null&&(cls!=='context'||line.startsWith(' ')),old=numbered&&cls!=='added'?before++:null,next=numbered&&cls!=='removed'?after++:null;
-     content.append(artifactDiffLine(cls,line,old,next,'working-diff-'));
-    }section.append(content);
+   const render=()=>{
+    if(rendered||!section.open)return;rendered=true;
+    if(onReview){const review=el('button','sprt-quiet working-file-review','request changes');review.setAttribute('aria-label','Request changes to '+file.path);review.onclick=()=>onReview({path:file.path,start:file.start,end:file.end});section.append(review);}
+    const raw=el('pre','working-file-diff');raw.tabIndex=0;raw.setAttribute('aria-label','Diff headers for '+file.path);
+    for(const line of file.headers)raw.append(artifactDiffLine('context',line,null,null,'working-diff-'));section.append(raw);
+    if(binary||file.combined)section.append(el('p','artifact-review-help',binary?'Binary snapshot; line-by-line review is unavailable.':'Combined diff shown as recorded; hunk review is unavailable.'));
+    for(const [i,hunk] of file.hunks.entries()){
+     const part=el('details','working-hunk'),summary=el('summary','working-hunk-title',hunk.header);
+     part.dataset.diffHunk=JSON.stringify([file.path,file.start,hunk.start]);summary.setAttribute('aria-label','Hunk '+(i+1)+' in '+file.path);part.append(summary);part.open=!collapsed.has(part.dataset.diffHunk);
+     if(onReview&&hunk.valid){const review=el('button','sprt-quiet working-file-review','request changes to hunk');review.setAttribute('aria-label','Request changes to hunk '+(i+1)+' in '+file.path);review.onclick=()=>onReview({path:file.path,start:hunk.start,end:hunk.end,hunk:hunk.header});part.append(review);}
+     if(!hunk.valid)part.append(el('p','artifact-review-help','Incomplete or unsupported hunk; review the recorded snapshot as a file.'));
+     const content=el('pre','working-file-diff');content.tabIndex=0;content.setAttribute('aria-label','Hunk '+(i+1)+' diff for '+file.path);
+     let before=hunk.before,after=hunk.after;
+     for(const [offset,line] of hunk.lines.entries()){
+      const cls=line.startsWith('+')?'added':line.startsWith('-')?'removed':'context';
+      const numbered=hunk.valid&&(cls!=='context'||line.startsWith(' ')),old=numbered&&cls!=='added'?before++:null,next=numbered&&cls!=='removed'?after++:null;
+      const row=artifactDiffLine(cls,line,old,next,'working-diff-');row.dataset.snapshotLine=String(hunk.start+1+offset);content.append(row);
+     }
+     part.append(content);section.append(part);
+    }
    };
    section.addEventListener('toggle',render);section.open=index===0;render();
   }
-  expand.onclick=()=>view.querySelectorAll('.working-file').forEach(f=>f.open=true);
+  expand.onclick=()=>{collapsed.clear();view.querySelectorAll('.working-hunk').forEach(h=>h.open=true);view.querySelectorAll('.working-file').forEach(f=>f.open=true);};
   collapse.onclick=()=>view.querySelectorAll('.working-file').forEach(f=>f.open=false);
  }
  if(untracked.length){const details=el("details","working-untracked");details.append(el("summary","",untracked.length+" untracked files · contents not included"));const list=el("ul","");for(const raw of untracked){let name=raw;try{name=JSON.parse(raw);}catch(e){}const row=el("li","working-untracked-file");row.title=name;row.append(el("span","",name.split("/").at(-1)));const folder=name.includes("/")?name.slice(0,name.lastIndexOf("/")):"";if(folder)row.append(el("small","",folder));list.append(row);}details.append(list);view.append(details);}
- const meta=el("details","working-snapshot-meta");meta.append(el("summary","","Snapshot details"),el("pre","",tracked.slice(0,starts[0]??tracked.length).replace("No tracked changes against HEAD.","").trim()));view.append(meta);
+ const meta=el("details","working-snapshot-meta");meta.append(el("summary","","Snapshot details"),el("pre","",parsed.metadata.replace("No tracked changes against HEAD.","").trim()));view.append(meta);
  return view;
+}
+
+// Hunk ranges are one-based lines in the immutable diff snapshot, never a
+// mixture of before/after file coordinates. Keep those coordinates for display.
+function artifactWorkingDiffFiles(text){
+ const marker="\nUntracked files (contents not included):\n",cut=text.indexOf(marker);
+ const tracked=cut<0?text:text.slice(0,cut),untracked=cut<0?[]:text.slice(cut+marker.length).trim().split("\n").filter(Boolean);
+ const starts=[...tracked.matchAll(/^diff --(?:git |cc |combined )/gm)].map(m=>m.index);
+ const files=starts.map((offset,i)=>{
+  const content=tracked.slice(offset,starts[i+1]??tracked.length),start=tracked.slice(0,offset).split('\n').length,lines=content.split('\n');
+  while(lines.at(-1)==='')lines.pop();
+  const headerPath=content.match(/^\+\+\+ (.+)$/m)?.[1],oldPath=content.match(/^--- (.+)$/m)?.[1];
+  let path=headerPath&&headerPath!=='/dev/null'?headerPath:oldPath||lines[0].replace(/^diff --(?:git |cc |combined )/,'');
+  try{if(path.startsWith('"'))path=JSON.parse(path);}catch(e){}path=path.replace(/^[ab]\//,'');
+  const combined=/^diff --(?:cc|combined) /.test(content),hunks=[];let headers=lines;
+  if(!combined){
+   const boundaries=lines.map((line,index)=>({line,index,match:line.match(/^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@/)})).filter(h=>h.match);
+   if(boundaries.length)headers=lines.slice(0,boundaries[0].index);
+   for(const [j,h] of boundaries.entries()){
+    const end=boundaries[j+1]?.index??lines.length,body=lines.slice(h.index+1,end),oldCount=Number(h.match[2]??1),newCount=Number(h.match[4]??1);
+    const old=body.filter(l=>l.startsWith(' ')||l.startsWith('-')).length,next=body.filter(l=>l.startsWith(' ')||l.startsWith('+')).length;
+    const valid=[h.match[1],h.match[3],oldCount,newCount].every(n=>Number.isSafeInteger(Number(n)))&&old===oldCount&&next===newCount&&body.every(l=>/^[ +\-]/.test(l)||l==='\\ No newline at end of file');
+    hunks.push({header:h.line,start:start+h.index,end:start+end-1,before:Number(h.match[1]),after:Number(h.match[3]),lines:body,valid});
+   }
+  }
+  return {path,content,start,end:start+lines.length-1,headers,hunks,combined};
+ });
+ return {files,untracked,metadata:tracked.slice(0,starts[0]??tracked.length)};
 }

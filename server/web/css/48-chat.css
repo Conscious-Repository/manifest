@@ -828,3 +828,7 @@ button.chat-attach-chip { min-height: 44px; max-width: 100%; background: transpa
 .chat-conversation-name { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .chat-conversation-agent { flex:none; color:var(--muted); font:var(--fs-xs) var(--mono); }
 .chat-tab-open { display:flex; align-items:center; justify-content:center; min-width:32px; align-self:stretch; color:var(--muted); text-decoration:none; }
+
+/* Hunk disclosures preserve exact snapshot ranges while file numbers stay visible. */
+.working-hunk > summary{font:var(--fs-sm)/1.5 var(--mono);overflow-wrap:anywhere;white-space:pre-wrap;min-height:var(--control-touch);}
+.working-hunk > .artifact-review-help{margin:var(--sp-4) 0;}

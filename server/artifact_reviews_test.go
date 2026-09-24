@@ -120,3 +120,62 @@ func TestArtifactReviewExactVersionReplayAndConflict(t *testing.T) {
 		}
 	}
 }
+
+func TestDiffHunkReviewAnchorsHistoricalSnapshot(t *testing.T) {
+	s, vault, _ := artifactFixture(t)
+	s.UseVault(vaultwriter.New(vault).Grant(vaultwriter.Capability{Name: "artifact-reviews", Zone: record.ZoneSystem, Pattern: "system/workbench/reviews/**", Actor: vaultwriter.ActorUserAction}))
+	s.UseArtifactReviews("system/workbench/reviews")
+	original := []byte("diff --git a/file b/file\n--- a/file\n+++ b/file\n@@ -20 +20 @@\n-old\n+new\n")
+	first, err := s.artifactReg.Put(artifacts.Put{Ref: "changes.diff", Content: original})
+	if err != nil {
+		t.Fatal(err)
+	}
+	id, hash := first.Artifact.ID, first.Artifact.Head
+	call := func(method, revision string, body any) *httptest.ResponseRecorder {
+		raw, _ := json.Marshal(body)
+		w := httptest.NewRecorder()
+		s.Handler().ServeHTTP(w, httptest.NewRequest(method, "/api/artifacts/reviews?id="+id+"&revision="+revision, bytes.NewReader(raw)))
+		return w
+	}
+	var base artifactReviews
+	if err = json.Unmarshal(call("GET", hash, nil).Body.Bytes(), &base); err != nil {
+		t.Fatal(err)
+	}
+	// The working snapshot advances while the owner reviews the older hunk.
+	latest, err := s.artifactReg.Put(artifacts.Put{ID: id, Content: []byte("different shorter snapshot\n")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := map[string]any{"request_id": "hunk-review-001", "record_version": base.RecordVersion, "state": "changes_requested", "note": "File: file\nHunk: @@ -20 +20 @@\nExplain this change.", "start": 4, "end": 6}
+	w := call("POST", hash, request)
+	if w.Code != 200 {
+		t.Fatal(w.Code, w.Body.String())
+	}
+	var reviewed artifactReviews
+	if err = json.Unmarshal(w.Body.Bytes(), &reviewed); err != nil {
+		t.Fatal(err)
+	}
+	if len(reviewed.Entries) != 1 || reviewed.Entries[0].Revision != hash || reviewed.Entries[0].Start != 4 || reviewed.Entries[0].End != 6 {
+		t.Fatal(reviewed)
+	}
+	content, err := s.artifactReg.Content(reviewed.Entries[0].Revision)
+	if err != nil || !bytes.Equal(content, original) {
+		t.Fatal("historical anchor lost", err)
+	}
+	current, _ := s.artifactReg.Get(id)
+	if current.Head != latest.Artifact.Head {
+		t.Fatal("review changed current snapshot")
+	}
+	if again := call("POST", hash, request); again.Code != 200 {
+		t.Fatal("lost acknowledgment did not reconcile", again.Code)
+	}
+	request["start"] = 5
+	if changed := call("POST", hash, request); changed.Code != 409 {
+		t.Fatal("request identity changed anchored range", changed.Code)
+	}
+	request["request_id"] = "hunk-review-002"
+	request["record_version"] = reviewed.RecordVersion
+	if changed := call("POST", latest.Artifact.Head, request); changed.Code != 400 {
+		t.Fatal("old range accepted against shorter new snapshot", changed.Code)
+	}
+}
