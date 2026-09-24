@@ -24,17 +24,25 @@ type EmailReply struct {
 	Clipped bool      `json:"clipped,omitempty"`
 }
 type EmailWatch struct {
-	Claim     string       `json:"claim,omitempty"`
-	Enabled   bool         `json:"enabled"`
-	CheckedAt time.Time    `json:"checkedAt,omitempty"`
-	NextCheck time.Time    `json:"nextCheck,omitempty"`
-	Error     string       `json:"error,omitempty"`
-	Replies   []EmailReply `json:"replies"`
-	Total     int          `json:"total"`
+	StopAfterReply bool         `json:"stopAfterReply,omitempty"`
+	StoppedReason  string       `json:"stoppedReason,omitempty"`
+	Claim          string       `json:"claim,omitempty"`
+	Enabled        bool         `json:"enabled"`
+	CheckedAt      time.Time    `json:"checkedAt,omitempty"`
+	NextCheck      time.Time    `json:"nextCheck,omitempty"`
+	Error          string       `json:"error,omitempty"`
+	Replies        []EmailReply `json:"replies"`
+	Total          int          `json:"total"`
 }
 type EmailThreadReader func(context.Context, string, string) ([]gmailsync.Msg, error)
 
 func (a *Adapter) SetEmailWatch(id string, enabled bool) (Object, error) {
+	return a.ConfigureEmailWatch(id, enabled, nil)
+}
+
+// ConfigureEmailWatch changes the owner-selected stopping rule. A nil rule
+// preserves existing behavior for older clients and already configured watches.
+func (a *Adapter) ConfigureEmailWatch(id string, enabled bool, stopAfterReply *bool) (Object, error) {
 	unlock, err := a.lockOperations()
 	if err != nil {
 		return nil, err
@@ -50,6 +58,10 @@ func (a *Adapter) SetEmailWatch(id string, enabled bool) (Object, error) {
 	if o.EmailWatch == nil {
 		o.EmailWatch = &EmailWatch{Replies: []EmailReply{}}
 	}
+	if stopAfterReply != nil {
+		o.EmailWatch.StopAfterReply = *stopAfterReply
+	}
+	o.EmailWatch.StoppedReason = ""
 	o.EmailWatch.Enabled = enabled
 	o.EmailWatch.Claim = ""
 	o.EmailWatch.NextCheck = time.Time{}
@@ -146,6 +158,12 @@ func (a *Adapter) PollEmailReplies(ctx context.Context, now time.Time, read Emai
 				current.EmailWatch.Error = ""
 				current.EmailWatch.Replies = replies
 				current.EmailWatch.Total = total
+				if current.EmailWatch.StopAfterReply && total > 0 {
+					current.EmailWatch.Enabled = false
+					current.EmailWatch.StoppedReason = "reply_found"
+					current.EmailWatch.Claim = ""
+					current.EmailWatch.NextCheck = time.Time{}
+				}
 			}
 			err = a.saveOperation(current)
 		}

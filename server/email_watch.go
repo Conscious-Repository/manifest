@@ -28,13 +28,14 @@ func (s *Server) handleEmailWatch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var b struct {
-		Enabled bool `json:"enabled"`
+		Enabled        bool  `json:"enabled"`
+		StopAfterReply *bool `json:"stopAfterReply"`
 	}
 	if err := decode(r, &b); err != nil {
 		httpError(w, err)
 		return
 	}
-	result, err := s.manifestOperations.SetEmailWatch(r.PathValue("id"), b.Enabled)
+	result, err := s.manifestOperations.ConfigureEmailWatch(r.PathValue("id"), b.Enabled, b.StopAfterReply)
 	if err != nil {
 		http.Error(w, err.Error(), 400)
 		return

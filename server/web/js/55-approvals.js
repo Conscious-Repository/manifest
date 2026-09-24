@@ -1815,11 +1815,16 @@ function manifestOperationCard(item) {
     const watch=o.emailWatch;
     const section=el("section","chat-email-watch");
     section.append(el("strong","","Replies"));
-    section.append(el("p","",watch?.enabled ? (watch.error|| (watch.checkedAt ? ((watch.total||0)+" replies · checked "+new Date(watch.checkedAt).toLocaleString()) : "Tracking enabled · waiting for first check")) : "Reply tracking is off"));
+    section.append(el("p","",watch?.enabled ? (watch.error|| (watch.checkedAt ? ((watch.total||0)+" replies · checked "+new Date(watch.checkedAt).toLocaleString()) : "Tracking enabled · waiting for first check")) : (watch?.stoppedReason === "reply_found" ? "Tracking stopped · reply found" : "Reply tracking is off")));
+    const rule=el("select","");rule.setAttribute("aria-label","Reply tracking end condition");
+    for(const [value,label] of [["reply","Stop when a reply is found"],["manual","Until I stop tracking"]]) {const option=el("option","",label);option.value=value;rule.append(option);}
+    rule.value=watch ? (watch.stopAfterReply ? "reply" : "manual") : "reply";
+    if(!watch?.enabled)section.append(rule);
     const toggle=el("button","ghost",watch?.enabled?"Stop tracking":"Track replies");
-    toggle.onclick=async()=>{toggle.disabled=true;try{await postJSONOk("/api/manifest/operations/"+encodeURIComponent(o.operationId)+"/email-watch",{enabled:!watch?.enabled});if(typeof chatOpenId!=="undefined"&&chatOpenId)refetchChatSession(chatOpenId);loadFeed();}catch(e){showToast(e.message||"Could not update reply tracking");toggle.disabled=false;}};
+    toggle.onclick=async()=>{toggle.disabled=true;rule.disabled=true;try{await postJSONOk("/api/manifest/operations/"+encodeURIComponent(o.operationId)+"/email-watch",watch?.enabled?{enabled:false}:{enabled:true,stopAfterReply:rule.value==="reply"});window.dispatchEvent(new Event("manifest-approval-updated"));if(typeof chatOpenId!=="undefined"&&chatOpenId)refetchChatSession(chatOpenId);loadFeed();}catch(e){showToast(e.message||"Could not update reply tracking");toggle.disabled=false;rule.disabled=false;}};
     section.append(toggle);
-    if(watch?.enabled)section.append(el("p","sprt-sub","Checks this sent thread every five minutes. Requires this sender's read-only Gmail connection."));
+    section.append(el("p","sprt-sub","Checks this sent thread every five minutes while enabled. Requires this sender's read-only Gmail connection."));
+    if(watch?.enabled)section.append(el("p","sprt-sub",watch.stopAfterReply ? "Stops when a reply is found. You can stop sooner." : "Continues until you stop tracking."));
     if(watch?.total>50)section.append(el("p","","Showing the latest 50 replies."));
     for(const reply of watch?.replies||[]){
       const detail=el("details","");detail.append(el("summary","",reply.from+" · "+new Date(reply.at).toLocaleString()));
@@ -1827,7 +1832,7 @@ function manifestOperationCard(item) {
       if(reply.clipped)detail.append(el("p","","Preview shortened. Open the mailbox for the full message."));section.append(detail);
     }
     card.append(section);
-  } else if(p.monitorReplies)card.append(el("p","","Reply tracking will start after confirmed sending."));
+  } else if(p.monitorReplies)card.append(el("p","","Reply tracking will start after confirmed sending, checking every five minutes until you stop it. The sent receipt lets you change the stopping rule."));
   if (o.result) {
     const receipt = el("details", ""); receipt.append(el("summary", "", "Result · " + o.status));
     receipt.append(el("pre", "", JSON.stringify(o.result, null, 2))); card.append(receipt);

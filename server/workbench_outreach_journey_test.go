@@ -281,4 +281,20 @@ func TestWorkbenchSourcedCandidateToCanonicalOutreach(t *testing.T) {
 	if err != nil || len(entries) < 2 || entries[0].Body != draft.Body || entries[0].Subject != draft.Subject {
 		t.Fatal("original reviewed draft history changed", entries, err)
 	}
+	// The sent receipt's owner control changes monitoring without another send.
+	for _, body := range []string{`{"enabled":true,"stopAfterReply":true}`, `{"enabled":false}`, `{"enabled":true}`} {
+		r := httptest.NewRequest("POST", "/", strings.NewReader(body))
+		r.SetPathValue("id", bridged.ID)
+		w := httptest.NewRecorder()
+		s.handleEmailWatch(w, r)
+		var result struct {
+			Record struct {
+				Watch *manifestmcp.EmailWatch `json:"emailWatch"`
+			} `json:"record"`
+		}
+		if err := json.Unmarshal(w.Body.Bytes(), &result); err != nil || w.Code != 200 || result.Record.Watch == nil || !result.Record.Watch.StopAfterReply || sends.Load() != 2 {
+			t.Fatal("watch policy update or legacy toggle lost rule", w.Code, w.Body.String(), err)
+		}
+	}
+
 }
