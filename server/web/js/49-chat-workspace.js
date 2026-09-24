@@ -460,7 +460,7 @@ function chatOpenFiles(){
     item.append(open,el('div','chat-file-meta',metadata.join(' · ')));if(a.ref)item.append(el('div','chat-file-path',a.ref));
     for(const link of a.sources||[]){
      if(!/^#\/(chat|terminal|artifact)\//.test(link.route||''))continue;
-     const anchor=el('a','sprt-quiet chat-file-source',link.kind==='conversation'?'source conversation':link.kind==='execution'?'producing execution':['note','task','goal'].includes(link.kind)?'source '+link.kind:'producing run');anchor.href=link.route;anchor.title=link.label||link.id;item.append(anchor);
+     const anchor=el('a','sprt-quiet chat-file-source',link.kind==='conversation'?'source conversation':link.kind==='execution'?'producing execution':['note','task','goal','person'].includes(link.kind)?'source '+link.kind:'producing run');anchor.href=link.route;anchor.title=link.label||link.id;item.append(anchor);
     }
     if((a.provenance?.session||a.provenance?.run)&&!a.sources?.length)item.append(el('div','chat-file-meta','Source unavailable; recorded identity retained.'));
     list.append(item);
@@ -539,8 +539,8 @@ function chatOpenRecords(){
  return chatEnsureWorkspace().tab('notes','Records',(host,drop)=>{
   const pane=el('section','chat-notes-inspector'),kind=document.createElement('select'),status=el('p','chat-workspace-hint'),preview=el('div','chat-notes-preview');
   kind.setAttribute('aria-label','Record kind');
-  for(const [value,label] of [['note','knowledge notes'],['task','open tasks'],['goal','goals and stages']]){const o=el('option','',label);o.value=value;kind.append(o);}
-  const hints={note:'Search authored knowledge notes by name, path or alias. System and imported notes are excluded.',task:'Search open tasks by title, container or exact ID. Preview includes fields, description and plan; comments, run state and linked file contents are excluded.',goal:'Search current goals and stages by title, ancestry, ID or alias. Preview includes the selected branch and its ancestry; archived goals are excluded.'};
+  for(const [value,label] of [['note','knowledge notes'],['task','open tasks'],['goal','goals and stages'],['person','people']]){const o=el('option','',label);o.value=value;kind.append(o);}
+  const hints={person:'Search existing contacts by name, key or profile alias. Preview includes the profile, relationship references and meeting evidence. Linked note contents, recruiting records and fundraising summaries are excluded.',note:'Search authored knowledge notes by name, path or alias. System and imported notes are excluded.',task:'Search open tasks by title, container or exact ID. Preview includes fields, description and plan; comments, run state and linked file contents are excluded.',goal:'Search current goals and stages by title, ancestry, ID or alias. Preview includes the selected branch and its ancestry; archived goals are excluded.'};
   status.setAttribute('role','status');status.textContent=hints.note;preview.tabIndex=0;
   let closed=false,ticket=0,selected=null;
   const current=()=>!closed&&key==='chat:'+chatAgent+'/'+chatOpenId&&chatCanSelectNoteContext();
@@ -574,6 +574,6 @@ function chatOpenRecords(){
   }});ta.input.setAttribute('aria-label','Find a record');
   kind.onchange=()=>{++ticket;selected=null;ta.setValue('');preview.replaceChildren();status.textContent=hints[kind.value];ta.focus();};
   pane.append(kind,ta.el,status,preview);host.append(pane);
-  return {element:pane,close:()=>{closed=true;++ticket;pane.remove();drop();},getView:()=>({query:ta.value(),kind:kind.value,id:selected?.record.id,revision:selected?.revision,scrollTop:preview.scrollTop}),restoreView:async view=>{kind.value=['note','task','goal'].includes(view.kind)?view.kind:'note';ta.setValue(view.query||'');status.textContent=hints[kind.value];if(view.id||view.path)await load(view.id||view.path,view.revision);preview.scrollTop=Math.max(0,Number(view.scrollTop)||0);return true;}};
+  return {element:pane,close:()=>{closed=true;++ticket;pane.remove();drop();},getView:()=>({query:ta.value(),kind:kind.value,id:selected?.record.id,revision:selected?.revision,scrollTop:preview.scrollTop}),restoreView:async view=>{kind.value=['note','task','goal','person'].includes(view.kind)?view.kind:'note';ta.setValue(view.query||'');status.textContent=hints[kind.value];if(view.id||view.path)await load(view.id||view.path,view.revision);preview.scrollTop=Math.max(0,Number(view.scrollTop)||0);return true;}};
  },{kind:'records'});
 }

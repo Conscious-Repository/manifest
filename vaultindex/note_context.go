@@ -35,3 +35,13 @@ func (ix *Index) ContextNote(path string) bool {
 	err := ix.db.QueryRow(`SELECT count(*) FROM notes WHERE path=? AND zone='knowledge' AND ai_authored=0`, path).Scan(&count)
 	return err == nil && count == 1
 }
+
+// UniqueNoteName reports whether this indexed note's name identifies exactly
+// one path. Callers using name-keyed contact identities must not pick whichever
+// duplicate happened to win the entity projection. Path-based note selection is
+// still available to the owner when names are ambiguous.
+func (ix *Index) UniqueNoteName(path string) (bool, error) {
+	var count int
+	err := ix.db.QueryRow(`SELECT count(*) FROM notes WHERE name_lower=(SELECT name_lower FROM notes WHERE path=?)`, path).Scan(&count)
+	return count == 1, err
+}

@@ -21,14 +21,16 @@ import (
 // Record context is a reviewed projection of existing records, never a second
 // task/goal store. A reference does not assign a task or grant shared access.
 type chatContextRecord struct {
-	Kind    string `json:"kind"`
-	ID      string `json:"id"`
-	Title   string `json:"title"`
-	Detail  string `json:"detail"`
-	Route   string `json:"route"`
-	aliases string
-	task    *unifiedRow
-	goal    *goalContextBranch
+	Kind             string `json:"kind"`
+	ID               string `json:"id"`
+	Title            string `json:"title"`
+	Detail           string `json:"detail"`
+	Route            string `json:"route"`
+	aliases          string
+	profileNotePath  string
+	ambiguousProfile bool
+	task             *unifiedRow
+	goal             *goalContextBranch
 }
 type goalContextBranch struct {
 	Area      string
@@ -53,6 +55,8 @@ func (s *Server) chatContextRecords(kind string, q string) ([]chatContextRecord,
 		for _, n := range notes {
 			out = append(out, chatContextRecord{Kind: kind, ID: n.Path, Title: n.Name, Detail: n.Path, Route: "#/note/" + url.PathEscape(n.Path)})
 		}
+	case "person":
+		return s.chatPersonRecords()
 	case "task":
 		if s.tasksStore == nil && s.realestate == nil && s.aion == nil && s.re == nil {
 			return nil, fmt.Errorf("task records unavailable")
@@ -95,7 +99,7 @@ func (s *Server) chatContextRecords(kind string, q string) ([]chatContextRecord,
 			walk(area.Rocks, "Rock", nil)
 		}
 	default:
-		return nil, errBadRequest("choose note, task or goal")
+		return nil, errBadRequest("choose note, task, goal or person")
 	}
 	return out, nil
 }
@@ -191,7 +195,11 @@ func (s *Server) chatContextRecordPreview(kind, id string) (chatContextRecord, [
 	}
 	var out strings.Builder
 	fmt.Fprintf(&out, "# %s\n\nRecord type: %s\nRecord ID: %s\n", selected.Title, kind, id)
-	if t := selected.task; t != nil {
+	if selected.Kind == "person" {
+		if err := s.renderPersonContext(&out, *selected); err != nil {
+			return *selected, nil, err
+		}
+	} else if t := selected.task; t != nil {
 		contextField(&out, "Source", t.Source)
 		contextField(&out, "Container", t.Container.Name)
 		contextField(&out, "Owner", t.Owner)
@@ -309,7 +317,7 @@ func contextSnapshotSource(a artifacts.Artifact) (kind, id, route string) {
 	if path := knowledgeContextPath(a); path != "" {
 		return "note", path, "#/note/" + url.PathEscape(path)
 	}
-	if a.Harness != "manifest" || (a.Provenance.Source != "task-context" && a.Provenance.Source != "goal-context") {
+	if a.Harness != "manifest" || (a.Provenance.Source != "task-context" && a.Provenance.Source != "goal-context" && a.Provenance.Source != "person-context") {
 		return "", "", ""
 	}
 	i := strings.LastIndex(a.Ref, "#context-")
@@ -319,5 +327,8 @@ func contextSnapshotSource(a artifacts.Artifact) (kind, id, route string) {
 	kind = strings.TrimSuffix(a.Provenance.Source, "-context")
 	id = a.Ref[:i]
 	route = "#/" + kind + "s/" + url.PathEscape(id)
+	if kind == "person" {
+		route = "#/contacts/" + url.PathEscape(id)
+	}
 	return
 }

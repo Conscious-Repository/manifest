@@ -95,12 +95,12 @@ func (s *Server) artifactSourceLinks(rows []artifacts.Artifact) map[string][]art
 				out[a.ID] = append(out[a.ID], artifactSourceLink{"note", rel, "#/note/" + url.PathEscape(rel), rel})
 			}
 		}
-		if kind, id, route := contextSnapshotSource(a); kind == "task" || kind == "goal" {
+		if kind, id, route := contextSnapshotSource(a); kind == "task" || kind == "goal" || kind == "person" {
 			if knownRecords[kind] == nil {
 				knownRecords[kind] = map[string]bool{}
 				if records, err := s.chatContextRecords(kind, ""); err == nil {
 					for _, r := range records {
-						knownRecords[kind][r.ID] = true
+						knownRecords[kind][r.ID] = r.Route != ""
 					}
 				}
 			}
