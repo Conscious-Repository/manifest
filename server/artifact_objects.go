@@ -49,6 +49,7 @@ type artifactView struct {
 	Links   artifacts.Links      `json:"links"`
 	Open    *artifactOpen        `json:"open,omitempty"`
 	Content string               `json:"content,omitempty"`
+	Preview *artifactPreview     `json:"preview,omitempty"`
 	Sources []artifactSourceLink `json:"sources,omitempty"`
 }
 
@@ -313,7 +314,7 @@ func (s *Server) handleArtifactGet(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	v := s.artifactView(a, s.artifactLinks([]artifacts.Artifact{a}))
-	if r.URL.Query().Get("content") == "1" {
+	if r.URL.Query().Get("content") == "1" || r.URL.Query().Get("preview") == "1" {
 		hash := orStr(strings.TrimSpace(r.URL.Query().Get("rev")), a.Head)
 		if _, ok := a.Revision(hash); !ok {
 			http.Error(w, "no such revision", http.StatusNotFound)
@@ -324,7 +325,14 @@ func (s *Server) handleArtifactGet(w http.ResponseWriter, r *http.Request) {
 			httpError(w, err)
 			return
 		}
-		v.Content = string(b)
+		if r.URL.Query().Get("preview") == "1" {
+			v.Preview = describeArtifactPreview(hash, b)
+			if v.Preview.Kind == "text" {
+				v.Content = string(b)
+			}
+		} else {
+			v.Content = string(b)
+		}
 	}
 	writeJSON(w, v)
 }

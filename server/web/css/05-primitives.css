@@ -362,3 +362,7 @@
 .artifact-cell-missing{background:var(--surface-field);}
 .artifact-table-source{margin-top:var(--sp-6);}
 .artifact-table-source summary{min-height:var(--control-touch);cursor:pointer;}
+.artifact-metadata-preview{overflow-wrap:anywhere;}
+.artifact-metadata-preview dl{display:grid;grid-template-columns:auto minmax(0,1fr);gap:var(--sp-4);font:var(--fs-sm)/1.5 var(--mono);}
+.artifact-metadata-preview dt{color:var(--muted);}
+.artifact-metadata-preview dd{margin:0;}

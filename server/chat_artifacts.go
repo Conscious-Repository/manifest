@@ -5,7 +5,9 @@ package server
 import (
 	"errors"
 	"fmt"
+	"mime"
 	"net/http"
+	"path"
 	"strings"
 	"unicode/utf8"
 
@@ -258,11 +260,16 @@ func (s *Server) handleArtifactContent(w http.ResponseWriter, r *http.Request) {
 		httpError(w, err)
 		return
 	}
-	mime := http.DetectContentType(b)
-	if !strings.HasPrefix(mime, "image/") && mime != "application/pdf" {
-		mime = "text/plain; charset=utf-8"
+	preview := describeArtifactPreview(rev, b)
+	mediaType := preview.MediaType
+	switch preview.Kind {
+	case "text":
+		mediaType = "text/plain; charset=utf-8"
+	case "metadata":
+		mediaType = "application/octet-stream"
+		w.Header().Set("Content-Disposition", mime.FormatMediaType("attachment", map[string]string{"filename": path.Base(orStr(a.Ref, a.ID))}))
 	}
-	w.Header().Set("Content-Type", mime)
+	w.Header().Set("Content-Type", mediaType)
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.Header().Set("Content-Security-Policy", "sandbox; default-src 'none'")
 	w.Header().Set("Cache-Control", "private, no-cache")

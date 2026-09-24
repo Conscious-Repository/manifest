@@ -732,11 +732,12 @@ function artifactReviewControls(artifact,revision,number,onDiscuss){
  const choice=document.createElement('select');choice.setAttribute('aria-label','Review decision');
  for(const [value,label] of [['accepted','accept this version'],['changes_requested','request changes'],['comment','comment'],['ready_for_review','mark ready for review']]){const option=el('option','',label);option.value=value;choice.append(option);}
  const note=document.createElement('textarea');note.rows=3;note.placeholder='Review notes';note.setAttribute('aria-label','Review notes');
- const range=el('details',''),start=document.createElement('input'),end=document.createElement('input');start.type=end.type='number';start.min=end.min='1';start.placeholder='First line';end.placeholder='Last line';start.setAttribute('aria-label','First reviewed line');end.setAttribute('aria-label','Last reviewed line');range.append(el('summary','','Specific lines'),start,end);range.hidden=/\.(diff|pdf|png|jpe?g|gif|webp)$/i.test(artifact.ref||'');
+ const range=el('details',''),start=document.createElement('input'),end=document.createElement('input');start.type=end.type='number';start.min=end.min='1';start.placeholder='First line';end.placeholder='Last line';start.setAttribute('aria-label','First reviewed line');end.setAttribute('aria-label','Last reviewed line');range.append(el('summary','','Specific lines'),start,end);range.hidden=artifact.preview?artifact.preview.kind!=='text'||/\.diff$/i.test(artifact.ref||''):/\.(diff|pdf|png|jpe?g|gif|webp)$/i.test(artifact.ref||'');
  const actions=el('div','form-actions'),save=el('button','','record decision');actions.append(save);form.append(choice,note,range,actions,el('p','artifact-review-help',onDiscuss?'Records your review. A change request is placed in the composer for you to send.':'Records your review of this version. No message is sent.'));
  const history=el('div','artifact-review-history');host.append(history);let snapshot=null,recorded=false;
  const endpoint='/api/artifacts/reviews?id='+encodeURIComponent(artifact.id)+'&revision='+encodeURIComponent(revision),storage='manifest.artifactReview.v1.'+artifact.id+'.'+revision;
  try{const draft=JSON.parse(localStorage.getItem(storage+'.draft')||localStorage.getItem(storage)||'null');if(draft){choice.value=draft.state;note.value=draft.note||'';start.value=draft.start||'';end.value=draft.end||'';}}catch(e){}
+ if(artifact.preview&&artifact.preview.kind!=='text'){start.value='';end.value='';}
  const clearPending=()=>{try{localStorage.removeItem(storage);localStorage.removeItem(storage+'.draft');}catch(e){}};
  const label=value=>({not_requested:'Not reviewed',ready_for_review:'Ready for review',accepted:'Accepted',changes_requested:'Changes requested',comment:'Comment'})[value]||value;
  const show=value=>{if(!value||value.revision!==revision||typeof value.record_version!=='string'||!Array.isArray(value.entries))throw Error('Invalid review response; reload before continuing.');snapshot=value;state.textContent=label(value.state)+' · version '+number;summary.textContent='Review · '+label(value.state);history.replaceChildren();
@@ -795,13 +796,12 @@ function artifactWorkspace(mount, options) {
     };
     await editState.refresh();
   }
-  const url = (a, hash) => "/api/artifacts/get?id="+encodeURIComponent(a.id)+"&content=1&rev="+encodeURIComponent(hash);
+  const url = (a, hash) => "/api/artifacts/get?id="+encodeURIComponent(a.id)+"&preview=1&rev="+encodeURIComponent(hash);
   const fetchJSON = async (path) => { const r = await fetch(path); if (!r.ok) throw new Error(await r.text()); return r.json(); };
   async function show(a, hash, number) {
     const ticket = ++generation;
     try {
-      const mediaRef = /\.(pdf|png|jpe?g|gif|webp)$/i.test(a.ref || "");
-      const d = await fetchJSON(mediaRef ? "/api/artifacts/get?id="+encodeURIComponent(a.id) : url(a, hash || a.head));
+      const d = await fetchJSON(url(a, hash || a.head));
       if (ticket !== generation || !pane.isConnected) return;
       current = d; selected = hash || d.head; selectedNumber = number || [...d.revisions].reverse().find(r=>r.hash===selected)?.n; editing = false;
       await prepareEditState(current.id);
@@ -828,11 +828,14 @@ function artifactWorkspace(mount, options) {
     controls.append(versions);
     const ext = (current.ref || "").split(".").pop().toLowerCase();
     const contentURL = "/api/artifacts/content?id="+encodeURIComponent(current.id)+"&rev="+encodeURIComponent(selected);
-    const binary = ["pdf", "png", "jpg", "jpeg", "gif", "webp"].includes(ext);
+    const binary = current.preview ? current.preview.kind !== 'text' : ["pdf", "png", "jpg", "jpeg", "gif", "webp"].includes(ext);
     const reviewControls=opts.review?artifactReviewControls(current,selected,selectedNumber,binary?null:opts.onDiscuss):null;
-    if (binary) {
-      const media = document.createElement(ext === "pdf" ? "iframe" : "img");
+    if (current.preview?.kind === 'metadata') {
+      body.append(artifactMetadataPreview(current,selectedNumber));
+    } else if (binary) {
+      const media = document.createElement((current.preview?.kind||ext) === "pdf" ? "iframe" : "img");
       media.src = contentURL; media.title = title.textContent; media.alt = title.textContent;
+      if(media.tagName==='IMG')media.onerror=()=>{if(!media.isConnected)return;media.replaceWith(artifactMetadataPreview({...current,preview:{...current.preview,revision:selected,size:current.preview?.size||0,mediaType:current.preview?.mediaType||ext,reason:'The image could not be decoded. Open the original file to inspect it.'}},selectedNumber));};
       body.append(media);
       notice.textContent = "Preview only. This file has not been sent to the agent.";
     } else if(ext==="diff"){
@@ -858,6 +861,7 @@ function artifactWorkspace(mount, options) {
         try{
           const old=await fetchJSON(url(current,previous.hash));
           if(ticket!==generation||!pane.isConnected)return;
+          if(old.preview&&old.preview.kind!=='text')throw new Error('The previous version has no text preview. Open that version to inspect the original file.');
           body.replaceChildren(artifactDiffView(old.content||"",versionText,`Changes from version ${previous.n} to version ${selectedNumber}`));
           previewMode="compare";compare.textContent="Back to preview";compare.onclick=render;
         }catch(e){if(ticket===generation)notice.textContent="Could not compare versions: "+e.message;}
@@ -907,6 +911,7 @@ function artifactWorkspace(mount, options) {
       try{
         const base=await fetchJSON(url(current,started.baseRevision));
         if(ticket!==generation||!pane.isConnected||!editing)return;
+        if(base.preview&&base.preview.kind!=='text')throw new Error('The starting version has no text preview. Your draft is preserved.');
         body.replaceChildren(artifactDiffView(base.content||"",input.value,"Unsaved changes from starting revision"));
         reviewing=true;previewMode="edit-review";review.textContent="Edit text";
       }catch(e){if(ticket===generation&&pane.isConnected)notice.textContent="Could not compare the starting revision: "+e.message;}
@@ -1099,4 +1104,13 @@ function artifactTablePreview(text,format,onReview=null){
   status.textContent=rows.length+' records · '+columns+' columns.'+(onReview?' Select a record number to request changes to its source lines.':'')+' Values are displayed as text; formulas are not evaluated.';
  }catch(error){status.textContent='Table preview unavailable: '+error.message+' The original source is shown below.';source.open=true;}
  view.append(source);return view;
+}
+
+function artifactMetadataPreview(artifact,number){
+ const view=el('section','artifact-metadata-preview'),data=artifact.preview;
+ view.append(el('h3','','File · version '+number),el('p','',data.reason));
+ const list=el('dl','');
+ for(const [label,value] of [['file',artifact.ref||artifact.title||'Unnamed file'],['type',data.mediaType],['size',data.size.toLocaleString()+' bytes'],['revision',data.revision]]){list.append(el('dt','',label),el('dd','',value));}
+ view.append(list,el('p','artifact-review-help','Review applies to this exact version. Use Open file to inspect its contents.'));
+ return view;
 }
