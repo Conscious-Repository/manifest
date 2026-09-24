@@ -9,25 +9,39 @@ const {chromium}=require('playwright'),fs=require('fs'),path=require('path'),ass
   window.chatRenderArtifactContext=(task,key)=>{window.rendered={task,key,ref:chatArtifactSelections.get(key)};};window.chatCaptureSyncedDraft=key=>{window.saved={key,ref:chatArtifactSelections.get('chat:'+key)};};
   window.chatEnsureWorkspace=()=>({tab:(key,title,build)=>{window.api=build(document.getElementById('host'),()=>{});return api;}});
   window.previewRevision='a'.repeat(64);window.retainRequests=[];window.failRetain=false;
-  window.fetch=async url=>({ok:true,json:async()=>url.startsWith('/api/chat/notes?')?{notes:[{Path:'one/same.md'},{Path:'two/same.md'}]}:{path:decodeURIComponent(url.split('path=')[1]),content:'Exact literal <script>source</script>\n'.repeat(35),revision:previewRevision,route:'#/note/two%2Fsame.md'}});
+  window.fetch=async url=>{const params=new URL(url,location.href).searchParams,kind=params.get('kind');const ids=kind==='note'?['one/same.md','two/same.md']:kind==='task'?['inbox/first','work/second']:['work/annual','work/stage'];const record=id=>({kind,id,title:kind==='note'?id:'Same title',detail:id,route:'#/'+(kind==='note'?'note':kind+'s')+'/'+encodeURIComponent(id)});return {ok:true,json:async()=>url.includes('/preview?')?{record:record(params.get('id')),content:'Exact literal <script>source</script>\n'.repeat(35),revision:previewRevision}:{records:ids.map(record)}};};
   window.postJSONOk=async(url,payload)=>{retainRequests.push({url,payload});if(failRetain)throw Error('note changed; review its current text before selecting it');return {id:'retained-note',title:'same',revision:payload.revision,version:1,explicitArtifacts:true};};
  });
  const components=fs.readFileSync(path.join(root,'js/05-components.js'),'utf8');await p.addScriptTag({content:components.slice(components.indexOf('function typeahead('),components.indexOf('// flattenRockLadder'))});
  const workspace=fs.readFileSync(path.join(root,'js/49-chat-workspace.js'),'utf8');await p.addScriptTag({content:workspace.slice(workspace.indexOf('function chatCanSelectNoteContext()'))});
  await p.addScriptTag({content:workspace.slice(workspace.indexOf('function chatContextInputs('),workspace.indexOf('function chatOpenContext('))});
  assert.deepEqual(await p.evaluate(()=>chatContextInputs({turns:[{who:'user',delivery:{context:{explicitArtifacts:true,artifacts:[{id:'note',revision:'a'}]}}},{who:'user',submission:{explicitArtifacts:true,artifacts:[{id:'note',revision:'b'}]}}]}).map(x=>[x.explicitArtifacts,x.artifacts[0].revision])),[[true,'a'],[true,'b']]);
- await p.evaluate(()=>chatOpenNotes());await p.getByRole('combobox').fill('same');await p.getByRole('option').nth(1).waitFor();
+ await p.evaluate(()=>chatOpenNotes());await p.getByRole('combobox',{name:'Find a record'}).fill('same');await p.locator('[role=option]').nth(1).waitFor();
  assert.equal(await p.evaluate(()=>chatArtifactSelections.size),0,'search grants no context');
- await p.getByRole('combobox').press('ArrowUp');await p.getByRole('combobox').press('Enter');
+ await p.getByRole('combobox',{name:'Find a record'}).press('ArrowUp');await p.getByRole('combobox',{name:'Find a record'}).press('Enter');
  await p.getByRole('heading',{name:'two/same.md'}).waitFor();assert.equal(await p.locator('.chat-notes-preview script').count(),0);assert.equal(await p.evaluate(()=>chatArtifactSelections.size),0,'preview grants no context');
  for(const theme of ['light','jarvis'])for(const width of [320,390,1440]){await p.setViewportSize({width,height:900});await p.evaluate(theme=>document.documentElement.dataset.theme=theme,theme);assert.ok(await p.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),theme+' '+width+' overflow');}
  await p.setViewportSize({width:390,height:844});await p.screenshot({path:'/tmp/manifest-note-context-phone.png'});
  await p.evaluate(()=>failRetain=true);await p.getByRole('button',{name:'use in this private chat'}).click();await p.getByRole('status').filter({hasText:'note changed'}).waitFor();assert.equal(await p.evaluate(()=>chatArtifactSelections.size),0,'stale retention does not replace context');
  await p.evaluate(()=>failRetain=false);await p.getByRole('button',{name:'use in this private chat'}).click();await p.getByRole('status').filter({hasText:'Selected exact'}).waitFor();
- assert.deepEqual(await p.evaluate(()=>retainRequests.at(-1)),{url:'/api/chat/notes/retain',payload:{path:'two/same.md',revision:'a'.repeat(64)}});
+ assert.deepEqual(await p.evaluate(()=>retainRequests.at(-1)),{url:'/api/chat/records/retain',payload:{kind:'note',id:'two/same.md',revision:'a'.repeat(64)}});
  assert.equal(await p.evaluate(()=>saved.ref.revision),'a'.repeat(64));assert.equal(await p.evaluate(()=>saved.ref.explicitArtifacts),true);
  await p.evaluate(async()=>{window.view=api.getView();api.close();previewRevision='b'.repeat(64);chatOpenNotes();await api.restoreView(view);});
  await p.getByRole('status').filter({hasText:'source changed'}).waitFor();assert.equal(await p.evaluate(()=>saved.ref.revision),'a'.repeat(64),'reopening newer source cannot replace selection');
+
+ // Kind changes clear the previous preview and use the selected record ID,
+ // independently of equal titles and whatever note was selected before.
+ for(const kind of ['task','goal']){
+  await p.getByLabel('Record kind').selectOption(kind);assert.equal(await p.locator('.chat-notes-preview h3').count(),0);
+  await p.getByRole('combobox',{name:'Find a record'}).fill('same');await p.locator('[role=option]').nth(1).waitFor();await p.getByRole('combobox',{name:'Find a record'}).press('ArrowUp');await p.getByRole('combobox',{name:'Find a record'}).press('Enter');
+  await p.getByRole('heading',{name:'Same title'}).waitFor();await p.getByRole('button',{name:'use in this private chat'}).click();await p.getByRole('status').filter({hasText:'Selected exact'}).waitFor();
+  if(kind==='goal')await p.screenshot({path:'/tmp/manifest-record-context-phone.png'});
+  const id=kind==='task'?'work/second':'work/stage';assert.deepEqual(await p.evaluate(()=>retainRequests.at(-1).payload),{kind,id,revision:'b'.repeat(64)});
+  await p.evaluate(async()=>{const view=api.getView();api.close();chatOpenRecords();await api.restoreView(view);});assert.equal(await p.getByLabel('Record kind').inputValue(),kind);assert.equal(await p.getByRole('link',{name:'open source '+kind}).getAttribute('href'),'#/'+kind+'s/'+encodeURIComponent(id));
+ }
+ // An older-kind search must not repopulate the picker after switching kinds.
+ await p.evaluate(()=>{window.realFetch=fetch;window.fetch=url=>url.includes('&q=delayed')?new Promise(resolve=>{window.finishDelayed=()=>resolve({ok:true,json:async()=>({records:[{kind:'goal',id:'old-kind',title:'stale result',detail:'old'}]})});}):realFetch(url);});
+ await p.getByRole('combobox',{name:'Find a record'}).fill('delayed');await p.waitForFunction(()=>typeof finishDelayed==='function');await p.getByLabel('Record kind').selectOption('task');await p.evaluate(()=>finishDelayed());await p.waitForTimeout(50);assert.equal(await p.locator('[role=option]').count(),0,'stale kind options stay hidden');
  await p.evaluate(()=>{api.close();chatCurSession={shared:true};chatOpenNotes();});assert.equal(await p.locator('.chat-notes-inspector').count(),0,'shared target hides note selection');
- assert.deepEqual(errors,[]);console.log('Knowledge note identity, keyboard selection, explicit retention, stale preview, restoration and responsive bounds passed');
+ assert.deepEqual(errors,[]);console.log('Record identity, keyboard selection, explicit retention, stale preview, kind restoration, stale search and responsive bounds passed');
 }finally{await browser.close();}})().catch(e=>{console.error(e);process.exitCode=1;});

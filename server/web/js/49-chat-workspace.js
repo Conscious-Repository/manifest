@@ -28,7 +28,7 @@ async function chatRestoreWorkspace(){
   else if(tab.spec?.kind==='activity')chatOpenActivity();
   else if(tab.spec?.kind==='context')chatOpenContext();
   else if(tab.spec?.kind==='files')chatOpenFiles();
-  else if(tab.spec?.kind==='notes')chatOpenNotes();
+  else if(tab.spec?.kind==='notes'||tab.spec?.kind==='records')chatOpenRecords();
   else if(tab.spec?.kind==='project'&&chatWorkstreams.groups[tab.spec.id])chatEditProject(tab.spec.id);
   const opened=w.entries.get(tab.key);if(opened?.api?.restoreView&&tab.view)opened.restoreView=tab.view;
  }
@@ -135,7 +135,7 @@ function chatWorkspaceChooser(host){
  const source=chatWorkspaceSource(),chooser=el('div','chat-workspace-chooser');
  const action=(name,description,icon,fn)=>{const b=el('button','chat-workspace-option');b.title=description;b.append(chatWorkspaceIcon(icon),el('span','',name));b.onclick=fn;chooser.append(b);};
  action('Files','Browse outputs and referenced files','file',()=>chatOpenFiles());
- if(chatCanSelectNoteContext())action('Notes','Find and review knowledge notes for this private chat','file',()=>chatOpenNotes());
+ if(chatCanSelectNoteContext())action('Records','Find and review records for this private chat','file',()=>chatOpenRecords());
  if(source)action('Activity','Inspect recorded instructions, narration and tool output','review',()=>chatOpenActivity());
  const project=chatCurrentProject();
  if(source)action('Context','Inspect recorded inputs and project instructions','folder',()=>chatOpenContext());
@@ -460,7 +460,7 @@ function chatOpenFiles(){
     item.append(open,el('div','chat-file-meta',metadata.join(' · ')));if(a.ref)item.append(el('div','chat-file-path',a.ref));
     for(const link of a.sources||[]){
      if(!/^#\/(chat|terminal|artifact)\//.test(link.route||''))continue;
-     const anchor=el('a','sprt-quiet chat-file-source',link.kind==='conversation'?'source conversation':link.kind==='execution'?'producing execution':link.kind==='note'?'source note':'producing run');anchor.href=link.route;anchor.title=link.label||link.id;item.append(anchor);
+     const anchor=el('a','sprt-quiet chat-file-source',link.kind==='conversation'?'source conversation':link.kind==='execution'?'producing execution':['note','task','goal'].includes(link.kind)?'source '+link.kind:'producing run');anchor.href=link.route;anchor.title=link.label||link.id;item.append(anchor);
     }
     if((a.provenance?.session||a.provenance?.run)&&!a.sources?.length)item.append(el('div','chat-file-meta','Source unavailable; recorded identity retained.'));
     list.append(item);
@@ -532,42 +532,48 @@ document.addEventListener('click',event=>{
 function chatCanSelectNoteContext(){
  return !!chatOpenId&&!chatIsPortal()&&(chatIsTerm()?!chatTermOpen?.sharedConversation:!chatCurSession?.shared)&&(chatRosterEntry(chatAgent)?.durableSend||chatIsTerm());
 }
-function chatOpenNotes(){
+function chatOpenNotes(){return chatOpenRecords();} // saved Notes tabs remain restorable
+function chatOpenRecords(){
  if(!chatCanSelectNoteContext())return;
  const key='chat:'+chatAgent+'/'+chatOpenId;
- return chatEnsureWorkspace().tab('notes','Notes',(host,drop)=>{
-  const pane=el('section','chat-notes-inspector'),status=el('p','chat-workspace-hint','Search authored knowledge notes by name, path or alias. Up to 50 matches. System and imported records are excluded.'),preview=el('div','chat-notes-preview');
-  status.setAttribute('role','status');preview.tabIndex=0;
+ return chatEnsureWorkspace().tab('notes','Records',(host,drop)=>{
+  const pane=el('section','chat-notes-inspector'),kind=document.createElement('select'),status=el('p','chat-workspace-hint'),preview=el('div','chat-notes-preview');
+  kind.setAttribute('aria-label','Record kind');
+  for(const [value,label] of [['note','knowledge notes'],['task','open tasks'],['goal','goals and stages']]){const o=el('option','',label);o.value=value;kind.append(o);}
+  const hints={note:'Search authored knowledge notes by name, path or alias. System and imported notes are excluded.',task:'Search open tasks by title, container or exact ID. Preview includes fields, description and plan; comments, run state and linked file contents are excluded.',goal:'Search current goals and stages by title, ancestry, ID or alias. Preview includes the selected branch and its ancestry; archived goals are excluded.'};
+  status.setAttribute('role','status');status.textContent=hints.note;preview.tabIndex=0;
   let closed=false,ticket=0,selected=null;
   const current=()=>!closed&&key==='chat:'+chatAgent+'/'+chatOpenId&&chatCanSelectNoteContext();
-  const load=async(path,expected)=>{
-   const turn=++ticket;selected=null;preview.replaceChildren();status.textContent='Loading note…';
+  const load=async(id,expected)=>{
+   const turn=++ticket,selectedKind=kind.value;selected=null;preview.replaceChildren();status.textContent='Loading record…';
    try{
-    const r=await fetch('/api/chat/notes/preview?path='+encodeURIComponent(path),{cache:'no-store'});if(!r.ok)throw Error(await r.text());const note=await r.json();
-    if(!current()||turn!==ticket)return;selected=note;
-    const title=el('h3','',note.path),source=el('a','sprt-quiet','open source note'),text=el('pre','chat-activity-text',note.content),use=el('button','sprt-quiet','use in this private chat');source.href=note.route;source.target='_blank';source.rel='noopener';
-    const revision=el('p','chat-workspace-hint','Revision '+note.revision);
-    status.textContent=expected&&expected!==note.revision?'The source changed since your last preview. Review this version before selecting it.':'Review the full note. Selecting retains these exact bytes for your next message and replaces any selected artifact. Send delivers it.';
+    const r=await fetch('/api/chat/records/preview?kind='+encodeURIComponent(selectedKind)+'&id='+encodeURIComponent(id),{cache:'no-store'});if(!r.ok)throw Error(await r.text());const snapshot=await r.json(),record=snapshot.record;
+    if(!current()||turn!==ticket||kind.value!==selectedKind)return;selected=snapshot;
+    const title=el('h3','',record.title),identity=el('p','chat-workspace-hint',record.kind+' · '+record.id),source=el('a','sprt-quiet','open source '+record.kind),text=el('pre','chat-activity-text',snapshot.content),use=el('button','sprt-quiet','use in this private chat');source.href=record.route;source.target='_blank';source.rel='noopener';
+    const revision=el('p','chat-workspace-hint','Revision '+snapshot.revision),scope=el('p','chat-workspace-hint',hints[selectedKind]);
+    status.textContent=expected&&expected!==snapshot.revision?'The source changed since your last preview. Review this version before selecting it.':'Review this snapshot. Selecting retains these exact bytes for your next message and replaces any selected artifact. Send delivers it.';
     use.onclick=async()=>{
-     if(!current()||selected!==note)return;use.disabled=true;status.textContent='Retaining reviewed version…';
+     if(!current()||selected!==snapshot)return;use.disabled=true;status.textContent='Retaining reviewed version…';
      try{
-      const ref=await postJSONOk('/api/chat/notes/retain',{path:note.path,revision:note.revision});
-      if(!current()||selected!==note)return;
+      const ref=await postJSONOk('/api/chat/records/retain',{kind:record.kind,id:record.id,revision:snapshot.revision});
+      if(!current()||selected!==snapshot)return;
       chatArtifactSelections.set(key,{...ref,explicitArtifacts:true});chatRenderArtifactContext('',key);chatCaptureSyncedDraft(key.slice(5));
-      status.textContent='Selected exact note version. Send delivers it.';
-     }catch(e){if(current()&&selected===note)status.textContent=e.message;}
+      status.textContent='Selected exact record version. Send delivers it.';
+     }catch(e){if(current()&&selected===snapshot)status.textContent=e.message;}
      finally{use.disabled=false;}
     };
-    preview.append(title,source,revision,text,use);
-   }catch(e){if(current()&&turn===ticket){status.textContent=e.message;const retry=el('button','sprt-quiet','retry preview');retry.onclick=()=>load(path,expected);preview.append(retry);}}
+    preview.append(title,identity,source,revision,scope,text,use);
+   }catch(e){if(current()&&turn===ticket){status.textContent=e.message;const retry=el('button','sprt-quiet','retry preview');retry.onclick=()=>load(id,expected);preview.append(retry);}}
   };
-  const ta=typeahead({placeholder:'Find a knowledge note',minChars:1,keyboard:true,suggest:async(q,add)=>{
-   try{const r=await fetch('/api/chat/notes?q='+encodeURIComponent(q),{cache:'no-store'});if(!r.ok)throw Error(await r.text());const data=await r.json();if(!current())return;
-    for(const note of data.notes||[])add(note.Path,'note',()=>{ta.commit(note.Path);load(note.Path);});
-    if(ta.value().toLowerCase()===q)status.textContent=data.notes?.length?data.notes.length+' matches · select a path to review its full text.':'No matching knowledge notes.';
-   }catch(e){if(current()&&ta.value().toLowerCase()===q)status.textContent=e.message;}
-  }});ta.input.setAttribute('aria-label','Find a knowledge note');
-  pane.append(ta.el,status,preview);host.append(pane);
-  return {element:pane,close:()=>{closed=true;++ticket;pane.remove();drop();},getView:()=>({query:ta.value(),path:selected?.path,revision:selected?.revision,scrollTop:preview.scrollTop}),restoreView:async view=>{ta.setValue(view.query||'');if(view.path)await load(view.path,view.revision);preview.scrollTop=Math.max(0,Number(view.scrollTop)||0);return true;}};
- },{kind:'notes'});
+  const ta=typeahead({placeholder:'Find a record',minChars:1,keyboard:true,suggest:async(q,add)=>{
+   const searchedKind=kind.value;
+   try{const r=await fetch('/api/chat/records?kind='+encodeURIComponent(searchedKind)+'&q='+encodeURIComponent(q),{cache:'no-store'});if(!r.ok)throw Error(await r.text());const data=await r.json();if(!current()||kind.value!==searchedKind)return;
+    for(const record of data.records||[])add(record.title+' · '+record.detail,record.kind,()=>{ta.commit(record.title===record.id?record.id:record.title+' · '+record.id);load(record.id);});
+    if(ta.value().toLowerCase()===q)status.textContent=data.records?.length?data.records.length+' matches (up to 50) · select a record to review its snapshot.':'No matching records.';
+   }catch(e){if(current()&&kind.value===searchedKind&&ta.value().toLowerCase()===q)status.textContent=e.message;}
+  }});ta.input.setAttribute('aria-label','Find a record');
+  kind.onchange=()=>{++ticket;selected=null;ta.setValue('');preview.replaceChildren();status.textContent=hints[kind.value];ta.focus();};
+  pane.append(kind,ta.el,status,preview);host.append(pane);
+  return {element:pane,close:()=>{closed=true;++ticket;pane.remove();drop();},getView:()=>({query:ta.value(),kind:kind.value,id:selected?.record.id,revision:selected?.revision,scrollTop:preview.scrollTop}),restoreView:async view=>{kind.value=['note','task','goal'].includes(view.kind)?view.kind:'note';ta.setValue(view.query||'');status.textContent=hints[kind.value];if(view.id||view.path)await load(view.id||view.path,view.revision);preview.scrollTop=Math.max(0,Number(view.scrollTop)||0);return true;}};
+ },{kind:'records'});
 }

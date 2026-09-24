@@ -480,7 +480,7 @@ function typeahead(opts) {
     el: wrap,
     input,
     value: () => input.value.trim(),
-    setValue: (v) => { input.value = v; },
+    setValue: (v) => { input.value = v; ++seq; hide(); },
     focus: () => input.focus(),
     commit: (v) => { input.value = v; ++seq; hide(); },
   };

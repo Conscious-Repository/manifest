@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -96,6 +97,14 @@ type outstandingGroup struct {
 // unifiedRows collects every OPEN item across the three sources, unfiltered —
 // callers split it into the me-projection and the Outstanding grouping.
 func (s *Server) unifiedRows(doc *tasks.Doc, now time.Time) []unifiedRow {
+	rows, _ := s.unifiedRowsChecked(doc, now)
+	return rows
+}
+
+// Callers that promise a complete selection must not treat a failed property
+// read as an empty set. Existing board callers keep their historical projection.
+func (s *Server) unifiedRowsChecked(doc *tasks.Doc, now time.Time) ([]unifiedRow, error) {
+	var readErr error
 	var rows []unifiedRow
 	// known is the cross-source dependency resolver's memory: every task id
 	// any source can see (done ones included) → still open?
@@ -140,6 +149,8 @@ func (s *Server) unifiedRows(doc *tasks.Doc, now time.Time) []unifiedRow {
 					})
 				}
 			}
+		} else {
+			readErr = fmt.Errorf("property task records unavailable: %w", err)
 		}
 	}
 	// the two DOMAIN backlogs — aion and its RE mirror — project identically
@@ -183,7 +194,7 @@ func (s *Server) unifiedRows(doc *tasks.Doc, now time.Time) []unifiedRow {
 		}
 	}
 	coordinateRows(rows, known)
-	return rows
+	return rows, readErr
 }
 
 // sortRows: ranked first (rank asc), then oldest-added first, stable.

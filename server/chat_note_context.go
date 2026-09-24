@@ -93,20 +93,27 @@ func (s *Server) handleChatNoteRetain(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "note changed; review its current text before selecting it", 409)
 		return
 	}
-	// The hash in Ref makes each observation independently immutable, while the
-	// source path remains navigable. Repeating retention is a deduplicated Put.
-	result, err := s.artifactReg.Put(artifacts.Put{Kind: artifacts.KindDocument, Title: req.Path, Harness: "vault", Ref: req.Path + "#context-" + req.Revision, Content: b, Actor: "owner", Provenance: artifacts.Provenance{Source: "knowledge-context"}})
+
+	ref, err := s.retainContextSnapshot("knowledge-context", "vault", req.Path, req.Path, b)
 	if err != nil {
 		httpError(w, err)
 		return
 	}
-	s.artifactEvent(result, "owner")
-	rev, ok := result.Artifact.Revision(req.Revision)
-	if !ok {
-		http.Error(w, "reviewed revision unavailable", 409)
-		return
+	writeJSON(w, ref)
+}
+
+func (s *Server) retainContextSnapshot(source, harness, id, title string, b []byte) (map[string]any, error) {
+	hash := artifacts.Hash(b)
+	result, err := s.artifactReg.Put(artifacts.Put{Kind: artifacts.KindDocument, Title: title, Harness: harness, Ref: id + "#context-" + hash, Content: b, Actor: "owner", Provenance: artifacts.Provenance{Source: source}})
+	if err != nil {
+		return nil, err
 	}
-	writeJSON(w, map[string]any{"id": result.Artifact.ID, "revision": req.Revision, "title": result.Artifact.Title, "version": rev.N, "explicitArtifacts": true})
+	s.artifactEvent(result, "owner")
+	rev, ok := result.Artifact.Revision(hash)
+	if !ok {
+		return nil, errBadRequest("reviewed revision unavailable")
+	}
+	return map[string]any{"id": result.Artifact.ID, "revision": hash, "title": result.Artifact.Title, "version": rev.N, "explicitArtifacts": true}, nil
 }
 
 func knowledgeContextPath(a artifacts.Artifact) string {

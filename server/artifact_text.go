@@ -26,7 +26,7 @@ func (s *Server) handleArtifactText(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ext := strings.ToLower(filepath.Ext(a.Ref))
-	if (a.Provenance.Source == "task-plan" || a.Provenance.Source == "knowledge-context") || !strings.Contains("|.md|.txt|.json|.csv|.tsv|.yaml|.yml|.toml|.js|.jsx|.ts|.tsx|.py|.go|.html|.css|.sql|.sh|.xml|.svg|", "|"+ext+"|") || ext == "" {
+	if (a.Provenance.Source == "task-plan" || a.Provenance.Source == "knowledge-context" || a.Provenance.Source == "task-context" || a.Provenance.Source == "goal-context") || !strings.Contains("|.md|.txt|.json|.csv|.tsv|.yaml|.yml|.toml|.js|.jsx|.ts|.tsx|.py|.go|.html|.css|.sql|.sh|.xml|.svg|", "|"+ext+"|") || ext == "" {
 		http.Error(w, "This file is preview-only", 400)
 		return
 	}

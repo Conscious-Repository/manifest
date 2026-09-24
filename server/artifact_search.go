@@ -87,11 +87,25 @@ func (s *Server) artifactSourceLinks(rows []artifacts.Artifact) map[string][]art
 			}
 		}
 	}
+	knownRecords := map[string]map[string]bool{}
 	for _, a := range rows {
 		if a.Provenance.Source == "knowledge-context" && a.Harness == "vault" && s.index != nil {
 			rel := knowledgeContextPath(a)
 			if rel != "" && s.index.ContextNote(rel) {
 				out[a.ID] = append(out[a.ID], artifactSourceLink{"note", rel, "#/note/" + url.PathEscape(rel), rel})
+			}
+		}
+		if kind, id, route := contextSnapshotSource(a); kind == "task" || kind == "goal" {
+			if knownRecords[kind] == nil {
+				knownRecords[kind] = map[string]bool{}
+				if records, err := s.chatContextRecords(kind, ""); err == nil {
+					for _, r := range records {
+						knownRecords[kind][r.ID] = true
+					}
+				}
+			}
+			if knownRecords[kind][id] {
+				out[a.ID] = append(out[a.ID], artifactSourceLink{kind, id, route, id})
 			}
 		}
 		if link, ok := conversations[a.Provenance.Session]; ok {

@@ -238,8 +238,8 @@ func (s *Server) retainedArtifactContext(refs []artifactContextRef) (string, err
 			return "", errBadRequest("this artifact needs a supported text extraction before discussing it")
 		}
 		source := ""
-		if rel := knowledgeContextPath(a); rel != "" {
-			source = fmt.Sprintf(" source-note=%q", rel)
+		if kind, id, _ := contextSnapshotSource(a); kind != "" {
+			source = fmt.Sprintf(" source-%s=%q", kind, id)
 		}
 		fmt.Fprintf(&out, "\n\n<referenced-artifact id=%q revision=%q version=%q%s>\n%s\n</referenced-artifact>", ref.ID, ref.Revision, fmt.Sprint(rev.N), source, string(b))
 	}

@@ -845,3 +845,5 @@ label.chat-artifact-handoff{display:flex;flex-direction:row;align-items:flex-sta
 .chat-notes-inspector .ta-item[aria-selected=true]{background:var(--base-20);outline:1px solid var(--base-50);outline-offset:-1px;}
 .chat-notes-preview{min-height:0;overflow:auto;overflow-wrap:anywhere;}
 .chat-notes-preview button{min-height:44px;}
+
+.chat-notes-inspector > select{min-height:44px;width:100%;}
