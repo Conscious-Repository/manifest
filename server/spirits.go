@@ -68,7 +68,20 @@ func (s *Server) handleSpiritsRun(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "spirits disabled", http.StatusServiceUnavailable)
 		return
 	}
-	h, sum, body, ok := s.findRun(r.PathValue("id"))
+	var h Harness
+	var sum spirits.RunSummary
+	var body string
+	var ok bool
+	if r.URL.Query().Has("harness") {
+		// An explicit provenance link must not fall back to another harness when
+		// its report was deleted or another tree has the same report ID.
+		if named := s.findHarness(r.URL.Query().Get("harness")); named != nil && named.Spirits != nil && r.URL.Query().Get("harness") != "" {
+			h = *named
+			sum, body, ok = h.Spirits.Run(r.PathValue("id"))
+		}
+	} else {
+		h, sum, body, ok = s.findRun(r.PathValue("id"))
+	}
 	if !ok {
 		http.Error(w, "run not found", http.StatusNotFound)
 		return

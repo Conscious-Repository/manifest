@@ -169,6 +169,27 @@ const {chromium}=require('playwright'),fs=require('fs'),path=require('path'),ass
  await p.getByRole('button',{name:'Standalone result',exact:true}).click();assert.equal(await p.evaluate(()=>fileOpened.revision),'a'.repeat(64));await p.evaluate(()=>chatOpenWorkingArtifact=fileOriginalOpen);
  await p.getByLabel('Filter files').fill('missing');await p.getByText('No matching files.',{exact:true}).waitFor();
  await p.getByLabel('Filter files').fill('');
+ await p.evaluate(()=>{
+  const prior=fetch;window.fetch=async(url,opts)=>{
+   if(url.startsWith('/api/artifacts?')&&!url.includes('conversation_id=')){
+    fileQueries.push(url);return {ok:true,json:async()=>({artifacts:[{id:'other-output',title:'Earlier report',ref:'archive/report.md',head:'c'.repeat(64),kind:'report',provenance:{session:'other-conversation'},sources:[{kind:'conversation',route:'#/chat/a/claude/other123',label:'Original source'}]}],contentSkipped:2})};
+   }return prior(url,opts);
+  };
+ });
+ await p.getByLabel('File scope').selectOption('all');
+ await p.getByRole('button',{name:'Earlier report',exact:true}).waitFor();
+ await p.getByLabel('Filter files').fill('content-only needle');
+ await p.waitForFunction(()=>fileQueries.some(q=>q.includes('q=content-only+needle')));
+ await p.getByRole('button',{name:'Earlier report',exact:true}).waitFor();
+ assert.equal(await p.getByRole('link',{name:'source conversation',exact:true}).getAttribute('href'),'#/chat/a/claude/other123');
+ assert.ok((await p.locator('.chat-files-inspector > .chat-workspace-hint').textContent()).includes('2 nonmatching files'));
+ await p.evaluate(()=>{chatOpenWorkingArtifact=ref=>window.fileOpened=ref;});
+ await p.getByRole('button',{name:'Earlier report',exact:true}).click();
+ assert.equal(await p.evaluate(()=>fileOpened.revision),'c'.repeat(64));assert.equal(await p.evaluate(()=>fileOpened.task),'','another output does not inherit this conversation task');
+ await p.evaluate(()=>chatOpenWorkingArtifact=fileOriginalOpen);
+ await p.evaluate(async()=>{chatWorkspaceTabs.close();await Promise.all([...chatWorkspaceStates.values()].map(s=>s.flush()));chatWorkspaceStates.clear();await chatRestoreWorkspace();});
+ await p.getByRole('button',{name:'Earlier report',exact:true}).waitFor();
+ assert.equal(await p.getByLabel('File scope').inputValue(),'all');assert.equal(await p.getByLabel('Filter files').inputValue(),'content-only needle');
  assert.equal(await p.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);
  await p.screenshot({path:'/tmp/manifest-workbench-files-phone.png'});
  assert.deepEqual(errors,[]);

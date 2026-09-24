@@ -133,7 +133,7 @@ function chatEnsureWorkspace(restoring=false){
 function chatWorkspaceChooser(host){
  const source=chatWorkspaceSource(),chooser=el('div','chat-workspace-chooser');
  const action=(name,description,icon,fn)=>{const b=el('button','chat-workspace-option');b.title=description;b.append(chatWorkspaceIcon(icon),el('span','',name));b.onclick=fn;chooser.append(b);};
- if(source)action('Files','Browse outputs and referenced files','file',()=>chatOpenFiles());
+ action('Files','Browse outputs and referenced files','file',()=>chatOpenFiles());
  if(source)action('Activity','Inspect recorded instructions, narration and tool output','review',()=>chatOpenActivity());
  const project=chatCurrentProject();
  if(source)action('Context','Inspect recorded inputs and project instructions','folder',()=>chatOpenContext());
@@ -438,39 +438,52 @@ function chatOpenContext(){
 
 function chatOpenFiles(){
  if(chatIsPortal())return;
- const source=chatWorkspaceSource();if(!source)return;
+ const source=chatWorkspaceSource();
  return chatEnsureWorkspace().tab('files','Files',(host,drop)=>{
-  const pane=el('section','chat-files-inspector'),toolbar=el('div','chat-files-toolbar'),search=document.createElement('input'),refresh=el('button','sprt-quiet','refresh'),status=el('p','chat-workspace-hint'),list=el('div','chat-files-list');
-  search.type='search';search.placeholder='Filter files';search.setAttribute('aria-label','Filter files');list.tabIndex=0;status.setAttribute('role','status');toolbar.append(search,refresh);pane.append(toolbar,status,list);host.append(pane);
-  let rows=[],closed=false,pending=null,ready=Promise.resolve();
+  const pane=el('section','chat-files-inspector'),toolbar=el('div','chat-files-toolbar'),search=document.createElement('input'),scope=document.createElement('select'),refresh=el('button','sprt-quiet','refresh'),status=el('p','chat-workspace-hint'),list=el('div','chat-files-list');
+  scope.setAttribute('aria-label','File scope');
+  for(const [value,label] of [...(source?[['conversation','this conversation']]:[]),['all','all registered files']]){const option=el('option','',label);option.value=value;scope.append(option);}
+  search.type='search';search.placeholder='Filter files';search.setAttribute('aria-label','Filter files');list.tabIndex=0;status.setAttribute('role','status');toolbar.append(scope,search,refresh);pane.append(toolbar,status,list);host.append(pane);
+  let rows=[],closed=false,pending=null,timer=null,ready=Promise.resolve();
   const render=()=>{
    const scroll=list.scrollTop;list.replaceChildren();const q=search.value.trim().toLowerCase();
    for(const {artifact:a,roles,attachment} of rows){
-    if(q&&![a.title,a.ref,a.kind].join(' ').toLowerCase().includes(q))continue;
+    if(scope.value==='conversation'&&q&&![a.title,a.ref,a.kind,a.provenance?.run].join(' ').toLowerCase().includes(q))continue;
     const item=el('div','chat-file-row'),open=el('button','chat-file-open',a.title||a.ref||'Untitled file');open.disabled=!!a.unknown||!a.id;
-    open.onclick=()=>attachment?chatOpenAttachment(attachment,"/api/chat/files/"+attachment.id):chatOpenWorkingArtifact({id:a.id,revision:a.head,task:source.task});
+    open.onclick=()=>attachment?chatOpenAttachment(attachment,"/api/chat/files/"+attachment.id):chatOpenWorkingArtifact({id:a.id,revision:a.head,task:a.provenance?.task||(scope.value==='conversation'?source?.task:'')});
     const metadata=[...roles,a.kind,a.revisions?.length?'v'+a.revisions.length:'',a.provenance?.run?'Run '+a.provenance.run:''].filter(Boolean);
-    item.append(open,el('div','chat-file-meta',metadata.join(' · ')));if(a.ref)item.append(el('div','chat-file-path',a.ref));list.append(item);
+    item.append(open,el('div','chat-file-meta',metadata.join(' · ')));if(a.ref)item.append(el('div','chat-file-path',a.ref));
+    for(const link of a.sources||[]){
+     if(!/^#\/(chat|terminal|artifact)\//.test(link.route||''))continue;
+     const anchor=el('a','sprt-quiet chat-file-source',link.kind==='conversation'?'source conversation':link.kind==='execution'?'producing execution':'producing run');anchor.href=link.route;anchor.title=link.label||link.id;item.append(anchor);
+    }
+    if((a.provenance?.session||a.provenance?.run)&&!a.sources?.length)item.append(el('div','chat-file-meta','Source unavailable; recorded identity retained.'));
+    list.append(item);
    }
-   if(!list.childElementCount)list.append(emptyRow(rows.length?'No matching files.':'No registered files for this conversation yet.'));
+   if(!list.childElementCount)list.append(emptyRow(search.value.trim()?'No matching files.':scope.value==='all'?'No registered files yet.':'No registered files for this conversation yet.'));
    list.scrollTop=scroll;
   };
   const load=async()=>{
-   pending?.abort();const controller=new AbortController();pending=controller;refresh.disabled=true;status.textContent='loading…';
+   clearTimeout(timer);pending?.abort();const controller=new AbortController();pending=controller;refresh.disabled=true;status.textContent='loading…';list.replaceChildren(emptyRow('loading…'));
+   const all=scope.value==='all';search.placeholder=all?'Search names and current text':'Filter files';
    try{
-    const query=new URLSearchParams({conversation_backend:source.backend==='terminal'?'terminal':'agent',conversation_agent:source.agent,conversation_id:source.id});
+    const query=new URLSearchParams({sources:'1'});
+    if(all)query.set('q',search.value.trim());
+    else{query.set('conversation_backend',source.backend==='terminal'?'terminal':'agent');query.set('conversation_agent',source.agent);query.set('conversation_id',source.id);}
     const get=async url=>{const r=await fetch(url,{signal:controller.signal,cache:'no-store'});if(!r.ok)throw Error('Files could not be loaded. Refresh to retry.');return r.json();};
-    const owner=(source.backend==='terminal'?'terminal:':'agent:')+source.agent+'/'+source.id;
-    const [scope,task,uploads]=await Promise.all([get('/api/artifacts?'+query),source.task?get('/api/tasks/panel?id='+encodeURIComponent(source.task)):Promise.resolve(null),get('/api/chat/files?owner='+encodeURIComponent(owner))]);
+    const owner=source?(source.backend==='terminal'?'terminal:':'agent:')+source.agent+'/'+source.id:'';
+    const [foundScope,task,uploads]=await Promise.all([get('/api/artifacts?'+query),!all&&source.task?get('/api/tasks/panel?id='+encodeURIComponent(source.task)):Promise.resolve(null),!all?get('/api/chat/files?owner='+encodeURIComponent(owner)):Promise.resolve({files:[]})]);
     if(closed||pending!==controller)return;
     const found=new Map();const add=(a,role)=>{const key=a.id||a.ref;if(!key)return;const row=found.get(key)||{artifact:a,roles:[]};if(!row.roles.includes(role))row.roles.push(role);found.set(key,row);};
-    for(const a of scope.artifacts||[])add(a,'Conversation output');for(const a of task?.artifacts?.outputs||[])add(a,'Task output');for(const a of task?.artifacts?.inputs||[])add(a,'Task input');
-    rows=[...(uploads.files||[]).map(f=>({artifact:{id:f.id,title:f.name,kind:f.type},attachment:{...f,owned:true},roles:[f.sent?"Attached context":"Draft attachment"]})),...found.values()];status.textContent=rows.length+' file'+(rows.length===1?'':'s');render();
-   }catch(e){if(!closed&&pending===controller&&e.name!=='AbortError')status.textContent=e.message;}
+    for(const a of foundScope.artifacts||[])add(a,all?'Registered file':'Conversation output');for(const a of task?.artifacts?.outputs||[])add(a,'Task output');for(const a of task?.artifacts?.inputs||[])add(a,'Task input');
+    rows=[...(uploads.files||[]).map(f=>({artifact:{id:f.id,title:f.name,kind:f.type},attachment:{...f,owned:true},roles:[f.sent?"Attached context":"Draft attachment"]})),...found.values()];
+    status.textContent=rows.length+' file'+(rows.length===1?'':'s')+(all?' · searches names, provenance and current text up to 1 MiB; attachments stay in their conversation.':'')+(foundScope.contentSkipped?' · '+foundScope.contentSkipped+' nonmatching files could not be searched as text.':'');render();
+   }catch(e){if(!closed&&pending===controller&&e.name!=='AbortError'){status.textContent=e.message;list.replaceChildren(emptyRow('Files unavailable.'));}}
    finally{if(!closed&&pending===controller)refresh.disabled=false;}
   };
-  search.oninput=render;refresh.onclick=()=>{ready=load();};ready=load();
-  return {element:pane,close:()=>{closed=true;pending?.abort();pane.remove();drop();},getView:()=>({query:search.value,scrollTop:list.scrollTop}),restoreView:async view=>{await ready;if(!host.isConnected||!host.clientHeight)return false;search.value=typeof view.query==='string'?view.query:'';render();list.scrollTop=Math.max(0,Number(view.scrollTop)||0);return true;}};
+  search.oninput=()=>{if(scope.value==='conversation'){render();return;}pending?.abort();pending=null;clearTimeout(timer);status.textContent='loading…';list.replaceChildren(emptyRow('loading…'));timer=setTimeout(()=>{ready=load();},250);};
+  scope.onchange=()=>{ready=load();};refresh.onclick=()=>{ready=load();};ready=load();
+  return {element:pane,close:()=>{closed=true;clearTimeout(timer);pending?.abort();pane.remove();drop();},getView:()=>({scope:scope.value,query:search.value,scrollTop:list.scrollTop}),restoreView:async view=>{search.value=typeof view.query==='string'?view.query:'';const mode=view.scope==='all'||!source?'all':'conversation';if(scope.value!==mode){scope.value=mode;ready=load();}else if(mode==='all')ready=load();await ready;if(!host.isConnected||!host.clientHeight)return false;render();list.scrollTop=Math.max(0,Number(view.scrollTop)||0);return true;}};
  },{kind:'files'});
 }
 

@@ -46,9 +46,10 @@ type artifactOpen struct {
 // links, how to open it, and (on request) a revision's content.
 type artifactView struct {
 	artifacts.Artifact
-	Links   artifacts.Links `json:"links"`
-	Open    *artifactOpen   `json:"open,omitempty"`
-	Content string          `json:"content,omitempty"`
+	Links   artifacts.Links      `json:"links"`
+	Open    *artifactOpen        `json:"open,omitempty"`
+	Content string               `json:"content,omitempty"`
+	Sources []artifactSourceLink `json:"sources,omitempty"`
 }
 
 func (s *Server) artifactView(a artifacts.Artifact, links map[string]artifacts.Links) artifactView {
@@ -246,6 +247,11 @@ func (s *Server) handleArtifactsList(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	q := r.URL.Query()
+	w.Header().Set("Cache-Control", "private, no-store")
+	if len(q.Get("q")) > 256 {
+		http.Error(w, "search query exceeds 256 bytes", http.StatusBadRequest)
+		return
+	}
 	f := artifacts.Filter{
 		Kind: strings.TrimSpace(q.Get("kind")), Task: strings.TrimSpace(q.Get("task")),
 		Run: strings.TrimSpace(q.Get("run")), Harness: strings.TrimSpace(q.Get("harness")),
@@ -277,13 +283,19 @@ func (s *Server) handleArtifactsList(w http.ResponseWriter, r *http.Request) {
 			f.Harness = h.Name
 		}
 	}
-	arts := s.artifactReg.List(f)
+	arts, skipped := s.searchArtifacts(s.artifactReg.List(f), q.Get("q"))
+	var sources map[string][]artifactSourceLink
+	if q.Get("sources") == "1" {
+		sources = s.artifactSourceLinks(arts)
+	}
 	links := s.artifactLinks(arts)
 	out := []artifactView{}
 	for _, a := range arts {
-		out = append(out, s.artifactView(a, links))
+		v := s.artifactView(a, links)
+		v.Sources = sources[a.ID]
+		out = append(out, v)
 	}
-	writeJSON(w, map[string]any{"artifacts": out, "count": len(out)})
+	writeJSON(w, map[string]any{"artifacts": out, "count": len(out), "contentSkipped": skipped})
 }
 
 // handleArtifactGet — GET /api/artifacts/get?id=&content=1&rev=<hash>. The

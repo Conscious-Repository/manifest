@@ -106,7 +106,8 @@ if (els.noteBackBtn) els.noteBackBtn.addEventListener("click", () => { location.
 // + .note-rendered) but reads through the spirits API — the harness tree lives
 // OUTSIDE the vault, so this is strictly read-only: no raw edit, no backlinks,
 // no Obsidian link (there is no vault path). Routed as
-// #/artifact/ref/<harness>/<encRef> and #/artifact/run/<runId>. ----
+// #/artifact/ref/<harness>/<encRef>, #/artifact/run/<runId>, and
+// exact-source #/artifact/run-in/<harness>/<runId>. ----
 let _artifactRaw = "";
 async function showArtifact(tail) {
   els.artifactView.hidden = false;
@@ -127,9 +128,11 @@ async function showArtifact(tail) {
       raw = (await r.json()).content || "";
       title = artifactTitleFromRef(ref);
       source = ref;
-    } else if (kind === "run") {
-      const runId = decodeURIComponent(parts.slice(1).join("/") || "");
-      const r = await fetch("/api/spirits/runs/" + encodeURIComponent(runId));
+    } else if (kind === "run" || kind === "run-in") {
+      const harness = kind === "run-in" ? decodeURIComponent(parts[1] || "") : "";
+      const runId = decodeURIComponent(parts.slice(kind === "run-in" ? 2 : 1).join("/") || "");
+      if (kind === "run-in" && !harness) throw new Error("run harness is required");
+      const r = await fetch("/api/spirits/runs/" + encodeURIComponent(runId) + (harness ? "?harness=" + encodeURIComponent(harness) : ""));
       if (!r.ok) throw new Error("HTTP " + r.status);
       const run = await r.json();
       const s = run.summary || {};
