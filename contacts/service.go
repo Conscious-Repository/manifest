@@ -90,7 +90,6 @@ type FundraisingSummary struct {
 	ID       string  `json:"id"`
 	Firm     string  `json:"firm"`
 	Status   string  `json:"status"`
-	Interest string  `json:"interest"`
 	Amount   float64 `json:"amount,omitempty"`
 	NextStep string  `json:"nextStep"`
 }

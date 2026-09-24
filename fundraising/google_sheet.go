@@ -17,15 +17,20 @@ import (
 )
 
 const (
-	sheetMetadataKey  = "manifestOpportunityID"
-	sheetSchemaKey    = "manifestFundraisingSchema"
-	sheetSchemaValue  = "1"
-	sheetColumnCount  = 16
-	defaultSheetTitle = "Fundraising"
+	sheetMetadataKey = "manifestOpportunityID"
+	sheetSchemaKey   = "manifestFundraisingSchema"
+	// Schema 1 (2026-08-17) carried an "Interest" column at F. Schema 2
+	// (2026-09-24) retired it; a schema-1 workbook is migrated in place on
+	// the first read (see migrateSchema).
+	sheetSchemaValue   = "2"
+	sheetSchemaLegacy  = "1"
+	sheetSchemaLegacyF = 5 // the retired Interest column, zero-based
+	sheetColumnCount   = 15
+	defaultSheetTitle  = "Fundraising"
 )
 
 var sheetHeaders = []string{
-	"Firm", "Website", "People", "Source", "Status", "Interest", "Amount", "Currency",
+	"Firm", "Website", "People", "Source", "Status", "Amount", "Currency",
 	"Last Touchpoint", "Last Touchpoint Date", "Computed Last Touchpoint", "Next Step",
 	"Next Step Due", "Notes", "Archived", "Sync",
 }
@@ -89,18 +94,21 @@ func (g *GoogleSheetBackend) Read(ctx context.Context) (SheetData, error) {
 	if err != nil {
 		return SheetData{}, err
 	}
-	initialized, err := g.initialized(ctx)
+	mark, err := g.schema(ctx)
 	if err != nil {
 		return SheetData{}, err
 	}
-	if !initialized {
+	if !mark.Found {
 		return SheetData{Initialized: false, RowCount: int(props.GridProperties.RowCount)}, nil
+	}
+	if err := g.migrateSchema(ctx, mark); err != nil {
+		return SheetData{}, err
 	}
 	rowCount := props.GridProperties.RowCount
 	var values *sheets.ValueRange
 	err = googleRetry(ctx, func() error {
 		var err error
-		values, err = g.service.Spreadsheets.Values.Get(g.spreadsheetID, quoteSheet(props.Title)+"!A2:P"+strconv.FormatInt(rowCount, 10)).
+		values, err = g.service.Spreadsheets.Values.Get(g.spreadsheetID, quoteSheet(props.Title)+"!A2:O"+strconv.FormatInt(rowCount, 10)).
 			ValueRenderOption("UNFORMATTED_VALUE").DateTimeRenderOption("FORMATTED_STRING").Context(ctx).Do()
 		return err
 	})
@@ -116,7 +124,7 @@ func (g *GoogleSheetBackend) Read(ctx context.Context) (SheetData, error) {
 		gridRow := i + 1
 		id := metadata[gridRow]
 		record := sharedFromCells(raw)
-		syncValue := cellString(raw, 15)
+		syncValue := cellString(raw, sheetColumnCount-1)
 		if id.Value == "" && !cellsHaveContent(raw) && syncValue == "" {
 			continue
 		}
@@ -153,15 +161,51 @@ func (g *GoogleSheetBackend) rowMetadata(ctx context.Context) (map[int]rowMetada
 	return out, nil
 }
 
-func (g *GoogleSheetBackend) initialized(ctx context.Context) (bool, error) {
-	request := &sheets.SearchDeveloperMetadataRequest{DataFilters: []*sheets.DataFilter{{DeveloperMetadataLookup: &sheets.DeveloperMetadataLookup{MetadataKey: sheetSchemaKey, MetadataValue: sheetSchemaValue, Visibility: "DOCUMENT"}}}}
+// schemaMark is the workbook-level marker Initialize leaves behind: its
+// presence means the tab carries the Manifest layout, its value says which
+// revision of that layout.
+type schemaMark struct {
+	Found      bool
+	Version    string
+	MetadataID int64
+}
+
+func (g *GoogleSheetBackend) schema(ctx context.Context) (schemaMark, error) {
+	request := &sheets.SearchDeveloperMetadataRequest{DataFilters: []*sheets.DataFilter{{DeveloperMetadataLookup: &sheets.DeveloperMetadataLookup{MetadataKey: sheetSchemaKey, Visibility: "DOCUMENT"}}}}
 	var response *sheets.SearchDeveloperMetadataResponse
 	err := googleRetry(ctx, func() error {
 		var err error
 		response, err = g.service.Spreadsheets.DeveloperMetadata.Search(g.spreadsheetID, request).Context(ctx).Do()
 		return err
 	})
-	return err == nil && len(response.MatchedDeveloperMetadata) > 0, err
+	if err != nil {
+		return schemaMark{}, err
+	}
+	for _, match := range response.MatchedDeveloperMetadata {
+		if m := match.DeveloperMetadata; m != nil {
+			return schemaMark{Found: true, Version: m.MetadataValue, MetadataID: m.MetadataId}, nil
+		}
+	}
+	return schemaMark{}, nil
+}
+
+// migrateSchema brings a schema-1 tab to schema 2 in one batch: the retired
+// Interest column is deleted (Sheets shifts every validation, protection,
+// filter and row-metadata range with it) and the marker is bumped so the
+// step never repeats. Any other version is left alone.
+func (g *GoogleSheetBackend) migrateSchema(ctx context.Context, mark schemaMark) error {
+	if mark.Version != sheetSchemaLegacy {
+		return nil
+	}
+	requests := []*sheets.Request{
+		{DeleteDimension: &sheets.DeleteDimensionRequest{Range: dimensionRange(g.sheetID, "COLUMNS", sheetSchemaLegacyF, sheetSchemaLegacyF+1)}},
+		{UpdateDeveloperMetadata: &sheets.UpdateDeveloperMetadataRequest{
+			DataFilters:       []*sheets.DataFilter{{DeveloperMetadataLookup: &sheets.DeveloperMetadataLookup{MetadataId: mark.MetadataID}}},
+			DeveloperMetadata: &sheets.DeveloperMetadata{MetadataValue: sheetSchemaValue},
+			Fields:            "metadataValue",
+		}},
+	}
+	return g.batch(ctx, requests)
 }
 
 func (g *GoogleSheetBackend) Write(ctx context.Context, changes []SheetChange) error {
@@ -205,9 +249,9 @@ func (g *GoogleSheetBackend) Initialize(ctx context.Context, records []SharedOpp
 	if err != nil {
 		return SheetInitResult{}, err
 	}
-	if done, err := g.initialized(ctx); err != nil {
+	if mark, err := g.schema(ctx); err != nil {
 		return SheetInitResult{}, err
-	} else if done {
+	} else if mark.Found {
 		return SheetInitResult{DryRun: dryRun, AlreadyDone: true, Rows: len(records)}, nil
 	}
 	backupTitle := uniqueBackupTitle(spreadsheet, time.Now())
@@ -262,11 +306,11 @@ func (g *GoogleSheetBackend) Initialize(ctx context.Context, records []SharedOpp
 	requests = append(requests,
 		&sheets.Request{SetBasicFilter: &sheets.SetBasicFilterRequest{Filter: &sheets.BasicFilter{Range: gridRange(g.sheetID, 0, int64(rowCount), 0, sheetColumnCount)}}},
 		&sheets.Request{RepeatCell: &sheets.RepeatCellRequest{Range: gridRange(g.sheetID, 1, int64(rowCount), 2, 4), Cell: &sheets.CellData{UserEnteredFormat: &sheets.CellFormat{WrapStrategy: "WRAP"}}, Fields: "userEnteredFormat.wrapStrategy"}},
-		&sheets.Request{RepeatCell: &sheets.RepeatCellRequest{Range: gridRange(g.sheetID, 1, int64(rowCount), 13, 14), Cell: &sheets.CellData{UserEnteredFormat: &sheets.CellFormat{WrapStrategy: "WRAP"}}, Fields: "userEnteredFormat.wrapStrategy"}},
-		&sheets.Request{AddProtectedRange: &sheets.AddProtectedRangeRequest{ProtectedRange: protected(gridRange(g.sheetID, 1, int64(rowCount), 10, 11), "Computed by Manifest", g.clientEmail)}},
-		&sheets.Request{AddProtectedRange: &sheets.AddProtectedRangeRequest{ProtectedRange: protected(gridRange(g.sheetID, 1, int64(rowCount), 14, 16), "Owner-controlled state", g.clientEmail)}},
+		&sheets.Request{RepeatCell: &sheets.RepeatCellRequest{Range: gridRange(g.sheetID, 1, int64(rowCount), 12, 13), Cell: &sheets.CellData{UserEnteredFormat: &sheets.CellFormat{WrapStrategy: "WRAP"}}, Fields: "userEnteredFormat.wrapStrategy"}},
+		&sheets.Request{AddProtectedRange: &sheets.AddProtectedRangeRequest{ProtectedRange: protected(gridRange(g.sheetID, 1, int64(rowCount), 9, 10), "Computed by Manifest", g.clientEmail)}},
+		&sheets.Request{AddProtectedRange: &sheets.AddProtectedRangeRequest{ProtectedRange: protected(gridRange(g.sheetID, 1, int64(rowCount), 13, 15), "Owner-controlled state", g.clientEmail)}},
 		&sheets.Request{AutoResizeDimensions: &sheets.AutoResizeDimensionsRequest{Dimensions: dimensionRange(g.sheetID, "COLUMNS", 0, sheetColumnCount)}},
-		&sheets.Request{UpdateDimensionProperties: &sheets.UpdateDimensionPropertiesRequest{Range: dimensionRange(g.sheetID, "COLUMNS", 13, 14), Properties: &sheets.DimensionProperties{PixelSize: 320}, Fields: "pixelSize"}},
+		&sheets.Request{UpdateDimensionProperties: &sheets.UpdateDimensionPropertiesRequest{Range: dimensionRange(g.sheetID, "COLUMNS", 12, 13), Properties: &sheets.DimensionProperties{PixelSize: 320}, Fields: "pixelSize"}},
 	)
 	for row, record := range records {
 		requests = append(requests, metadataCreate(g.sheetID, row+1, record.ID))
@@ -303,16 +347,16 @@ func (g *GoogleSheetBackend) sheetProperties(spreadsheet *sheets.Spreadsheet) (*
 func sharedFromCells(row []any) SharedOpportunity {
 	return SharedOpportunity{
 		Firm: cellString(row, 0), Website: cellString(row, 1), People: splitPeople(cellString(row, 2)), Source: cellString(row, 3),
-		Status: cellString(row, 4), Interest: cellString(row, 5), Amount: cellFloat(row, 6), Currency: cellString(row, 7),
-		LastTouchpoint: cellString(row, 8), LastTouchpointDate: cellDate(row, 9), ComputedLastTouchpoint: cellDate(row, 10),
-		NextStep: cellString(row, 11), NextStepDue: cellDate(row, 12), Notes: cellString(row, 13), Archived: cellBool(row, 14),
+		Status: cellString(row, 4), Amount: cellFloat(row, 5), Currency: cellString(row, 6),
+		LastTouchpoint: cellString(row, 7), LastTouchpointDate: cellDate(row, 8), ComputedLastTouchpoint: cellDate(row, 9),
+		NextStep: cellString(row, 10), NextStepDue: cellDate(row, 11), Notes: cellString(row, 12), Archived: cellBool(row, 13),
 	}
 }
 
 func sharedCells(record SharedOpportunity, syncValue string) []*sheets.CellData {
 	return []*sheets.CellData{
 		textCell(record.Firm), textCell(record.Website), textCell(strings.Join(record.People, "; ")), textCell(record.Source),
-		textCell(record.Status), textCell(record.Interest), numberCell(record.Amount, "#,##0.00"), textCell(record.Currency),
+		textCell(record.Status), numberCell(record.Amount, "#,##0.00"), textCell(record.Currency),
 		textCell(record.LastTouchpoint), dateCell(record.LastTouchpointDate), dateCell(record.ComputedLastTouchpoint), textCell(record.NextStep),
 		dateCell(record.NextStepDue), textCell(record.Notes), boolCell(record.Archived), textCell(syncValue),
 	}
@@ -333,12 +377,11 @@ func validationRequests(sheetID int64, rowCount int) []*sheets.Request {
 	return []*sheets.Request{
 		{SetDataValidation: &sheets.SetDataValidationRequest{Range: rangeFor(1), Rule: &sheets.DataValidationRule{Condition: &sheets.BooleanCondition{Type: "TEXT_IS_URL"}, Strict: false, InputMessage: "Use an http or https website URL."}}},
 		{SetDataValidation: &sheets.SetDataValidationRequest{Range: rangeFor(4), Rule: list(Statuses...)}},
-		{SetDataValidation: &sheets.SetDataValidationRequest{Range: rangeFor(5), Rule: list(Interests...)}},
-		{SetDataValidation: &sheets.SetDataValidationRequest{Range: rangeFor(6), Rule: &sheets.DataValidationRule{Condition: &sheets.BooleanCondition{Type: "NUMBER_GREATER_THAN_EQ", Values: []*sheets.ConditionValue{{UserEnteredValue: "0"}}}, Strict: true}}},
-		{SetDataValidation: &sheets.SetDataValidationRequest{Range: rangeFor(7), Rule: &sheets.DataValidationRule{Condition: &sheets.BooleanCondition{Type: "CUSTOM_FORMULA", Values: []*sheets.ConditionValue{{UserEnteredValue: "=OR(H2=\"\",REGEXMATCH(H2,\"^[A-Z]{3}$\"))"}}}, Strict: true, InputMessage: "Use a three-letter currency code such as USD."}}},
+		{SetDataValidation: &sheets.SetDataValidationRequest{Range: rangeFor(5), Rule: &sheets.DataValidationRule{Condition: &sheets.BooleanCondition{Type: "NUMBER_GREATER_THAN_EQ", Values: []*sheets.ConditionValue{{UserEnteredValue: "0"}}}, Strict: true}}},
+		{SetDataValidation: &sheets.SetDataValidationRequest{Range: rangeFor(6), Rule: &sheets.DataValidationRule{Condition: &sheets.BooleanCondition{Type: "CUSTOM_FORMULA", Values: []*sheets.ConditionValue{{UserEnteredValue: "=OR(G2=\"\",REGEXMATCH(G2,\"^[A-Z]{3}$\"))"}}}, Strict: true, InputMessage: "Use a three-letter currency code such as USD."}}},
+		{SetDataValidation: &sheets.SetDataValidationRequest{Range: rangeFor(8), Rule: date}},
 		{SetDataValidation: &sheets.SetDataValidationRequest{Range: rangeFor(9), Rule: date}},
-		{SetDataValidation: &sheets.SetDataValidationRequest{Range: rangeFor(10), Rule: date}},
-		{SetDataValidation: &sheets.SetDataValidationRequest{Range: rangeFor(12), Rule: date}},
+		{SetDataValidation: &sheets.SetDataValidationRequest{Range: rangeFor(11), Rule: date}},
 	}
 }
 
@@ -413,7 +456,7 @@ func cellString(row []any, col int) string {
 }
 func cellsHaveContent(row []any) bool {
 	for i, value := range row {
-		if i == 15 || value == nil {
+		if i == sheetColumnCount-1 || value == nil {
 			continue
 		}
 		if strings.TrimSpace(fmt.Sprint(value)) != "" {

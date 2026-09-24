@@ -435,6 +435,13 @@ func (s *SheetSync) load() error {
 	if state.Records == nil {
 		state.Records = map[string]syncRecordState{}
 	}
+	for id, rec := range state.Records {
+		// Retired 2026-09-24 with the Interest column; a base written before
+		// then still names it, and a stale key must not read as a conflict.
+		delete(rec.Base, "interest")
+		delete(rec.Conflicts, "interest")
+		state.Records[id] = rec
+	}
 	s.state = state
 	return nil
 }

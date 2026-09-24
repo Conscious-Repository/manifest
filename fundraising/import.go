@@ -90,7 +90,7 @@ func NormalizeSheet(rows []SheetRow, exact ExactContactResolver) []Opportunity {
 		if firm == "" {
 			firm = row.Warm
 		}
-		op := Opportunity{Firm: firm, Status: StatusActive, Interest: normalizeInterest(row.Interest), Currency: "USD", LastTouchpoint: row.Touch, NextStep: row.Next, Notes: row.Notes, SourceRows: []int{row.Row}, People: personRefsFromText(row.Warm)}
+		op := Opportunity{Firm: firm, Status: StatusActive, Currency: "USD", LastTouchpoint: row.Touch, NextStep: row.Next, Notes: row.Notes, SourceRows: []int{row.Row}, People: personRefsFromText(row.Warm)}
 		if row.Section == "hit" {
 			op.Status = StatusProspect
 		}
@@ -151,18 +151,6 @@ func personRefsFromText(raw string) []PersonRef {
 	return mergePeople(nil, out)
 }
 
-func normalizeInterest(v string) string {
-	switch strings.ToLower(strings.TrimSpace(v)) {
-	case "high":
-		return InterestHigh
-	case "medium":
-		return InterestMedium
-	case "low":
-		return InterestLow
-	default:
-		return InterestUnknown
-	}
-}
 func committedLanguage(s string) bool {
 	for _, needle := range []string{"confirmed", "invested", "wants to invest", " in spv", " angel", "angel check"} {
 		if strings.Contains(s, needle) {

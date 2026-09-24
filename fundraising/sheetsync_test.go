@@ -129,7 +129,7 @@ func TestSheetSyncCreatesPlaintextPeopleAndRejectsInvalidDate(t *testing.T) {
 		t.Fatal(err)
 	}
 	backend.data.Rows = append(backend.data.Rows, SyncSheetRow{Row: 1, Record: SharedOpportunity{
-		Firm: "New Fund", People: []string{"Unlisted Person"}, Status: StatusProspect, Interest: InterestUnknown, Currency: "USD",
+		Firm: "New Fund", People: []string{"Unlisted Person"}, Status: StatusProspect, Currency: "USD",
 	}})
 	if err := syncer.Sync(context.Background()); err != nil {
 		t.Fatal(err)
@@ -150,7 +150,7 @@ func TestSheetSyncCreatesPlaintextPeopleAndRejectsInvalidDate(t *testing.T) {
 
 func TestPlaintextPeopleFrontmatterPreservesUnknownFieldsAndBody(t *testing.T) {
 	store := syncTestStore(t)
-	op, err := store.CreateShared(SharedOpportunity{Firm: "Plain Fund", People: []string{"External Person"}, Status: StatusProspect, Interest: InterestUnknown, Currency: "USD"})
+	op, err := store.CreateShared(SharedOpportunity{Firm: "Plain Fund", People: []string{"External Person"}, Status: StatusProspect, Currency: "USD"})
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -36,7 +36,7 @@ func (a fundraisingDirectoryAdapter) Fundraising(key string) []contacts.Fundrais
 		if op.Archived {
 			continue
 		}
-		out = append(out, contacts.FundraisingSummary{ID: op.ID, Firm: op.Firm, Status: op.Status, Interest: op.Interest, Amount: op.Amount, NextStep: op.NextStep})
+		out = append(out, contacts.FundraisingSummary{ID: op.ID, Firm: op.Firm, Status: op.Status, Amount: op.Amount, NextStep: op.NextStep})
 	}
 	return out
 }
@@ -53,7 +53,7 @@ func (s *Server) fundraisingView() map[string]any {
 	if s.fundraising != nil {
 		resources = s.fundraising.Resources()
 	}
-	return map[string]any{"opportunities": ops, "statuses": fundraising.Statuses, "interests": fundraising.Interests, "resources": resources}
+	return map[string]any{"opportunities": ops, "statuses": fundraising.Statuses, "resources": resources}
 }
 
 // FundraisingSnapshot is the private complete projection shared by the owner

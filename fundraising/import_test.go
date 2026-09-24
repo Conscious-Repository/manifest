@@ -103,7 +103,6 @@ func TestImportUpsertIsIdempotent(t *testing.T) {
 	op := Opportunity{
 		Firm:       "Repeat Ventures",
 		Status:     StatusActive,
-		Interest:   InterestMedium,
 		Currency:   "USD",
 		People:     []PersonRef{},
 		SourceRows: []int{17},

@@ -7,15 +7,9 @@ const (
 	StatusActive    = "active"
 	StatusCommitted = "committed"
 	StatusPassed    = "passed"
-
-	InterestUnknown = "unknown"
-	InterestHigh    = "high"
-	InterestMedium  = "medium"
-	InterestLow     = "low"
 )
 
 var Statuses = []string{StatusProspect, StatusActive, StatusCommitted, StatusPassed}
-var Interests = []string{InterestUnknown, InterestHigh, InterestMedium, InterestLow}
 
 // PersonRef is an explicit CRM→contact edge. NotePath is optional: the shared
 // CRM registry carries note-less people until the owner elects to create a
@@ -42,7 +36,6 @@ type Opportunity struct {
 	Firm     string      `json:"firm"`
 	Website  string      `json:"website,omitempty"`
 	Status   string      `json:"status"`
-	Interest string      `json:"interest"`
 	Amount   float64     `json:"amount,omitempty"`
 	Currency string      `json:"currency"`
 	People   []PersonRef `json:"people"`

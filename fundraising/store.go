@@ -165,14 +165,6 @@ func validStatus(v string) bool {
 	}
 	return false
 }
-func validInterest(v string) bool {
-	for _, x := range Interests {
-		if v == x {
-			return true
-		}
-	}
-	return false
-}
 
 func (s *Store) List() ([]Opportunity, error) {
 	dir := s.abs(s.root)
@@ -247,7 +239,7 @@ func (s *Store) loadRel(rel string) (Opportunity, bool) {
 	if !containsFold(mdfm.List(fm["categories"]), "fundraising") {
 		return Opportunity{}, false
 	}
-	op := Opportunity{Path: rel, ID: scalar(fm["id"]), Firm: scalar(fm["firm"]), Website: scalar(fm["website"]), Status: strings.ToLower(scalar(fm["status"])), Interest: strings.ToLower(scalar(fm["interest"])), Currency: scalar(fm["currency"]), LastTouchpoint: scalar(fm["last-touchpoint"]), LastTouchpointDate: scalar(fm["last-touchpoint-date"]), NextStep: scalar(fm["next-step"]), NextStepDue: scalar(fm["next-step-due"]), Notes: scalar(fm["notes"]), Archived: parseBool(fm["archived"]), ImportReview: parseBool(fm["import-review"])}
+	op := Opportunity{Path: rel, ID: scalar(fm["id"]), Firm: scalar(fm["firm"]), Website: scalar(fm["website"]), Status: strings.ToLower(scalar(fm["status"])), Currency: scalar(fm["currency"]), LastTouchpoint: scalar(fm["last-touchpoint"]), LastTouchpointDate: scalar(fm["last-touchpoint-date"]), NextStep: scalar(fm["next-step"]), NextStepDue: scalar(fm["next-step-due"]), Notes: scalar(fm["notes"]), Archived: parseBool(fm["archived"]), ImportReview: parseBool(fm["import-review"])}
 	if op.ID == "" {
 		op.ID = "fr/" + strings.TrimSuffix(filepath.Base(rel), ".md")
 	}
@@ -256,9 +248,6 @@ func (s *Store) loadRel(rel string) (Opportunity, bool) {
 	}
 	if !validStatus(op.Status) {
 		op.Status = StatusProspect
-	}
-	if !validInterest(op.Interest) {
-		op.Interest = InterestUnknown
 	}
 	if op.Currency == "" {
 		op.Currency = "USD"
@@ -318,7 +307,7 @@ func (s *Store) create(firm string) (Opportunity, error) {
 		}
 		slug = fmt.Sprintf("%s-%d", base, n)
 	}
-	op := Opportunity{ID: "fr/" + slug, Path: s.root + "/" + slug + ".md", Firm: firm, Status: StatusProspect, Interest: InterestUnknown, Currency: "USD", People: []PersonRef{}, UnlinkedPeople: []string{}}
+	op := Opportunity{ID: "fr/" + slug, Path: s.root + "/" + slug + ".md", Firm: firm, Status: StatusProspect, Currency: "USD", People: []PersonRef{}, UnlinkedPeople: []string{}}
 	if err := s.writeNew(op); err != nil {
 		return Opportunity{}, err
 	}
@@ -339,7 +328,7 @@ func (s *Store) writeNew(op Opportunity) error {
 	if op.Website != "" {
 		b.WriteString("website: " + q(op.Website) + "\n")
 	}
-	b.WriteString("status: " + op.Status + "\ninterest: " + op.Interest + "\n")
+	b.WriteString("status: " + op.Status + "\n")
 	if op.Amount > 0 {
 		b.WriteString("amount: " + strconv.FormatFloat(op.Amount, 'f', -1, 64) + "\n")
 	}
@@ -430,7 +419,9 @@ func (s *Store) replaceKnown(op Opportunity) error {
 		vals["website"] = nil
 	}
 	put("status", op.Status)
-	put("interest", op.Interest)
+	// The interest level was retired 2026-09-24; a record that still carries
+	// one loses it on its next write.
+	vals["interest"] = nil
 	put("currency", op.Currency)
 	put("people", string(people))
 	if len(op.UnlinkedPeople) > 0 {
@@ -491,12 +482,6 @@ func (s *Store) update(id string, set map[string]any) (Opportunity, error) {
 				return op, errors.New("invalid status")
 			}
 			op.Status = v
-		case "interest":
-			v := strings.ToLower(strings.TrimSpace(fmt.Sprint(raw)))
-			if !validInterest(v) {
-				return op, errors.New("invalid interest")
-			}
-			op.Interest = v
 		case "amount":
 			v := strings.TrimSpace(fmt.Sprint(raw))
 			if v == "" {
