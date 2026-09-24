@@ -993,12 +993,12 @@ function artifactWorkspace(mount, options) {
   } catch(e) { notice.textContent=e.message; title.textContent="Artifact unavailable"; } }
   const ready=refresh(opts.revision,opts.proposal);
   return {element:pane, close:()=>close.click(), isEditing:()=>editing, refresh,
-    getView:()=>({revision:selected,mode:previewMode,scrollTop:body.scrollTop,syntaxEnabled:body.querySelector('.artifact-code-preview')?.getHighlight?.(),linkSourceOpen:!!body.querySelector('.artifact-link-source')?.open,table:{scrollLeft:body.querySelector('.artifact-table-scroll')?.scrollLeft||0,sourceOpen:!!body.querySelector('.artifact-table-source')?.open},editor:editing&&editor?{scrollTop:editor.scrollTop,start:editor.selectionStart,end:editor.selectionEnd,direction:editor.selectionDirection}:null,expandedFiles:[...body.querySelectorAll('.working-file[open]')].map(f=>f.dataset.diffFile),collapsedHunks:[...body.querySelectorAll('.working-changes-view')].flatMap(v=>v.getCollapsedHunks?.()||[])}),
+    getView:()=>({revision:selected,mode:previewMode,scrollTop:body.scrollTop,syntaxEnabled:body.querySelector('.artifact-code-preview,.working-changes-view')?.getHighlight?.(),linkSourceOpen:!!body.querySelector('.artifact-link-source')?.open,table:{scrollLeft:body.querySelector('.artifact-table-scroll')?.scrollLeft||0,sourceOpen:!!body.querySelector('.artifact-table-source')?.open},editor:editing&&editor?{scrollTop:editor.scrollTop,start:editor.selectionStart,end:editor.selectionEnd,direction:editor.selectionDirection}:null,expandedFiles:[...body.querySelectorAll('.working-file[open]')].map(f=>f.dataset.diffFile),collapsedHunks:[...body.querySelectorAll('.working-changes-view')].flatMap(v=>v.getCollapsedHunks?.()||[])}),
     restoreView:async view=>{await ready;if(!pane.isConnected||!body.clientHeight)return false;if((view.mode==="edit"||view.mode==="edit-review")&&opts.save&&editState?.value&&(!opts.canEdit||opts.canEdit(current))){
       editVersion(!!editState.value.restore,true,null,false);
       if(view.editor){editor.setSelectionRange(Math.max(0,Number(view.editor.start)||0),Math.max(0,Number(view.editor.end)||0),view.editor.direction||"none");editor.scrollTop=Math.max(0,Number(view.editor.scrollTop)||0);}
       if(view.mode==="edit-review"&&openDraftReview)await openDraftReview();
-    }else if(view.mode==="compare"&&previewMode!=="compare"&&openComparison)await openComparison();if(!pane.isConnected||!body.clientHeight)return false;if(Array.isArray(view.expandedFiles)){body.querySelectorAll('.working-file').forEach(f=>f.open=view.expandedFiles.includes(f.dataset.diffFile));await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));}if(Array.isArray(view.collapsedHunks)&&(!view.revision||view.revision===selected)){body.querySelectorAll('.working-changes-view').forEach(v=>v.restoreHunks?.(view.collapsedHunks));}if(view.revision===selected&&typeof view.syntaxEnabled==='boolean')body.querySelector('.artifact-code-preview')?.setHighlight?.(view.syntaxEnabled);if(view.revision===selected&&typeof view.linkSourceOpen==='boolean'){const source=body.querySelector('.artifact-link-source');if(source)source.open=view.linkSourceOpen;}if(view.table&&view.revision===selected){const table=body.querySelector('.artifact-table-scroll'),source=body.querySelector('.artifact-table-source');if(table)table.scrollLeft=Math.max(0,Number(view.table.scrollLeft)||0);if(source)source.open=!!view.table.sourceOpen;}if(Number.isFinite(view.scrollTop))body.scrollTop=Math.max(0,view.scrollTop);return true;}
+    }else if(view.mode==="compare"&&previewMode!=="compare"&&openComparison)await openComparison();if(!pane.isConnected||!body.clientHeight)return false;if(Array.isArray(view.expandedFiles)){body.querySelectorAll('.working-file').forEach(f=>f.open=view.expandedFiles.includes(f.dataset.diffFile));await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));}if(Array.isArray(view.collapsedHunks)&&(!view.revision||view.revision===selected)){body.querySelectorAll('.working-changes-view').forEach(v=>v.restoreHunks?.(view.collapsedHunks));}if(view.revision===selected&&typeof view.syntaxEnabled==='boolean')body.querySelector('.artifact-code-preview,.working-changes-view')?.setHighlight?.(view.syntaxEnabled);if(view.revision===selected&&typeof view.linkSourceOpen==='boolean'){const source=body.querySelector('.artifact-link-source');if(source)source.open=view.linkSourceOpen;}if(view.table&&view.revision===selected){const table=body.querySelector('.artifact-table-scroll'),source=body.querySelector('.artifact-table-source');if(table)table.scrollLeft=Math.max(0,Number(view.table.scrollLeft)||0);if(source)source.open=!!view.table.sourceOpen;}if(Number.isFinite(view.scrollTop))body.scrollTop=Math.max(0,view.scrollTop);return true;}
   };
 }
 
@@ -1018,7 +1018,8 @@ function reviewDialog(title,build){
 // Presentation only: immutable snapshot bytes remain available through Open file.
 function artifactWorkingChangesView(text,onReview=null){
  const view=el("div","working-changes-view"),parsed=artifactWorkingDiffFiles(text),{files,untracked}=parsed;
- let collapsed=new Set();
+ let collapsed=new Set(),syntaxEnabled=true;
+ view.getHighlight=()=>syntaxEnabled;view.setHighlight=value=>{syntaxEnabled=!!value;view.querySelectorAll('.working-file-diff').forEach(node=>node.setHighlight?.(syntaxEnabled));view.querySelector('.working-syntax-toggle')?.setAttribute('aria-pressed',String(syntaxEnabled));};
  view.getCollapsedHunks=()=>{view.querySelectorAll('.working-hunk').forEach(h=>{if(h.open)collapsed.delete(h.dataset.diffHunk);else collapsed.add(h.dataset.diffHunk);});return [...collapsed];};
  view.restoreHunks=keys=>{collapsed=new Set(keys);view.querySelectorAll('.working-hunk').forEach(h=>h.open=!collapsed.has(h.dataset.diffHunk));};
  view.append(el("p","working-changes-summary",files.length?files.length+" changed "+(files.length===1?"file":"files"):!text.trim()||text.includes("No tracked changes against HEAD.")?"No tracked changes":"No supported file diff headers; inspect Snapshot details."));
@@ -1026,6 +1027,7 @@ function artifactWorkingChangesView(text,onReview=null){
   const tools=el('div','working-file-actions');
   const expand=el('button','sprt-quiet','expand all'),collapse=el('button','sprt-quiet','collapse all');
   tools.append(expand,collapse);view.append(tools);
+  if(files.some(file=>artifactSyntaxLanguage(file.path.split('.').pop().toLowerCase())&&file.hunks.some(h=>h.valid))){const toggle=el('button','sprt-quiet working-syntax-toggle','syntax highlighting');toggle.setAttribute('aria-pressed','true');toggle.onclick=()=>view.setHighlight(!syntaxEnabled);tools.append(toggle);}
   for(const [index,file] of files.entries()){
    const section=el('details','working-file'),heading=el('summary',''),name=el('span','working-file-name',file.path);
    section.dataset.diffFile=file.path;name.title=file.path;
@@ -1053,6 +1055,7 @@ function artifactWorkingChangesView(text,onReview=null){
       const row=artifactDiffLine(cls,line,old,next,'working-diff-');row.dataset.snapshotLine=String(hunk.start+1+offset);content.append(row);
      }
      part.append(content);section.append(part);
+     if(hunk.valid)artifactHunkSyntax(content,hunk.lines,file.path,syntaxEnabled);
     }
    };
    section.addEventListener('toggle',render);section.open=index===0;render();
@@ -1199,9 +1202,17 @@ function artifactLoadSyntax(){
  }).catch(error=>{artifactSyntaxLoading=null;throw error;});
  return artifactSyntaxLoading;
 }
-function artifactCodePreview(text,extension){
+function artifactSyntaxLanguage(extension){
  const languages={js:'javascript',mjs:'javascript',cjs:'javascript',jsx:'javascript',ts:'typescript',tsx:'typescript',py:'python',go:'go',json:'json',sh:'bash',bash:'bash',css:'css',html:'xml',htm:'xml',xml:'xml',svg:'xml',sql:'sql',yaml:'yaml',yml:'yaml'};
- const view=el('section','artifact-code-preview'),source=el('pre','artifact-source-preview'),code=el('code','',text),language=languages[extension];source.append(code);
+ return languages[extension];
+}
+function artifactSyntaxFragment(text,language,highlight){
+ const template=document.createElement('template');template.innerHTML=highlight(text,language).replace(/\r/g,'&#13;');
+ if(template.content.textContent!==text||[...template.content.querySelectorAll('*')].some(node=>node.tagName!=='SPAN'||[...node.attributes].some(a=>a.name!=='class')))throw Error('Highlighting changed source text');
+ return template.content;
+}
+function artifactCodePreview(text,extension){
+ const view=el('section','artifact-code-preview'),source=el('pre','artifact-source-preview'),code=el('code','',text),language=artifactSyntaxLanguage(extension);source.append(code);
  if(!language){view.append(source);return view;}
  const status=el('p','artifact-review-help',language+' · loading syntax highlighting…');status.setAttribute('role','status');
  view.append(status,source);
@@ -1212,9 +1223,41 @@ function artifactCodePreview(text,extension){
  view.getHighlight=()=>enabled;view.setHighlight=value=>{enabled=!!value;render();};toggle.onclick=()=>view.setHighlight(!enabled);
  artifactLoadSyntax().then(highlight=>{
   if(!view.isConnected)return;
-  const template=document.createElement('template');template.innerHTML=highlight(text,language).replace(/\r/g,'&#13;');
-  if(template.content.textContent!==text||[...template.content.querySelectorAll('*')].some(node=>node.tagName!=='SPAN'||[...node.attributes].some(a=>a.name!=='class')))throw Error('Highlighting changed source text');
-  highlighted=template.content;status.textContent=language+' · exact source text';render();
+  highlighted=artifactSyntaxFragment(text,language,highlight);status.textContent=language+' · exact source text';render();
  }).catch(()=>{if(view.isConnected){status.textContent=language+' · syntax highlighting unavailable; original text retained.';toggle.disabled=true;}});
  return view;
+}
+
+// Split generated spans at LF boundaries while retaining nested token classes.
+// Each fragment must retain its original line; coordinates remain on the row.
+function artifactSyntaxLines(text,language,highlight){
+ const fragment=artifactSyntaxFragment(text,language,highlight),lines=[document.createDocumentFragment()];
+ const visit=(node,classes=[])=>{
+  if(node.nodeType===3){const parts=node.textContent.split('\n');parts.forEach((part,index)=>{if(index)lines.push(document.createDocumentFragment());let leaf=document.createTextNode(part);for(const cls of [...classes].reverse()){const span=el('span',cls);span.append(leaf);leaf=span;}lines.at(-1).append(leaf);});}
+  else for(const child of node.childNodes)visit(child,node.nodeType===1?[...classes,node.className]:classes);
+ };
+ visit(fragment);return lines;
+}
+function artifactHunkSyntax(content,lines,path,enabled){
+ const language=artifactSyntaxLanguage(path.split('.').pop().toLowerCase());if(!language)return;
+ const status=el('p','artifact-review-help',language+' · highlighting hunk fragments…');content.before(status);
+ const before=lines.filter(line=>line[0]==='-'||line[0]===' ').map(line=>line.slice(1)).join('\n'),after=lines.filter(line=>line[0]==='+'||line[0]===' ').map(line=>line.slice(1)).join('\n');
+ if(new TextEncoder().encode(before+after).length>65536||lines.length>2000){status.textContent=language+' · plain hunk (highlighting limit: 64 KiB across both sides and 2,000 lines).';return;}
+ let decorated=null;
+ const rows=[...content.querySelectorAll('.diff-line-text')];
+ const render=()=>rows.forEach((row,index)=>{row.replaceChildren(enabled&&decorated?.[index]?decorated[index].cloneNode(true):document.createTextNode(lines[index]));});
+ content.setHighlight=value=>{enabled=!!value;render();};
+ artifactLoadSyntax().then(highlight=>{
+  if(!content.isConnected)return;
+  const old=artifactSyntaxLines(before,language,highlight),next=artifactSyntaxLines(after,language,highlight);let oldIndex=0,nextIndex=0;
+  decorated=lines.map(line=>{const prefix=line[0];let fragment;
+   if(prefix==='-')fragment=old[oldIndex++];
+   else if(prefix==='+')fragment=next[nextIndex++];
+   else if(prefix===' '){oldIndex++;fragment=next[nextIndex++];}
+   else return null;
+   if(!fragment||fragment.textContent!==line.slice(1))throw Error('Hunk source mismatch');
+   const result=document.createDocumentFragment();result.append(document.createTextNode(prefix),fragment);return result;
+  });
+  status.textContent=language+' · hunk fragments only; surrounding file context is unavailable.';render();
+ }).catch(()=>{if(content.isConnected)status.textContent=language+' · syntax unavailable; original hunk retained.';});
 }

@@ -369,8 +369,10 @@
 .artifact-link-preview{min-width:0;overflow-wrap:anywhere;}
 .artifact-link-destination{color:var(--accent);display:block;white-space:pre-wrap;min-height:var(--control-touch);font:var(--fs-sm)/1.5 var(--mono);}
 .artifact-link-source summary{min-height:var(--control-touch);cursor:pointer;}
-.artifact-code-preview .hljs-keyword,.artifact-code-preview .hljs-selector-tag,.artifact-code-preview .hljs-built_in{color:var(--accent);}
-.artifact-code-preview .hljs-string,.artifact-code-preview .hljs-regexp,.artifact-code-preview .hljs-attr{color:var(--text);font-style:italic;}
-.artifact-code-preview .hljs-number,.artifact-code-preview .hljs-literal,.artifact-code-preview .hljs-title{color:var(--accent);}
-.artifact-code-preview .hljs-comment,.artifact-code-preview .hljs-meta{color:var(--muted);}
+:is(.artifact-code-preview,.working-hunk) .hljs-keyword,:is(.artifact-code-preview,.working-hunk) .hljs-selector-tag,:is(.artifact-code-preview,.working-hunk) .hljs-built_in{color:var(--accent);}
+:is(.artifact-code-preview,.working-hunk) .hljs-string,:is(.artifact-code-preview,.working-hunk) .hljs-regexp,:is(.artifact-code-preview,.working-hunk) .hljs-attr{color:var(--text);font-style:italic;}
+:is(.artifact-code-preview,.working-hunk) .hljs-number,:is(.artifact-code-preview,.working-hunk) .hljs-literal,:is(.artifact-code-preview,.working-hunk) .hljs-title{color:var(--accent);}
+:is(.artifact-code-preview,.working-hunk) .hljs-comment,:is(.artifact-code-preview,.working-hunk) .hljs-meta{color:var(--muted);}
 .artifact-code-preview > button{min-height:var(--control-touch);}
+
+.working-syntax-toggle{min-height:var(--control-touch);}
