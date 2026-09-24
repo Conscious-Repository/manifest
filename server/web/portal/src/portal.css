@@ -210,6 +210,22 @@ textarea.v2-input { line-height: 1.6; }
   .portal-work-row > :nth-child(4) { grid-column: 3; grid-row: 2; }
   .portal-work-row > :nth-child(5) { grid-column: 3; grid-row: 1; }
   .v2-main input, .v2-main textarea, .v2-main select { font-size: 16px !important; max-width: 100%; }
+  /* ARCHIVE on a phone (2026-09-24): the desktop row is date · kind · title ·
+     provenance in fixed columns; at 390px that left the title no width and
+     ran the provenance off the edge. The row restacks — kind and date on the
+     first line, the title full-width under them, the provenance last — and
+     the filter tabs meet the touch size. The breadcrumb stacks its two sides
+     and the main column clears the phone's status bar. */
+  .v2-main { padding-top: max(16px, env(safe-area-inset-top)); }
+  .v2-breadcrumb { flex-direction: column; align-items: flex-start; gap: 4px; }
+  .portal-archive-tabs { gap: 0 2px !important; }
+  .portal-archive-tabs > button { min-height: 40px; padding: 8px 10px !important; font-size: 13px !important; }
+  .portal-archive-row { grid-template-columns: minmax(0,1fr) auto !important; gap: 3px 10px !important; padding: 12px 4px !important; }
+  .portal-archive-row > :nth-child(1) { grid-column: 2; grid-row: 1; }
+  .portal-archive-row > :nth-child(2) { grid-column: 1; grid-row: 1; }
+  .portal-archive-row > :nth-child(3) { grid-column: 1 / -1; grid-row: 2; }
+  .portal-archive-row > :nth-child(3) > span:first-child { font-size: 15px !important; line-height: 1.4; }
+  .portal-archive-row > :nth-child(4) { grid-column: 1 / -1; grid-row: 3; white-space: normal; overflow-wrap: anywhere; }
 }
 
 .aaf-reading-key { display: flex; flex-wrap: wrap; gap: 8px 24px; color: var(--ink-faint,#888); font: 10px/1.6 var(--font-mono,monospace); }

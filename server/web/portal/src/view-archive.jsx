@@ -18,7 +18,7 @@ function ArchiveView({ data, items, goalsIndex, filter, tab, onTab, onSelect, pi
   ];
   return (
     <div>
-      <div style={{ display: 'flex', gap: 0, borderBottom: '1px solid var(--line,#3a3a3a)', padding: '10px 0 0', flexWrap: 'wrap' }}>
+      <div className="portal-archive-tabs" style={{ display: 'flex', gap: 0, borderBottom: '1px solid var(--line,#3a3a3a)', padding: '10px 0 0', flexWrap: 'wrap' }}>
         {tabs.map(t => (
           <button key={t.id} className="v2-bare v2-hoverink" onClick={() => onTab(t.id)}
             style={{ borderBottom: '2px solid ' + (tab === t.id ? 'var(--accent,#0091ea)' : 'transparent'),
@@ -32,7 +32,7 @@ function ArchiveView({ data, items, goalsIndex, filter, tab, onTab, onSelect, pi
       </div>
       <div style={{ display: 'flex', flexDirection: 'column', marginTop: 12 }}>
         {arch.rows.map((e, i) => (
-          <button key={i} className="v2-bare v2-hoverbg" onClick={e.open}
+          <button key={i} className="v2-bare v2-hoverbg portal-archive-row" onClick={e.open}
             style={{ display: 'grid', gridTemplateColumns: '74px 86px minmax(0,1fr) 210px', gap: 14, alignItems: 'baseline',
               textAlign: 'left', borderBottom: '1px solid var(--line-soft,#2a2a2a)', padding: '8px 4px', color: 'var(--ink,#d4d4d4)' }}>
             <span style={{ fontSize: 11, color: 'var(--ink-mute,#666)' }}>{e.date}</span>
