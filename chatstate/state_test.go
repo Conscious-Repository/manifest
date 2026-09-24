@@ -269,3 +269,29 @@ func TestSeenMarkersSurviveRestart(t *testing.T) {
 		t.Fatal(got, err)
 	}
 }
+
+func TestQuestionDraftSurvivesRestartAndConflictsIndependently(t *testing.T) {
+	root := t.TempDir()
+	key := "question-0123456789abcdef0123456789abcdef"
+	value := json.RawMessage(`{"text":"pending answer","requestId":"saved-request-123","locked":true}`)
+	saved, err := New(root).Write(key, "draft", 0, value)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reopened, err := New(root).Read(key, "draft")
+	if err != nil || !bytes.Equal(reopened.Value, saved.Value) {
+		t.Fatal(reopened, err)
+	}
+	if _, err := New(root).Write(key, "draft", 0, json.RawMessage(`{"text":"another device"}`)); !errors.Is(err, ErrConflict) {
+		t.Fatal("stale answer overwrote saved submission", err)
+	}
+	composer, err := New(root).Read(testKey, "draft")
+	if err != nil || composer.Revision != 0 {
+		t.Fatal("question answer polluted composer", composer, err)
+	}
+	for _, slot := range []string{"view", "deliveries", "workspace", "edit"} {
+		if _, err := New(root).Read(key, slot); !errors.Is(err, ErrInvalid) {
+			t.Fatal("unexpected question slot", slot, err)
+		}
+	}
+}

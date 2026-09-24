@@ -34,7 +34,7 @@ func TestPortalCannotAccessOwnerDrafts(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, key := range []string{"project-0123456789abcdef0123456789abcdef", "conversation-0123456789abcdef0123456789abcdef", "landing-0123456789abcdef0123456789abcdef", "inbox"} {
+	for _, key := range []string{"question-0123456789abcdef0123456789abcdef", "project-0123456789abcdef0123456789abcdef", "conversation-0123456789abcdef0123456789abcdef", "landing-0123456789abcdef0123456789abcdef", "inbox"} {
 		slot := "draft"
 		if key == "inbox" {
 			slot = "pins"

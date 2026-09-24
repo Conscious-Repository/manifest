@@ -73,6 +73,13 @@ func TestQuestionAnswerDeliveryAndReplay(t *testing.T) {
 			if err == nil || text != "" {
 				t.Fatal("duplicate logical answer allowed")
 			}
+			// Restart without a daemon: the original receipt, not a new
+			// runtime invocation, must answer the exact retry.
+			restarted := &Server{terminal: &termCfg{regPath: s.terminal.regPath}}
+			recovered := receiptInput(restarted, se.ID, string(payload))
+			if recovered.Code != first.Code || prompts.Load() != 1 {
+				t.Fatal("restart replayed answer", recovered.Code, recovered.Body.String())
+			}
 			again := receiptInput(s, se.ID, string(payload))
 			if again.Code != first.Code || prompts.Load() != 1 {
 				t.Fatal("retry replayed answer", again.Body.String())
@@ -108,5 +115,33 @@ func TestQuestionAnswerValidation(t *testing.T) {
 	}
 	if prompts.Load() != 0 {
 		t.Fatal("invalid response crossed runtime boundary")
+	}
+}
+
+func TestQuestionAnswerRevisionRejectsChangedPrompt(t *testing.T) {
+	s, se, prompts := terminalReceiptFixture(t, false)
+	se = questionRollout(t, s, se)
+	original := parseCodexTranscript(strings.NewReader(questionCallFixture())).Questions[0]
+	if len(original.Revision) != 64 {
+		t.Fatal("missing question revision", original)
+	}
+	answer := terminalQuestionAnswer{ID: original.ID, Revision: original.Revision, Answer: "Two"}
+	if _, err := s.prepareQuestionAnswers(se, []terminalQuestionAnswer{answer}); err != nil {
+		t.Fatal(err)
+	}
+	path := s.terminal.transcriptPath(se)
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = os.WriteFile(path, []byte(strings.ReplaceAll(string(raw), "Which option?", "Which changed option?")), 0600); err != nil {
+		t.Fatal(err)
+	}
+	body, _ := json.Marshal(terminalInput{RequestID: "receipt-input-001", QuestionAnswers: []terminalQuestionAnswer{answer}})
+	if w := receiptInput(s, se.ID, string(body)); w.Code != 409 {
+		t.Fatal("stale question revision accepted", w.Code, w.Body.String())
+	}
+	if prompts.Load() != 0 {
+		t.Fatal("stale answer reached runtime")
 	}
 }

@@ -8,16 +8,18 @@ import (
 
 // Questions are a projection of native tool calls, not a second conversation store.
 type terminalQuestion struct {
-	ID      string   `json:"id"`
-	Title   string   `json:"title"`
-	Options []string `json:"options,omitempty"`
-	State   string   `json:"state"` // pending, sent, unconfirmed, answered
-	Answer  string   `json:"answer,omitempty"`
-	Async   bool     `json:"async"`
+	Revision string   `json:"revision"`
+	ID       string   `json:"id"`
+	Title    string   `json:"title"`
+	Options  []string `json:"options,omitempty"`
+	State    string   `json:"state"` // pending, sent, unconfirmed, answered
+	Answer   string   `json:"answer,omitempty"`
+	Async    bool     `json:"async"`
 }
 type terminalQuestionAnswer struct {
-	ID     string `json:"id"`
-	Answer string `json:"answer"`
+	Revision string `json:"revision,omitempty"`
+	ID       string `json:"id"`
+	Answer   string `json:"answer"`
 }
 type nativeQuestionReply struct {
 	ID       string `json:"questionItemId"`
@@ -73,6 +75,8 @@ func projectQuestionCall(name, call, args string) []terminalQuestion {
 				row.Options = append(row.Options, label)
 			}
 		}
+		identity, _ := json.Marshal([]any{row.ID, row.Title, row.Options, row.Async})
+		row.Revision = hashTerminalText(string(identity))
 		out = append(out, row)
 	}
 	return out
@@ -121,7 +125,7 @@ func (s *Server) prepareQuestionAnswers(se termSession, answers []terminalQuesti
 	replies := []nativeQuestionReply{}
 	for _, a := range answers {
 		q, exists := byID[a.ID]
-		if !exists || !q.Async || q.State != "pending" || seen[a.ID] {
+		if !exists || !q.Async || q.State != "pending" || seen[a.ID] || (a.Revision != "" && a.Revision != q.Revision) {
 			return "", fmt.Errorf("question is no longer awaiting an answer; refresh the conversation")
 		}
 		if strings.TrimSpace(a.Answer) == "" || len(a.Answer) > 32000 {

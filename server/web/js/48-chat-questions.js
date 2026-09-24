@@ -1,6 +1,63 @@
 // Native async question cards use the existing terminal input receipt boundary.
 // Keep keyed DOM nodes: a transcript poll must never replace a focused answer.
 const chatQuestionDrafts = new Map();
+// One existing private draft snapshot per native question, separate from the
+// composer. Frozen request identity is saved before any runtime submission.
+class ChatQuestionDraft extends ChatDraftState {
+ constructor(key,session,question,revision){super(key,null);this.questionRevision=revision;this.endpoint='/api/terminal/session/'+encodeURIComponent(session);this.question=question;this.busy=false;this.recovery='';this.notice='';}
+ edit(text){if(this.value?.locked||this.busy)return;this.set({...this.value,text,questionRevision:this.questionRevision||null,requestId:this.value?.requestId||crypto.randomUUID(),locked:false});}
+ async lookup(rejected=''){
+  const value=this.value;if(!value?.locked)return;
+  this.recovery='check';
+  try{
+   const response=await fetch(this.endpoint+'/delivery?request='+encodeURIComponent(value.requestId),{cache:'no-store'});
+   if(!chatStateEqual(value,this.value))return;
+   if(response.status===404){
+    if(rejected){this.set({...value,locked:false,requestId:crypto.randomUUID()});this.recovery='';this.notice=rejected;}
+    else{this.recovery='retry';this.notice='No receipt found. Retry this saved answer with its original request ID.';}
+   }else if(response.ok){this.acceptReceipt((await response.json()).delivery);}
+   else throw Error('Receipt unavailable');
+  }catch(e){this.notice='Could not confirm delivery. Your saved answer is locked; check delivery before retrying.';}
+ }
+ acceptReceipt(receipt){
+  const value=this.value,answer=receipt?.questionAnswers?.[0];
+  if(receipt?.id!==value?.requestId||receipt?.questionAnswers?.length!==1||answer?.id!==this.question||answer?.answer!==value?.text||(value?.questionRevision&&answer?.revision!==value.questionRevision)||!['sent','unconfirmed'].includes(receipt?.state))throw Error('Answer receipt mismatch');
+  this.recovery=receipt.state==='sent'?'done':'check';
+  this.notice=receipt.state==='sent'?'Answer sent':'Delivery uncertain — check the conversation before sending again.';
+ }
+ async check(){if(this.busy||!this.value?.locked)return;this.busy=true;this.publish();try{await this.lookup();}finally{this.busy=false;this.publish();}}
+ async submit(){
+  if(this.busy||!this.value?.text?.trim()||(this.value.locked&&this.recovery!=='retry'))return;
+  this.busy=true;this.notice='Saving answer…';this.publish();
+  const expected=this.value;
+  try{
+   await this.refresh();
+   if(this.error||this.conflict||!this.loaded||!chatStateEqual(this.value,expected)){this.notice='Review the saved answer and resolve any sync conflict before sending.';return;}
+   this.set({...this.value,locked:true});
+   if(!await this.flush()||(this.dirty&&!await this.flush())||this.conflict||!chatStateEqual(this.base,this.value)){this.notice='Answer not submitted. Resolve draft sync, then check delivery to retry.';this.recovery='check';return;}
+   const value=this.value;this.notice='Sending answer…';this.publish();
+   let rejected='';
+   try{
+    const response=await fetch(this.endpoint+'/input',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({requestId:value.requestId,questionAnswers:[{id:this.question,answer:value.text,...(value.questionRevision?{revision:value.questionRevision}:{})}]})});
+    if(!response.ok){const message=await response.text();if([400,403,404,409,413].includes(response.status))rejected=message||'Answer was not sent.';throw Error(message);}
+    this.acceptReceipt((await response.json()).delivery);
+   }catch(e){await this.lookup(rejected);}
+  }finally{this.busy=false;this.publish();}
+ }
+}
+function chatQuestionState(o,q,key){
+ if(!chatQuestionDrafts.has(key)){
+  const entry={state:null,ready:null};
+  entry.ready=(async()=>{
+   const digest=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(JSON.stringify(['terminal',o.id,q.id,q.revision||'',q.title,q.options||[]])));
+   const id=Array.from(new Uint8Array(digest).slice(0,16),b=>b.toString(16).padStart(2,'0')).join('');
+   const state=new ChatQuestionDraft('question-'+id,o.id,q.id,q.revision);entry.state=state;await state.refresh();return state;
+  })();chatQuestionDrafts.set(key,entry);
+ }
+ return chatQuestionDrafts.get(key).ready;
+}
+window.addEventListener('pagehide',()=>{for(const entry of chatQuestionDrafts.values())if(entry.state?.dirty)entry.state.flush();});
+window.addEventListener('focus',()=>{for(const entry of chatQuestionDrafts.values())if(entry.state?.active?.())entry.state.refresh().then(()=>{if(entry.state.value?.locked)entry.state.check();});});
 function chatQuestionReplyDisplay(text) {
   const value=(text||'').trim(),open='<send_user_message_question_reply>',close='</send_user_message_question_reply>';
   if(!value.startsWith(open)||!value.endsWith(close))return text;
@@ -26,7 +83,7 @@ function chatQuestionPanel(o) {
   const ids=new Set(questions.map(q=>q.id));
   for(const node of [...panel.children])if(node.dataset.question&&!ids.has(node.dataset.question))node.remove();
   for(const q of questions){
-    const key=o.id+':'+q.id;
+    const key=JSON.stringify([o.id,q.id,q.revision||'',q.title,q.options||[]]);
     let card=[...panel.children].find(n=>n.dataset.question===q.id);
     const signature=JSON.stringify(q);
     if(card?.dataset.signature===signature)continue;
@@ -47,47 +104,40 @@ function chatQuestionCard(o,q,key) {
   }
   if(!q.async || o.se.backend!=='herdr' || o.sharedConversation){
     status.textContent='This runtime prompt needs a response in Terminal.';
-    const open=el('button','pill','Open Terminal');open.type='button';open.onclick=()=>chatOpenTerminalPane(o.se);
+    const open=el('button','pill','open terminal');open.type='button';open.onclick=()=>chatOpenTerminalPane(o.se);
     card.append(status,open);return card;
   }
-  let draft=chatQuestionDrafts.get(key);
-  if(!draft){draft={answer:'',requestId:crypto.randomUUID(),locked:false};chatQuestionDrafts.set(key,draft);}
+  let draft=null;
   const radios=[];
   const customLabel=el('label','chat-question-custom','Your answer');
-  const answer=el('textarea','chat-question-input');answer.rows=2;answer.maxLength=32000;answer.value=draft.answer;
+  const answer=el('textarea','chat-question-input');answer.rows=2;answer.maxLength=32000;
   customLabel.append(answer);
-  const submit=el('button','pill','Send answer');submit.type='submit';submit.disabled=!draft.answer.trim()||draft.locked;
+  const submit=el('button','pill','send answer');submit.type='submit';submit.disabled=true;fields.disabled=true;
+  const recovery=el('button','pill','check delivery');recovery.type='button';recovery.hidden=true;
   for(const option of q.options||[]){
-    const label=el('label','chat-question-option');const radio=el('input','');radio.type='radio';radio.name=draft.requestId;radio.value=option;radio.checked=draft.answer===option;
-    radio.onchange=()=>{draft.answer=option;answer.value=option;submit.disabled=false;};radios.push(radio);
+    const label=el('label','chat-question-option');const radio=el('input','');radio.type='radio';radio.name=key;radio.value=option;
+    radio.onchange=()=>{answer.value=option;draft?.edit(option);};radios.push(radio);
     label.append(radio,el('span','',option));fields.append(label);
   }
-  answer.oninput=()=>{draft.answer=answer.value;radios.forEach(r=>{r.checked=r.value===draft.answer;});submit.disabled=!draft.answer.trim();};
-  fields.append(customLabel);fields.disabled=draft.locked;
-  const actions=el('div','feed-actions');actions.append(submit);card.append(actions,status);
-  status.textContent=draft.notice||'';
-  card.onsubmit=async event=>{
-    event.preventDefault();if(draft.locked||!draft.answer.trim())return;
-    draft.locked=true;fields.disabled=true;submit.disabled=true;status.textContent='Sending answer…';
-    const url='/api/terminal/session/'+encodeURIComponent(o.id);
-    let rejected=false;
-    try {
-      const response=await fetch(url+'/input',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({requestId:draft.requestId,questionAnswers:[{id:q.id,answer:draft.answer}]})});
-      if(!response.ok){const message=await response.text();rejected=true;throw new Error(message||'Answer was not sent.');}
-      const result=await response.json();
-      draft.notice=result.delivery?.state==='sent'?'Answer sent':'Delivery uncertain — check the conversation before sending again.';
-    }catch(error){
-      if(draft.locked){
-        // A lost HTTP response is not permission to submit again.
-        try {const check=await fetch(url+'/delivery?request='+encodeURIComponent(draft.requestId));
-          if(check.ok){const result=await check.json();draft.notice=result.delivery?.state==='sent'?'Answer sent':'Delivery uncertain — check the conversation before sending again.';}
-          else if(check.status===404&&rejected){draft.locked=false;draft.notice=error.message;}
-          else {draft.notice='Could not confirm delivery. Your answer is retained; check the conversation before retrying.';}
-        }catch(e){draft.notice='Could not confirm delivery. Your answer is retained; check the conversation before retrying.';}
-      }else draft.notice=error.message;
-    }
-    status.textContent=draft.notice;fields.disabled=draft.locked;submit.disabled=draft.locked||!draft.answer.trim();
-    if(chatTermOpen===o)chatTermRequestFinalTail(o);
+  answer.oninput=()=>draft?.edit(answer.value);
+  fields.append(customLabel);
+  const actions=el('div','feed-actions');actions.append(submit,recovery);card.append(actions,status);
+  const sync=el('div','chat-question-sync');card.append(sync);status.textContent='loading…';
+  const paint=(state,apply=false)=>{
+    if(!card.isConnected)return;
+    if(apply&&answer.value!==(state.value?.text||''))answer.value=state.value?.text||'';
+    radios.forEach(r=>{r.checked=r.value===answer.value;});
+    fields.disabled=state.busy||!!state.value?.locked;
+    submit.disabled=state.busy||!!state.value?.locked||!!state.conflict||!state.value?.text?.trim();
+    status.textContent=state.notice||'';
+    recovery.hidden=!state.value?.locked||state.recovery==='done';recovery.disabled=state.busy||!!state.conflict;
+    recovery.textContent=state.recovery==='retry'?'retry answer':'check delivery';
+    chatRenderStateNotice(sync,state);
   };
+  chatQuestionState(o,q,key).then(async state=>{
+   if(!card.isConnected)return;draft=state;state.active=()=>card.isConnected;state.changed=paint;paint(state,true);if(state.value?.locked)await state.check();
+  }).catch(()=>{if(card.isConnected)status.textContent='Answer recovery unavailable. Reopen this conversation to retry.';});
+  recovery.onclick=async()=>{if(!draft)return;if(draft.recovery==='retry')await draft.submit();else await draft.check();if(chatTermOpen===o)chatTermRequestFinalTail(o);};
+  card.onsubmit=async event=>{event.preventDefault();if(!draft)return;await draft.submit();if(chatTermOpen===o)chatTermRequestFinalTail(o);};
   return card;
 }
