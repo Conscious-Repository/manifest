@@ -16,3 +16,7 @@ No message is sent by returning a finding. Existing draft stores, conflict contr
 - `make test` and `go test ./...` retain the previously documented `cmd/re-intake-canary/TestCanarySourceCallGraphIsolation` failure requiring re-audit of `hermes/authority.go` and `hermes/claude_successor.go`. Those files are unchanged. Other packages passed.
 
 This verifies a bounded draft-return journey. It does not certify all adapter recovery, physical-phone behavior, generic cross-device workspace recovery or the full workbench acceptance checklist. Browser integration uses fixture storage, not real provider sends.
+
+## Deployment receipt
+
+Published implementation `c7bfd21` to main. `make deploy` reached a self-SSH public-key failure; running its build, sync-daemon build and Manifest restart steps locally on Metis succeeded. `manifest.service` is active. HTTP-served `47-chat-state.js`, `48-chat.js` and `49-chat-workspace.js` matched local release bytes exactly, with `Cache-Control: no-cache`. A real Chromium read-only production smoke loaded the chat composer without page errors; non-GET API requests were blocked for that smoke. No provider messages or existing drafts were submitted. The canonical active plan records this milestone and retains the remaining acceptance work.
