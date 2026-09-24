@@ -56,6 +56,30 @@ function device(storage=new Map()){
  const taskSnapshot=task.value;task.clearSent(taskSnapshot);await task.flush();
  assert.equal(task.value.mode,'ask');assert.equal(task.value.agent,'agent:alfred');assert.equal(task.value.mentions.length,0);assert.equal(task.value.files.length,0);
  const taskAgain=device();await taskAgain.refresh();assert.equal(taskAgain.value.text,'');assert.equal(taskAgain.value.mode,'ask');assert.equal(taskAgain.value.selection.revision,'exact-old-version');
+ // Side findings commit text and receipt together and survive response rerenders,
+ // local reload, another device, Send and ordinary composer replacement.
+ const parentStorage=new Map(),parent=device(parentStorage);await parent.refresh();
+ parent.set({text:'owner draft',files:[{hash:'keep'}],recipient:{agent:'claude'}});await parent.flush();
+ lose=true;assert.equal(await parent.addSideFinding('side:turn1','Finding one'),false);
+ assert.equal(remote.value.text,'owner draft\n\nFinding one');
+ const reload=device(parentStorage);assert.equal(await reload.addSideFinding('side:turn1','Finding one'),true);
+ assert.equal(reload.value.text,'owner draft\n\nFinding one');assert.equal(reload.value.files[0].hash,'keep');
+ const other=device();assert.equal(await other.addSideFinding('side:turn1','Finding one'),true);
+ assert.equal(other.value.text,reload.value.text);
+ other.clearSent(other.value);await other.flush();other.set({text:'new typing',files:[]});await other.flush();
+ assert.equal(await reload.addSideFinding('side:turn1','Finding one'),true);assert.equal(reload.value.text,'new typing');
+ assert.equal(await reload.addSideFinding('side:turn2','Finding one'),true);assert.equal(reload.value.text,'new typing\n\nFinding one','identical text in a different turn remains distinct');
+ // Navigation while refreshing cancels the append; offline never claims success.
+ const unchanged=remote.value.text;
+ assert.equal(await reload.addSideFinding('side:turn3','wrong destination',()=>false),false);assert.equal(remote.value.text,unchanged);
+ offline=true;assert.equal(await reload.addSideFinding('side:turn3','offline'),false);offline=false;assert.equal(remote.value.text,unchanged);
+ // Concurrent drafts demand explicit resolution. Keeping local content must
+ // retain receipts already committed remotely, even when discarding that text.
+ await other.refresh();other.set({text:'local competing draft',files:[]});
+ assert.equal(await reload.addSideFinding('side:turn3','remote finding'),true);
+ assert.equal(await other.addSideFinding('side:turn4','pending finding'),false);assert.ok(other.conflict);
+ await other.resolve(false);assert.equal(await other.addSideFinding('side:turn3','remote finding'),true);
+ assert.equal(other.value.text,'local competing draft');
  // The task UI restores/clears exact context independently for each task,
  // retaining its typed draft when a context chip changes.
  const selections=new Map(),painted=[];

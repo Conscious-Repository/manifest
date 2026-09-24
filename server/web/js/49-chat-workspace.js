@@ -161,13 +161,17 @@ function chatMountSideFrame(host,spec){
  const link=el('a','sprt-quiet','Open full chat ↗');link.href=spec.route;link.target='_blank';link.rel='noopener';strip.append(info,link);
  const frame=document.createElement('iframe');frame.title='Side chat · '+spec.title;frame.className='chat-side-frame';frame.src=location.pathname+'?chatPane=1'+spec.route;
  if(spec.existing){const tab=[...chatWorkspaceTabs.entries.values()].find(t=>t.host===host);link.textContent='↗';link.title='Open full conversation';link.setAttribute('aria-label','Open full conversation');link.classList.add('chat-tab-open');tab?.row.insertBefore(link,tab.row.lastChild);host.append(frame);}else{info.querySelector('summary').textContent='Context';info.title='Context from '+spec.title;host.append(strip,frame);}
- const accepted=new Set();
- const receive=e=>{
+ const parentKey=(chatAgent||'spirits')+'/'+chatOpenId;
+ const receive=async e=>{
   if(e.origin!==location.origin||e.source!==frame.contentWindow||!host.isConnected||e.data?.type!=='manifest-side-finding')return;
-  const {id,text}=e.data;if(typeof id!=='string'||id.length>80||typeof text!=='string'||!text.trim()||text.length>32000)return;
-  const input=document.querySelector('#chatComposer textarea');if(!input||input.disabled)return;
-  if(!accepted.has(id)){input.value=(input.value.trim()?input.value+'\n\n':'')+'From side chat ('+spec.route+'):\n'+text;input.dispatchEvent(new Event('input',{bubbles:true}));accepted.add(id);}
-  frame.contentWindow.postMessage({type:'manifest-side-finding-ack',id},location.origin);if(window.matchMedia('(max-width: 900px)').matches)chatWorkspaceTabs?.show(false);input.focus();
+  const {id,text,route}=e.data;if(route!==spec.route||typeof id!=='string'||!/^[a-f0-9]{64}$/.test(id)||typeof text!=='string'||!text.trim()||text.length>32000)return;
+  const available=()=>host.isConnected&&chatDraftKey===parentKey&&!!document.querySelector('#chatComposer textarea')&&!document.querySelector('#chatComposer textarea').disabled;
+  if(!available())return;
+  const state=chatSyncedDrafts.get(parentKey);if(!state)return;
+  chatCaptureSyncedDraft(parentKey);
+  const saved=await state.addSideFinding(spec.route+':'+id,'From side chat ('+spec.route+'):\n'+text,available);
+  if(!saved||!available())return;
+  frame.contentWindow.postMessage({type:'manifest-side-finding-ack',id},location.origin);if(window.matchMedia('(max-width: 900px)').matches)chatWorkspaceTabs?.show(false);document.querySelector('#chatComposer textarea')?.focus();
  };
  window.addEventListener('message',receive);return {close:()=>window.removeEventListener('message',receive)};
 }
@@ -258,7 +262,7 @@ function chatUpdateJump(){
  if(!button.hidden){const bounds=transcript.getBoundingClientRect(),parent=main.getBoundingClientRect();button.style.top=Math.max(0,bounds.bottom-parent.top-52)+'px';}
 }
 
-function chatCopyResponseControl(blocks){
+function chatCopyResponseControl(blocks,turnID){
  const text=blocks.filter(block=>block.t==='say').map(block=>block.text||'').filter(Boolean).join('\n\n');
  if(!text)return null;
  const recentlyCopied=chatCopyResponseControl.last?.text===text&&Date.now()-chatCopyResponseControl.last.at<2000;
@@ -270,13 +274,25 @@ function chatCopyResponseControl(blocks){
   catch(error){button.textContent='Try again';button.title='Clipboard unavailable. Select the response text to copy it.';button.setAttribute('aria-label','Copy failed; try again');}
   finally{button.disabled=false;setTimeout(()=>{if(button.isConnected){button.textContent='Copy';button.setAttribute('aria-label','Copy response');}},2000);}
  };
- if(chatEmbedded){
-  const actions=el('span','chat-response-actions'),send=el('button','chat-copy-response','Add to parent draft');send.title='Append this response to the parent composer without sending';const id=crypto.randomUUID();
-  send.onclick=()=>{if(text.length>32000){send.textContent='Response too long · copy an excerpt';return;}send.disabled=true;window.parent.postMessage({type:'manifest-side-finding',id,text},location.origin);
-   const receive=e=>{if(e.origin!==location.origin||e.source!==window.parent||e.data?.type!=='manifest-side-finding-ack'||e.data.id!==id)return;clearTimeout(timer);window.removeEventListener('message',receive);send.textContent='Added to parent draft';};
-   window.addEventListener('message',receive);const timer=setTimeout(()=>{window.removeEventListener('message',receive);send.disabled=false;send.textContent='Retry adding to parent';},5000);
+ if(chatEmbedded&&turnID!==undefined&&turnID!==null){
+  const actions=el('span','chat-response-actions'),send=el('button','chat-copy-response','Add to parent draft');send.title='Append this response to the parent composer without sending';
+  // Source turn plus exact response bytes identify this return across renders
+  // and reloads. Different turns with identical text remain distinct.
+  const route=location.hash,identity=JSON.stringify([route,String(turnID),text]);
+  send.onclick=async()=>{
+   if(text.length>32000){send.textContent='Response too long · copy an excerpt';return;}
+   send.disabled=true;
+   try{
+    const digest=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(identity));
+    const id=Array.from(new Uint8Array(digest),b=>b.toString(16).padStart(2,'0')).join('');
+    const receive=e=>{if(e.origin!==location.origin||e.source!==window.parent||e.data?.type!=='manifest-side-finding-ack'||e.data.id!==id)return;clearTimeout(timer);window.removeEventListener('message',receive);send.textContent='Added to parent draft';};
+    window.addEventListener('message',receive);
+    const timer=setTimeout(()=>{window.removeEventListener('message',receive);send.disabled=false;send.textContent='Retry adding to parent';send.title='Save not confirmed. Check the parent draft for sync errors or conflicts, then retry.';},5000);
+    window.parent.postMessage({type:'manifest-side-finding',id,text,route},location.origin);
+   }catch(e){send.disabled=false;send.textContent='Retry adding to parent';}
   };actions.append(button,send);return actions;
  }
+
  return button;
 }
 

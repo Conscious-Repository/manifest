@@ -43,6 +43,8 @@ class ChatDraftState {
     return this;
   }
   set(value){
+    // Return receipts survive typing, attachment changes and clearing after Send.
+    if(this.slot==="draft"&&this.value?.sideReturns)value={...value,sideReturns:{...this.value.sideReturns,...value?.sideReturns}};
     if(chatStateEqual(value,this.value))return;
     this.value=JSON.parse(JSON.stringify(value));this.dirty=!chatStateEqual(this.value,this.base);
     this.publish();this.schedule();
@@ -76,8 +78,25 @@ class ChatDraftState {
     if(!this.conflict)return;
     const remote=this.conflict;this.conflict=null;this.revision=remote.revision;this.base=remote.value;
     if(useSaved)this.value=remote.value;
+    else if(this.slot==="draft"&&remote.value?.sideReturns)this.value={...this.value,sideReturns:{...remote.value.sideReturns,...this.value?.sideReturns}};
     this.dirty=!chatStateEqual(this.value,this.base);this.publish(useSaved);
     if(this.dirty)await this.flush();
+  }
+  async addSideFinding(id,text,canApply=()=>true){
+    // Persist the appended text and its receipt in the same revision. No ack
+    // until that revision is observed on the server; retry a lost ack safely.
+    await this.refresh();
+    if(this.slot!=="draft"||!this.loaded||this.error||this.conflict||!canApply())return false;
+    if(!this.value?.sideReturns?.[id]){
+      const value=this.value||{};
+      this.set({...value,text:(value.text?.trim()?value.text+"\n\n":"")+text,sideReturns:{...value.sideReturns,[id]:true}});
+      this.publish(true);
+    }
+    if(this.base?.sideReturns?.[id])return true;
+    // A preceding save can finish while the appended version is still dirty.
+    if(!await this.flush())return false;
+    if(!this.base?.sideReturns?.[id]&&!await this.flush())return false;
+    return !!this.base?.sideReturns?.[id]&&!this.conflict;
   }
   clearSent(value){
     if(!chatStateEqual(this.value,value))return false;

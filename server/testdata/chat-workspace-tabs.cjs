@@ -1,11 +1,11 @@
 const {chromium}=require('playwright'),fs=require('fs'),path=require('path'),assert=require('node:assert/strict');
-(async()=>{const b=await chromium.launch({headless:true,channel:'chrome'});try{
+(async()=>{const b=await chromium.launch({headless:true,...(process.env.PLAYWRIGHT_CHROMIUM_CHANNEL?{channel:process.env.PLAYWRIGHT_CHROMIUM_CHANNEL}:{})});try{
  const p=await b.newPage({viewport:{width:1440,height:900}}),root=path.join(__dirname,'../web'),errors=[];p.on('pageerror',e=>errors.push(e.message));
  await p.route('https://fixture.test/**',r=>r.fulfill({body:'<main class="chat-shell" style="height:850px"><aside class="chat-rail">Chats</aside><section class="chat-main"><header></header><div id="chatComposer"><textarea></textarea></div></section></main>',contentType:'text/html'}));await p.goto('https://fixture.test/#/chat/a/codex/abcdef12');
  for(const f of ['00-core','05-primitives','48-chat'])await p.addStyleTag({content:fs.readFileSync(path.join(root,'css',f+'.css'),'utf8')});
  await p.evaluate(()=>{
   window.el=(tag,cls,text)=>{const e=document.createElement(tag);e.className=cls||'';e.textContent=text||'';return e;};window.renderMarkdown=t=>el('pre','',t);window.chatRenderStateNotice=()=>{};
-  window.chatWorkspace=null;window.chatTaskID='';window.chatCurrentProject=()=>'';window.chatOpenId='abcdef12';window.chatAgent='codex';window.chatIsTerm=()=>true;window.chatIsPortal=()=>false;window.chatRosterEntry=()=>({durableSend:true});window.chatTermOpen={se:{id:'abcdef12',kind:'codex',name:'Parent',model:'gpt-6-astra',cwd:'/project'}};window.chatRoster=[{name:'alfred',label:'Alfred',enabled:true,durableSend:true,model:'selected'}];window.chatTermKinds={codex:'Codex',claude:'Claude'};window.chatTermEnabled=true;window.chatRecipients=new Map();window.chatArtifactSelections=new Map();window.chatRenderArtifactContext=()=>{};window.chatCaptureSyncedDraft=()=>{};window.chatLoadWorkstreams=async()=>{};window.chatWorkstreamMember=key=>key==='terminal:codex/abcdef12'?'work-1':'';window.chatSaveWorkstream=async(...args)=>{window.savedWorkstream=args;};window.chatBaseFor=()=>'/api/agents/chat/alfred/sessions';window.postJSONOk=async(endpoint,payload)=>{window.created={endpoint,payload};return {id:'side1234',agent:payload.agent,conversation:{route:'#/chat/a/'+payload.agent+'/side1234'}};};
+  window.chatDraftKey='codex/abcdef12';window.chatSyncedDrafts=new Map();window.chatWorkspace=null;window.chatTaskID='';window.chatCurrentProject=()=>'';window.chatOpenId='abcdef12';window.chatAgent='codex';window.chatIsTerm=()=>true;window.chatIsPortal=()=>false;window.chatRosterEntry=()=>({durableSend:true});window.chatTermOpen={se:{id:'abcdef12',kind:'codex',name:'Parent',model:'gpt-6-astra',cwd:'/project'}};window.chatRoster=[{name:'alfred',label:'Alfred',enabled:true,durableSend:true,model:'selected'}];window.chatTermKinds={codex:'Codex',claude:'Claude'};window.chatTermEnabled=true;window.chatRecipients=new Map();window.chatArtifactSelections=new Map();window.chatRenderArtifactContext=()=>{};window.chatCaptureSyncedDraft=()=>{};window.chatLoadWorkstreams=async()=>{};window.chatWorkstreamMember=key=>key==='terminal:codex/abcdef12'?'work-1':'';window.chatSaveWorkstream=async(...args)=>{window.savedWorkstream=args;};window.chatBaseFor=()=>'/api/agents/chat/alfred/sessions';window.postJSONOk=async(endpoint,payload)=>{window.created={endpoint,payload};return {id:'side1234',agent:payload.agent,conversation:{route:'#/chat/a/'+payload.agent+'/side1234'}};};
   window.a={id:'plan',title:'Plan',ref:'plan.md',content:'original',head:'a'.repeat(64),revisions:[{n:1,hash:'a'.repeat(64)}]};window.fetch=async()=>({ok:true,json:async()=>structuredClone(a)});
  });
  const components=fs.readFileSync(path.join(root,'js/05-components.js'),'utf8');await p.addScriptTag({content:components.slice(components.indexOf('function artifactLineChanges'),components.indexOf('// A compact, keyboard-accessible'))});
@@ -76,20 +76,37 @@ const {chromium}=require('playwright'),fs=require('fs'),path=require('path'),ass
  await p.getByRole('button',{name:'Retry creation',exact:true}).click();await p.waitForFunction(()=>sideRequests.length===2);
  assert.deepEqual(await p.evaluate(()=>sideRequests[1]),request,'retry preserves exact payload and request identity');
  await p.waitForFunction(()=>document.querySelectorAll('.chat-side-frame').length>=1);
- await p.setViewportSize({width:1440,height:900});await p.locator('#chatComposer textarea').fill('Existing parent draft');
+ await p.setViewportSize({width:1440,height:900});
+ await p.evaluate(async()=>{
+  const state=new ChatDraftState('conversation-'+'2'.repeat(32),(s,apply)=>{if(apply)document.querySelector('#chatComposer textarea').value=s.value?.text||'';});
+  chatSyncedDrafts.set(chatDraftKey,state);await state.refresh();
+  window.chatCaptureSyncedDraft=()=>state.set({...state.value,text:document.querySelector('#chatComposer textarea').value,files:[]});
+ });
+ await p.locator('#chatComposer textarea').fill('Existing parent draft');
  await p.evaluate(()=>window.postMessage({type:'manifest-side-finding',id:'forged',text:'Wrong source'},location.origin));
  const child=await (await p.locator('.chat-side-frame').last().elementHandle()).contentFrame();
- await child.evaluate(()=>parent.postMessage({type:'manifest-side-finding',id:'finding-one',text:'Selected side finding'},location.origin));
+ await child.evaluate(()=>parent.postMessage({type:'manifest-side-finding',id:'a'.repeat(64),route:location.hash,text:'Selected side finding'},location.origin));
  await p.waitForFunction(()=>document.querySelector('#chatComposer textarea').value.includes('Selected side finding'));
  const parentDraft=await p.locator('#chatComposer textarea').inputValue();assert.ok(parentDraft.startsWith('Existing parent draft'));assert.ok(!parentDraft.includes('Wrong source'));
- await child.evaluate(()=>parent.postMessage({type:'manifest-side-finding',id:'finding-one',text:'Selected side finding'},location.origin));
+ await child.evaluate(()=>parent.postMessage({type:'manifest-side-finding',id:'a'.repeat(64),route:location.hash,text:'Selected side finding'},location.origin));
  await p.waitForTimeout(30);assert.equal(await p.locator('#chatComposer textarea').inputValue(),parentDraft,'replayed return does not duplicate the draft');
  await child.evaluate(()=>{window.el=(tag,cls,text)=>{const e=document.createElement(tag);e.className=cls||'';e.textContent=text||'';return e;};});
  await child.addScriptTag({content:fs.readFileSync(path.join(root,'js/49-chat-workspace.js'),'utf8')});
- await child.evaluate(()=>document.body.append(chatCopyResponseControl([{t:'say',text:'Finding through the response action'}])));
+ await child.evaluate(()=>document.body.append(chatCopyResponseControl([{t:'say',text:'Finding through the response action'}],'turn-one')));
  await child.getByRole('button',{name:'Add to parent draft',exact:true}).click();
  await child.getByRole('button',{name:'Added to parent draft',exact:true}).waitFor();
  assert.ok((await p.locator('#chatComposer textarea').inputValue()).includes('Finding through the response action'));
+ // Rerendering the same response reuses the receipt, including after the
+ // parent's frame listener is destroyed and restored from saved workspace.
+ const returned=await p.locator('#chatComposer textarea').inputValue();
+ await p.evaluate(async()=>{chatWorkspaceTabs.close();await Promise.all([...chatWorkspaceStates.values()].map(s=>s.flush()));chatWorkspaceStates.clear();await chatRestoreWorkspace();});
+ const reloadedChild=await (await p.locator('.chat-side-frame').last().elementHandle()).contentFrame();
+ await reloadedChild.evaluate(()=>{window.el=(tag,cls,text)=>{const e=document.createElement(tag);e.className=cls||'';e.textContent=text||'';return e;};});
+ await reloadedChild.addScriptTag({content:fs.readFileSync(path.join(root,'js/49-chat-workspace.js'),'utf8')});
+ await reloadedChild.evaluate(()=>document.body.append(chatCopyResponseControl([{t:'say',text:'Finding through the response action'}],'turn-one')));
+ await reloadedChild.getByRole('button',{name:'Add to parent draft',exact:true}).click();
+ await reloadedChild.getByRole('button',{name:'Added to parent draft',exact:true}).waitFor();
+ assert.equal(await p.locator('#chatComposer textarea').inputValue(),returned,'reload does not duplicate a returned finding');
  await p.addScriptTag({content:components.slice(components.indexOf('function attachmentWorkspace('),components.indexOf('function artifactLineChanges('))});
  await p.addScriptTag({content:chat.slice(chat.indexOf('function chatOpenAttachment('),chat.indexOf('function chatChangesButton('))});
  await p.evaluate(()=>{

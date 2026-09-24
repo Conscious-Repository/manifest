@@ -2185,7 +2185,7 @@ function chatPaintTurns(host, turns, ctx) {
       promote.onclick = () => ctx.promote(t);
       foot.append(promote);
     }
-    if(typeof chatCopyResponseControl==="function"){const copy=chatCopyResponseControl(responseBlocks);if(copy)foot.append(copy);}
+    if(typeof chatCopyResponseControl==="function"){const copy=chatCopyResponseControl(responseBlocks,t.n);if(copy)foot.append(copy);}
     if (foot.childElementCount) wrap.append(foot);
     host.append(wrap);
   });
@@ -3332,7 +3332,7 @@ function chatTermTurnEl(t) {
     if (t.ts) meta.push(fmtWhen(t.ts));
     if (t.usd) meta.push("$" + t.usd);
     const footer=el('div','chat-response-footer');
-    if(typeof chatCopyResponseControl==='function'){const copy=chatCopyResponseControl(blocks);if(copy)footer.append(copy);}
+    if(typeof chatCopyResponseControl==='function'){const copy=chatCopyResponseControl(blocks,t.id);if(copy)footer.append(copy);}
     if(meta.length)footer.append(el('span','chat-term-meta',meta.join(' · ')));
     if(footer.childElementCount)out.append(footer);
     return out;
