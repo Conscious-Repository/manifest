@@ -847,3 +847,9 @@ label.chat-artifact-handoff{display:flex;flex-direction:row;align-items:flex-sta
 .chat-notes-preview button{min-height:44px;}
 
 .chat-notes-inspector > select{min-height:44px;width:100%;}
+
+.chat-artifact-context{flex-direction:column;flex-wrap:nowrap;align-items:stretch;max-height:160px;overflow:auto;}
+.chat-artifact-context-item{display:flex;align-items:center;gap:6px;min-width:0;}
+.chat-artifact-context-item > button:first-child{min-width:0;flex:1;white-space:normal;overflow-wrap:anywhere;text-align:left;}
+.chat-artifact-context-item > button{min-height:44px;}
+.chat-artifact-handoff span{white-space:pre-wrap;}

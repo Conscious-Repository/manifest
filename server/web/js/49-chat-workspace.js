@@ -194,7 +194,7 @@ function chatWorkspaceSideSetup(source,restore=null){
   const sync=()=>{folder.hidden=!pick.value.startsWith('terminal:');chatPopulateModelSelect(model,pick.value.startsWith('terminal:')?pick.value.slice(9):pick.value,pick.value===initial?(recipient?.model||source.model):options.find(a=>a.value===pick.value)?.model||'');};sync();if(saved.model)chatPopulateModelSelect(model,pick.value.startsWith('terminal:')?pick.value.slice(9):pick.value,saved.model);pick.onchange=()=>{model.value=pick.value===initial?(recipient?.model||source.model):options.find(a=>a.value===pick.value)?.model||'';sync();};
   const handoff=saved.artifact||chatArtifactSelections.get('chat:'+source.agent+'/'+source.id)||null;
   const include=document.createElement('input');include.type='checkbox';include.setAttribute('aria-label','Include selected artifact in side chat');include.checked=saved.includeArtifact??!!(handoff&&!handoff.explicitArtifacts);
-  const handoffField=el('label','chat-artifact-handoff');handoffField.append(include,el('span','','Include selected artifact'+(handoff?' · '+(handoff.title||handoff.id)+' · revision '+handoff.revision:'')));handoffField.hidden=!handoff;
+  const handoffField=el('label','chat-artifact-handoff');handoffField.append(include,el('span','','Include selected context versions'+(handoff?'\n'+chatArtifactSelectionLabel(handoff):'')));handoffField.hidden=!handoff;
   const status=el('p','chat-workspace-hint');status.setAttribute('role','status');
   const start=el('button','chat-side-start','Open side chat');start.disabled=!pick.value;
   // Recovery is scoped to this setup tab. Keep the accepted request identity on
@@ -203,7 +203,7 @@ function chatWorkspaceSideSetup(source,restore=null){
   const lock=()=>{pick.disabled=model.disabled=cwd.disabled=include.disabled=!!remembered;};lock();if(remembered){status.textContent='Creation is unconfirmed. Retry checks the same request.';start.textContent='Retry creation';}
   start.onclick=async()=>{
    const coding=pick.value.startsWith('terminal:');let payload={agent:coding?pick.value.slice(9):pick.value,model:model.value.trim(),title:Array.from('Side chat · '+source.title).slice(0,240).join(''),task:source.task||'',prompt:source.initialPrompt||'',mode:'side',...(coding?{backend:'terminal',cwd:cwd.value.trim()}:{})};
-   if(handoff&&include.checked){payload.artifacts=[{id:handoff.id,revision:handoff.revision}];if(handoff.explicitArtifacts)payload.explicitArtifacts=true;}
+   if(handoff&&include.checked)Object.assign(payload,chatArtifactPayload(handoff));
    if(remembered)payload=remembered.payload;else remembered={payload,requestId:crypto.randomUUID()};lock();w.save();
    start.disabled=true;status.textContent='Preparing context…';
    try{
@@ -551,13 +551,13 @@ function chatOpenRecords(){
     if(!current()||turn!==ticket||kind.value!==selectedKind)return;selected=snapshot;
     const title=el('h3','',record.title),identity=el('p','chat-workspace-hint',record.kind+' · '+record.id),source=el('a','sprt-quiet','open source '+record.kind),text=el('pre','chat-activity-text',snapshot.content),use=el('button','sprt-quiet','use in this private chat');source.href=record.route;source.target='_blank';source.rel='noopener';
     const revision=el('p','chat-workspace-hint','Revision '+snapshot.revision),scope=el('p','chat-workspace-hint',hints[selectedKind]);
-    status.textContent=expected&&expected!==snapshot.revision?'The source changed since your last preview. Review this version before selecting it.':'Review this snapshot. Selecting retains these exact bytes for your next message and replaces any selected artifact. Send delivers it.';
+    status.textContent=expected&&expected!==snapshot.revision?'The source changed since your last preview. Review this version before selecting it.':'Review this snapshot. Selecting retains these exact bytes for your next message alongside your other selected versions (up to 8). Send delivers it.';
     use.onclick=async()=>{
      if(!current()||selected!==snapshot)return;use.disabled=true;status.textContent='Retaining reviewed version…';
      try{
       const ref=await postJSONOk('/api/chat/records/retain',{kind:record.kind,id:record.id,revision:snapshot.revision});
       if(!current()||selected!==snapshot)return;
-      chatArtifactSelections.set(key,{...ref,explicitArtifacts:true});chatRenderArtifactContext('',key);chatCaptureSyncedDraft(key.slice(5));
+      chatAddArtifactSelection(key,{...ref,explicitArtifacts:true});chatRenderArtifactContext('',key);chatCaptureSyncedDraft(key.slice(5));
       status.textContent='Selected exact record version. Send delivers it.';
      }catch(e){if(current()&&selected===snapshot)status.textContent=e.message;}
      finally{use.disabled=false;}

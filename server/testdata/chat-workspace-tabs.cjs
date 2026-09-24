@@ -10,7 +10,7 @@ const {chromium}=require('playwright'),fs=require('fs'),path=require('path'),ass
  });
  const components=fs.readFileSync(path.join(root,'js/05-components.js'),'utf8');await p.addScriptTag({content:components.slice(components.indexOf('function artifactLineChanges'),components.indexOf('// A compact, keyboard-accessible'))});
  await p.addScriptTag({content:components.slice(components.indexOf('function artifactWorkingChangesView('))});
- const chat=fs.readFileSync(path.join(root,'js/48-chat.js'),'utf8');await p.addScriptTag({content:chat.slice(chat.indexOf('let chatPaneResizeCleanup='))});await p.addScriptTag({content:fs.readFileSync(path.join(root,'js/49-chat-workspace.js'),'utf8')});
+ const chat=fs.readFileSync(path.join(root,'js/48-chat.js'),'utf8');await p.addScriptTag({content:chat.slice(chat.indexOf('function chatSelectedArtifacts('),chat.indexOf('function chatOpenWorkingArtifact('))});await p.addScriptTag({content:chat.slice(chat.indexOf('let chatPaneResizeCleanup='))});await p.addScriptTag({content:fs.readFileSync(path.join(root,'js/49-chat-workspace.js'),'utf8')});
  await p.evaluate(()=>chatWorkspaceHeader(document.querySelector('header')));await p.getByLabel('Toggle workspace').click();assert.equal(await p.getByLabel('Chat workspace').isVisible(),true);
  await p.evaluate(()=>chatEnsureWorkspace().tab('plan','Plan',(host,drop)=>artifactWorkspace(host,{load:async()=>structuredClone(a),save:async()=>{},onClose:drop})));
  await p.getByRole('button',{name:'Edit',exact:true}).click();await p.getByLabel('File content').fill('unsaved reversible draft');
@@ -208,7 +208,7 @@ const {chromium}=require('playwright'),fs=require('fs'),path=require('path'),ass
  await p.evaluate(async()=>{chatWorkspaceTabs.close();await Promise.all([...chatWorkspaceStates.values()].map(s=>s.flush()));chatWorkspaceStates.clear();await chatRestoreWorkspace();});
  await p.getByText('Browsing does not add message context.',{exact:false}).waitFor();
  assert.equal(await p.locator('.artifact-workspace:visible').getByRole('button',{name:'Discuss',exact:true}).count(),0);
- await p.evaluate(()=>{window.chatConversationTasks=new Map();window.chatPendingFiles=[];});
+ await p.evaluate(()=>{window.chatConversationTasks=new Map();window.chatPendingFiles=[];chatArtifactSelections.clear();});
  await p.addScriptTag({content:chat.slice(chat.indexOf('function chatCaptureSyncedDraft('),chat.indexOf('function chatRenderDraftNotice('))});
  await p.addScriptTag({content:chat.slice(chat.indexOf('function chatRenderArtifactContext('),chat.indexOf('function chatArtifactActions('))});
  await p.getByRole('button',{name:'use in this private chat',exact:true}).click();
@@ -216,6 +216,29 @@ const {chromium}=require('playwright'),fs=require('fs'),path=require('path'),ass
  assert.equal(explicit.revision,'c'.repeat(64));assert.equal(explicit.explicitArtifacts,true);assert.equal(explicit.task,'');
  assert.equal(await p.getByRole('button',{name:'Discussing: Plan · v1',exact:true}).count(),1);
  const restored=await p.evaluate(async()=>{await chatSyncedDrafts.get(chatDraftKey).flush();const next=new ChatDraftState(chatSyncedDrafts.get(chatDraftKey).key);await next.refresh();return next.value.selection;});assert.equal(restored.explicitArtifacts,true);assert.equal(restored.revision,explicit.revision);
+
+ await p.evaluate(()=>{
+  const key='chat:'+chatAgent+'/'+chatOpenId;
+  chatAddArtifactSelection(key,{id:'person-context',revision:'e'.repeat(64),title:'Person profile',version:1,explicitArtifacts:true});
+  chatAddArtifactSelection(key,{id:'task-context',revision:'f'.repeat(64),title:'Task record',version:1,explicitArtifacts:true});
+  chatAddArtifactSelection(key,{id:'person-context',revision:'e'.repeat(64),title:'Person profile',version:1,explicitArtifacts:true});
+  chatRenderArtifactContext('',key);chatCaptureSyncedDraft(key.slice(5));
+ });
+ assert.equal(await p.locator('#chatComposer .chat-artifact-context-item').count(),3,'exact duplicate does not add another item');
+ await p.getByRole('button',{name:'Remove artifact context: Person profile · '+ 'e'.repeat(64),exact:true}).click();
+ assert.equal(await p.locator('#chatComposer .chat-artifact-context-item').count(),2,'removal preserves other contexts');
+ await p.evaluate(()=>{const key='chat:'+chatAgent+'/'+chatOpenId;chatAddArtifactSelection(key,{id:'person-context',revision:'e'.repeat(64),title:'Person profile',version:1,explicitArtifacts:true});chatRenderArtifactContext('',key);chatCaptureSyncedDraft(key.slice(5));});
+ const selection=await p.evaluate(async()=>{await chatSyncedDrafts.get(chatDraftKey).flush();const state=new ChatDraftState(chatSyncedDrafts.get(chatDraftKey).key);await state.refresh();return state.value.selection;});
+ assert.deepEqual(selection.items.map(ref=>ref.id),['other-output','task-context','person-context'],'all versions recover in selection order');
+ await p.evaluate(async selection=>{
+  const originalFetch=fetch;
+  try{window.fetch=async url=>({ok:true,json:async()=>({title:'Handed-over file',revisions:[{hash:selection.items.find(ref=>url.endsWith(encodeURIComponent(ref.id))).revision,n:1}]})});
+   window.childSelection=await chatOriginArtifactSelection({artifacts:chatArtifactPayload(selection).artifacts});
+  }finally{window.fetch=originalFetch;}
+ },selection);
+ assert.deepEqual(await p.evaluate(()=>chatArtifactPayload(childSelection).artifacts),selection.items.map(ref=>({id:ref.id,revision:ref.revision})),'child composer keeps all handed-over revisions');
+ for(const width of [320,390,1440]){await p.setViewportSize({width,height:844});assert.equal(await p.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);assert.equal(await p.locator('.chat-artifact-context').evaluate(e=>e.scrollWidth>e.clientWidth),false,'selected context list fits without horizontal scrolling');}
+ await p.setViewportSize({width:390,height:844});await p.screenshot({path:'/tmp/manifest-multiple-context-phone.png'});
  await p.evaluate(()=>{window.handoffRequests=[];window.postJSONOk=async(endpoint,payload)=>{handoffRequests.push(structuredClone(payload));if(handoffRequests.length===1)throw Error('Handoff reply lost');return {id:'explicit-side',agent:payload.agent,conversation:{route:'#/chat/a/'+payload.agent+'/explicit-side'}};};chatWorkspaceSideSetup(chatWorkspaceSource(),{key:'explicit-handoff'});});
  assert.equal(await p.getByLabel('Include selected artifact in side chat').isChecked(),false);
  for(const width of [320,390,1440]){await p.setViewportSize({width,height:844});assert.equal(await p.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);}
@@ -223,7 +246,7 @@ const {chromium}=require('playwright'),fs=require('fs'),path=require('path'),ass
  await p.getByLabel('Include selected artifact in side chat').check();
  await p.evaluate(()=>chatArtifactSelections.set('chat:'+chatAgent+'/'+chatOpenId,{id:'changed-selection',revision:'d'.repeat(64),explicitArtifacts:true}));
  await p.getByRole('button',{name:'Open side chat',exact:true}).click();await p.getByText('Handoff reply lost',{exact:true}).waitFor();
- const handed=await p.evaluate(()=>handoffRequests[0]);assert.equal(handed.explicitArtifacts,true);assert.equal(handed.artifacts[0].id,'other-output');assert.equal(handed.artifacts[0].revision,'c'.repeat(64));
+ const handed=await p.evaluate(()=>handoffRequests[0]);assert.equal(handed.explicitArtifacts,true);assert.equal(handed.artifacts[0].id,'other-output');assert.equal(handed.artifacts[0].revision,'c'.repeat(64));assert.deepEqual(handed.artifacts,selection.items.map(ref=>({id:ref.id,revision:ref.revision})));
  await p.evaluate(async()=>{chatWorkspaceTabs.close();await Promise.all([...chatWorkspaceStates.values()].map(s=>s.flush()));chatWorkspaceStates.clear();await chatRestoreWorkspace();});
  assert.equal(await p.getByLabel('Include selected artifact in side chat').isChecked(),true);assert.equal(await p.getByLabel('Include selected artifact in side chat').isDisabled(),true);
  await p.getByRole('button',{name:'Retry creation',exact:true}).click();await p.waitForFunction(()=>handoffRequests.length===2);assert.deepEqual(await p.evaluate(()=>handoffRequests[1]),handed);

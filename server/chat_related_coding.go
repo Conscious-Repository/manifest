@@ -149,10 +149,6 @@ func (s *Server) handleRelatedCodingChat(w http.ResponseWriter, r *http.Request,
 		http.Error(w, "private handoff is unavailable from shared conversations", 403)
 		return
 	}
-	if len(origin.Artifacts) > 1 {
-		httpError(w, errBadRequest("the coding handoff supports one selected artifact version at a time"))
-		return
-	}
 	// Only the source’s persisted handoff grants inherited version access.
 	var handed []artifactContextRef
 	if source.Origin != nil {

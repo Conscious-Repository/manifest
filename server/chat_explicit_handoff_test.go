@@ -3,6 +3,7 @@ package server
 import (
 	"manifest/artifacts"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -11,12 +12,16 @@ func TestExplicitRelatedArtifactHandoff(t *testing.T) {
 		t.Run(backend, func(t *testing.T) {
 			s, st, _ := agentChatFixture(t, echoStub)
 			a := explicitArtifactFixture(t, s)
+			second, err := s.artifactReg.Put(artifacts.Put{Ref: "second-context", Content: []byte("SECOND_EXACT_CONTEXT")})
+			if err != nil {
+				t.Fatal(err)
+			}
 			s.terminal = &termCfg{regPath: filepath.Join(t.TempDir(), "terminals.json"), defaultWd: t.TempDir()}
 			parent, err := st.Create("alfred", "", "Parent", "")
 			if err != nil {
 				t.Fatal(err)
 			}
-			payload := map[string]any{"agent": "alfred", "title": "Selected output follow-up", "mode": "side", "requestId": "explicit-related-001", "artifacts": []artifactContextRef{{ID: a.ID, Revision: a.Head}}}
+			payload := map[string]any{"agent": "alfred", "title": "Selected output follow-up", "mode": "side", "requestId": "explicit-related-001", "artifacts": []artifactContextRef{{ID: a.ID, Revision: a.Head}, {ID: second.Artifact.ID, Revision: second.Artifact.Head}}}
 			if backend != "planning" {
 				payload["backend"] = "terminal"
 				payload["agent"] = backend
@@ -49,8 +54,9 @@ func TestExplicitRelatedArtifactHandoff(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if _, err := s.scopedArtifactContext("", "child", refs, refs); err != nil {
-				t.Fatal("retained handoff unavailable", err)
+			context, err := s.scopedArtifactContext("", "child", refs, refs)
+			if err != nil || len(refs) != 2 || !strings.Contains(context, "EXACT_PRIOR_OUTPUT") || !strings.Contains(context, "SECOND_EXACT_CONTEXT") || strings.Contains(context, "NOT_HANDED_OVER") {
+				t.Fatal("retained handoff unavailable", context, err)
 			}
 			if _, err := s.scopedArtifactContext("", "child", []artifactContextRef{{ID: a.ID, Revision: newer.Artifact.Head}}, refs); err == nil {
 				t.Fatal("handoff granted unreviewed revision")

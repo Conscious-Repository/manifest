@@ -9,6 +9,7 @@ const ctx=vm.createContext({chatIsTerm:()=>false,chatAgent:'alfred',chatOpenId:'
   if(url.startsWith('/api/artifacts/')){requested();await pending;return {ok:true,json:async()=>({title:'Plan',revisions:[]})};}
   return {ok:true,json:async()=>({conversation:{key:'original'},session:{turns:0,origin:{task:'task',prompt:'private handoff',artifacts:[{id:'plan',revision:'v1'}]}}})};
  }});
+vm.runInContext(source.slice(source.indexOf('function chatSelectedArtifacts('),source.indexOf('function chatOpenWorkingArtifact(')),ctx);
 vm.runInContext(source.slice(source.indexOf('async function loadChatSession(id)'),source.indexOf('// ---- live stream layer')),ctx);
 (async()=>{
  const loading=ctx.loadChatSession('source');await started;

@@ -1645,12 +1645,7 @@ async function loadChatSession(id) {
   }
   if (id !== chatOpenId || base !== chatBase()) return; // navigated away mid-fetch
   if(d.sharedConversation?.route){location.hash=d.sharedConversation.route;return;}
-  let originSelection=null;
-  const originRef=d.session.origin?.artifacts?.[0];
-  if(originRef && d.session.turns===0){
-    originSelection={...originRef,task:d.session.origin.task,title:"Artifact",version:"?"};
-    try{const r=await fetch("/api/artifacts/get?id="+encodeURIComponent(originRef.id));if(r.ok){const a=await r.json();originSelection.title=a.title||"Artifact";originSelection.version=a.revisions.find(v=>v.hash===originRef.revision)?.n||"?";}}catch(e){}
-  }
+  const originSelection=d.session.turns===0?await chatOriginArtifactSelection(d.session.origin):null;
   if (id !== chatOpenId || base !== chatBase() || els.chatView.hidden) return;
   await Promise.all([
     chatPrepareDraft(d.conversation,(agent||"spirits")+"/"+id,d.session.origin&&d.session.turns===0?{text:d.session.origin.prompt||"",files:[],task:d.session.origin.task||"",selection:originSelection}:null),
@@ -2532,7 +2527,7 @@ function renderChatComposer(session) {
       try{
         const target=chosenRecipient;
         const url=chatBaseFor(target.agent)+"/"+encodeURIComponent(target.id)+"/messages";
-        await chatDeliverRemembered(chatRememberDelivery(draftKey,target.agent,url,{text:messageText,files:sendFiles,recipient:{agent:target.agent,model:target.model},task:session?.shared?"":selected?.task||session?.task||"",artifacts:selected?[{id:selected.id,revision:selected.revision}]:[],explicitArtifacts:selected?.explicitArtifacts||undefined}));
+        await chatDeliverRemembered(chatRememberDelivery(draftKey,target.agent,url,{text:messageText,files:sendFiles,recipient:{agent:target.agent,model:target.model},task:session?.shared?"":selected?.task||session?.task||"",...chatArtifactPayload(selected)}));
         acceptedDraft();
         if(sendRoute===chatRouteVersion&&chatTermOpen)await chatTermRequestFinalTail(chatTermOpen);
       }catch(e){showToast(e.message||"Send not confirmed. Your draft is retained.");}
@@ -2543,7 +2538,7 @@ function renderChatComposer(session) {
       try{
         if(sendFiles.length&&!session?.shared)throw new Error("File uploads are not supported by this coding continuation yet. Remove the attachment or choose a planning agent.");
         const url=chatTermBase(chosenRecipient.id)+"/input";
-        const input={text:messageText,...(sendFiles.length?{files:sendFiles.map(f=>f.hash)}:{}),conversationAgent:sendAgent,conversationId:sendSession,task:session?.shared?"":selected?.task||session?.task||"",artifacts:selected?[{id:selected.id,revision:selected.revision}]:[],explicitArtifacts:selected?.explicitArtifacts||undefined};
+        const input={text:messageText,...(sendFiles.length?{files:sendFiles.map(f=>f.hash)}:{}),conversationAgent:sendAgent,conversationId:sendSession,task:session?.shared?"":selected?.task||session?.task||"",...chatArtifactPayload(selected)};
         if(chatTermFind(chosenRecipient.id)?.agentState==='working')await chatStageMessage(draftKey,chosenRecipient.agent,url,input);
         else{
           const remembered=chatRememberDelivery(draftKey,chosenRecipient.agent,url,input);
@@ -2559,12 +2554,12 @@ function renderChatComposer(session) {
     if(durable){
       payload.recipient=chatRecipients.get(draftKey)||{agent:sendAgent,model:session?.model||""};
       payload.task=selected?.task||chatConversationTasks.get("chat:"+draftKey)||session?.task||"";
-      if(selected){payload.artifacts=[{id:selected.id,revision:selected.revision}];if(selected.explicitArtifacts)payload.explicitArtifacts=true;}
+      if(selected)Object.assign(payload,chatArtifactPayload(selected));
     }
     if (chatIsTerm()) {
       // claude/codex: runtime input (explicitly resuming an ended session first); a
       // landing send creates the registry row, then delivers
-      try { if (!await chatTermSend(initialText,selected?{task:selected.task,artifacts:[{id:selected.id,revision:selected.revision}],explicitArtifacts:selected.explicitArtifacts||undefined}:{})) {
+      try { if (!await chatTermSend(initialText,selected?{task:selected.task,...chatArtifactPayload(selected)}:{})) {
         showToast("Send not confirmed. Your draft is retained.");
       }else acceptedDraft(); }
       finally { chatSending = false; renderChatComposer(chatCurSession); }
@@ -2985,11 +2980,7 @@ async function loadChatTermSession(id) {
     d = await res.json();
   } catch (e) { return; }
   if (id !== chatOpenId || !chatIsTerm()) return; // navigated away mid-fetch
-  const ref=d.draft&&d.origin?.artifacts?.[0];
-  const selection=ref?{...ref,task:d.origin.task,title:"Artifact",version:"?"}:null;
-  if(selection){
-    try{const r=await fetch("/api/artifacts/get?id="+encodeURIComponent(ref.id));if(r.ok){const a=await r.json();selection.title=a.title||"Artifact";selection.version=a.revisions.find(v=>v.hash===ref.revision)?.n||"?";}}catch(e){}
-  }
+  const selection=d.draft?await chatOriginArtifactSelection(d.origin):null;
   if (id !== chatOpenId || !chatIsTerm()) return;
   const readingGestureBefore = chatReadingGestureUntil;
   const preparation = Promise.all([
@@ -3824,6 +3815,37 @@ function chatChangesButton(runtime){
   button.onclick=async()=>{const route=chatRouteVersion;button.disabled=true;try{const snapshot=await postJSONOk(chatTermBase(runtime.id)+"/changes/snapshot",{});if(route===chatRouteVersion)chatOpenWorkingArtifact({...snapshot,selectionKey:"chat:"+chatAgent+"/"+chatOpenId});}catch(e){showToast(e.message||"Could not capture working-folder changes.");}finally{button.disabled=false;}};
   return button;
 }
+// Single-reference drafts remain readable; new drafts keep a bounded ordered set.
+function chatSelectedArtifacts(selection){return selection?(Array.isArray(selection.items)?selection.items:[selection]):[];}
+function chatArtifactPayload(selection){
+ const refs=chatSelectedArtifacts(selection);
+ return {artifacts:refs.map(ref=>({id:ref.id,revision:ref.revision})),...(refs.some(ref=>ref.explicitArtifacts)||selection?.explicitArtifacts?{explicitArtifacts:true}:{})};
+}
+function chatArtifactSelection(refs){
+ if(!refs.length)return null;
+ const task=refs.find(ref=>ref.task)?.task||'';
+ const items=refs.map(ref=>{const {items,...value}=ref;return value;});
+ return items.length===1?items[0]:{...items[0],task,items,explicitArtifacts:items.some(ref=>ref.explicitArtifacts)};
+}
+function chatStoreArtifactSelection(key,refs){const selection=chatArtifactSelection(refs);if(selection)chatArtifactSelections.set(key,selection);else chatArtifactSelections.delete(key);}
+async function chatOriginArtifactSelection(origin){
+ const refs=await Promise.all((origin?.artifacts||[]).map(async ref=>{
+  const selected={...ref,task:origin.task||'',title:'Artifact',version:'?'};
+  try{const r=await fetch('/api/artifacts/get?id='+encodeURIComponent(ref.id));if(r.ok){const a=await r.json();selected.title=a.title||'Artifact';selected.version=a.revisions.find(v=>v.hash===ref.revision)?.n||'?';}}catch(e){}
+  return selected;
+ }));
+ return chatArtifactSelection(refs);
+}
+function chatAddArtifactSelection(key,ref){
+ if(!key.startsWith('chat:')){chatArtifactSelections.set(key,ref);return;}
+ const refs=chatSelectedArtifacts(chatArtifactSelections.get(key));
+ const existing=refs.findIndex(item=>item.id===ref.id&&item.revision===ref.revision);
+ if(existing>=0){if(ref.explicitArtifacts&&!refs[existing].explicitArtifacts)chatStoreArtifactSelection(key,refs.map((item,i)=>i===existing?{...item,...ref,task:item.task||ref.task}:item));return;}
+ if(refs.length>=8)throw Error('Up to 8 exact versions can be selected. Remove one before adding another.');
+ if(ref.task&&refs.some(item=>item.task&&item.task!==ref.task))throw Error('These files belong to different tasks. Open the additional file from all registered files and explicitly use it in this private chat.');
+ chatStoreArtifactSelection(key,[...refs,ref]);
+}
+function chatArtifactSelectionLabel(selection){return chatSelectedArtifacts(selection).map(ref=>(ref.title||ref.id)+' · revision '+ref.revision).join('\n');}
 function chatOpenWorkingArtifact(spec) {
   const taskID = spec.contextDisabled ? "" : spec.task || chatTaskID;
   const key = spec.selectionKey || (chatOpenId&&!chatTaskID ? "chat:"+chatAgent+"/"+chatOpenId : taskID ? "task:"+taskID : location.hash);
@@ -3836,7 +3858,7 @@ function chatOpenWorkingArtifact(spec) {
   };
   const canUsePrivate=spec.contextDisabled&&key.startsWith('chat:')&&!chatIsPortal()&&(chatIsTerm()?!chatTermOpen?.sharedConversation:!chatCurSession?.shared)&&(chatRosterEntry(chatAgent)?.durableSend||chatIsTerm());
   const selectContext=ref=>{
-      chatArtifactSelections.set(key,{...ref,task:taskID,discuss:!!spec.discuss});
+      try{chatAddArtifactSelection(key,{...ref,task:taskID,discuss:!!spec.discuss});}catch(e){showToast(e.message);return;}
       if(ref.reviewNote){const input=document.querySelector('#chatComposer textarea');if(input){const request='Please revise '+ref.title+' (version '+ref.version+(ref.reviewStart?', '+(ref.reviewLineKind==='snapshot'?'snapshot lines ':'lines ')+ref.reviewStart+'–'+ref.reviewEnd:'')+'):\n'+ref.reviewNote;input.value=(input.value.trim()?input.value+'\n\n':'')+request;input.dispatchEvent(new Event('input',{bubbles:true}));}}
       if(key.startsWith("chat:"))chatRenderArtifactContext(taskID,key);
       if(key.startsWith("chat:"))chatCaptureSyncedDraft(key.slice(5));
@@ -3858,18 +3880,22 @@ function chatRenderArtifactContext(taskID,key,host){
  key=key||"task:"+taskID;
  const composer=host||document.getElementById("chatComposer");if(!composer)return;
  composer.querySelector(".chat-artifact-context")?.remove();
- const ref=chatArtifactSelections.get(key);if(!ref)return;
- taskID=ref.task||taskID;
+ const selection=chatArtifactSelections.get(key);if(!selection)return;
  const row=el("div","chat-artifact-context");
- const open=el("button","sprt-quiet","Discussing: "+ref.title+" · v"+ref.version);
- open.onclick=()=>{
-   const spec={id:ref.id,revision:ref.revision,task:taskID,discuss:ref.discuss,selectionKey:key,contextDisabled:!!ref.explicitArtifacts};
+ for(const ref of chatSelectedArtifacts(selection)){
+  const chip=el('div','chat-artifact-context-item');
+  const open=el("button","sprt-quiet","Discussing: "+(ref.title||ref.id)+(ref.version?" · v"+ref.version:""));
+  open.title='Exact revision '+ref.revision;
+  open.onclick=()=>{
+   const spec={id:ref.id,revision:ref.revision,task:ref.task||taskID,discuss:ref.discuss,selectionKey:key,contextDisabled:!!ref.explicitArtifacts};
    if(key.startsWith("task:")&&!location.hash.startsWith("#/chat/task/")){chatPendingWorkspace=spec;location.hash=chatTaskThreadHash(taskID);}
    else chatOpenWorkingArtifact(spec);
- };
- const clear=el("button","sprt-quiet","×");clear.setAttribute("aria-label","Remove artifact context");
- clear.onclick=()=>{chatArtifactSelections.delete(key);row.remove();if(key.startsWith("chat:"))chatCaptureSyncedDraft(key.slice(5));else if(key.startsWith("task:"))todoSaveArtifactSelection(taskID);};
- row.append(open,clear);composer.prepend(row);
+  };
+  const clear=el("button","sprt-quiet","×");clear.setAttribute("aria-label","Remove artifact context: "+(ref.title||ref.id)+' · '+ref.revision);
+  clear.onclick=()=>{const current=chatSelectedArtifacts(chatArtifactSelections.get(key));chatStoreArtifactSelection(key,current.filter(item=>item.id!==ref.id||item.revision!==ref.revision));chatRenderArtifactContext(taskID,key,composer);if(key.startsWith("chat:"))chatCaptureSyncedDraft(key.slice(5));else if(key.startsWith("task:"))todoSaveArtifactSelection(taskID);};
+  chip.append(open,clear);row.append(chip);
+ }
+ composer.prepend(row);
 }
 function chatArtifactActions(data){
  const row=el("div","chat-artifact-actions");
@@ -4175,14 +4201,14 @@ function chatStartRelated(source,targetAgent){
     const model=document.createElement("input");model.className="pp-in";model.setAttribute("aria-label","Coding model");model.placeholder="Installed default";model.value=remembered?.model||"";
     const codingFields=el("div","");codingFields.append(field("Working folder on metis",cwd),field("Model",model));body.append(codingFields);
     const syncCoding=()=>{codingFields.hidden=!pick.value.startsWith("terminal:");if(!codingFields.hidden&&!cwd.value)cwd.value=chatRecall("manifest.chatTermCwd."+pick.value.slice(9))||"";};pick.onchange=syncCoding;syncCoding();
-    const ref=remembered?.artifacts?.[0]||selected;
+    const ref=remembered?.artifacts?{items:remembered.artifacts,explicitArtifacts:remembered.explicitArtifacts}:selected;
     const include=document.createElement('input');include.type='checkbox';include.setAttribute('aria-label','Include selected artifact in related chat');include.checked=!!(remembered?.artifacts?.length||(ref&&!ref.explicitArtifacts));
-    if(ref){const handoff=el('label','chat-artifact-handoff');handoff.append(include,el('span','','Include selected artifact · revision '+ref.revision));body.append(handoff);}
+    if(chatSelectedArtifacts(ref).length){const handoff=el('label','chat-artifact-handoff');handoff.append(include,el('span','','Include selected context versions\n'+chatArtifactSelectionLabel(ref)));body.append(handoff);}
     const status=el("p","");status.setAttribute("role","status");body.append(status);
     const cancel=el("button","sprt-quiet","Cancel"),create=el("button","sprt-quiet","Create related chat");cancel.onclick=close;
     create.onclick=async()=>{
       const coding=pick.value.startsWith("terminal:");
-      const payload={agent:coding?pick.value.slice(9):pick.value,title:title.value,prompt:prompt.value,task:remembered?.task||selected?.task||source.task||"",artifacts:ref&&include.checked?[{id:ref.id,revision:ref.revision}]:[],...(ref&&include.checked&&(remembered?.explicitArtifacts||ref.explicitArtifacts)?{explicitArtifacts:true}:{}),...(coding?{backend:"terminal",cwd:cwd.value,model:model.value}:{})};
+      const payload={agent:coding?pick.value.slice(9):pick.value,title:title.value,prompt:prompt.value,task:remembered?.task||selected?.task||source.task||"",...chatArtifactPayload(include.checked?ref:null),...(coding?{backend:"terminal",cwd:cwd.value,model:model.value}:{})};
       const signature=JSON.stringify(payload);
       const requestId=remembered?.signature===signature?remembered.requestId:crypto.randomUUID();
       remembered={...payload,signature,requestId};
