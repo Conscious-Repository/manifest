@@ -832,3 +832,7 @@ button.chat-attach-chip { min-height: 44px; max-width: 100%; background: transpa
 /* Hunk disclosures preserve exact snapshot ranges while file numbers stay visible. */
 .working-hunk > summary{font:var(--fs-sm)/1.5 var(--mono);overflow-wrap:anywhere;white-space:pre-wrap;min-height:var(--control-touch);}
 .working-hunk > .artifact-review-help{margin:var(--sp-4) 0;}
+label.chat-artifact-handoff{display:flex;flex-direction:row;align-items:flex-start;gap:8px;min-height:44px;overflow-wrap:anywhere;}
+.chat-side-setup label.chat-artifact-handoff{flex-direction:row;}
+.chat-artifact-handoff span{min-width:0;}
+.chat-artifact-handoff input[type=checkbox]{flex:none;width:20px;min-width:20px;min-height:20px;height:20px;margin:2px 0;padding:0;}

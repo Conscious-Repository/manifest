@@ -160,10 +160,11 @@ func (s *Server) scopedArtifactContext(task, scope string, refs, handed []artifa
 		allowed := false
 		if a, ok := s.artifactReg.Get(ref.ID); ok && a.Provenance.Source == "runtime-changes" {
 			allowed = scope != "" && a.Provenance.Session == scope
-			for _, h := range handed {
-				if h == ref {
-					allowed = true
-				}
+		}
+		// These exact references came from a validated, persisted creation handoff.
+		for _, h := range handed {
+			if h == ref {
+				allowed = true
 			}
 		}
 		if !allowed {

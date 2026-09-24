@@ -190,15 +190,18 @@ function chatWorkspaceSideSetup(source,restore=null){
   const field=(label,input)=>{const l=el('label','',label);l.append(input);return l;};
   const folder=field('Working folder',cwd),advanced=el('details','chat-side-options');advanced.append(el('summary','','Working folder'),folder);
   const sync=()=>{folder.hidden=!pick.value.startsWith('terminal:');chatPopulateModelSelect(model,pick.value.startsWith('terminal:')?pick.value.slice(9):pick.value,pick.value===initial?(recipient?.model||source.model):options.find(a=>a.value===pick.value)?.model||'');};sync();if(saved.model)chatPopulateModelSelect(model,pick.value.startsWith('terminal:')?pick.value.slice(9):pick.value,saved.model);pick.onchange=()=>{model.value=pick.value===initial?(recipient?.model||source.model):options.find(a=>a.value===pick.value)?.model||'';sync();};
+  const handoff=saved.artifact||chatArtifactSelections.get('chat:'+source.agent+'/'+source.id)||null;
+  const include=document.createElement('input');include.type='checkbox';include.setAttribute('aria-label','Include selected artifact in side chat');include.checked=saved.includeArtifact??!!(handoff&&!handoff.explicitArtifacts);
+  const handoffField=el('label','chat-artifact-handoff');handoffField.append(include,el('span','','Include selected artifact'+(handoff?' · '+(handoff.title||handoff.id)+' · revision '+handoff.revision:'')));handoffField.hidden=!handoff;
   const status=el('p','chat-workspace-hint');status.setAttribute('role','status');
   const start=el('button','chat-side-start','Open side chat');start.disabled=!pick.value;
   // Recovery is scoped to this setup tab. Keep the accepted request identity on
   // uncertain responses; keep settings fixed until the result is confirmed.
   let remembered=saved.pending||null;
-  const lock=()=>{pick.disabled=model.disabled=cwd.disabled=!!remembered;};lock();if(remembered){status.textContent='Creation is unconfirmed. Retry checks the same request.';start.textContent='Retry creation';}
+  const lock=()=>{pick.disabled=model.disabled=cwd.disabled=include.disabled=!!remembered;};lock();if(remembered){status.textContent='Creation is unconfirmed. Retry checks the same request.';start.textContent='Retry creation';}
   start.onclick=async()=>{
    const coding=pick.value.startsWith('terminal:');let payload={agent:coding?pick.value.slice(9):pick.value,model:model.value.trim(),title:Array.from('Side chat · '+source.title).slice(0,240).join(''),task:source.task||'',prompt:source.initialPrompt||'',mode:'side',...(coding?{backend:'terminal',cwd:cwd.value.trim()}:{})};
-   const selected=chatArtifactSelections.get('chat:'+source.agent+'/'+source.id);if(selected)payload.artifacts=[{id:selected.id,revision:selected.revision}];
+   if(handoff&&include.checked){payload.artifacts=[{id:handoff.id,revision:handoff.revision}];if(handoff.explicitArtifacts)payload.explicitArtifacts=true;}
    if(remembered)payload=remembered.payload;else remembered={payload,requestId:crypto.randomUUID()};lock();w.save();
    start.disabled=true;status.textContent='Preparing context…';
    try{
@@ -217,7 +220,7 @@ function chatWorkspaceSideSetup(source,restore=null){
    }catch(e){status.textContent=e.message||'Could not create side chat. Retry safely.';start.textContent='Retry creation';}finally{start.disabled=false;}
   };
   if(source.initialPrompt)wrap.append(el('p','chat-workspace-hint',source.initialPrompt));
-  wrap.append(heading,hint,field('Agent',pick),field('Model',model),advanced,status,start);host.append(wrap);host.addEventListener('input',()=>w.save());return {getView:()=>({agent:pick.value,model:model.value,cwd:cwd.value,pending:remembered})};
+  wrap.append(heading,hint,field('Agent',pick),field('Model',model),advanced,handoffField,status,start);host.append(wrap);host.addEventListener('input',()=>w.save());return {getView:()=>({agent:pick.value,model:model.value,cwd:cwd.value,artifact:handoff,includeArtifact:include.checked,pending:remembered})};
  },{kind:'side-setup',source});
 }
 

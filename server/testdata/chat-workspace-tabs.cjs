@@ -216,6 +216,17 @@ const {chromium}=require('playwright'),fs=require('fs'),path=require('path'),ass
  assert.equal(explicit.revision,'c'.repeat(64));assert.equal(explicit.explicitArtifacts,true);assert.equal(explicit.task,'');
  assert.equal(await p.getByRole('button',{name:'Discussing: Plan · v1',exact:true}).count(),1);
  const restored=await p.evaluate(async()=>{await chatSyncedDrafts.get(chatDraftKey).flush();const next=new ChatDraftState(chatSyncedDrafts.get(chatDraftKey).key);await next.refresh();return next.value.selection;});assert.equal(restored.explicitArtifacts,true);assert.equal(restored.revision,explicit.revision);
+ await p.evaluate(()=>{window.handoffRequests=[];window.postJSONOk=async(endpoint,payload)=>{handoffRequests.push(structuredClone(payload));if(handoffRequests.length===1)throw Error('Handoff reply lost');return {id:'explicit-side',agent:payload.agent,conversation:{route:'#/chat/a/'+payload.agent+'/explicit-side'}};};chatWorkspaceSideSetup(chatWorkspaceSource(),{key:'explicit-handoff'});});
+ assert.equal(await p.getByLabel('Include selected artifact in side chat').isChecked(),false);
+ for(const width of [320,390,1440]){await p.setViewportSize({width,height:844});assert.equal(await p.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);}
+ await p.setViewportSize({width:390,height:844});await p.screenshot({path:'/tmp/manifest-explicit-handoff-phone.png'});
+ await p.getByLabel('Include selected artifact in side chat').check();
+ await p.evaluate(()=>chatArtifactSelections.set('chat:'+chatAgent+'/'+chatOpenId,{id:'changed-selection',revision:'d'.repeat(64),explicitArtifacts:true}));
+ await p.getByRole('button',{name:'Open side chat',exact:true}).click();await p.getByText('Handoff reply lost',{exact:true}).waitFor();
+ const handed=await p.evaluate(()=>handoffRequests[0]);assert.equal(handed.explicitArtifacts,true);assert.equal(handed.artifacts[0].id,'other-output');assert.equal(handed.artifacts[0].revision,'c'.repeat(64));
+ await p.evaluate(async()=>{chatWorkspaceTabs.close();await Promise.all([...chatWorkspaceStates.values()].map(s=>s.flush()));chatWorkspaceStates.clear();await chatRestoreWorkspace();});
+ assert.equal(await p.getByLabel('Include selected artifact in side chat').isChecked(),true);assert.equal(await p.getByLabel('Include selected artifact in side chat').isDisabled(),true);
+ await p.getByRole('button',{name:'Retry creation',exact:true}).click();await p.waitForFunction(()=>handoffRequests.length===2);assert.deepEqual(await p.evaluate(()=>handoffRequests[1]),handed);
  assert.deepEqual(errors,[]);
  console.log('PASS: real artifact draft survives pane and tab switches, scoped model defaults, keyboard tabs, mobile return, route disposal.');
 }finally{await b.close()}})().catch(e=>{console.error(e);process.exit(1)});

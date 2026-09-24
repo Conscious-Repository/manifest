@@ -9,6 +9,7 @@ import (
 )
 
 type relatedChatRequest struct {
+	ExplicitArtifacts                            bool
 	Agent, Model, Title, RequestID, Prompt, Task string
 	Backend, Cwd, Mode                           string
 	Artifacts                                    []agentchat.ArtifactReference
@@ -34,8 +35,12 @@ func (s *Server) handleChatRelated(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if b.ExplicitArtifacts && (len(b.Artifacts) == 0 || b.Mode == "continue") {
+		http.Error(w, "explicit artifact handoff requires selected versions in a separate private chat", 400)
+		return
+	}
 	task := strings.TrimSpace(b.Task)
-	origin := agentchat.Origin{Agent: r.PathValue("agent"), ID: r.PathValue("id"), Task: task, Prompt: b.Prompt, Artifacts: b.Artifacts}
+	origin := agentchat.Origin{Agent: r.PathValue("agent"), ID: r.PathValue("id"), Task: task, Prompt: b.Prompt, Artifacts: b.Artifacts, ExplicitArtifacts: b.ExplicitArtifacts}
 	origin.Backend = r.PathValue("originBackend")
 	if b.Backend == "terminal" && (origin.Agent == "kairos" || origin.Agent == "zeck") {
 		origin.Backend = "portal"
@@ -48,7 +53,13 @@ func (s *Server) handleChatRelated(w http.ResponseWriter, r *http.Request) {
 		httpError(w, errBadRequest("unsupported related chat backend"))
 		return
 	}
-	release, gateErr := s.chatShareMutation(origin.Agent, origin.ID)
+	shareAgent, shareID := origin.Agent, origin.ID
+	if origin.Backend == "terminal" && s.terminal != nil {
+		if source, ok := s.terminal.find(origin.ID); ok {
+			shareAgent, shareID = s.terminalShareSource(source)
+		}
+	}
+	release, gateErr := s.chatShareMutation(shareAgent, shareID)
 	if gateErr != nil {
 		http.Error(w, gateErr.Error(), http.StatusConflict)
 		return
@@ -78,6 +89,10 @@ func (s *Server) handleChatRelated(w http.ResponseWriter, r *http.Request) {
 					httpError(w, errBadRequest("continue from the original conversation instead"))
 					return
 				}
+				if b.ExplicitArtifacts && s.terminalSharedConversation(se) != nil {
+					http.Error(w, "private handoff is unavailable from shared conversations", 403)
+					return
+				}
 				ok = true
 				source = agentchat.Session{Agent: origin.Agent, ID: origin.ID, Origin: se.Origin}
 				if origin.Mode == "side" {
@@ -95,6 +110,10 @@ func (s *Server) handleChatRelated(w http.ResponseWriter, r *http.Request) {
 	}
 	if !ok {
 		http.NotFound(w, r)
+		return
+	}
+	if b.ExplicitArtifacts && source.Sharing != nil {
+		http.Error(w, "private handoff is unavailable from shared conversations", 403)
 		return
 	}
 	if origin.Mode == "side" && origin.Backend == "" {
@@ -121,7 +140,7 @@ func (s *Server) handleChatRelated(w http.ResponseWriter, r *http.Request) {
 	if source.Origin != nil {
 		handed = source.Origin.Artifacts
 	}
-	if _, err = s.scopedArtifactContext(task, s.originArtifactScope(origin), b.Artifacts, handed); err != nil {
+	if _, err = s.selectedArtifactContext(b.ExplicitArtifacts, task, s.originArtifactScope(origin), b.Artifacts, handed); err != nil {
 		httpError(w, err)
 		return
 	}

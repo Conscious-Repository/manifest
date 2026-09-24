@@ -4176,12 +4176,13 @@ function chatStartRelated(source,targetAgent){
     const codingFields=el("div","");codingFields.append(field("Working folder on metis",cwd),field("Model",model));body.append(codingFields);
     const syncCoding=()=>{codingFields.hidden=!pick.value.startsWith("terminal:");if(!codingFields.hidden&&!cwd.value)cwd.value=chatRecall("manifest.chatTermCwd."+pick.value.slice(9))||"";};pick.onchange=syncCoding;syncCoding();
     const ref=remembered?.artifacts?.[0]||selected;
-    if(ref)body.append(el("p","","Includes the selected artifact version as context for the next send."));
+    const include=document.createElement('input');include.type='checkbox';include.setAttribute('aria-label','Include selected artifact in related chat');include.checked=!!(remembered?.artifacts?.length||(ref&&!ref.explicitArtifacts));
+    if(ref){const handoff=el('label','chat-artifact-handoff');handoff.append(include,el('span','','Include selected artifact · revision '+ref.revision));body.append(handoff);}
     const status=el("p","");status.setAttribute("role","status");body.append(status);
     const cancel=el("button","sprt-quiet","Cancel"),create=el("button","sprt-quiet","Create related chat");cancel.onclick=close;
     create.onclick=async()=>{
       const coding=pick.value.startsWith("terminal:");
-      const payload={agent:coding?pick.value.slice(9):pick.value,title:title.value,prompt:prompt.value,task:remembered?.task||selected?.task||source.task||"",artifacts:ref?[{id:ref.id,revision:ref.revision}]:[],...(coding?{backend:"terminal",cwd:cwd.value,model:model.value}:{})};
+      const payload={agent:coding?pick.value.slice(9):pick.value,title:title.value,prompt:prompt.value,task:remembered?.task||selected?.task||source.task||"",artifacts:ref&&include.checked?[{id:ref.id,revision:ref.revision}]:[],...(ref&&include.checked&&(remembered?.explicitArtifacts||ref.explicitArtifacts)?{explicitArtifacts:true}:{}),...(coding?{backend:"terminal",cwd:cwd.value,model:model.value}:{})};
       const signature=JSON.stringify(payload);
       const requestId=remembered?.signature===signature?remembered.requestId:crypto.randomUUID();
       remembered={...payload,signature,requestId};

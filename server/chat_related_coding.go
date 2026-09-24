@@ -33,6 +33,10 @@ func (s *Server) handleRelatedCodingChat(w http.ResponseWriter, r *http.Request,
 	}
 	// Adding a runtime after publication is a new explicit owner action. A
 	// task/title match never expands the shared runtime set.
+	if origin.Backend == "portal" && b.ExplicitArtifacts {
+		http.Error(w, "private artifact handoff is unavailable from shared conversations", 403)
+		return
+	}
 	if origin.Backend == "portal" {
 		ag, _ := s.portalChatAgent(origin.Agent)
 		if _, err := s.sharedConversationReview(ag, origin.ID); err != nil {
@@ -106,6 +110,10 @@ func (s *Server) handleRelatedCodingChat(w http.ResponseWriter, r *http.Request,
 				httpError(w, errBadRequest("continue from the original conversation instead"))
 				return
 			}
+			if b.ExplicitArtifacts && s.terminalSharedConversation(parent) != nil {
+				http.Error(w, "private handoff is unavailable from shared conversations", 403)
+				return
+			}
 			ok = true
 			source = agentchat.Session{Agent: origin.Agent, ID: origin.ID, Title: parent.Name, Origin: parent.Origin}
 			if origin.Mode == "continue" || origin.Mode == "side" {
@@ -137,6 +145,10 @@ func (s *Server) handleRelatedCodingChat(w http.ResponseWriter, r *http.Request,
 			return
 		}
 	}
+	if b.ExplicitArtifacts && source.Sharing != nil {
+		http.Error(w, "private handoff is unavailable from shared conversations", 403)
+		return
+	}
 	if len(origin.Artifacts) > 1 {
 		httpError(w, errBadRequest("the coding handoff supports one selected artifact version at a time"))
 		return
@@ -146,7 +158,7 @@ func (s *Server) handleRelatedCodingChat(w http.ResponseWriter, r *http.Request,
 	if source.Origin != nil {
 		handed = source.Origin.Artifacts
 	}
-	if _, err := s.scopedArtifactContext(origin.Task, s.originArtifactScope(origin), origin.Artifacts, handed); err != nil {
+	if _, err := s.selectedArtifactContext(b.ExplicitArtifacts, origin.Task, s.originArtifactScope(origin), origin.Artifacts, handed); err != nil {
 		httpError(w, err)
 		return
 	}
