@@ -1,0 +1,199 @@
+package server
+
+import (
+	"context"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"strings"
+	"sync/atomic"
+	"testing"
+	"time"
+
+	"golang.org/x/oauth2"
+	"manifest/approvals"
+	"manifest/gmailsend"
+	"manifest/manifestmcp"
+	"manifest/recruiting"
+	"manifest/recruiting/sources"
+)
+
+// This journey explicitly carries a reviewed recruiting draft into canonical
+// email preparation. It does not imply an automatic recruiting-log bridge.
+func TestWorkbenchSourcedCandidateToCanonicalOutreach(t *testing.T) {
+	s, _, vault, data := testRecruitingServer(t)
+	now := time.Date(2026, 9, 24, 12, 0, 0, 0, time.UTC)
+	candidate, err := s.recruiting.AcceptDraft(sources.CandidateDraft{SourceID: "manual", Name: "Journey Candidate", Role: "role/mri-engineer", Evidence: []sources.Evidence{{SourceID: "manual", URLOrFile: "https://example.test/source", RetrievedAt: now, Kind: sources.EvidencePage, Trust: sources.TrustMedium, Snippet: "Low-field MRI hardware, pulse sequence and coil design; available on-site in Saint Louis"}}}, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(candidate.Evidence) != 1 || candidate.Evidence[0].Snippet != "Low-field MRI hardware, pulse sequence and coil design; available on-site in Saint Louis" {
+		t.Fatal(candidate)
+	}
+	if _, err = s.recruiting.UpdateCandidate(candidate.ID, map[string]string{"email": "candidate@example.test"}); err != nil {
+		t.Fatal(err)
+	}
+	for _, criterion := range []string{"low-field MRI hardware", "pulse sequence or coil design", "on-site Saint Louis"} {
+		candidate, err = s.recruiting.ScoreFit(candidate.ID, criterion, "4", []string{candidate.Evidence[0].ID}, false)
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	if !candidate.Gate.Passed {
+		t.Fatal("reviewed candidate did not pass readiness gate", candidate.Gate)
+	}
+	private, chats, _ := agentChatFixture(t, echoStub)
+	s.agentChat = private.agentChat
+	conversation, err := chats.Create("alfred", "", "Recruiting journey", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("GMAIL_SEND_TOKEN", "")
+	creds := filepath.Join(data, "creds.json")
+	if err = os.WriteFile(creds, []byte(`{"installed":{"client_id":"fixture","client_secret":"fixture","auth_uri":"https://example.invalid/auth","token_uri":"https://example.invalid/token","redirect_uris":["http://localhost"]}}`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("GMAIL_OAUTH_CLIENT", creds)
+	registry := gmailsend.NewRegistry(data)
+	var sends atomic.Int32
+	var deliveredBody atomic.Value
+	provider := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		sends.Add(1)
+		var payload map[string]string
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			t.Error(err)
+		}
+		raw, err := gmailsend.DecodeRaw(payload["raw"])
+		if err != nil {
+			t.Error(err)
+		}
+		deliveredBody.Store(string(raw))
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"id":"journey-message","threadId":"journey-thread"}`))
+	}))
+	defer provider.Close()
+	registry.Aion.UseEndpoint(provider.URL, provider.Client())
+	if err = registry.Aion.SaveToken("ben@aion.bio", &oauth2.Token{AccessToken: "fixture", TokenType: "Bearer", Expiry: time.Now().Add(time.Hour)}, []string{gmailsend.SendScope}); err != nil {
+		t.Fatal(err)
+	}
+	adapter, err := manifestmcp.New(vault, data, "system")
+	if err != nil {
+		t.Fatal(err)
+	}
+	approvalRoot := filepath.Join(data, "approvals")
+	s.UseApprovals(approvals.NewStore(approvalRoot))
+	s.UseMailSenders(registry)
+	s.UseManifestOperations(adapter)
+	draftResponse := recruitingPost(t, s, s.handleRecruitingOutreachDraft, "/api/aion/recruiting/outreach/draft/"+candidate.ID, candidate.ID, `{"kind":"direct","subject":"Coil research role","body":"Reviewed invitation referencing documented coil design experience."}`)
+	if draftResponse.Code != 200 {
+		t.Fatal(draftResponse.Code, draftResponse.Body.String())
+	}
+	var drafted struct {
+		Entry recruiting.OutreachEntry `json:"entry"`
+	}
+	if err = json.Unmarshal(draftResponse.Body.Bytes(), &drafted); err != nil {
+		t.Fatal(err)
+	}
+	draft := drafted.Entry
+	readinessResponse := recruitingPost(t, s, s.handleRecruitingOutreachPrepare, "/", candidate.ID, `{}`)
+	var readiness struct {
+		Readiness recruiting.OutreachReadiness `json:"readiness"`
+	}
+	if readinessResponse.Code != 200 || json.Unmarshal(readinessResponse.Body.Bytes(), &readiness) != nil || !readiness.Readiness.Ready {
+		t.Fatal("reviewed draft not ready", readinessResponse.Code, readinessResponse.Body.String())
+	}
+
+	input := manifestmcp.EmailInput{Domain: "aion", To: draft.To, Subject: draft.Subject, Body: draft.Body, Conversation: conversation, Turn: "reviewed-sourcing-turn", IdempotencyKey: "sourced-outreach-journey"}
+	prepare := func(q manifestmcp.EmailInput) *httptest.ResponseRecorder {
+		b, _ := json.Marshal(q)
+		w := httptest.NewRecorder()
+		s.handleEmailPrepare(w, httptest.NewRequest("POST", "/api/email/prepare", strings.NewReader(string(b))))
+		return w
+	}
+	prepared := prepare(input)
+	if prepared.Code != 200 {
+		t.Fatal(prepared.Code, prepared.Body.String())
+	}
+	var result struct {
+		ID string `json:"operationId"`
+	}
+	json.Unmarshal(prepared.Body.Bytes(), &result)
+	retry := prepare(input)
+	if retry.Code != 200 {
+		t.Fatal(retry.Code, retry.Body.String())
+	}
+	var again struct {
+		ID string `json:"operationId"`
+	}
+	json.Unmarshal(retry.Body.Bytes(), &again)
+	if again.ID != result.ID {
+		t.Fatal("duplicate proposal")
+	}
+	if sends.Load() != 0 || len(s.feedProposals()) != 1 || len(s.chatOperations(conversation)) != 1 || len(s.chatOperations("unrelated")) != 0 {
+		t.Fatal("preparation sent or lost identity")
+	}
+	// A later saved outreach draft cannot replace the frozen email under approval.
+	newer := recruitingPost(t, s, s.handleRecruitingOutreachDraft, "/", candidate.ID, `{"kind":"direct","subject":"Changed subject","body":"UNREVIEWED_REPLACEMENT"}`)
+	if newer.Code != 200 {
+		t.Fatal(newer.Code, newer.Body.String())
+	}
+	changed := input
+	changed.Body = "UNREVIEWED_REPLACEMENT"
+	if w := prepare(changed); w.Code == 200 {
+		t.Fatal("changed payload reused approval identity")
+	}
+	approve := func() *httptest.ResponseRecorder {
+		r := httptest.NewRequest("POST", "/", strings.NewReader("{}"))
+		r.SetPathValue("id", manifestmcp.ProposalID(result.ID))
+		w := httptest.NewRecorder()
+		s.handleSpiritsApprovalConfirm(w, r)
+		return w
+	}
+	decisions := make(chan *httptest.ResponseRecorder, 2)
+	for i := 0; i < 2; i++ {
+		go func() { decisions <- approve() }()
+	}
+	accepted := 0
+	for i := 0; i < 2; i++ {
+		w := <-decisions
+		if w.Code == 200 {
+			accepted++
+		} else if w.Code >= 500 {
+			t.Fatal(w.Code, w.Body.String())
+		}
+	}
+	if accepted == 0 {
+		t.Fatal("neither owner approval succeeded")
+	}
+	delivered, _ := deliveredBody.Load().(string)
+	if sends.Load() != 1 || !strings.Contains(delivered, "From: ben@aion.bio\r\n") || !strings.Contains(delivered, "To: candidate@example.test\r\n") || !strings.Contains(delivered, draft.Body) || strings.Contains(delivered, "UNREVIEWED_REPLACEMENT") {
+		t.Fatal("wrong frozen delivery", sends.Load(), delivered)
+	}
+	receipt := s.chatOperations(conversation)[0]["record"].(*manifestmcp.OperationRecord)
+	if receipt.Status != "succeeded" || receipt.Result["messageId"] != "journey-message" || receipt.Result["threadId"] != "journey-thread" || len(s.feedProposals()) != 0 {
+		t.Fatal(receipt)
+	}
+	// Reload the operation and approval stores, then retry the accepted identity.
+	restarted, err := manifestmcp.New(vault, data, "system")
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.UseApprovals(approvals.NewStore(approvalRoot))
+	s.UseManifestOperations(restarted)
+	if _, err = restarted.Execute(context.Background(), result.ID); err != nil {
+		t.Fatal(err)
+	}
+	if sends.Load() != 1 {
+		t.Fatal("restart replayed email")
+	}
+	got := s.chatOperations(conversation)[0]["record"].(*manifestmcp.OperationRecord)
+	if got.ID != receipt.ID || got.Result["threadId"] != receipt.Result["threadId"] {
+		t.Fatal("receipt changed across restart")
+	}
+	entries, err := s.recruiting.Outreach(candidate.ID)
+	if err != nil || len(entries) < 2 || entries[0].Body != draft.Body || entries[0].Subject != draft.Subject {
+		t.Fatal("original reviewed draft history changed", entries, err)
+	}
+}
