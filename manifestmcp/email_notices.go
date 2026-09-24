@@ -15,10 +15,11 @@ import (
 // One durable notice per sent thread. Keeping the latest reply watermark after
 // dismissal/expiry prevents repeated provider reads from resurfacing old mail.
 type EmailReplyNotice struct {
-	ReplyID   string    `json:"replyId"`
-	From      string    `json:"from"`
-	At        time.Time `json:"at"`
-	Dismissed bool      `json:"dismissed,omitempty"`
+	Reply     *EmailReply `json:"reply,omitempty"` // bounded preview behind this notice, retained across later reads
+	ReplyID   string      `json:"replyId"`
+	From      string      `json:"from"`
+	At        time.Time   `json:"at"`
+	Dismissed bool        `json:"dismissed,omitempty"`
 }
 
 type EmailNotice struct {
@@ -39,7 +40,13 @@ func updateEmailNotice(w *EmailWatch, replies []EmailReply) {
 	for _, r := range replies {
 		previous := w.Notice
 		if previous == nil || r.At.After(previous.At) || r.At.Equal(previous.At) && r.ID > previous.ReplyID {
-			w.Notice = &EmailReplyNotice{ReplyID: r.ID, From: r.From, At: r.At}
+			copy := r
+			w.Notice = &EmailReplyNotice{ReplyID: r.ID, From: r.From, At: r.At, Reply: &copy}
+		} else if previous.Reply == nil && r.ID == previous.ReplyID && r.At.Equal(previous.At) {
+			// Hydrate older notices only from the same verified reply, without
+			// rearming a dismissal or moving the latest-reply watermark.
+			copy := r
+			previous.Reply = &copy
 		}
 	}
 }

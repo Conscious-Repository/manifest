@@ -16,11 +16,18 @@ const {chromium}=require('playwright'),fs=require('node:fs'),path=require('node:
  await page.getByRole('button',{name:'view replies',exact:true}).click();await page.getByText('Could not load the sent receipt. Try again.',{exact:true}).waitFor();
  await page.evaluate(()=>failRead=false);await page.getByRole('button',{name:'view replies',exact:true}).click();await page.getByText('Tracking stopped · reply found',{exact:true}).waitFor();
  await page.getByText(/Candidate ·/).click();await page.getByText('<script>private reply</script>',{exact:true}).waitFor();
+ await page.evaluate(()=>fixture.record.emailWatch.notice={replyId:'saved',reply:{id:'saved',from:'Saved author',at:'2026-09-24T13:00:00Z',body:'<b>retained reply</b>',clipped:true}});
+ await page.getByRole('button',{name:'view replies',exact:true}).click();
+ await page.getByText(/Its saved preview is retained below/).waitFor();await page.getByText(/Saved author ·/).click();await page.getByText('<b>retained reply</b>',{exact:true}).waitFor();
+ await page.evaluate(()=>fixture.record.emailWatch.replies.push(fixture.record.emailWatch.notice.reply));
+ await page.getByRole('button',{name:'view replies',exact:true}).click();assert.equal(await page.getByText(/Its saved preview is retained below/).count(),0);assert.equal(await page.getByText('<b>retained reply</b>',{exact:true}).count(),1);
+ await page.evaluate(()=>{fixture.record.emailWatch.replies=[];delete fixture.record.emailWatch.notice.reply});
+ await page.getByRole('button',{name:'view replies',exact:true}).click();await page.getByText(/A saved preview is unavailable for this older notice/).waitFor();
  assert.equal(await page.getByRole('button',{name:'Approve',exact:true}).count(),0);
  await page.getByRole('button',{name:'Dismiss',exact:true}).click();assert.equal(await page.locator('.portal-card').count(),1,'refused dismissal must restore card');
  for(const width of [320,390,1440]){await page.setViewportSize({width,height:844});assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);}
  await page.setViewportSize({width:390,height:844});await page.screenshot({path:'/tmp/manifest-email-reply-notice.png'});
  await page.evaluate(()=>failDismiss=false);await page.getByRole('button',{name:'Dismiss',exact:true}).click();assert.equal(await page.locator('.portal-card').count(),0);
- const requests=await page.evaluate(()=>requests);assert.equal(requests.filter(r=>r.method==='GET').length,2);assert.ok(requests.filter(r=>r.method==='GET').every(r=>r.url==='/api/manifest/operations/sha256%3Afixture/email-receipt'));assert.ok(requests.filter(r=>r.method==='POST').every(r=>r.url==='/api/portals/item/dismiss'));
+ const requests=await page.evaluate(()=>requests);assert.equal(requests.filter(r=>r.method==='GET').length,5);assert.ok(requests.filter(r=>r.method==='GET').every(r=>r.url==='/api/manifest/operations/sha256%3Afixture/email-receipt'));assert.ok(requests.filter(r=>r.method==='POST').every(r=>r.url==='/api/portals/item/dismiss'));
  assert.deepEqual(errors,[]);console.log('PASS: reply notice → canonical receipt, literal preview, read retry, stale dismissal recovery and viewport bounds.');
 }finally{await browser.close()}})().catch(e=>{console.error(e);process.exitCode=1});

@@ -1826,7 +1826,15 @@ function manifestOperationCard(item) {
     section.append(el("p","sprt-sub","Checks this sent thread every five minutes while enabled. Requires this sender's read-only Gmail connection."));
     if(watch?.enabled)section.append(el("p","sprt-sub",watch.stopAfterReply ? "Stops when a reply is found. You can stop sooner." : "Continues until you stop tracking."));
     if(watch?.total>50)section.append(el("p","","Showing the latest 50 replies."));
-    for(const reply of watch?.replies||[]){
+    const replies=[...(watch?.replies||[])];
+    const missingNoticedReply=watch?.notice&&!replies.some(reply=>reply.id===watch.notice.replyId);
+    if(missingNoticedReply){
+      if(watch.notice.reply){
+        section.append(el("p","sprt-sub","The reply behind this notice was verified earlier and is absent from the latest mailbox preview. Its saved preview is retained below."));
+        replies.push(watch.notice.reply);
+      }else section.append(el("p","sprt-sub","The reply behind this notice is absent from the latest mailbox preview. A saved preview is unavailable for this older notice."));
+    }
+    for(const reply of replies){
       const detail=el("details","");detail.append(el("summary","",reply.from+" · "+new Date(reply.at).toLocaleString()));
       const body=el("pre","chat-email-body",reply.body);body.style.whiteSpace="pre-wrap";body.style.overflowWrap="anywhere";detail.append(body);
       if(reply.clipped)detail.append(el("p","","Preview shortened. Open the mailbox for the full message."));section.append(detail);

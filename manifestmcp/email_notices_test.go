@@ -63,6 +63,7 @@ func TestEmailReplyNoticeLifecycle(t *testing.T) {
 	}
 	second := first
 	second.ID = "second"
+	second.Body = "LATEST VERIFIED REPLY"
 	second.Internal = now.Add(time.Minute)
 	poll(now.Add(10*time.Minute), second)
 	n = notices(now)
@@ -76,6 +77,18 @@ func TestEmailReplyNoticeLifecycle(t *testing.T) {
 	if got := notices(now); len(got) != 1 || got[0].ID != n[0].ID {
 		t.Fatal("older provider result regressed notice", got)
 	}
+	saved, err := a.loadOperation(id)
+	if err != nil || saved.EmailWatch.Notice.Reply == nil || saved.EmailWatch.Notice.Reply.Body != "LATEST VERIFIED REPLY" || saved.EmailWatch.Replies[0].ID != "first" {
+		t.Fatal("notice lost its own evidence", saved, err)
+	}
+	a, err = New(a.Vault, a.Data, a.System)
+	if err != nil {
+		t.Fatal(err)
+	}
+	saved, err = a.loadOperation(id)
+	if err != nil || saved.EmailWatch.Notice.Reply.Body != "LATEST VERIFIED REPLY" {
+		t.Fatal("notice evidence lost after restart", saved, err)
+	}
 	if len(notices(second.Internal.Add(14*24*time.Hour))) != 0 {
 		t.Fatal("notice did not expire")
 	}
@@ -87,5 +100,18 @@ func TestEmailReplyNoticeLifecycle(t *testing.T) {
 	}
 	if sends != 1 {
 		t.Fatal("notice lifecycle sent mail", sends)
+	}
+}
+
+func TestEmailNoticeHydratesLegacyPreviewWithoutRearming(t *testing.T) {
+	at := time.Now().UTC()
+	w := &EmailWatch{Notice: &EmailReplyNotice{ReplyID: "reply", From: "Sender", At: at, Dismissed: true}}
+	updateEmailNotice(w, []EmailReply{{ID: "older", At: at.Add(-time.Minute), Body: "WRONG"}})
+	if w.Notice.Reply != nil {
+		t.Fatal("used unrelated evidence")
+	}
+	updateEmailNotice(w, []EmailReply{{ID: "reply", At: at, From: "Sender", Body: "VERIFIED", Clipped: true}})
+	if !w.Notice.Dismissed || w.Notice.Reply == nil || w.Notice.Reply.Body != "VERIFIED" || !w.Notice.Reply.Clipped {
+		t.Fatal(w.Notice)
 	}
 }

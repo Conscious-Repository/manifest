@@ -54,3 +54,9 @@ received notice. No reply body is copied into the Feed list. Notice state is
 saved atomically with the watch result in the existing operation record.
 Existing watches begin producing notices on their next successful poll; stopped
 watches are not silently restarted. Reading or dismissing never executes a send.
+
+The notice retains its own bounded verified reply preview even if a later mailbox
+snapshot omits it. The receipt labels this saved evidence separately from the
+latest mailbox preview and avoids repeating it when already present. Older
+notices without saved evidence say so; a later read of the exact same reply can
+fill that preview without rearming a dismissed notice.
