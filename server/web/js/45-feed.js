@@ -417,6 +417,19 @@ function portalCardEl(pc) {
   }
 
   const acts = [];
+  if(pc.operationId){
+    const detail=el("div","");
+    const open=pillLight("view replies",async()=>{
+      open.disabled=true;
+      try{
+        const r=await fetch("/api/manifest/operations/"+encodeURIComponent(pc.operationId)+"/email-receipt");
+        if(!r.ok)throw new Error("Could not load the sent receipt. Try again.");
+        detail.replaceChildren(manifestOperationCard(await r.json()));
+        detail.tabIndex=-1;detail.focus();
+      }catch(e){detail.replaceChildren(el("p","",e.message));}finally{open.disabled=false;}
+    });
+    acts.push(open);card.append(detail);
+  }
   if (!isDigest && pc.url) acts.push(pillLight("jump →", () => window.open(pc.url, "_blank")));
   acts.push(pillLight("Dismiss", () => portalDismiss(pc.id, card)));
   card.append(cardActions(acts));

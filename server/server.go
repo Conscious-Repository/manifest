@@ -941,6 +941,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/properties/{slug}/measurables", s.handlePropertyMeasurables)
 	mux.HandleFunc("POST /api/manifest/operations/{id}/regenerate", s.handleOperationRegenerate)
 	mux.HandleFunc("POST /api/manifest/operations/{id}/email-watch", s.handleEmailWatch)
+	mux.HandleFunc("GET /api/manifest/operations/{id}/email-receipt", s.handleEmailReceipt)
 	mux.HandleFunc("POST /api/spirits/approvals/{id}/recontract", s.handleApprovalReContract)
 	mux.HandleFunc("POST /api/properties/{slug}/receipt", s.handleReceiptUpload)
 	mux.HandleFunc("POST /api/deals/{slug}/export-underwrite", s.handleDealExportUnderwrite)

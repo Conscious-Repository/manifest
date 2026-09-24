@@ -42,3 +42,15 @@ it is not confirmed delivery and must not be treated as permission to resend.
 A missing sender connection fails before sending and is shown explicitly.
 
 Validation uses local fake Gmail transports. No real mail is sent by tests.
+
+
+Tracked replies also appear as private Feed notices. One notice per sent operation
+shows the latest observed reply's author and subject, with a read-only action to
+open the canonical receipt and its reply previews. Notices contribute to the
+existing badge and expire 14 days after the provider reply timestamp. Dismissal
+survives restart and repeated reads; a later reply rearms the notice. A stale
+notice cannot dismiss a newer reply. Stopping tracking retains an already
+received notice. No reply body is copied into the Feed list. Notice state is
+saved atomically with the watch result in the existing operation record.
+Existing watches begin producing notices on their next successful poll; stopped
+watches are not silently restarted. Reading or dismissing never executes a send.

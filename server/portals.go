@@ -351,6 +351,19 @@ func (s *Server) handlePortalDismiss(w http.ResponseWriter, r *http.Request) {
 		httpError(w, errBadRequest("id is required"))
 		return
 	}
+	if strings.HasPrefix(b.ID, "email-reply:") {
+		if s.manifestOperations == nil {
+			http.Error(w, "Email notices unavailable", 503)
+			return
+		}
+		if err := s.manifestOperations.DismissEmailNotice(b.ID); err != nil {
+			http.Error(w, err.Error(), 409)
+			return
+		}
+		s.invalidatePortalCards()
+		writeJSON(w, map[string]bool{"ok": true})
+		return
+	}
 	// team-portal notices dismiss into the bridge's own cache (same id-prefix
 	// routing the portals service uses internally for clickup/benchling)
 	defer s.invalidatePortalCards() // the verdict shows on the next read
@@ -409,6 +422,7 @@ func (s *Server) portalCards() []portals.Card {
 		cards = append(cards, tb.Cards(time.Now())...)
 	}
 	cards = append(cards, s.bankFeedCards()...)
+	cards = append(cards, s.emailReplyCards(time.Now())...)
 	return cards
 }
 

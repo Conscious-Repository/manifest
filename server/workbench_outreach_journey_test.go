@@ -15,6 +15,7 @@ import (
 	"golang.org/x/oauth2"
 	"manifest/approvals"
 	"manifest/gmailsend"
+	"manifest/gmailsync"
 	"manifest/manifestmcp"
 	"manifest/recruiting"
 	"manifest/recruiting/sources"
@@ -220,6 +221,13 @@ func TestWorkbenchSourcedCandidateToCanonicalOutreach(t *testing.T) {
 	if len(s.feedProposals()) != 1 || sends.Load() != 1 {
 		t.Fatal("bridge sent without approval")
 	}
+	pendingReceipt := httptest.NewRecorder()
+	pendingRequest := httptest.NewRequest("GET", "/", nil)
+	pendingRequest.SetPathValue("id", bridged.ID)
+	s.handleEmailReceipt(pendingReceipt, pendingRequest)
+	if pendingReceipt.Code != 409 || sends.Load() != 1 {
+		t.Fatal("pending receipt read executed or claimed delivery", pendingReceipt.Code)
+	}
 	pendingBody, _ := json.Marshal(map[string]string{"operationId": bridged.ID})
 	pendingRecord := recruitingPost(t, s, s.handleRecruitingOutreachReconcile, "/", candidate.ID, string(pendingBody))
 	if pendingRecord.Code == 200 || sends.Load() != 1 {
@@ -295,6 +303,30 @@ func TestWorkbenchSourcedCandidateToCanonicalOutreach(t *testing.T) {
 		if err := json.Unmarshal(w.Body.Bytes(), &result); err != nil || w.Code != 200 || result.Record.Watch == nil || !result.Record.Watch.StopAfterReply || sends.Load() != 2 {
 			t.Fatal("watch policy update or legacy toggle lost rule", w.Code, w.Body.String(), err)
 		}
+	}
+
+	observed := time.Now().UTC()
+	if err := s.manifestOperations.PollEmailReplies(context.Background(), observed, func(context.Context, string, string) ([]gmailsync.Msg, error) {
+		return []gmailsync.Msg{{ID: "journey-message", From: "ben@aion.bio", Internal: observed.Add(-time.Hour)}, {ID: "reply-notice", From: "candidate@example.test", Internal: observed.Add(-time.Minute), Body: "Reply for the owner"}}, nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	notices := s.emailReplyCards(observed)
+	if len(notices) != 1 || notices[0].OperationID != bridged.ID || s.portalInboxCount() != 1 {
+		t.Fatal("reply missing from notices/badge", notices)
+	}
+	request := httptest.NewRequest("GET", "/", nil)
+	request.SetPathValue("id", bridged.ID)
+	response := httptest.NewRecorder()
+	s.handleEmailReceipt(response, request)
+	if response.Code != 200 || !strings.Contains(response.Body.String(), "Reply for the owner") || sends.Load() != 2 {
+		t.Fatal("read-only receipt", response.Code, sends.Load())
+	}
+	payload, _ := json.Marshal(map[string]string{"id": notices[0].ID})
+	response = httptest.NewRecorder()
+	s.handlePortalDismiss(response, httptest.NewRequest("POST", "/", strings.NewReader(string(payload))))
+	if response.Code != 200 || s.portalInboxCount() != 0 || sends.Load() != 2 {
+		t.Fatal("notice dismissal", response.Code, s.portalInboxCount(), sends.Load())
 	}
 
 }

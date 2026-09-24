@@ -231,18 +231,19 @@ func (svc *Service) Start(ctx context.Context) {
 // the engine's feed dir, never kept/discarded. Persisted dismissal lives in the
 // portal cache.
 type Card struct {
-	ID     string        `json:"id"`
-	Type   string        `json:"type"`   // portal-item | portal-digest
-	Portal string        `json:"portal"` // clickup | benchling (muted source tag)
-	Title  string        `json:"title"`
-	Detail string        `json:"detail"`
-	Change string        `json:"change"` // "new" | "edited" (benchling) — a chip on the card
-	URL    string        `json:"url"`
-	Actor  string        `json:"actor"`
-	Date   string        `json:"date"`   // RFC3339
-	Pinned bool          `json:"pinned"` // today's digest / fresh, like other digests
-	ForYou []DigestLine  `json:"forYou,omitempty"`
-	Groups []DigestGroup `json:"groups,omitempty"`
+	OperationID string        `json:"operationId,omitempty"` // private canonical email receipt, when present
+	ID          string        `json:"id"`
+	Type        string        `json:"type"`   // portal-item | portal-digest
+	Portal      string        `json:"portal"` // clickup | benchling (muted source tag)
+	Title       string        `json:"title"`
+	Detail      string        `json:"detail"`
+	Change      string        `json:"change"` // "new" | "edited" (benchling) — a chip on the card
+	URL         string        `json:"url"`
+	Actor       string        `json:"actor"`
+	Date        string        `json:"date"`   // RFC3339
+	Pinned      bool          `json:"pinned"` // today's digest / fresh, like other digests
+	ForYou      []DigestLine  `json:"forYou,omitempty"`
+	Groups      []DigestGroup `json:"groups,omitempty"`
 }
 
 // Cards is the deterministic set of portal items for the feed: ClickUp collapses

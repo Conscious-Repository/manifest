@@ -24,15 +24,16 @@ type EmailReply struct {
 	Clipped bool      `json:"clipped,omitempty"`
 }
 type EmailWatch struct {
-	StopAfterReply bool         `json:"stopAfterReply,omitempty"`
-	StoppedReason  string       `json:"stoppedReason,omitempty"`
-	Claim          string       `json:"claim,omitempty"`
-	Enabled        bool         `json:"enabled"`
-	CheckedAt      time.Time    `json:"checkedAt,omitempty"`
-	NextCheck      time.Time    `json:"nextCheck,omitempty"`
-	Error          string       `json:"error,omitempty"`
-	Replies        []EmailReply `json:"replies"`
-	Total          int          `json:"total"`
+	Notice         *EmailReplyNotice `json:"notice,omitempty"`
+	StopAfterReply bool              `json:"stopAfterReply,omitempty"`
+	StoppedReason  string            `json:"stoppedReason,omitempty"`
+	Claim          string            `json:"claim,omitempty"`
+	Enabled        bool              `json:"enabled"`
+	CheckedAt      time.Time         `json:"checkedAt,omitempty"`
+	NextCheck      time.Time         `json:"nextCheck,omitempty"`
+	Error          string            `json:"error,omitempty"`
+	Replies        []EmailReply      `json:"replies"`
+	Total          int               `json:"total"`
 }
 type EmailThreadReader func(context.Context, string, string) ([]gmailsync.Msg, error)
 
@@ -158,6 +159,7 @@ func (a *Adapter) PollEmailReplies(ctx context.Context, now time.Time, read Emai
 				current.EmailWatch.Error = ""
 				current.EmailWatch.Replies = replies
 				current.EmailWatch.Total = total
+				updateEmailNotice(current.EmailWatch, replies)
 				if current.EmailWatch.StopAfterReply && total > 0 {
 					current.EmailWatch.Enabled = false
 					current.EmailWatch.StoppedReason = "reply_found"
