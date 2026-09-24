@@ -350,3 +350,15 @@
   outline: var(--focus-width) solid var(--accent);
   outline-offset: calc(-1 * var(--focus-width));
 }
+
+/* Delimited artifacts retain source text and scroll within their own pane. */
+.artifact-table-scroll{overflow:auto;max-width:100%;border:1px solid var(--line);border-radius:var(--radius);}
+.artifact-data-table{border-collapse:collapse;width:max-content;min-width:100%;font:var(--fs-sm)/1.5 var(--sans);}
+.artifact-data-table caption{text-align:left;padding:var(--sp-4);color:var(--muted);font-size:var(--fs-xs);}
+.artifact-data-table th,.artifact-data-table td{border-bottom:1px solid var(--line);border-right:1px solid var(--line);padding:var(--sp-4);vertical-align:top;text-align:left;white-space:pre-wrap;min-width:6rem;max-width:24rem;overflow-wrap:anywhere;}
+.artifact-data-table th{font-weight:normal;color:var(--muted);background:var(--surface-field);}
+.artifact-data-table th:first-child{min-width:3rem;}
+.artifact-data-table button{min-height:var(--control-touch);min-width:var(--control-touch);}
+.artifact-cell-missing{background:var(--surface-field);}
+.artifact-table-source{margin-top:var(--sp-6);}
+.artifact-table-source summary{min-height:var(--control-touch);cursor:pointer;}

@@ -753,7 +753,7 @@ function artifactReviewControls(artifact,revision,number,onDiscuss){
    if(host.isConnected&&content.state==='changes_requested'&&onDiscuss)onDiscuss({id:artifact.id,revision,title:artifact.title||'Artifact',version:number,reviewNote:content.note,reviewStart:content.start,reviewEnd:content.end,reviewLineKind:/\.diff$/i.test(artifact.ref||'')?'snapshot':'file'});
   }catch(e){state.textContent=e.message||'Review not confirmed. Retry uses the same decision ID.';}finally{save.disabled=!snapshot||recorded;}
  };
- host.prepareChange=context=>{choice.value='changes_requested';start.value=context.start;end.value=context.end;note.value=(note.value.trim()?note.value+'\n\n':'')+'File: '+context.path+'\n'+(context.hunk?'Hunk: '+context.hunk+'\nSnapshot lines: '+context.start+'–'+context.end+'\n':'');host.open=true;changed();note.focus();note.setSelectionRange(note.value.length,note.value.length);};
+ host.prepareChange=context=>{choice.value='changes_requested';start.value=context.start;end.value=context.end;note.value=(note.value.trim()?note.value+'\n\n':'')+'File: '+context.path+'\n'+(context.record?'Record: '+context.record+'\nSource lines: '+context.start+'–'+context.end+'\n':'')+(context.hunk?'Hunk: '+context.hunk+'\nSnapshot lines: '+context.start+'–'+context.end+'\n':'');host.open=true;changed();note.focus();note.setSelectionRange(note.value.length,note.value.length);};
  load();return host;
 }
 
@@ -837,6 +837,8 @@ function artifactWorkspace(mount, options) {
       notice.textContent = "Preview only. This file has not been sent to the agent.";
     } else if(ext==="diff"){
       body.append(artifactWorkingChangesView(current.content||"",reviewControls?context=>reviewControls.prepareChange(context):null));
+    } else if(ext==='csv'||ext==='tsv'){
+      body.append(artifactTablePreview(current.content||'',ext,reviewControls?record=>reviewControls.prepareChange({path:current.ref,...record}):null));
     } else if(ext && !['md','markdown','mdown'].includes(ext)) {
       const source=el('pre','artifact-source-preview');source.append(el('code','',current.content||''));body.append(source);
     } else {
@@ -945,12 +947,12 @@ function artifactWorkspace(mount, options) {
   } catch(e) { notice.textContent=e.message; title.textContent="Artifact unavailable"; } }
   const ready=refresh(opts.revision,opts.proposal);
   return {element:pane, close:()=>close.click(), isEditing:()=>editing, refresh,
-    getView:()=>({revision:selected,mode:previewMode,scrollTop:body.scrollTop,editor:editing&&editor?{scrollTop:editor.scrollTop,start:editor.selectionStart,end:editor.selectionEnd,direction:editor.selectionDirection}:null,expandedFiles:[...body.querySelectorAll('.working-file[open]')].map(f=>f.dataset.diffFile),collapsedHunks:[...body.querySelectorAll('.working-changes-view')].flatMap(v=>v.getCollapsedHunks?.()||[])}),
+    getView:()=>({revision:selected,mode:previewMode,scrollTop:body.scrollTop,table:{scrollLeft:body.querySelector('.artifact-table-scroll')?.scrollLeft||0,sourceOpen:!!body.querySelector('.artifact-table-source')?.open},editor:editing&&editor?{scrollTop:editor.scrollTop,start:editor.selectionStart,end:editor.selectionEnd,direction:editor.selectionDirection}:null,expandedFiles:[...body.querySelectorAll('.working-file[open]')].map(f=>f.dataset.diffFile),collapsedHunks:[...body.querySelectorAll('.working-changes-view')].flatMap(v=>v.getCollapsedHunks?.()||[])}),
     restoreView:async view=>{await ready;if(!pane.isConnected||!body.clientHeight)return false;if((view.mode==="edit"||view.mode==="edit-review")&&opts.save&&editState?.value&&(!opts.canEdit||opts.canEdit(current))){
       editVersion(!!editState.value.restore,true,null,false);
       if(view.editor){editor.setSelectionRange(Math.max(0,Number(view.editor.start)||0),Math.max(0,Number(view.editor.end)||0),view.editor.direction||"none");editor.scrollTop=Math.max(0,Number(view.editor.scrollTop)||0);}
       if(view.mode==="edit-review"&&openDraftReview)await openDraftReview();
-    }else if(view.mode==="compare"&&previewMode!=="compare"&&openComparison)await openComparison();if(!pane.isConnected||!body.clientHeight)return false;if(Array.isArray(view.expandedFiles)){body.querySelectorAll('.working-file').forEach(f=>f.open=view.expandedFiles.includes(f.dataset.diffFile));await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));}if(Array.isArray(view.collapsedHunks)&&(!view.revision||view.revision===selected)){body.querySelectorAll('.working-changes-view').forEach(v=>v.restoreHunks?.(view.collapsedHunks));}if(Number.isFinite(view.scrollTop))body.scrollTop=Math.max(0,view.scrollTop);return true;}
+    }else if(view.mode==="compare"&&previewMode!=="compare"&&openComparison)await openComparison();if(!pane.isConnected||!body.clientHeight)return false;if(Array.isArray(view.expandedFiles)){body.querySelectorAll('.working-file').forEach(f=>f.open=view.expandedFiles.includes(f.dataset.diffFile));await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));}if(Array.isArray(view.collapsedHunks)&&(!view.revision||view.revision===selected)){body.querySelectorAll('.working-changes-view').forEach(v=>v.restoreHunks?.(view.collapsedHunks));}if(view.table&&view.revision===selected){const table=body.querySelector('.artifact-table-scroll'),source=body.querySelector('.artifact-table-source');if(table)table.scrollLeft=Math.max(0,Number(view.table.scrollLeft)||0);if(source)source.open=!!view.table.sourceOpen;}if(Number.isFinite(view.scrollTop))body.scrollTop=Math.max(0,view.scrollTop);return true;}
   };
 }
 
@@ -1043,4 +1045,58 @@ function artifactWorkingDiffFiles(text){
   return {path,content,start,end:start+lines.length-1,headers,hunks,combined};
  });
  return {files,untracked,metadata:tracked.slice(0,starts[0]??tracked.length)};
+}
+
+
+// Parse delimited artifact bytes for presentation only. The source and review
+// anchors always refer to the immutable original; never reserialize for saving.
+function artifactDelimitedRows(text,delimiter){
+ if(new TextEncoder().encode(text).length>1024*1024)throw Error('Table preview supports text up to 1 MiB.');
+ const rows=[];let cells=[],field='',quoted=false,closed=false,line=1,start=1,touched=false,total=0;
+ const cell=()=>{cells.push(field);field='';closed=false;if(cells.length>50)throw Error('Table preview supports up to 50 columns.');};
+ const row=()=>{cell();total+=cells.length;if(rows.length>=200||total>10000)throw Error('Table preview supports up to 200 records and 10,000 cells.');rows.push({cells,start,end:line});cells=[];touched=false;};
+ for(let i=text.charCodeAt(0)===0xfeff?1:0;i<text.length;i++){
+  const ch=text[i];
+  if(ch==='\0')throw Error('Table preview requires text without binary bytes.');
+  if(quoted){
+   if(ch==='"'){if(text[i+1]==='"'){field+='"';i++;}else{quoted=false;closed=true;}}
+   else{field+=ch;if(ch==='\n')line++;}
+  }else if(ch===delimiter){cell();touched=true;}
+  else if(ch==='\n'||ch==='\r'){
+   if(ch==='\r'){if(text[i+1]!=='\n')throw Error('Table preview requires LF or CRLF line endings.');i++;}
+   row();line++;start=line;
+  }else if(ch==='"'){
+   if(field||closed)throw Error('Unexpected quote in record '+(rows.length+1)+'.');quoted=true;touched=true;
+  }else{
+   if(closed)throw Error('Unexpected text after a quoted field in record '+(rows.length+1)+'.');field+=ch;touched=true;
+  }
+  if(field.length>16000)throw Error('A field is too large for table preview.');
+ }
+ if(quoted)throw Error('Unclosed quoted field in record '+(rows.length+1)+'.');
+ if(touched||cells.length||field||closed)row();
+ return rows;
+}
+function artifactTablePreview(text,format,onReview=null){
+ const view=el('section','artifact-table-preview'),status=el('p','artifact-review-help');status.setAttribute('role','status');view.append(status);
+ const source=el('details','artifact-table-source'),raw=el('pre','artifact-source-preview');raw.append(el('code','',text));source.append(el('summary','','source text'),raw);
+ try{
+  const rows=artifactDelimitedRows(text,format==='tsv'?'\t':',');
+  if(!rows.length){status.textContent='Empty table.';view.append(source);return view;}
+  const columns=Math.max(...rows.map(r=>r.cells.length)),scroll=el('div','artifact-table-scroll'),table=el('table','artifact-data-table');
+  scroll.tabIndex=0;scroll.setAttribute('role','region');scroll.setAttribute('aria-label',format.toUpperCase()+' table; scroll for more columns');
+  table.append(el('caption','',format.toUpperCase()+' records · first record is shown as data'));
+  const head=el('thead',''),headRow=el('tr','');
+  for(const label of ['record',...Array.from({length:columns},(_,i)=>'column '+(i+1))]){const th=el('th','',label);th.scope='col';headRow.append(th);}head.append(headRow);table.append(head);
+  const body=el('tbody','');
+  rows.forEach((record,index)=>{
+   const tr=el('tr',''),number=el('th','','');number.scope='row';number.title='Source lines '+record.start+'–'+record.end;
+   if(onReview){const action=el('button','sprt-quiet',String(index+1));action.setAttribute('aria-label','Request changes to record '+(index+1));action.title=number.title;action.onclick=()=>onReview({record:index+1,start:record.start,end:record.end});number.append(action);}else number.textContent=String(index+1);
+   tr.append(number);
+   for(let column=0;column<columns;column++){const cell=el('td','',record.cells[column]??'');if(column>=record.cells.length){cell.classList.add('artifact-cell-missing');cell.setAttribute('aria-label','No field in this record');}tr.append(cell);}
+   body.append(tr);
+  });
+  table.append(body);scroll.append(table);view.append(scroll);
+  status.textContent=rows.length+' records · '+columns+' columns.'+(onReview?' Select a record number to request changes to its source lines.':'')+' Values are displayed as text; formulas are not evaluated.';
+ }catch(error){status.textContent='Table preview unavailable: '+error.message+' The original source is shown below.';source.open=true;}
+ view.append(source);return view;
 }

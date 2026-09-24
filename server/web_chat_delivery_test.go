@@ -128,3 +128,13 @@ func TestChatQuestionsUI(t *testing.T) {
 		t.Fatalf("question UI: %v\n%s", err, out)
 	}
 }
+
+func TestArtifactTablePreview(t *testing.T) {
+	node, err := exec.LookPath("node")
+	if err != nil {
+		t.Skip("node unavailable")
+	}
+	if out, err := exec.Command(node, "testdata/artifact-table.cjs").CombinedOutput(); err != nil {
+		t.Fatalf("artifact table: %v\n%s", err, out)
+	}
+}
