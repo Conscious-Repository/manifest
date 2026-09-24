@@ -2,6 +2,8 @@ package manifestmcp
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"net/mail"
@@ -22,6 +24,7 @@ type EmailReply struct {
 	Clipped bool      `json:"clipped,omitempty"`
 }
 type EmailWatch struct {
+	Claim     string       `json:"claim,omitempty"`
 	Enabled   bool         `json:"enabled"`
 	CheckedAt time.Time    `json:"checkedAt,omitempty"`
 	NextCheck time.Time    `json:"nextCheck,omitempty"`
@@ -48,6 +51,7 @@ func (a *Adapter) SetEmailWatch(id string, enabled bool) (Object, error) {
 		o.EmailWatch = &EmailWatch{Replies: []EmailReply{}}
 	}
 	o.EmailWatch.Enabled = enabled
+	o.EmailWatch.Claim = ""
 	o.EmailWatch.NextCheck = time.Time{}
 	if err = a.saveOperation(o); err != nil {
 		return nil, err
@@ -110,6 +114,13 @@ func (a *Adapter) PollEmailReplies(ctx context.Context, now time.Time, read Emai
 			unlock()
 			continue
 		}
+		var claimBytes [16]byte
+		if _, err = rand.Read(claimBytes[:]); err != nil {
+			unlock()
+			return err
+		}
+		claim := hex.EncodeToString(claimBytes[:])
+		o.EmailWatch.Claim = claim
 		o.EmailWatch.NextCheck = now.Add(5 * time.Minute)
 		if err = a.saveOperation(o); err != nil {
 			unlock()
@@ -127,7 +138,7 @@ func (a *Adapter) PollEmailReplies(ctx context.Context, now time.Time, read Emai
 			return err
 		}
 		current, err := a.loadOperation(id)
-		if err == nil && current.EmailWatch != nil && current.EmailWatch.Enabled && current.EmailWatch.NextCheck.Equal(now.Add(5*time.Minute)) {
+		if err == nil && current.Status == "succeeded" && current.EmailWatch != nil && current.EmailWatch.Enabled && current.EmailWatch.Claim == claim && current.EmailWatch.NextCheck.Equal(now.Add(5*time.Minute)) {
 			current.EmailWatch.CheckedAt = now
 			if readErr != nil {
 				current.EmailWatch.Error = "Could not check replies. Verify the sender's read-only Gmail connection."

@@ -80,3 +80,84 @@ func TestEmailWatchRejectsMissingSentAnchor(t *testing.T) {
 		t.Fatal("accepted unanchored thread")
 	}
 }
+
+// A schedule timestamp is not a read identity: two polls may claim the same
+// tick after stop/restart, including across independent adapter instances.
+func TestEmailWatchRestartRejectsOlderInFlightRead(t *testing.T) {
+	for _, staleError := range []bool{false, true} {
+		t.Run(map[bool]string{false: "stale-replies", true: "stale-error"}[staleError], func(t *testing.T) {
+			a, _, _ := fixture(t)
+			p, err := a.PrepareEmail(EmailInput{Domain: "aion", To: []string{"candidate@example.test"}, Subject: "Question", Body: "Reply please", IdempotencyKey: "watch-restart-race", MonitorReplies: true})
+			if err != nil {
+				t.Fatal(err)
+			}
+			id := p["operationId"].(string)
+			a.mailSend = func(context.Context, gmailsend.Message) (gmailsend.Ref, error) {
+				return gmailsend.Ref{ID: "sent", ThreadID: "thread"}, nil
+			}
+			approve(t, a, id)
+			execute(t, a, id, "succeeded")
+			restarted, err := New(a.Vault, a.Data, a.System)
+			if err != nil {
+				t.Fatal(err)
+			}
+			now := time.Now().UTC()
+			started := make(chan struct{})
+			release := make(chan struct{})
+			done := make(chan error, 1)
+			messages := func(body string) []gmailsync.Msg {
+				return []gmailsync.Msg{{ID: "sent", From: "ben@aion.bio", Internal: now.Add(-time.Hour)}, {ID: "reply", From: "candidate@example.test", Body: body, Internal: now.Add(-time.Minute)}}
+			}
+			go func() {
+				done <- a.PollEmailReplies(context.Background(), now, func(context.Context, string, string) ([]gmailsync.Msg, error) {
+					close(started)
+					<-release
+					if staleError {
+						return nil, errors.New("old provider failure")
+					}
+					return messages("STALE READ"), nil
+				})
+			}()
+			<-started
+			// Always release the blocked provider fixture, including on an assertion error.
+			released := false
+			defer func() {
+				if !released {
+					close(release)
+					<-done
+				}
+			}()
+			if _, err = restarted.SetEmailWatch(id, false); err != nil {
+				t.Fatal(err)
+			}
+			if _, err = restarted.SetEmailWatch(id, true); err != nil {
+				t.Fatal(err)
+			}
+			if err = restarted.PollEmailReplies(context.Background(), now, func(context.Context, string, string) ([]gmailsync.Msg, error) { return messages("CURRENT READ"), nil }); err != nil {
+				t.Fatal(err)
+			}
+			current, err := restarted.loadOperation(id)
+			if err != nil || current.EmailWatch.Claim == "" {
+				t.Fatal(current, err)
+			}
+			claim := current.EmailWatch.Claim
+			close(release)
+			released = true
+			if err = <-done; err != nil {
+				t.Fatal(err)
+			}
+			final, err := restarted.loadOperation(id)
+			if err != nil || final.EmailWatch.Claim != claim || final.EmailWatch.Error != "" || len(final.EmailWatch.Replies) != 1 || final.EmailWatch.Replies[0].Body != "CURRENT READ" {
+				t.Fatal("old read overwrote restarted watch", final, err)
+			}
+			if _, err = restarted.SetEmailWatch(id, false); err != nil {
+				t.Fatal(err)
+			}
+			disabled, _ := restarted.loadOperation(id)
+			if disabled.EmailWatch.Claim != "" || disabled.EmailWatch.Enabled {
+				t.Fatal("stop retained read authority", disabled.EmailWatch)
+			}
+
+		})
+	}
+}
