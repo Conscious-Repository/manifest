@@ -57,6 +57,14 @@ func TestEmailApprovalAndDeliveryRecovery(t *testing.T) {
 			if !uncertain && o.Result["threadId"] != "thread-1" {
 				t.Fatal("provider thread not retained")
 			}
+			outcome, outcomeErr := a.ConfirmedEmail(id)
+			if uncertain {
+				if outcomeErr == nil {
+					t.Fatal("uncertain send exposed confirmed outcome")
+				}
+			} else if outcomeErr != nil || outcome.Ref.ID != "message-1" || outcome.Message.Body != q.Body || outcome.ConfirmedAt.IsZero() {
+				t.Fatal(outcome, outcomeErr)
+			}
 			// Simulate process loss between provider receipt and operation completion.
 			o.Status = "executing"
 			a.saveOperation(o)

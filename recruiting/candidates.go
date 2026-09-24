@@ -280,7 +280,7 @@ func (d *CandidateDoc) Paths() []PathClaim {
 func (d *CandidateDoc) Outreach() []OutreachRef {
 	out := []OutreachRef{}
 	for _, r := range rows(section(d.Sections, "outreach")) {
-		out = append(out, OutreachRef{Log: r.Get("log"), Last: r.Get("last"), Status: r.Get("status"),
+		out = append(out, OutreachRef{Operations: r.GetAll("operation"), Log: r.Get("log"), Last: r.Get("last"), Status: r.Get("status"),
 			MessageID: r.Get("message"), ThreadID: r.Get("thread")})
 	}
 	return out
@@ -313,6 +313,18 @@ func (d *CandidateDoc) SetOutreach(ref OutreachRef) {
 	}
 	if ref.ThreadID != "" {
 		row.Set("thread", ref.ThreadID)
+	}
+	for _, id := range ref.Operations {
+		found := false
+		for _, old := range row.GetAll("operation") {
+			if old == id {
+				found = true
+				break
+			}
+		}
+		if !found {
+			row.Fields = append(row.Fields, Field{Key: "operation", Value: id})
+		}
 	}
 }
 

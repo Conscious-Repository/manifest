@@ -62,24 +62,26 @@ var ErrOutreachNotReady = errors.New("outreach: not ready to send")
 var ErrOutreachUnconfigured = errors.New("outreach: sending is not connected — connect the sender first")
 
 var outreachEntryKeys = []string{"seq", "at", "kind", "status", "to", "via", "sender",
-	"subject", "message", "thread", "sent_at", "actor"}
+	"subject", "message", "thread", "sent_at", "actor", "operation", "draft_seq"}
 
 // OutreachEntry is one log row: a draft or a send.
 type OutreachEntry struct {
-	Seq       int      `json:"seq"`
-	At        string   `json:"at"`
-	Kind      string   `json:"kind"`
-	Status    string   `json:"status"`
-	To        []string `json:"to"`
-	Via       string   `json:"via,omitempty"` // the mutual (network person id) for warm/referral
-	Sender    string   `json:"sender"`
-	Subject   string   `json:"subject"`
-	Body      string   `json:"body"`
-	MessageID string   `json:"messageId,omitempty"`
-	ThreadID  string   `json:"threadId,omitempty"`
-	SentAt    string   `json:"sentAt,omitempty"`
-	Actor     string   `json:"actor,omitempty"`
-	Unknown   []Field  `json:"unknown,omitempty"`
+	OperationID string   `json:"operationId,omitempty"`
+	DraftSeq    int      `json:"draftSeq,omitempty"`
+	Seq         int      `json:"seq"`
+	At          string   `json:"at"`
+	Kind        string   `json:"kind"`
+	Status      string   `json:"status"`
+	To          []string `json:"to"`
+	Via         string   `json:"via,omitempty"` // the mutual (network person id) for warm/referral
+	Sender      string   `json:"sender"`
+	Subject     string   `json:"subject"`
+	Body        string   `json:"body"`
+	MessageID   string   `json:"messageId,omitempty"`
+	ThreadID    string   `json:"threadId,omitempty"`
+	SentAt      string   `json:"sentAt,omitempty"`
+	Actor       string   `json:"actor,omitempty"`
+	Unknown     []Field  `json:"unknown,omitempty"`
 }
 
 // OutreachDoc is outreach/<slug>.md.
@@ -124,7 +126,9 @@ func (d *OutreachDoc) Entries() []OutreachEntry {
 		}
 		r := ln.Row
 		seq, _ := strconv.Atoi(strings.TrimSpace(r.Get("seq")))
+		draftSeq, _ := strconv.Atoi(r.Get("draft_seq"))
 		out = append(out, OutreachEntry{
+			OperationID: r.Get("operation"), DraftSeq: draftSeq,
 			Seq: seq, At: r.Get("at"), Kind: r.Get("kind"), Status: r.Get("status"),
 			To: r.GetAll("to"), Via: r.Get("via"), Sender: r.Get("sender"),
 			Subject: r.Get("subject"), Body: snippetOf(r),
@@ -147,12 +151,23 @@ func (d *OutreachDoc) Latest() (OutreachEntry, bool) {
 
 // CurrentDraft is the last row when it is still a draft (or marked ready):
 // once a send has been appended after it, there is no current draft.
-func (d *OutreachDoc) CurrentDraft() (OutreachEntry, bool) {
-	e, ok := d.Latest()
-	if !ok || (e.Status != OutreachStatusDraft && e.Status != OutreachStatusReady) {
-		return OutreachEntry{}, false
+func (d *OutreachDoc) CurrentDraft() (OutreachEntry, bool) { return CurrentOutreachDraft(d.Entries()) }
+
+// A late canonical receipt consumes its source draft, never a newer draft.
+func CurrentOutreachDraft(entries []OutreachEntry) (OutreachEntry, bool) {
+	for i := len(entries) - 1; i >= 0; i-- {
+		draft := entries[i]
+		if draft.Status != OutreachStatusDraft && draft.Status != OutreachStatusReady {
+			continue
+		}
+		for _, later := range entries[i+1:] {
+			if later.DraftSeq == 0 || later.DraftSeq == draft.Seq {
+				return OutreachEntry{}, false
+			}
+		}
+		return draft, true
 	}
-	return e, true
+	return OutreachEntry{}, false
 }
 
 // Append adds one row. It is the ONLY mutator: there is no method that finds
@@ -188,6 +203,12 @@ func (d *OutreachDoc) Append(e OutreachEntry) (OutreachEntry, error) {
 	}
 	r.Set("sender", e.Sender)
 	r.Set("subject", e.Subject)
+	if e.OperationID != "" {
+		r.Set("operation", e.OperationID)
+	}
+	if e.DraftSeq > 0 {
+		r.Set("draft_seq", strconv.Itoa(e.DraftSeq))
+	}
 	if e.MessageID != "" {
 		r.Set("message", e.MessageID)
 	}

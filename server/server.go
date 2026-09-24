@@ -563,6 +563,7 @@ func (s *Server) Handler() http.Handler {
 			mux.HandleFunc("POST /api/aion/recruiting/outreach/draft/{id...}", s.handleRecruitingOutreachDraft)
 			mux.HandleFunc("POST /api/aion/recruiting/outreach/prepare/{id...}", s.handleRecruitingOutreachPrepare)
 			mux.HandleFunc("POST /api/aion/recruiting/outreach/propose/{id...}", s.handleRecruitingOutreachPropose)
+			mux.HandleFunc("POST /api/aion/recruiting/outreach/reconcile/{id...}", s.handleRecruitingOutreachReconcile)
 			mux.HandleFunc("POST /api/aion/recruiting/outreach/send/{id...}", s.handleRecruitingOutreachSend)
 			mux.HandleFunc("POST /api/aion/recruiting/candidate", s.handleRecruitingCandidateAdd)
 			mux.HandleFunc("POST /api/aion/recruiting/candidate/update/{id...}", s.handleRecruitingCandidateUpdate)

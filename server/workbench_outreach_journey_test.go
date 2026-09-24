@@ -220,6 +220,11 @@ func TestWorkbenchSourcedCandidateToCanonicalOutreach(t *testing.T) {
 	if len(s.feedProposals()) != 1 || sends.Load() != 1 {
 		t.Fatal("bridge sent without approval")
 	}
+	pendingBody, _ := json.Marshal(map[string]string{"operationId": bridged.ID})
+	pendingRecord := recruitingPost(t, s, s.handleRecruitingOutreachReconcile, "/", candidate.ID, string(pendingBody))
+	if pendingRecord.Code == 200 || sends.Load() != 1 {
+		t.Fatal("pending approval was recorded as sent", pendingRecord.Code)
+	}
 	projected := s.recruitingOutreachOperations(candidate.ID)
 	if len(projected) != 1 || projected[0]["record"].(*manifestmcp.OperationRecord).ID != bridged.ID || len(s.recruitingOutreachOperations("cand/other")) != 0 {
 		t.Fatal("bridge identity projection", projected)
@@ -252,6 +257,25 @@ func TestWorkbenchSourcedCandidateToCanonicalOutreach(t *testing.T) {
 	}
 	if w = propose(revision); w.Code != 200 || sends.Load() != 2 {
 		t.Fatal("bridge replay after completion", w.Code, sends.Load())
+	}
+	reconcile := func(id, op string) *httptest.ResponseRecorder {
+		b, _ := json.Marshal(map[string]string{"operationId": op})
+		return recruitingPost(t, s, s.handleRecruitingOutreachReconcile, "/", id, string(b))
+	}
+	if w := reconcile("cand/wrong", bridged.ID); w.Code != 409 {
+		t.Fatal("wrong candidate accepted", w.Code)
+	}
+	for i := 0; i < 2; i++ {
+		if w := reconcile(candidate.ID, bridged.ID); w.Code != 200 {
+			t.Fatal(w.Code, w.Body.String())
+		}
+	}
+	if sends.Load() != 2 {
+		t.Fatal("record reconciliation sent mail")
+	}
+	updated := s.recruiting.LoadCandidate(recruiting.CandidateSlug(candidate.ID))
+	if updated.Get("stage") != recruiting.StageOutreach || len(updated.Outreach()[0].Operations) != 1 {
+		t.Fatal("outcome not reflected in candidate", updated.Outreach())
 	}
 	entries, err := s.recruiting.Outreach(candidate.ID)
 	if err != nil || len(entries) < 2 || entries[0].Body != draft.Body || entries[0].Subject != draft.Subject {

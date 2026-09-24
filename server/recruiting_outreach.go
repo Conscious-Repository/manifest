@@ -123,8 +123,8 @@ func (s *Server) handleRecruitingOutreach(w http.ResponseWriter, r *http.Request
 		return
 	}
 	revision := ""
-	if len(entries) > 0 {
-		revision = outreachDraftRevision(entries[len(entries)-1])
+	if draft, ok := recruiting.CurrentOutreachDraft(entries); ok {
+		revision = outreachDraftRevision(draft)
 	}
 	writeJSON(w, map[string]any{"entries": entries, "draftRevision": revision, "operations": s.recruitingOutreachOperations(strings.TrimSpace(r.PathValue("id")))})
 }

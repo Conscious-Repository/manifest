@@ -11,8 +11,7 @@ import (
 )
 
 func outreachDraftRevision(entry recruiting.OutreachEntry) string {
-	raw, _ := json.Marshal(entry)
-	return artifacts.Hash(raw)
+	return recruiting.OutreachRevision(entry)
 }
 
 // Preparing a reviewed saved draft never sends. A stable source revision gives
@@ -82,4 +81,38 @@ func (s *Server) recruitingOutreachOperations(id string) []map[string]any {
 		out = append(out, map[string]any{"record": o, "proposal": manifestmcp.Proposal(o)})
 	}
 	return out
+}
+
+// Recording a confirmed outcome is an owner record update, never a send retry.
+func (s *Server) handleRecruitingOutreachReconcile(w http.ResponseWriter, r *http.Request) {
+	if !s.recruitingReady(w) {
+		return
+	}
+	if s.manifestOperations == nil {
+		http.Error(w, "email receipts unavailable", 503)
+		return
+	}
+	var req struct {
+		OperationID string `json:"operationId"`
+	}
+	if decode(r, &req) != nil {
+		http.Error(w, "operation identity required", 400)
+		return
+	}
+	outcome, err := s.manifestOperations.ConfirmedEmail(req.OperationID)
+	if err != nil {
+		httpError(w, errBadRequest(err.Error()))
+		return
+	}
+	id := strings.TrimSpace(r.PathValue("id"))
+	if outcome.Source == nil || outcome.Source.Kind != "recruiting-outreach" || outcome.Source.ID != id || outcome.Message.From != "ben@aion.bio" || len(outcome.Message.Cc) > 0 || len(outcome.Message.Attachments) > 0 {
+		http.Error(w, "receipt is not this candidate's outreach", 409)
+		return
+	}
+	entry, err := s.recruiting.RecordOutreachOutcome(id, recruiting.OutreachOutcome{OperationID: outcome.OperationID, Revision: outcome.Source.Revision, Sender: outcome.Message.From, To: outcome.Message.To, Subject: outcome.Message.Subject, Body: outcome.Message.Body, MessageID: outcome.Ref.ID, ThreadID: outcome.Ref.ThreadID, ConfirmedAt: outcome.ConfirmedAt})
+	if err != nil {
+		httpError(w, errBadRequest(err.Error()))
+		return
+	}
+	writeJSON(w, map[string]any{"entry": entry, "view": s.recruiting.View()})
 }

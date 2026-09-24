@@ -3778,8 +3778,10 @@ async function recOutreachCall(url, body) {
 }
 
 function recOutreachCurrentDraft(entries) {
-  const last = entries[entries.length - 1];
-  return last && (last.status === "draft" || last.status === "ready") ? last : null;
+  for(let i=entries.length-1;i>=0;i--){const draft=entries[i];if(draft.status!=='draft'&&draft.status!=='ready')continue;
+    return entries.slice(i+1).some(later=>!later.draftSeq||later.draftSeq===draft.seq)?null:draft;
+  }
+  return null;
 }
 
 async function recOutreachDraft(c, body) {
@@ -3833,7 +3835,23 @@ function recOutreachSection(c) {
   });
   if (!entries.length) sec.append(emptyRow("no outreach yet"));
   const operations=recOutreachLog.operations||[];
-  for(const item of operations)sec.append(manifestOperationCard(item));
+  for(const item of operations){
+    sec.append(manifestOperationCard(item));
+    if(item.record.status==='succeeded'){
+      const recorded=entries.some(entry=>entry.operationId===item.record.operationId);
+      const applied=(c.outreach||[]).some(ref=>(ref.operations||[]).includes(item.record.operationId));
+      if(applied&&recorded){sec.append(el('p','rec-next','Sent outcome recorded in recruiting.'));continue;}
+      const apply=el('button','pill light',recorded?'finish recording outcome':'record sent outcome');
+      apply.title='Update recruiting history and stage from the confirmed receipt; sends no email';
+      apply.onclick=async()=>{apply.disabled=true;try{
+        const out=await recOutreachCall('/api/aion/recruiting/outreach/reconcile/'+c.id,{operationId:item.record.operationId});
+        if(out.view)recCache=out.view;
+        if(recSel===c.id&&aionMode==='recruiting')await recOutreachLoadLog(c.id);
+        showToast('Sent outcome recorded.');
+      }catch(e){showToast(String(e.message||e).slice(0,180),null,'error');apply.disabled=false;}};
+      sec.append(el('p','rec-next','Records this confirmed send and moves candidates in earlier stages to outreach.'),apply);
+    }
+  }
   if(operations.length){const refresh=el('button','pill light','refresh approval status');refresh.onclick=()=>recOutreachLoadLog(c.id);sec.append(refresh);}
 
   if (c.stage === "archived") return sec;
