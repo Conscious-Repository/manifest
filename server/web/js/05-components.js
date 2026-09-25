@@ -1300,4 +1300,3 @@ function artifactHunkSyntax(content,lines,path,enabled){
   status.textContent=language+' · hunk fragments only; surrounding file context is unavailable.';render();
  }).catch(()=>{if(content.isConnected)status.textContent=language+' · syntax unavailable; original hunk retained.';});
 }
-
