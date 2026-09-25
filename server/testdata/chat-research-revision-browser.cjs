@@ -1,6 +1,7 @@
 // Full frontend research revision and lost-save-ack recovery at phone width.
 const {chromium,devices}=require('playwright'),fs=require('node:fs'),path=require('node:path'),http=require('node:http'),assert=require('node:assert/strict');
 const web=path.join(__dirname,'../web');
+const backend=process.argv[2]?JSON.parse(process.argv[2]):null;
 const types={'.html':'text/html','.js':'text/javascript','.css':'text/css','.svg':'image/svg+xml','.png':'image/png','.woff2':'font/woff2','.json':'application/json'};
 const LIST_DELAY=300,THREAD_DELAY=400;
 const overrides={};
@@ -35,12 +36,29 @@ const server=http.createServer((req,res)=>{
   const context=await browser.newContext({...devices['iPhone 13']});
   const page=await context.newPage(),errors=[],states=new Map(),saves=[];
   page.on('pageerror',e=>errors.push(e.message));
-  const id='fedcba9876543210',first='a'.repeat(64),second='b'.repeat(64);
+  const id=backend?.id||'fedcba9876543210',first=backend?.first||'a'.repeat(64),second=backend?.second||'b'.repeat(64);
   const original='# Research brief\n\nOriginal findings with a source.',revised='# Research brief\n\nVerified findings and limitations.';
   const artifact={id,title:'Research brief',ref:'research.md',head:first,content:original,preview:{kind:'text'},provenance:{source:'chat',session:'alfred/a'},revisions:[{n:1,hash:first,actor:'alfred',at:'2026-09-25T10:00:00Z'}]};
   let receipt=null,loseAck=true;
   const handleRoute=async route=>{
    const req=route.request(),url=new URL(req.url()),p=url.pathname;
+   if(backend&&(p.startsWith('/api/artifacts/')||p.startsWith('/api/chat/state/artifact-'))){
+    if(p==='/api/artifacts/text'){
+     const body=req.postDataJSON();saves.push(body);
+     const persisted=await (await fetch(backend.url+'/api/chat/state/artifact-'+id+'/edit')).json();
+     assert.equal(persisted.value.saveRequestID,body.requestID);
+     if(saves.length>1)assert.deepEqual(body,saves[0]);
+    }
+    const response=await fetch(backend.url+url.pathname+url.search,{method:req.method(),headers:{'Content-Type':'application/json'},body:req.method()==='GET'?undefined:req.postData()});
+    const text=await response.text();
+    if(p.startsWith('/api/chat/state/artifact-')&&[200,409].includes(response.status))states.set(p,JSON.parse(text));
+    if(p==='/api/artifacts/text'&&response.ok){
+     const current=await fetch(backend.url+'/api/artifacts/get?id='+id+'&preview=1');
+     assert.equal(current.status,200);Object.assign(artifact,await current.json());
+     if(loseAck){loseAck=false;return route.abort('failed');}
+    }
+    return route.fulfill({status:response.status,contentType:response.headers.get('content-type')||'text/plain',body:text});
+   }
    const state=p.match(/^\/api\/chat\/state\/([^/]+)\/([^/]+)$/);
    if(state){
     const key=decodeURIComponent(state[1]),slot=decodeURIComponent(state[2]);
