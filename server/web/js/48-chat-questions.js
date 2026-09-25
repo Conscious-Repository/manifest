@@ -71,7 +71,9 @@ function chatQuestionPanel(o) {
   if(panel?.dataset.session!==o.id){panel?.remove();panel=null;}
   // The composer is an action surface; resolved answers live in the transcript.
   // Keep uncertain deliveries visible because they still need attention.
-  const questions=(o.questions||[]).filter(q=>q.state==='pending'||q.state==='unconfirmed');
+  // A stale question (its asking process is gone) stays visible so the owner
+  // learns it cannot be answered, rather than the card silently vanishing.
+  const questions=(o.questions||[]).filter(q=>q.state==='pending'||q.state==='unconfirmed'||q.state==='stale');
   if(!questions.length){panel?.remove();return;}
   if(!panel){
     panel=el('section','chat-questions');panel.id='chatQuestions';panel.dataset.session=o.id;
@@ -79,7 +81,7 @@ function chatQuestionPanel(o) {
     panel.append(el('div','micro-label','Questions for you'));
     composer.before(panel);
   }
-  panel.children[0].textContent='Questions for you · '+questions.filter(q=>q.state==='pending').length+' awaiting answer'+(questions.some(q=>q.state==='unconfirmed')?' · delivery needs attention':'');
+  panel.children[0].textContent='Questions for you · '+questions.filter(q=>q.state==='pending').length+' awaiting answer'+(questions.some(q=>q.state==='unconfirmed')?' · delivery needs attention':'')+(questions.some(q=>q.state==='stale')?' · '+questions.filter(q=>q.state==='stale').length+' stale':'');
   const ids=new Set(questions.map(q=>q.id));
   for(const node of [...panel.children])if(node.dataset.question&&!ids.has(node.dataset.question))node.remove();
   for(const q of questions){
@@ -96,6 +98,10 @@ function chatQuestionCard(o,q,key) {
   const legend=el('legend','chat-question-title',q.title);
   const fields=el('fieldset','chat-question-fields');fields.append(legend);card.append(fields);
   const status=el('div','chat-question-status');status.setAttribute('role','status');
+  if(q.state==='stale'){
+    status.textContent='This question’s run is no longer live; it cannot be answered. Send a new message to continue.';
+    card.classList.add('chat-question-stale');card.append(status);return card;
+  }
   if(q.state!=='pending'){
     fields.append(el('div','chat-question-answer',q.answer||''));
     status.textContent=q.state==='answered'?'Answered':q.state==='sent'?'Answer sent':'Delivery uncertain — check the conversation before sending again.';

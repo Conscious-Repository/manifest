@@ -54,6 +54,10 @@ type agentChatCfg struct {
 	descBusy bool // a background refresh is running
 
 	recovered bool // the startup repair ran (agentChatRecover)
+	// pendingEvents are run.disconnected entries recorded by the startup repair
+	// before the ledger was wired (main wires the ledger after Hermes); the
+	// startup drain flushes them. The session file already holds the truth.
+	pendingEvents []ledger.Entry
 }
 
 // hermesDescribeEvery bounds how often the descriptions are re-asked.
@@ -148,8 +152,36 @@ func (s *Server) agentChatRecover() {
 		return
 	}
 	s.agentChat.recovered = true
-	if fixed := s.agentChat.store.Recover(); len(fixed) > 0 {
-		log.Printf("agent chat: repaired %d interrupted session(s): %s", len(fixed), strings.Join(fixed, ", "))
+	fixed := s.agentChat.store.RecoverDeliveries()
+	if len(fixed) == 0 {
+		return
+	}
+	keys := make([]string, 0, len(fixed))
+	for _, rec := range fixed {
+		keys = append(keys, rec.Agent+"/"+rec.ID)
+		// The disconnection is durable in the session file; the ledger carries
+		// the same run identity so the event is found by one ID everywhere.
+		conversation := agentConversation("hermes", rec.Agent, rec.ID, "private", "").Key
+		for _, requestID := range rec.Disconnected {
+			s.agentChat.pendingEvents = append(s.agentChat.pendingEvents, ledger.Entry{TS: time.Now().UTC(), Source: "run", Kind: "run.disconnected", Actor: "system", Object: ledger.Object{Kind: ledger.ObjSession, ID: rec.ID}, Session: rec.ID, Harness: "hermes",
+				Text: "chat turn disconnected — the server restarted while the provider call was in flight; not replayed",
+				Meta: map[string]any{"agent": rec.Agent, "requestId": requestID, "runId": supervisionRunID(adapterHermesOneshot, conversation, requestID), "deliveryState": agentchat.DeliveryInterrupted, "supervision": supervisionDisconnected, "queuedRetained": len(rec.Queued)}})
+		}
+	}
+	log.Printf("agent chat: repaired %d interrupted session(s): %s", len(fixed), strings.Join(keys, ", "))
+	s.flushAgentChatEvents()
+}
+
+// flushAgentChatEvents writes recovery events once a ledger exists. Without a
+// ledger they stay pending; the session files remain the record either way.
+func (s *Server) flushAgentChatEvents() {
+	if s.agentChat == nil || s.ledgerStore == nil {
+		return
+	}
+	pending := s.agentChat.pendingEvents
+	s.agentChat.pendingEvents = nil
+	for _, e := range pending {
+		s.ledger(e)
 	}
 }
 
@@ -159,6 +191,7 @@ func (s *Server) ResumeAgentChats() {
 	if s.agentChat == nil || !s.hermesEnabled() {
 		return
 	}
+	s.flushAgentChatEvents()
 	for _, agent := range s.agentChat.store.Agents() {
 		for _, sess := range s.agentChat.store.List(agent) {
 			if len(s.agentChat.store.Queued(agent, sess.ID)) > 0 {
@@ -333,10 +366,11 @@ func (s *Server) handleAgentChatSessions(w http.ResponseWriter, r *http.Request)
 	type row struct {
 		agentchat.Session
 		Conversation conversationDescriptor `json:"conversation"`
+		Supervision  chatSupervision        `json:"supervision"`
 	}
 	out := make([]row, 0, len(rows))
 	for _, session := range rows {
-		out = append(out, row{session, sessionConversation(session)})
+		out = append(out, row{session, sessionConversation(session), s.nativeChatSupervision(session, "")})
 	}
 	writeJSON(w, map[string]any{"agent": agent, "sessions": out})
 }
@@ -428,7 +462,7 @@ func (s *Server) handleAgentChatSession(w http.ResponseWriter, r *http.Request) 
 	}
 	views := s.codingContinuations(r.Context(), sess)
 	planRevisions := s.chatPlanRevisions(sess, body)
-	out := map[string]any{"session": sess, "body": body, "queued": queued, "operations": s.chatOperations(sess.ID),
+	out := map[string]any{"session": sess, "body": body, "queued": queued, "capabilities": nativeChatCapabilities(), "supervision": s.nativeChatSupervision(sess, body), "operations": s.chatOperations(sess.ID),
 		"conversation": sessionConversation(sess), "related": s.relatedChats(sess), "proposals": s.chatTaskProposals(sess), "codingResults": s.chatCodingResults(sess), "continuations": views, "planRevisions": planRevisions}
 	if s.artifactReg != nil {
 		out["outputs"] = chatOutputs(sess, body)
@@ -631,7 +665,7 @@ func (s *Server) agentChatSendTo(agent, id, requestID, text string, files []thre
 		return agentchat.Delivery{}, err
 	}
 	if accepted.New {
-		s.ledger(ledger.Entry{Source: "chat", Kind: "chat.user", Actor: "owner", Object: ledger.Object{Kind: ledger.ObjSession, ID: id}, Session: id, Harness: "hermes", Text: ledger.Snip(text, 280), Meta: map[string]any{"agent": agent, "requestId": accepted.Delivery.ID}})
+		s.ledger(ledger.Entry{Source: "chat", Kind: "chat.user", Actor: "owner", Object: ledger.Object{Kind: ledger.ObjSession, ID: id}, Session: id, Harness: "hermes", Text: ledger.Snip(text, 280), Meta: map[string]any{"agent": agent, "requestId": accepted.Delivery.ID, "runId": supervisionRunID(adapterHermesOneshot, sessionConversation(sess).Key, accepted.Delivery.ID)}})
 	}
 	s.startAgentChatDelivery(agent, id)
 	receipt, _ := s.agentChat.store.Receipt(agent, id, accepted.Delivery.ID)

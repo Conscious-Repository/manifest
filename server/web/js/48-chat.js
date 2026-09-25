@@ -1067,7 +1067,7 @@ window.addEventListener('artifact-review-recorded',()=>{chatLoadReviewStatus().t
 function chatEntryState(entry){
  const session=entry.session,review={...chatReviewStatus[session.conversation?.key]};
  const tasks=new Set([session.task,...(session.conversation?.links||[]).filter(l=>l.kind==='task').map(l=>l.id)].filter(Boolean));for(const task of tasks)for(const field of ['ready','changes','accepted','unreviewed'])review[field]=(review[field]||0)+(chatReviewTaskStatus[task]?.[field]||0);
- let execution='unknown',label='Status unavailable';
+ let execution='unknown',label='Status unavailable',evidence='';
  if(entry.taskThread){
   const st=session.taskState||"",phase=session.phase?" ("+session.phase+")":"";
   if(['running','plan-running'].includes(st)){execution='running';label='Working'+phase;}
@@ -1091,20 +1091,38 @@ function chatEntryState(entry){
   }
   if(execution!=='running'&&session.run?.state==='completed'&&session.run.evidence){execution='completed';label=ob.connectivity!=='connected'?'Run finished · disconnected':ob.agentState==='blocked'?'Run finished · input pending':'Run finished';}
   else if(execution==='unknown'&&session.run?.state==='failed'){execution='failed';label='Run failed';}
+  // A submission this runtime never confirmed, or whose process is gone
+  // without a provider record, is disconnected — an idle pane is not a result.
+  const projected=chatSupervisionState(session.supervision);
+  if(projected&&execution!=='running'&&execution!=='waiting_user'&&(projected.execution==='disconnected'||(projected.execution==='completed'&&execution!=='completed'))){execution=projected.execution;label=projected.label;evidence=projected.evidence;}
  }else{
   const deliveries=session.deliveries||[],latest=deliveries.filter(d=>d.state!=='cancelled').at(-1);
   const running=deliveries.find(d=>d.state==='running');
-  if(running){execution='running';label=running.stopRequested?'Interruption requested':'Working';}
+  // The server's supervision projection is the one vocabulary every adapter
+  // shares; it names the artifact behind each state. A receipt the process no
+  // longer owns is disconnected here, never "Working" and never "finished".
+  const projected=chatSupervisionState(session.supervision);
+  if(projected){execution=projected.execution;label=projected.label;evidence=projected.evidence;}
+  else if(running){execution='running';label=running.stopRequested?'Interruption requested':'Working';}
   else if(deliveries.some(d=>d.state==='queued')){execution='queued';label='Queued';}
   else if(session.status==='thinking'){execution='running';label='Working';}
   else if(latest?.state==='completed'){execution='completed';label='Run finished';}
   else if(latest?.state==='failed'||session.status==='error'){execution='failed';label='Run failed';}
   else if(latest?.state==='queued'){execution='queued';label='Queued';}
-  else if(latest?.state==='interrupted'){label='Interrupted · check run';}
+  else if(latest?.state==='interrupted'){label=latest.disconnected?'Disconnected · outcome uncertain':'Interrupted · check run';if(latest.disconnected)execution='disconnected';}
   else if(!latest&&!session.turns){execution='draft';label='Not started';}
   else label='Idle · result unverified';
  }
- return {execution,label,review};
+ return {execution,label,review,evidence};
+}
+// chatSupervisionState maps the normalised run state (server chat_supervision.go)
+// to the rail's execution filter + label. unknown yields null so the caller's
+// adapter-specific fallback (or "Status unavailable") speaks instead.
+function chatSupervisionState(sv){
+ if(!sv||!sv.state||sv.state==='unknown')return null;
+ const stopping=(sv.runs||[]).some(r=>r.state==='running'&&r.stopRequested);
+ const map={submitted:['queued','Queued'],running:['running',stopping?'Interruption requested':'Working'],disconnected:['disconnected','Disconnected · outcome uncertain'],ready_for_review:['completed','Finished · ready for review'],failed:['failed','Run failed'],interrupted:['unknown','Interrupted · check run'],cancelled:['unknown','Cancelled before dispatch']};
+ const hit=map[sv.state];return hit?{execution:hit[0],label:hit[1],evidence:sv.evidence||''}:null;
 }
 function chatEntryMatchesAttention(entry){
  const state=chatEntryState(entry);
@@ -1155,7 +1173,7 @@ function renderChatInboxRows() {
     const key=chatInboxKey(entry),pinned=chatPins[key]===true;
     const state=chatEntryState(entry);row.dataset.execution=state.execution;
     const changed=chatSeen[key]&&chatSeen[key].marker!==chatActivityMarker(entry.session);if(changed&&meta)meta.prepend(el("span","chat-unread","new"));row.dataset.unread=String(!!changed);row.dataset.inboxKey=key;row.dataset.activity=chatActivityMarker(entry.session);
-    if(meta){const status=el('span','chat-row-state',state.label);status.title=entry.terminal?'Live runtime observation; a process being idle is not proof of a completed run.':'Status from the current session and its durable delivery receipt.';meta.prepend(status);
+    if(meta){const status=el('span','chat-row-state',state.label);status.title=state.evidence||(entry.terminal?'Live runtime observation; a process being idle is not proof of a completed run.':'Status from the current session and its durable delivery receipt.');meta.prepend(status);
      if(state.review.ready||state.review.changes){status.classList.add('chat-row-attention');status.textContent=(state.review.changes?state.review.changes+' need revision':state.review.ready+' ready for review')+' · '+state.label;}
     }
     const pin=el("button","sprt-quiet chat-inbox-pin",pinned?"Unpin":"Pin");pin.setAttribute("aria-label",(pinned?"Unpin ":"Pin ")+(entry.session.title||entry.session.name||entry.session.id));pin.setAttribute("aria-pressed",String(pinned));
@@ -1248,7 +1266,7 @@ function renderChatRail() {
     select.onchange = () => { chatInboxFilter = select.value; renderChatInboxRows(); };
     const workstreams=document.createElement("select");workstreams.id="chatWorkstreamFilter";workstreams.className="chat-inbox-filter";workstreams.setAttribute("aria-label","Filter chats by workstream");workstreams.onchange=()=>{chatWorkstreamFilter=workstreams.value;renderChatInboxRows();};
     const filters=el("div","chat-inbox-filters");filters.append(select,workstreams);
-    const attention=document.createElement('select');attention.className='chat-inbox-filter';attention.setAttribute('aria-label','Filter by attention');for(const [value,label] of [['all','All states'],['running','Running or queued'],['waiting_user','Needs input'],['review','Needs review or revision'],['failed','Failed']]){const option=el('option','',label);option.value=value;attention.append(option);}attention.value=chatAttentionFilter;attention.onchange=()=>{chatAttentionFilter=attention.value;renderChatInboxRows();};filters.append(attention);
+    const attention=document.createElement('select');attention.className='chat-inbox-filter';attention.setAttribute('aria-label','Filter by attention');for(const [value,label] of [['all','All states'],['running','Running or queued'],['waiting_user','Needs input'],['disconnected','Disconnected · outcome uncertain'],['review','Needs review or revision'],['failed','Failed']]){const option=el('option','',label);option.value=value;attention.append(option);}attention.value=chatAttentionFilter;attention.onchange=()=>{chatAttentionFilter=attention.value;renderChatInboxRows();};filters.append(attention);
     const lifecycle=document.createElement("select");lifecycle.className="chat-inbox-filter";lifecycle.setAttribute("aria-label","Conversation list");
     [["active","Chats"],["archived","Archived chats"],["deleted","Trash"]].forEach(([value,label])=>{const option=el("option","",label);option.value=value;lifecycle.append(option);});
     lifecycle.value=chatLifecycleFilter;lifecycle.onchange=()=>{chatLifecycleFilter=lifecycle.value;renderChatInboxRows();};
@@ -2274,8 +2292,9 @@ function renderChatTranscript(d) {
   const activeTask=chatConversationTasks.get("chat:"+chatAgent+"/"+s.id);
   if(activeTask)s.task=activeTask;
   s.related=d.related||[];s.handoffBody=d.body||"";s.continuations=d.continuations||[];s.sharedFiles=d.sharedFiles||[];
+  s.capabilities=d.capabilities||null;s.supervision=d.supervision||null;
   chatCurSession = s;
-  if(typeof chatWorkbenchActivityUpdate==="function")chatWorkbenchActivityUpdate(d.timeline||parseChatTurns(d.body||""),[...(d.operations||[]),...(d.sharedOperations||[])],d.proposals||[],{deliveries:s.deliveries||[],origin:s.origin||null});
+  if(typeof chatWorkbenchActivityUpdate==="function")chatWorkbenchActivityUpdate(d.timeline||parseChatTurns(d.body||""),[...(d.operations||[]),...(d.sharedOperations||[])],d.proposals||[],{deliveries:s.deliveries||[],origin:s.origin||null,capabilities:d.capabilities||null});
   chatLastUpdated = chatTranscriptSignature(d);
   const who = s.spirit || (s.agent ? chatAgentLabel(s.agent) : "");
   const portal = chatIsPortal();
@@ -2682,7 +2701,7 @@ function renderChatComposer(session) {
 // there runs the server's chatSweep over the agent's run reports.
 
 function chatTranscriptSignature(d) {
-  return JSON.stringify((d.session.deliveries || []).map(x=>[x.id,x.state,x.userTurn,x.replyTurn,x.stopRequested,x.toolScope,x.historyOmitted,x.result,x.error])) + "|" + d.session.updated + "|" + d.session.status + "|" + (d.queued || []).length + "|" + JSON.stringify((d.operations || []).map(x => [x.record.operationId, x.record.status, x.record.result])) + "|" + JSON.stringify(d.session.sharing || null) + "|" + JSON.stringify(d.sharedOperations || []) + "|" + JSON.stringify(d.proposals || []) + "|" + JSON.stringify(d.codingResults || [])+"|"+JSON.stringify(d.outputs || [])+"|"+JSON.stringify(d.continuations||[])+"|"+JSON.stringify(d.sharedFiles||[]);
+  return JSON.stringify((d.session.deliveries || []).map(x=>[x.id,x.state,x.userTurn,x.replyTurn,x.stopRequested,x.toolScope,x.historyOmitted,x.result,x.error])) + "|" + d.session.updated + "|" + d.session.status + "|" + (d.queued || []).length + "|" + JSON.stringify((d.operations || []).map(x => [x.record.operationId, x.record.status, x.record.result])) + "|" + JSON.stringify(d.session.sharing || null) + "|" + JSON.stringify(d.sharedOperations || []) + "|" + JSON.stringify(d.proposals || []) + "|" + JSON.stringify(d.codingResults || [])+"|"+JSON.stringify(d.outputs || [])+"|"+JSON.stringify(d.capabilities||null)+"|"+JSON.stringify((d.supervision||{}).state||null)+"|"+JSON.stringify(d.continuations||[])+"|"+JSON.stringify(d.sharedFiles||[]);
 }
 function ensureChatPoll(session, queued) {
   const active = session && (session.status === "thinking" || session.shared || queued > 0 || (chatAgent && !chatIsPortal()));
@@ -3645,6 +3664,7 @@ async function chatTermTail(o) {
   const runChanged=JSON.stringify(o.se.run||null)!==JSON.stringify(d.run||null);o.se.run=d.run||null;const listed=chatTermFind(o.id);if(listed){listed.run=o.se.run;listed.activityOffset=d.offset||0;}if(runChanged&&!document.querySelector('.chat-row-menu[open]'))renderChatInboxRows();
   const planningChanged=JSON.stringify([o.planningTimeline,o.planningOperations,o.planRevisions||{},o.proposals||[]])!==JSON.stringify([d.planningTimeline,d.planningOperations,d.planRevisions||{},d.proposals||[]]);
   o.questions=d.questions||[];
+  o.capabilities=d.capabilities||o.capabilities||null;o.supervision=d.supervision||o.supervision||null;
   chatQuestionPanel(o);
   o.planningTimeline=d.planningTimeline;
   o.planningOperations=d.planningOperations;
@@ -4171,6 +4191,7 @@ function chatRenderStagedMessages(host,scope){
  for(const item of items){
   const row=el('div','chat-pending-message'),preview=el('span','chat-pending-preview',chatAttachmentMessageLabel(item.payload.text));preview.title=preview.textContent;
   const steer=el('button','sprt-quiet','↳ Steer');steer.title='Steer the current run with this message';
+  const caps=chatTermOpen?.capabilities;if(caps&&caps.steer!=='explicit'){steer.disabled=true;steer.title='This runtime ('+caps.adapter+') cannot steer a working agent.';}
   const remove=el('button','sprt-quiet','×');remove.setAttribute('aria-label','Remove pending message');
   const more=el('details','chat-pending-more'),summary=el('summary','','…');summary.setAttribute('aria-label','Pending message actions');const menu=el('div','chat-pending-menu');more.append(summary,menu);more.addEventListener('toggle',()=>{if(more.open)more.classList.toggle('below',more.getBoundingClientRect().top<120);});
   const status=el('span','chat-pending-status',item.stagedError||'Queued · sends after this run');status.setAttribute('role','status');
@@ -4477,7 +4498,12 @@ function chatConversationInfo(title){
 function chatNativeInterruptionControls(session,base,refresh) {
  const box=el('section','chat-native-interruption');
  const running=(session.deliveries||[]).find(d=>d.state==='running');
- if(running){
+ // Capability truth: offer only what the adapter honours; say so otherwise.
+ const caps=session.capabilities||null;
+ const disconnected=(session.deliveries||[]).filter(d=>d.state==='interrupted'&&d.disconnected);
+ for(const receipt of disconnected){const note=el('p','chat-workspace-hint','Disconnected: the server restarted while this turn was in flight. Its outcome is uncertain and it was not replayed; review the transcript before asking again.');note.setAttribute('role','status');note.dataset.request=receipt.id;box.append(note);}
+ if(running&&caps&&caps.interrupt==='unsupported'){box.append(el('p','chat-workspace-hint','This adapter ('+caps.adapter+') cannot interrupt a running turn.'));}
+ else if(running){
   const count=(session.deliveries||[]).filter(d=>d.state==='queued').length;
   const button=el('button','sprt-quiet',count?'Interrupt turn and cancel '+count+' queued':'Interrupt turn');
   button.classList.add('chat-native-stop');button.title='Request interruption · Ctrl+Alt+X, then Enter';button.setAttribute('aria-keyshortcuts','Control+Alt+x');
@@ -4486,6 +4512,7 @@ function chatNativeInterruptionControls(session,base,refresh) {
   box.append(button,status);
  }
  for(const receipt of session.deliveries||[]){if(receipt.state!=='queued')continue;
+  if(caps&&!caps.cancelQueued){box.append(el('p','chat-workspace-hint','Queued: '+(receipt.text||'').replace(/\s+/g,' ').slice(0,120)+' — this adapter ('+caps.adapter+') cannot cancel a queued instruction.'));continue;}
   const row=el('div','chat-queued-control'),cancel=el('button','sprt-quiet','Cancel queued instruction'),status=el('p','chat-workspace-hint');status.setAttribute('role','status');
   cancel.setAttribute('aria-label','Cancel queued instruction: '+(receipt.text||'').replace(/\s+/g,' ').slice(0,80));
   cancel.onclick=async()=>{cancel.disabled=true;try{await postJSONOk(base+'/'+encodeURIComponent(session.id)+'/cancel-queued',{requestId:receipt.id});status.textContent='Instruction cancelled before dispatch.';refresh();}catch(e){status.textContent=e.message||'Could not cancel queued instruction. Check status and retry.';cancel.disabled=false;}};

@@ -415,7 +415,7 @@ function chatOpenContext(){
  if(chatIsPortal())return;
  return chatEnsureWorkspace().tab('context','Context',(host,drop)=>{
   const key=chatAgent+'/'+chatOpenId,pane=el('section','chat-context-inspector'),body=el('div','chat-context-body');body.tabIndex=0;host.append(pane);pane.append(body);
-  let closed=false,selected=null,instructionOpen=false;
+  let closed=false,selected=null,instructionOpen=false,capabilitiesOpen=false;
   const render=()=>{
    if(closed||!host.isConnected||key!==chatAgent+'/'+chatOpenId)return;
    const source=chatWorkspaceSource();if(!source)return;
@@ -427,6 +427,28 @@ function chatOpenContext(){
    if(project){const projectRow=el('div','chat-context-section'),edit=el('button','sprt-quiet','edit project instructions');edit.onclick=()=>chatEditProject(project);projectRow.append(el('h3','',chatWorkstreams.groups[project]||'Project'),el('p','chat-workspace-hint','Current project instructions apply to new chats. Recorded inputs below show what was sent here.'),edit);const notes=chatWorkstreams.contexts?.[project]?.instructions;if(notes){const current=el('details','');current.append(el('summary','','Current project instructions'),el('pre','chat-activity-text',notes));projectRow.append(current);}body.append(projectRow);}
    if(source.task){const task=el('button','sprt-quiet','open linked task');task.onclick=()=>openTodoPanel(source.task);body.append(task);}
    const data=chatWorkbenchActivity?.key===key?chatWorkbenchActivity:null,inputs=chatContextInputs(data);
+   const capabilities=data?.context?.capabilities;
+   if(capabilities?.adapter){
+    // Adapter capability truth (server chat_capabilities.go): what this
+    // adapter's code path can honour, never a running delivery's state.
+    const details=el('details','chat-context-capabilities'),facts=el('dl','chat-context-summary');
+    details.append(el('summary','','Adapter capabilities'),el('p','chat-workspace-hint','Current adapter support; recorded inputs below describe individual deliveries.'));
+    const fact=(label,value)=>facts.append(el('dt','',label),el('dd','',value));
+    const names={'hermes-oneshot':'Hermes one-shot','herdr-codex':'Codex (herdr)','herdr-claude':'Claude Code (herdr)','herdr-shell':'Shell (herdr)','tmux-legacy':'Legacy tmux','remote-keep':'Remote kept session'};
+    fact('Adapter',names[capabilities.adapter]||capabilities.adapter);
+    fact('Follow-up instructions',capabilities.queue==='durable'?'Durably queued for a later turn':capabilities.queue==='none'?'Not supported':'Not reported');
+    fact('Cancel queued instruction',capabilities.cancelQueued?'Supported before dispatch':'Not supported');
+    fact('Interruption',capabilities.interrupt==='request-and-cancel-queued'?'Requests cancellation of the active turn and cancels queued instructions. Already-started effects may continue.':capabilities.interrupt==='unsupported'?'Not supported':'Not reported');
+    fact('Stop',capabilities.stop==='request'?'Cancellation request; the runner decides when it returns':capabilities.stop==='process-kill'?'Ends the process; the transcript is kept':capabilities.stop==='unsupported'?'Not supported':'Not reported');
+    fact('Live steering',capabilities.liveSteering?'Supported: a deliberate send into a working agent':'Not supported');
+    fact('Questions',capabilities.structuredQuestions?'Codex async questions answered from chat':capabilities.answerQuestions==='terminal-only'?'Runtime prompts need Terminal':'Not supported');
+    fact('Retry','Explicit resubmit only; an uncertain send is never replayed');
+    fact('Resume',{'fresh-session-per-turn':'Fresh Hermes session per turn; nothing to resume','exact-resume-id':'Exact conversation ID resume on an explicit send','tmux-relaunch':'tmux relaunch on send'}[capabilities.resume]||(capabilities.resume==='unsupported'?'Not supported':'Not reported'));
+    fact('Supervision evidence',{'delivery-receipt':'Durable delivery receipts in the session file','input-receipt+observation':'Input receipts plus live runtime observation','observation-only':'Observation only; no receipts, so idle is never completion'}[capabilities.supervision]||'Not reported');
+    fact('Enabled skills','Not reported by this adapter');
+    details.open=capabilitiesOpen;details.addEventListener('toggle',()=>{if(details.isConnected)capabilitiesOpen=details.open;});
+    details.append(facts);body.append(details);
+   }
    const section=el('section','chat-context-section');section.append(el('h3','','Recorded inputs'));body.append(section);
    if(!inputs.length){section.append(emptyRow('No recorded inputs available yet.'));body.scrollTop=scroll;return;}
    const selector=document.createElement('select');selector.className='pp-in';selector.setAttribute('aria-label','Recorded instruction');
@@ -452,7 +474,7 @@ function chatOpenContext(){
    body.scrollTop=scroll;
   };
   window.addEventListener('chat-workbench-activity',render);render();
-  return {element:pane,close:()=>{closed=true;window.removeEventListener('chat-workbench-activity',render);pane.remove();drop();},getView:()=>({selected,scrollTop:body.scrollTop,instructionOpen:body.querySelector('.chat-context-instruction')?.open||false}),restoreView:async view=>{if(!host.isConnected||!host.clientHeight)return false;selected=view.selected||null;instructionOpen=!!view.instructionOpen;render();body.scrollTop=Math.max(0,Number(view.scrollTop)||0);return true;}};
+  return {element:pane,close:()=>{closed=true;window.removeEventListener('chat-workbench-activity',render);pane.remove();drop();},getView:()=>({selected,scrollTop:body.scrollTop,capabilitiesOpen:body.querySelector('.chat-context-capabilities')?.open||false,instructionOpen:body.querySelector('.chat-context-instruction')?.open||false}),restoreView:async view=>{if(!host.isConnected||!host.clientHeight)return false;selected=view.selected||null;instructionOpen=!!view.instructionOpen;capabilitiesOpen=!!view.capabilitiesOpen;render();body.scrollTop=Math.max(0,Number(view.scrollTop)||0);return true;}};
  },{kind:'context'});
 }
 

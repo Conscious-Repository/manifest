@@ -751,6 +751,7 @@ button.chat-attach-chip { min-height: 44px; max-width: 100%; background: transpa
 .chat-question-input { display: block; width: 100%; box-sizing: border-box; margin-top: var(--sp-3); padding: var(--sp-4); background: var(--bg); color: var(--text); border: 1px solid var(--line); border-radius: var(--radius); resize: vertical; font: inherit; }
 .chat-question-answer { white-space: pre-wrap; overflow-wrap: anywhere; color: var(--text); font-family: var(--sans); font-size: var(--fs-md); }
 .chat-question-status { margin-top: var(--sp-4); color: var(--base-60); font-family: var(--sans); font-size: var(--fs-md); }
+.chat-question-stale .chat-question-title { color: var(--base-60); text-decoration: line-through; }
 .chat-main.terminal-focus .chat-questions { display: none; }
 .chat-question-history summary { font-family: var(--sans); font-size: var(--fs-md); color: var(--base-60); cursor: pointer; }
 /* Pending follow-ups: a compact row above the composer, with explicit dispatch. */

@@ -14,7 +14,7 @@ const LIST_DELAY=300,THREAD_DELAY=400;
 const overrides={};
 const thread=id=>overrides[id]||({session:{id,title:'Thread '+id.toUpperCase(),status:'idle',agent:'alfred',turns:2,updated:'2026-09-12T10:0'+(id==='a'?1:2)+':00Z',created:'2026-09-12T10:00:00Z',spentUsd:0},
  body:'## Turn 1 — user · 2026-09-12T10:00:00Z\n\nhello from '+id.toUpperCase()+'\n\n## Turn 2 — alfred · 2026-09-12T10:01:00Z\n\nreply from '+id.toUpperCase(),
- conversation:{key:'conv-'+id},outputs:id==='a'?[{delivery:'native-output-request',replyTurn:2,hash:'c'.repeat(64)}]:[],queued:[],operations:[],proposals:[],related:[],continuations:[],sharedFiles:[]});
+ conversation:{key:'conv-'+id},capabilities:{adapter:'hermes-oneshot',queue:'durable',cancelQueued:true,interrupt:'request-and-cancel-queued',stop:'request',steer:'unsupported',liveSteering:false,retry:'explicit-resubmit',resume:'fresh-session-per-turn',structuredQuestions:false,answerQuestions:'unsupported',supervision:'delivery-receipt',skillInventory:'not-reported'},outputs:id==='a'?[{delivery:'native-output-request',replyTurn:2,hash:'c'.repeat(64)}]:[],queued:[],operations:[],proposals:[],related:[],continuations:[],sharedFiles:[]});
 const log=[];
 const json=(res,code,body,delay=0)=>setTimeout(()=>{res.writeHead(code,{'Content-Type':'application/json'});res.end(JSON.stringify(body));},delay);
 const server=http.createServer((req,res)=>{
@@ -68,6 +68,12 @@ const server=http.createServer((req,res)=>{
   const aFetches=(await (await fetch(base+'/__log')).json()).filter(r=>r.p==='/api/agents/chat/alfred/sessions/a').length;
   assert.equal(aFetches,2,'A was fetched on first open and once to revalidate');
   assert.deepEqual(errors.filter(e=>!/EventSource|terminal\/events/.test(e)),[]);
+  await page.evaluate(()=>chatOpenContext());
+  await page.getByText('Adapter capabilities',{exact:true}).click();
+  await page.getByText('Durably queued for a later turn',{exact:true}).waitFor();
+  await page.getByText('Not reported by this adapter',{exact:true}).waitFor();
+  assert.equal(await page.locator('.chat-context-capabilities').getByText('Not supported',{exact:true}).count(),2);
+  await page.getByRole('button',{name:'Hide workspace',exact:true}).click();
   const retainedOutputs=[];
   let fileReads=0,fileDelay=0,fileFail=false;
   const extraFiles=[];

@@ -137,9 +137,11 @@ const {chromium}=require('playwright'),fs=require('fs'),path=require('path'),ass
  assert.ok((await p.locator('.chat-activity-event').innerText()).includes('rerun'));
  await p.setViewportSize({width:390,height:844});assert.equal(await p.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);await p.screenshot({path:'/tmp/manifest-workbench-activity-phone.png'});
  await p.evaluate(()=>{
-  chatWorkbenchActivityUpdate([{n:1,who:'user',text:'Use the original plan'},{n:2,who:'user',text:'Second request <button>literal</button>'}],[],[],{deliveries:[{id:'1234567890abcdef1234567890abcdef',state:'completed',result:{reportedModel:'reported-opus',sessionId:'20260925_143000_123456abcdef'},userTurn:1,toolScope:{source:'request',toolsets:'web,files'},context:{recipient:{agent:'claude',model:'opus'},artifacts:[{id:'plan',revision:'b'.repeat(64)}]}},{id:'legacy-delivery',userTurn:2,state:'completed'}]});
+  chatWorkbenchActivityUpdate([{n:1,who:'user',text:'Use the original plan'},{n:2,who:'user',text:'Second request <button>literal</button>'}],[],[],{capabilities:{adapter:'hermes-oneshot',queue:'durable',cancelQueued:true,interrupt:'request-and-cancel-queued',stop:'request',steer:'unsupported',liveSteering:false,retry:'explicit-resubmit',resume:'fresh-session-per-turn',structuredQuestions:false,answerQuestions:'unsupported',supervision:'delivery-receipt',skillInventory:'not-reported'},deliveries:[{id:'1234567890abcdef1234567890abcdef',state:'completed',result:{reportedModel:'reported-opus',sessionId:'20260925_143000_123456abcdef'},userTurn:1,toolScope:{source:'request',toolsets:'web,files'},context:{recipient:{agent:'claude',model:'opus'},artifacts:[{id:'plan',revision:'b'.repeat(64)}]}},{id:'legacy-delivery',userTurn:2,state:'completed'}]});
   chatOpenContext();
  });
+ await p.getByText('Adapter capabilities',{exact:true}).click();
+ await p.getByText('Not reported by this adapter',{exact:true}).waitFor();
  await p.getByText('Tool scope was not recorded for this instruction.',{exact:true}).waitFor();
  await p.getByText('No runner result recorded for this instruction.',{exact:true}).waitFor();
  assert.equal(await p.getByText('Not reported',{exact:true}).count(),2);
@@ -153,6 +155,7 @@ const {chromium}=require('playwright'),fs=require('fs'),path=require('path'),ass
  await p.getByText('Use the original plan',{exact:true}).waitFor();
  await p.evaluate(async()=>{chatWorkspaceTabs.close();await Promise.all([...chatWorkspaceStates.values()].map(s=>s.flush()));chatWorkspaceStates.clear();await chatRestoreWorkspace();});
  await p.waitForFunction(()=>document.querySelector('.chat-context-instruction')?.open);
+ assert.equal(await p.locator('.chat-context-capabilities').evaluate(e=>e.open),true,'capability disclosure restores with Context');
  assert.equal(await p.getByLabel('Recorded instruction').inputValue(),'1');
  await p.getByText('20260925_143000_123456abcdef',{exact:true}).waitFor();
  await p.getByText('reported-opus',{exact:true}).waitFor();

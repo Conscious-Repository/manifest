@@ -48,20 +48,25 @@ type InvocationResult struct {
 }
 
 type Delivery struct {
-	Result         *InvocationResult `json:"result,omitempty"`
-	StopRequested  bool              `json:"stopRequested,omitempty"`
-	ToolScope      *ToolScope        `json:"toolScope,omitempty"`
-	ID             string            `json:"id"`
-	HistoryOmitted int               `json:"historyOmitted,omitempty"`
-	Text           string            `json:"text,omitempty"`
-	Fingerprint    string            `json:"fingerprint"`
-	State          string            `json:"state"`
-	Accepted       string            `json:"accepted"`
-	Updated        string            `json:"updated"`
-	UserTurn       int               `json:"userTurn,omitempty"`
-	ReplyTurn      int               `json:"replyTurn,omitempty"`
-	Error          string            `json:"error,omitempty"`
-	Context        *MessageContext   `json:"context,omitempty"`
+	Result        *InvocationResult `json:"result,omitempty"`
+	StopRequested bool              `json:"stopRequested,omitempty"`
+	// Disconnected marks a delivery whose running provider call outlived the
+	// process that owned it: a restart found it running and could not know the
+	// outcome. It stays interrupted and is never replayed; supervision projects
+	// it as disconnected rather than as an owner interruption or a failure.
+	Disconnected   bool            `json:"disconnected,omitempty"`
+	ToolScope      *ToolScope      `json:"toolScope,omitempty"`
+	ID             string          `json:"id"`
+	HistoryOmitted int             `json:"historyOmitted,omitempty"`
+	Text           string          `json:"text,omitempty"`
+	Fingerprint    string          `json:"fingerprint"`
+	State          string          `json:"state"`
+	Accepted       string          `json:"accepted"`
+	Updated        string          `json:"updated"`
+	UserTurn       int             `json:"userTurn,omitempty"`
+	ReplyTurn      int             `json:"replyTurn,omitempty"`
+	Error          string          `json:"error,omitempty"`
+	Context        *MessageContext `json:"context,omitempty"`
 }
 
 type ArtifactReference struct {

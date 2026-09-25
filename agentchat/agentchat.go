@@ -535,17 +535,39 @@ func (s *Store) Queued(agent, id string) []string {
 	return out
 }
 
+// Recovered names one session repaired at startup and the deliveries whose
+// provider call was in flight when the previous process died. Those
+// deliveries are disconnected: not running, not done, never replayed.
+type Recovered struct {
+	Agent        string
+	ID           string
+	Disconnected []string // request IDs that were running
+	Queued       []string // request IDs still waiting; they start only through Claim
+}
+
 // Recover repairs sessions left `thinking` by a process that died mid-turn:
 // the flag goes back to idle and a system turn records the interruption. Call
 // once at startup, before any turn can start. Returns the ids repaired.
 func (s *Store) Recover() []string {
 	var fixed []string
+	for _, r := range s.RecoverDeliveries() {
+		fixed = append(fixed, key(r.Agent, r.ID))
+	}
+	return fixed
+}
+
+// RecoverDeliveries is Recover with the per-delivery detail a supervisor needs
+// to record the disconnection durably (ledger) without rereading every file.
+func (s *Store) RecoverDeliveries() []Recovered {
+	var fixed []Recovered
 	for _, agent := range s.Agents() {
 		for _, sess := range s.List(agent) {
 			if sess.Status != StatusThinking {
 				continue
 			}
+			rec := Recovered{Agent: agent, ID: sess.ID}
 			_, err := s.update(agent, sess.ID, func(x *Session, body *string) error {
+				rec.Disconnected, rec.Queued = nil, nil
 				interrupted := false
 				stopRequested := false
 				queued := false
@@ -554,6 +576,7 @@ func (s *Store) Recover() []string {
 					switch d.State {
 					case DeliveryRunning:
 						d.State = DeliveryInterrupted
+						d.Disconnected = true
 						d.Error = "Server restarted; provider delivery is uncertain and was not replayed"
 						if d.StopRequested {
 							stopRequested = true
@@ -561,8 +584,10 @@ func (s *Store) Recover() []string {
 						}
 						d.Updated = now()
 						interrupted = true
+						rec.Disconnected = append(rec.Disconnected, d.ID)
 					case DeliveryQueued:
 						queued = true
+						rec.Queued = append(rec.Queued, d.ID)
 					}
 				}
 				// Sessions created by the old transport have no receipt for the active turn.
@@ -580,7 +605,7 @@ func (s *Store) Recover() []string {
 				return nil
 			})
 			if err == nil {
-				fixed = append(fixed, key(agent, sess.ID))
+				fixed = append(fixed, rec)
 			}
 		}
 	}

@@ -148,11 +148,26 @@ func TestCanarySourceCallGraphIsolation(t *testing.T) {
 // Re-audited 2026-09-25: ToolsetScope extracts pure request/default selection
 // from legacy buildArgs. Run still returns from the fixed MigratedDuty branch
 // before buildArgs; no successor routing, imports, authority or effects changed.
+// Re-audited 2026-09-25 (commit e283514, "Give a bounded extraction turn seven
+// minutes"): authority.go and claude_successor.go changed only by replacing the
+// literal 120 with the named constant ExtractionTimeoutCap = 420 in three
+// places — DutyAuthority.Validate's local-binding bound (TimeoutSeconds >
+// ExtractionTimeoutCap), extractionDutyAllowed's admission bound, and
+// defaultExtractionDuties' TimeoutSeconds. Branch-sensitive review: the canary
+// duty (extractor/re-intake, deepseek-local, TimeoutSeconds 120, CeilingUSD 0,
+// MaxSteps 1, Tools none, MCP no_mcp) still passes Validate (120 ≤ 420) and is
+// still excluded by extractionDutyAllowed by exact duty name before any
+// provider check, so Runner.Run still returns through runSuccessor only. No
+// call, import, provider, model, cost or tool authority changed; the ceiling
+// stays zero. The wider bound loosens liveness (how long one local tool-free
+// turn may run), never spend or reach. The extraction path itself is not on the
+// canary's call graph. Pins refreshed to the reviewed bytes; a future change
+// to either file must repeat this review, not refresh blindly.
 var reviewedSuccessorSources = map[string]string{
-	"../../hermes/claude_successor.go": "8033ce4e155e64208fd75bad4dc16406b0a5688b4d306a48b5c4253032ef5de6",
+	"../../hermes/claude_successor.go": "2268cefe71d72de28b6425c0c248c0d79bf210a506892de24ea346f024f13cd8",
 	"../../hermes/runner.go":           "7b23d917498fdb0ff058076080575a8f12d70e3fb19b07e5615eb401d18ebaac",
 	"../../hermes/successor.go":        "b154048dfe670b02c46d4d2302d17ac9bc8d58ca499c0445e8d7bbd818d0e8af",
 	"../../hermes/successor.py":        "a7737229609b18c627c720f466858045b7aa06b4e03ed29ce1c0774d8385ae5c",
-	"../../hermes/authority.go":        "fef7b7a179b9f62bb53e910381c4ea3bca198a3743432a8f7541abe334585b32",
+	"../../hermes/authority.go":        "eb81015bc173e44cf7caab821c2458480125b18381414de626d0980bda61baba",
 	"../../hermes/fallback.go":         "361d54087bd0eb76a98ee1014717e86632c7f037ab5dab4643528f91142f98e6",
 }

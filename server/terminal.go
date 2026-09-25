@@ -379,6 +379,8 @@ func (s *Server) handleTermSessions(w http.ResponseWriter, r *http.Request) {
 		AgentState     string                 `json:"agentState"`
 		Connectivity   string                 `json:"connectivity"`
 		Process        string                 `json:"process"`
+		Capabilities   chatCapabilities       `json:"capabilities"`
+		Supervision    chatSupervision        `json:"supervision"`
 	}
 	out := make([]row, 0, len(list))
 	for _, se := range list {
@@ -399,8 +401,8 @@ func (s *Server) handleTermSessions(w http.ResponseWriter, r *http.Request) {
 		}
 		var run *terminalRunEvidence
 		var activityOffset int64
+		var tr termTranscript
 		if se.Kind == "codex" || se.Kind == "claude" {
-			var tr termTranscript
 			if path := s.terminal.transcriptPath(se); path != "" {
 				if t, ok := readTranscript(se.Kind, path, 0); ok {
 					tr = t
@@ -414,7 +416,8 @@ func (s *Server) handleTermSessions(w http.ResponseWriter, r *http.Request) {
 				}
 			}
 		}
-		out = append(out, row{se, activityOffset, l, s.terminalConversation(se), run, ob.AgentState, ob.Connectivity, ob.Process})
+		tr.Run = run // a board failure record overrides the rail's run evidence
+		out = append(out, row{se, activityOffset, l, s.terminalConversation(se), run, ob.AgentState, ob.Connectivity, ob.Process, terminalChatCapabilities(se), s.terminalChatSupervision(se, tr, ob)})
 	}
 	sort.SliceStable(out, func(i, j int) bool {
 		if out[i].Pinned != out[j].Pinned {

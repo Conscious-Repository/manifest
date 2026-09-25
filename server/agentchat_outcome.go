@@ -34,7 +34,7 @@ func agentChatOutcomeEntry(agent, id string, d agentchat.Delivery, recipient age
 	default:
 		return ledger.Entry{}, false
 	}
-	e.Meta = map[string]any{"agent": recipient.Agent, "sourceAgent": agent, "profile": recipient.Profile, "requestId": d.ID, "deliveryState": d.State, "userTurn": d.UserTurn, "replyTurn": d.ReplyTurn, "selectedModel": recipient.Model, "requestedModel": recipient.RequestedModel, "spentUsd": usd}
+	e.Meta = map[string]any{"agent": recipient.Agent, "sourceAgent": agent, "profile": recipient.Profile, "requestId": d.ID, "runId": supervisionRunID(adapterHermesOneshot, agentConversation("hermes", agent, id, "private", "").Key, d.ID), "deliveryState": d.State, "userTurn": d.UserTurn, "replyTurn": d.ReplyTurn, "selectedModel": recipient.Model, "requestedModel": recipient.RequestedModel, "spentUsd": usd}
 	if d.Result != nil {
 		e.Meta["sessionId"] = d.Result.SessionID
 		e.Meta["model"] = d.Result.ReportedModel

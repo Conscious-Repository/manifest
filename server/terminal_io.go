@@ -54,7 +54,9 @@ func (s *Server) handleTermTranscript(w http.ResponseWriter, r *http.Request) {
 	}
 	planningTimeline, _ := s.terminalPlanningTimeline(r.Context(), se)
 	writeJSON(w, map[string]any{
-		"questions":        s.terminalQuestions(se, full),
+		"questions":        s.terminalQuestionsObserved(se, full, ob),
+		"capabilities":     terminalChatCapabilities(se),
+		"supervision":      s.terminalChatSupervision(se, full, ob),
 		"historyAvailable": tr.Available,
 		"turns":            tr.Turns, "title": tr.Title, "cost": tr.Cost, "run": full.Run,
 		"conversation":       s.terminalConversation(se),
@@ -235,6 +237,13 @@ func (s *Server) handleTermInput(w http.ResponseWriter, r *http.Request) {
 		httpError(w, errBadRequest("artifact context is unavailable for this terminal backend; nothing sent"))
 		return
 	}
+	// Capability truth: the legacy runtime has no agent observation, so it can
+	// neither hold a message for an idle prompt nor steer a working agent.
+	// Refuse in words rather than sending the text as an ordinary keystroke.
+	if (b.Steer || b.AfterRun) && se.backend() != "herdr" {
+		http.Error(w, "this runtime ("+terminalChatCapabilities(se).Adapter+") cannot queue or steer; nothing sent", http.StatusConflict)
+		return
+	}
 	if se.backend() == "herdr" {
 		mu := s.termInputMutex(se.ID)
 		mu.Lock()
@@ -303,6 +312,13 @@ func (s *Server) handleTermInput(w http.ResponseWriter, r *http.Request) {
 				}
 				text, err := s.prepareQuestionAnswers(se, b.QuestionAnswers)
 				if err != nil {
+					http.Error(w, err.Error(), http.StatusConflict)
+					return
+				}
+				// A stale question must not be answered as if live: with the
+				// asking process gone, launch resolution below would resume the
+				// conversation and deliver the answer as a fresh message.
+				if err := s.questionRunLive(r.Context(), se); err != nil {
 					http.Error(w, err.Error(), http.StatusConflict)
 					return
 				}
