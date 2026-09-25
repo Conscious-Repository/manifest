@@ -33,10 +33,32 @@
       toggle.textContent = open ? "Close chats" : "‹ Chats";
     };
     setOpen(false);
-    toggle.onclick = () => setOpen(!chatShell.classList.contains("mf-chat-nav-open"));
+    // The open list is a history entry (same URL, state mfChats), so the
+    // phone's Back closes it instead of leaving the conversation — measured
+    // 2026-09-25: Back with the list open went to the page before Chat.
+    // Closing it from the page pops that entry again; a row click navigates
+    // on top of it (one same-URL entry remains, harmless).
+    const openList = () => {
+      setOpen(true);
+      if (!history.state?.mfChats) history.pushState({ ...(history.state || {}), mfChats: true }, "");
+    };
+    const closeList = () => {
+      setOpen(false);
+      if (history.state?.mfChats) history.back();
+    };
+    toggle.onclick = () => (chatShell.classList.contains("mf-chat-nav-open") ? closeList() : openList());
     chatShell.prepend(toggle);
-    window.mf.openChats = () => { if (mqPhone.matches) { setOpen(true); toggle.focus({ preventScroll: true }); } };
-    window.mf.closeChats = () => setOpen(false);
+    window.mf.openChats = () => { if (mqPhone.matches) { openList(); toggle.focus({ preventScroll: true }); } };
+    window.mf.closeChats = closeList;
+    window.addEventListener("popstate", () => {
+      if (chatShell.classList.contains("mf-chat-nav-open") && !history.state?.mfChats) setOpen(false);
+    });
+    chatShell.addEventListener("keydown", (event) => {
+      if (event.key !== "Escape" || !mqPhone.matches || !chatShell.classList.contains("mf-chat-nav-open")) return;
+      event.stopPropagation();
+      closeList();
+      (chatShell.querySelector(".mf-chat-back") || toggle).focus({ preventScroll: true });
+    });
     window.addEventListener("hashchange", () => {
       const section = /^#\/chat\/a\/[^/]+$/.test(location.hash) || location.hash === "#/chat/spirits";
       if (mqPhone.matches && !section) setOpen(false);
