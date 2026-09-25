@@ -808,6 +808,21 @@ function artifactReviewControls(artifact,revision,number,onDiscuss){
 // context; opening it never navigates, edits a file, or starts an agent.
 const artifactEditDrafts = new Map();
 window.addEventListener("pagehide",()=>{for(const state of artifactEditDrafts.values())if(state.dirty)state.flush();});
+// Artifact origin is not the authorship of every later revision.
+function artifactProvenanceView(artifact,hash,number) {
+ const view=el('details','artifact-provenance');view.append(el('summary','','Origin and version details'));
+ const revision=(artifact.revisions||[]).find(r=>r.hash===hash&&r.n===number),origin=artifact.provenance||{};
+ const facts=el('dl','');
+ const add=(label,value)=>{if(value)facts.append(el('dt','',label),el('dd','',String(value)));};
+ add('Version',number);add('Revision',hash);add('Version recorded by',revision?.actor||'Not recorded');add('Version recorded at',revision?.at||'Not recorded');
+ add('Artifact source',origin.source||'Not recorded');add('Recorded conversation',origin.session);add('Recorded run',origin.run);add('Recorded task',origin.task);
+ view.append(facts);
+ const links=(artifact.sources||[]).filter(link=>typeof link.route==='string'&&link.route.startsWith('#/'));
+ for(const link of links){const row=el('p',''),a=el('a','',link.kind==='conversation'?'Open source conversation':link.kind==='execution'?'Open producing execution':link.kind==='run'?'Open producing run':'Open source '+link.kind);a.href=link.route;a.title=link.label||link.id||'';row.append(a);view.append(row);}
+ if((origin.session||origin.run)&&!links.length)view.append(el('p','','Source unavailable; recorded identity retained.'));
+ return view;
+}
+
 function artifactWorkspace(mount, options) {
   const opts = options || {};
   const pane = el("aside", "artifact-workspace");
@@ -843,7 +858,7 @@ function artifactWorkspace(mount, options) {
     };
     await editState.refresh();
   }
-  const url = (a, hash) => "/api/artifacts/get?id="+encodeURIComponent(a.id)+"&preview=1&rev="+encodeURIComponent(hash);
+  const url = (a, hash) => "/api/artifacts/get?id="+encodeURIComponent(a.id)+"&preview=1&sources=1&rev="+encodeURIComponent(hash);
   const fetchJSON = async (path) => { const r = await fetch(path); if (!r.ok) throw new Error(await r.text()); return r.json(); };
   async function show(a, hash, number) {
     const ticket = ++generation;
@@ -900,6 +915,7 @@ function artifactWorkspace(mount, options) {
     const download = el("a", "sprt-quiet", "Open file ↗");
     download.href = contentURL; download.target = "_blank"; download.rel = "noopener";
     controls.append(download);
+    body.prepend(artifactProvenanceView(current,selected,selectedNumber));
     if(reviewControls)body.prepend(reviewControls);
     const previous=current.revisions.find(r=>r.n===selectedNumber-1);
     if(previous&&!binary){
@@ -1284,3 +1300,4 @@ function artifactHunkSyntax(content,lines,path,enabled){
   status.textContent=language+' · hunk fragments only; surrounding file context is unavailable.';render();
  }).catch(()=>{if(content.isConnected)status.textContent=language+' · syntax unavailable; original hunk retained.';});
 }
+

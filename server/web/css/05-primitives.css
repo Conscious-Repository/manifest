@@ -376,3 +376,5 @@
 .artifact-code-preview > button{min-height:var(--control-touch);}
 
 .working-syntax-toggle{min-height:var(--control-touch);}
+
+.artifact-provenance{font-size:var(--font-sm,12px);overflow-wrap:anywhere;margin-bottom:12px}.artifact-provenance dl{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,2fr);gap:4px 12px}.artifact-provenance dd{margin:0;min-width:0}.artifact-provenance p{margin:6px 0}

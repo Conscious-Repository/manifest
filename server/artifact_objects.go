@@ -314,6 +314,9 @@ func (s *Server) handleArtifactGet(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	v := s.artifactView(a, s.artifactLinks([]artifacts.Artifact{a}))
+	if r.URL.Query().Get("sources") == "1" {
+		v.Sources = s.artifactSourceLinks([]artifacts.Artifact{a})[a.ID]
+	}
 	if r.URL.Query().Get("content") == "1" || r.URL.Query().Get("preview") == "1" {
 		hash := orStr(strings.TrimSpace(r.URL.Query().Get("rev")), a.Head)
 		if _, ok := a.Revision(hash); !ok {

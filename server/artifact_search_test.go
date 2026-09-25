@@ -108,6 +108,10 @@ func TestArtifactSearchSourcesPreserveExecutionAndConversation(t *testing.T) {
 	if code != 200 || len(out["artifacts"].([]any)[0].(map[string]any)["sources"].([]any)) != 2 {
 		t.Fatal(code, out)
 	}
+	code, exact := artifactsDo(t, s, "GET", "/api/artifacts/get?id="+output.ID+"&sources=1&preview=1&rev="+output.Head, "")
+	if code != 200 || len(exact["sources"].([]any)) != 2 {
+		t.Fatal(code, exact)
+	}
 	// Deleting the recorded runtime removes its link, without relinking by title.
 	s.terminal.save([]termSession{root})
 	links = s.artifactSourceLinks([]artifacts.Artifact{output})
