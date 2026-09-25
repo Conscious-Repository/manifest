@@ -78,7 +78,8 @@ const REC_RUN_COMMON_FIELDS = ["role", "query", "max"];
 // recApplyRoute is called from showAion with everything after "recruiting".
 function recApplyRoute(sub) {
   sub = (sub || "").replace(/^\//, "");
-  if (sub.startsWith("role/")) { recView = "role"; recRoleView = sub.slice(5); }
+  if (sub.startsWith("candidate/")) { recView = "board"; recRole = null; recOrigin = "both"; recOriginSet = true; recCut = "all"; recQuery = ""; recPeopleFacet = "considering"; try { recSel = decodeURIComponent(sub.slice(10)); } catch (_) { recSel = ""; } }
+  else if (sub.startsWith("role/")) { recView = "role"; recRoleView = sub.slice(5); }
   else if (sub === "sources") { recView = "places"; recPlacesLayout = "review"; } // the queue is a chip on PLACES now
   else if (sub === "network" || sub === "board" || sub === "places") { recView = sub; }
   else recView = "network";
