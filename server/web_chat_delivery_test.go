@@ -148,3 +148,13 @@ func TestArtifactLinkPreview(t *testing.T) {
 		t.Fatalf("artifact links: %v\n%s", err, out)
 	}
 }
+
+func TestTaskThreadRequestsUI(t *testing.T) {
+	node, err := exec.LookPath("node")
+	if err != nil {
+		t.Skip("node unavailable")
+	}
+	if out, err := exec.Command(node, "testdata/task-thread-requests.cjs").CombinedOutput(); err != nil {
+		t.Fatalf("task thread requests: %v\n%s", err, out)
+	}
+}

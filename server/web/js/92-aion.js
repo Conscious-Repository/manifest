@@ -684,7 +684,7 @@ function aionComposer(taskID, selected) {
   const send = pillLight("comment", async () => {
     if (!ta.value.trim() && !pendingFiles.length) return;
     try {
-      await postJSONOk("/api/tasks/thread", { id: taskID, text: ta.value.trim(), files: pendingFiles, mentions: [] });
+      await postTaskThread({ id: taskID, text: ta.value.trim(), files: pendingFiles, mentions: [] });
       if (aionSelId === selected) { await loadAion(); }
     } catch (e) { showToast("Couldn't comment — " + (e.message || "error")); }
   });

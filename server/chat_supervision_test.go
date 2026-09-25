@@ -472,7 +472,9 @@ func TestTerminalSupervisionProjectionAndRefusals(t *testing.T) {
 func TestChatAdapterCapabilityMatrix(t *testing.T) {
 	seen := map[string]chatCapabilities{}
 	for _, c := range chatAdapterCapabilities() {
-		if c.Retry != "explicit-resubmit" || (c.SkillInventory != "not-reported" && c.SkillInventory != "on-disk") {
+		// restart-redispatch is the one deliberate replay (task-thread turns,
+		// 4fbea1c); any other automatic retry is invented.
+		if (c.Retry != "explicit-resubmit" && !(c.Adapter == adapterHermesTaskThread && c.Retry == "restart-redispatch")) || (c.SkillInventory != "not-reported" && c.SkillInventory != "on-disk") {
 			t.Fatalf("invented capability: %+v", c)
 		}
 		// An on-disk inventory is a claim about readable skill folders, not about

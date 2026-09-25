@@ -12,10 +12,15 @@ package server
 //	Interrupt       request-and-cancel-queued | unsupported
 //	Stop            request | process-kill | unsupported
 //	Steer           unsupported | explicit          (explicit = steer:true on a working agent)
-//	Retry           explicit-resubmit                (never automatic; an uncertain send is never replayed)
+//	Retry           explicit-resubmit | restart-redispatch
+//	                explicit-resubmit: never automatic; an uncertain send is never replayed.
+//	                restart-redispatch: task-thread Ask/Do turns only — hermesTurnSweep
+//	                re-dispatches a turn the process died on, up to hermesTurnRetries
+//	                attempts in all (4fbea1c). The one deliberate replay; each
+//	                re-dispatch is its own visible run. The count is an owner decision.
 //	Resume          fresh-session-per-turn | exact-resume-id | tmux-relaunch | unsupported
 //	AnswerQuestions unsupported | async-codex | terminal-only
-//	Supervision     delivery-receipt | input-receipt+observation | observation-only
+//	Supervision     delivery-receipt | input-receipt+observation | observation-only | turn-marker
 //	SkillInventory  on-disk | not-reported          (on-disk = skill folders readable now via …/skills; never what a turn loaded)
 type chatCapabilities struct {
 	Adapter             string `json:"adapter"`
@@ -40,7 +45,21 @@ const (
 	adapterHerdrOther    = "herdr-shell"
 	adapterTmuxLegacy    = "tmux-legacy"
 	adapterRemoteKeep    = "remote-keep"
+	// adapterHermesTaskThread is a task thread's Ask/Do turn: one `hermes -z`
+	// run per accepted turn, tracked by private turn-open/turn-closed markers.
+	adapterHermesTaskThread = "hermes-task-thread"
 )
+
+// taskThreadCapabilities: nothing queues, nothing can be stopped or steered
+// from the thread, and a turn the process died on is re-dispatched by the
+// sweep — stated here rather than dressed up as explicit-resubmit.
+func taskThreadCapabilities() chatCapabilities {
+	return chatCapabilities{
+		Adapter: adapterHermesTaskThread, Queue: "none", Interrupt: "unsupported", Stop: "unsupported", Steer: "unsupported",
+		Retry: "restart-redispatch", Resume: "fresh-session-per-turn", AnswerQuestions: "unsupported",
+		Supervision: "turn-marker", SkillInventory: "not-reported",
+	}
+}
 
 // nativeChatCapabilities: Manifest's durable delivery store in front of one
 // `hermes -z` turn per instruction. Every turn is a fresh Hermes session, so
@@ -96,5 +115,6 @@ func chatAdapterCapabilities() []chatCapabilities {
 		terminalChatCapabilities(termSession{Backend: "herdr", Kind: "claude"}),
 		terminalChatCapabilities(termSession{Kind: "claude"}),
 		terminalChatCapabilities(termSession{Kind: "claude", Device: "laptop"}),
+		taskThreadCapabilities(),
 	}
 }

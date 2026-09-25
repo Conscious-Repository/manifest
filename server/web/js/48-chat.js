@@ -578,7 +578,8 @@ async function renderTaskChat(taskID, refetch) {
   head.append(chatArtifactActions(d));
   head.append(info);
   chatMountHeader(head);
-  (d.timeline || d.thread || []).forEach((c) => host.append(chatTaskThreadEntry(c, taskID)));
+  host.append(...taskThreadWithRuns(d, d.timeline || d.thread || [], (c) => chatTaskThreadEntry(c, taskID),
+    (l) => { const e = el("div", "chat-turn chat-system", l.text); e.title = l.title; return e; }));
   if (d.inflight) host.append(el("div", "chat-thinking", "✦ " + (d.inflight.name || "agent") + " is working…"));
   if (!(d.thread || []).length && !d.inflight) host.append(emptyRow("no comments yet"));
   appendTaskApprovals(host, d);

@@ -288,6 +288,11 @@ type Server struct {
 	// agentChat: the Hermes-family chat store (Alfred + profiles) in the
 	// primary harness tree — agent-chat plan Phase 1 (agentchat.go). Nilable.
 	agentChat *agentChatCfg
+
+	// taskThreadReqMu serializes request-ID claims on POST /api/tasks/thread;
+	// taskThreadInflight holds the claims this process is still recording.
+	taskThreadReqMu    sync.Mutex
+	taskThreadInflight map[string]bool
 }
 
 // UseLedger wires the daily ledger.

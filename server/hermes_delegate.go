@@ -574,6 +574,10 @@ func isImageExt(name string) bool {
 const (
 	actTurnOpen   = "turn-open"   // an accepted do-bot turn (owed)
 	actTurnClosed = "turn-closed" // the turn finished — success or ⚠ failure
+	// actTurnRedispatch records the sweep's decision to replay an owed turn,
+	// written before the replay (meta attempt/of/previous; error when the
+	// dispatch was refused). Read by taskThreadSupervision.
+	actTurnRedispatch = "turn-redispatch"
 	// hermesTurnRetries caps re-dispatches of one owed turn (opens without a
 	// close) — a turn that outlives every deploy window must not loop forever.
 	hermesTurnRetries = 3
@@ -649,10 +653,22 @@ func (s *Server) hermesTurnSweep() {
 			continue
 		}
 		log.Printf("hermes turn %s (%s): re-dispatching an interrupted turn (attempt %d)", id, phase, len(owed)+1)
+		// The one deliberate replay (4fbea1c; the count awaits an owner
+		// decision). It is recorded BEFORE the dispatch so every re-dispatch is
+		// its own visible run (taskThreadSupervision) and ledger entry, even if
+		// the process dies again inside the spool.
+		redispatch := map[string]any{"agent": agent, "phase": phase, "attempt": len(owed) + 1, "of": owed[0].ID, "previous": open.ID, "cap": hermesTurnRetries}
+		s.hermesTurnMark(id, actTurnRedispatch, redispatch)
+		s.ledger(ledger.Entry{Source: "run", Kind: "run.redispatched", Actor: who.ID,
+			Object: ledger.Object{Kind: ledger.ObjTask, ID: id}, Task: id, Harness: "hermes",
+			Text: fmt.Sprintf("%s turn on %s re-dispatched after interruption (attempt %d of %d)", phase, id, len(owed)+1, hermesTurnRetries),
+			Meta: map[string]any{"task": id, "phase": phase, "attempt": len(owed) + 1, "of": owed[0].ID, "previous": open.ID}})
 		// re-compose from the durable inputs — the fresh order writes its
 		// own turn-open marker, extending the owed chain
 		if err := s.spoolTaskWorkOrderAs(h, agent, id, phase, text, intent); err != nil {
 			log.Printf("hermes turn %s (%s): re-dispatch: %v", id, phase, err)
+			redispatch["error"] = err.Error()
+			s.hermesTurnMark(id, actTurnRedispatch, redispatch)
 		}
 	}
 }

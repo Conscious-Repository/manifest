@@ -400,7 +400,8 @@ async function renderTodoPanel(refetch) {
   thHead.append(thActs);
   th.append(thHead);
   const list = el("div", "tdo-p-thread");
-  (d.timeline || d.thread || []).forEach((c) => list.append(todoThreadEntry(c, todoSelId)));
+  list.append(...taskThreadWithRuns(d, d.timeline || d.thread || [], (c) => todoThreadEntry(c, todoSelId),
+    (l) => { const e = el("div", "tdo-p-comment structural act-run", l.text); e.title = l.title; return e; }));
   if (d.inflight) list.append(todoInflightEntry(d.inflight));
   if (!(d.thread || []).length && !d.inflight) list.append(el("div", "tdo-p-empty", "Add context, ask a question, or tell an agent what to do."));
   th.append(list);
@@ -412,6 +413,49 @@ async function renderTodoPanel(refetch) {
 
 // todoInflightEntry — presence (§3.4d): "✦ Alfred is working… since 14:02
 // (plan)", derived from the live delegation index, never stored.
+// postTaskThread posts one thread comment under a request ID remembered with
+// its exact payload, so a retry after a lost acknowledgment (same payload)
+// reuses the ID and the server returns the recorded comment instead of
+// posting — and dispatching — twice. A changed payload is a new request.
+async function postTaskThread(body) {
+  const key = "manifest.taskThreadRequest.v1." + body.id;
+  const signature = JSON.stringify(body);
+  let saved = null;
+  try { saved = JSON.parse(localStorage.getItem(key) || "null"); } catch (e) {}
+  const requestId = saved && saved.signature === signature ? saved.requestId
+    : Array.from(crypto.getRandomValues(new Uint8Array(16)), (b) => b.toString(16).padStart(2, "0")).join(""); // secure-context free, unlike randomUUID
+  try { localStorage.setItem(key, JSON.stringify({ signature, requestId })); } catch (e) {}
+  const result = await postJSONOk("/api/tasks/thread", { ...body, requestId });
+  try { localStorage.removeItem(key); } catch (e) {}
+  return result;
+}
+
+// taskRunLines — the server's turn-marker projection (supervision.runs) as
+// quiet system lines: every sweep re-dispatch, and any interrupted or failed
+// turn, is shown where it happened so a replay is never silent. A first
+// attempt that answered adds nothing; the answer is already in the thread.
+const TASK_RUN_WORDS = { running: "running", disconnected: "interrupted", failed: "failed", ready_for_review: "answered", unknown: "state unknown" };
+function taskRunLines(d) {
+  const runs = (d && d.supervision && d.supervision.runs) || [];
+  return runs.filter((r) => r.attempt > 1 || r.state === "disconnected" || r.state === "failed").map((r) => ({
+    at: Date.parse(r.updated || "") || 0,
+    text: (r.attempt > 1 ? "re-dispatched after an interruption · attempt " + r.attempt + " · " : "turn ") + (TASK_RUN_WORDS[r.state] || r.state),
+    title: r.evidence || "",
+  }));
+}
+// taskThreadWithRuns interleaves those lines with the thread by time.
+function taskThreadWithRuns(d, entries, renderComment, renderLine) {
+  const lines = taskRunLines(d);
+  const out = [];
+  for (const c of entries) {
+    const at = Date.parse(c.at || "") || 0;
+    while (lines.length && lines[0].at <= at) out.push(renderLine(lines.shift()));
+    out.push(renderComment(c));
+  }
+  lines.forEach((l) => out.push(renderLine(l)));
+  return out;
+}
+
 function todoInflightEntry(f) {
   const e = el("div", "tdo-p-comment tdo-p-inflight");
   const since = f.since ? new Date(f.since) : null;
@@ -809,8 +853,9 @@ function todoComposer(d, opts) {
     const sent=snapshot();
     send.disabled = true;
     try {
-      await postJSONOk("/api/tasks/thread", { id: taskID, text, mentions, files: pendingFiles, mode, agent, context: sent.selection ? [{id:sent.selection.id,revision:sent.selection.revision}] : [] });
-      if (mode === "ask") showToast("Asked " + agentName() + " — the answer lands in this thread", null, "info");
+      const posted = await postTaskThread({ id: taskID, text, mentions, files: pendingFiles, mode, agent, context: sent.selection ? [{id:sent.selection.id,revision:sent.selection.revision}] : [] });
+      if (posted.replayed) showToast(posted.dispatch === "uncertain" ? "Already recorded — whether the agent was asked is uncertain; nothing was sent again" : "Already recorded — nothing was sent again", null, "info");
+      else if (mode === "ask") showToast("Asked " + agentName() + " — the answer lands in this thread", null, "info");
       else if (mode === "do") showToast(agentName() + " received your instructions — follow progress here", null, "info");
       if(chatStateEqual(draftState?.value||snapshot(),sent)){
         const cleared={...sent,text:"",files:[],mentions:[]};

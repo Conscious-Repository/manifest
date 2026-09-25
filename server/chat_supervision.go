@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"manifest/agentchat"
+	"manifest/threads"
 )
 
 // Supervision is the ONE state vocabulary every chat adapter projects into.
@@ -51,6 +52,10 @@ type supervisionRun struct {
 	Evidence      string `json:"evidence"`
 	StopRequested bool   `json:"stopRequested,omitempty"`
 	Updated       string `json:"updated,omitempty"`
+	// Attempt/ReplayOf are set only on a sweep re-dispatch of a task-thread
+	// turn: attempt n (the original is 1) of the run whose request is ReplayOf.
+	Attempt  int    `json:"attempt,omitempty"`
+	ReplayOf string `json:"replayOf,omitempty"`
 }
 
 type chatSupervision struct {
@@ -366,4 +371,110 @@ func (s *Server) questionRunLive(ctx context.Context, se termSession) error {
 		return fmt.Errorf("question is stale: its run is no longer live (%s/%s); nothing sent", ob.Process, ob.Connectivity)
 	}
 	return nil
+}
+
+// ---- task thread (hermes Ask/Do turns) ----
+
+// taskThreadSupervision projects a task thread's private turn markers: every
+// turn-open is a run (request ID = the marker's comment ID); a turn-redispatch
+// marker before it makes that run a replay, attempt n of the owed chain. The
+// markers are the only record — nothing is written here.
+func (s *Server) taskThreadSupervision(taskID string) chatSupervision {
+	out := chatSupervision{Adapter: adapterHermesTaskThread, Conversation: "task:" + taskID, Capabilities: taskThreadCapabilities(), Runs: []supervisionRun{}}
+	if s.threads == nil || s.threads.private == nil {
+		out.State, out.Evidence = supervisionUnknown, "no private thread store; no turn markers"
+		return out
+	}
+	entries := s.threads.private.Thread(taskID)
+	visible := s.listThread(taskID)
+	inFlight := false
+	if s.hermes != nil {
+		s.hermes.mu.Lock()
+		_, inFlight = s.hermes.running[taskID]
+		s.hermes.mu.Unlock()
+	}
+	var pending map[string]any // the redispatch marker awaiting its turn-open
+	for i, c := range entries {
+		switch c.Action {
+		case actTurnRedispatch:
+			if _, failed := c.Meta["error"]; failed {
+				attempt := metaInt(c.Meta["attempt"])
+				out.Runs = append(out.Runs, supervisionRun{
+					RunID: supervisionRunID(adapterHermesTaskThread, out.Conversation, c.ID), Adapter: adapterHermesTaskThread,
+					Conversation: out.Conversation, RequestID: c.ID, Attempt: attempt, ReplayOf: metaString(c.Meta["of"]),
+					State: supervisionFailed, Updated: c.At.UTC().Format(time.RFC3339),
+					Evidence: fmt.Sprintf("re-dispatch attempt %d refused before a turn opened: %s", attempt, metaString(c.Meta["error"])),
+				})
+				pending = nil
+				continue
+			}
+			pending = c.Meta
+		case actTurnOpen:
+			run := supervisionRun{RunID: supervisionRunID(adapterHermesTaskThread, out.Conversation, c.ID), Adapter: adapterHermesTaskThread,
+				Conversation: out.Conversation, RequestID: c.ID, Updated: c.At.UTC().Format(time.RFC3339)}
+			label := "turn-open marker " + c.ID
+			if pending != nil {
+				run.Attempt, run.ReplayOf = metaInt(pending["attempt"]), metaString(pending["of"])
+				label = fmt.Sprintf("re-dispatch attempt %d of %d (replays %s after an interruption) — turn-open marker %s", run.Attempt, metaInt(pending["cap"]), run.ReplayOf, c.ID)
+				pending = nil
+			}
+			run.State, run.Evidence = taskTurnState(entries[i+1:], visible, c, label, inFlight)
+			out.Runs = append(out.Runs, run)
+		}
+	}
+	out.State, out.Evidence = conversationSupervisionState(out.Runs)
+	return out
+}
+
+// taskTurnState settles one turn-open from what follows it: its close, a
+// later open (the process died and the chain moved on), the agent's reply, or
+// the in-memory invocation. Idle is never completion.
+func taskTurnState(after, visible []threads.Comment, open threads.Comment, label string, inFlight bool) (string, string) {
+	agent := metaString(open.Meta["agent"])
+	who := agentTokenIdentity(agent).ID
+	var reply *threads.Comment
+	for i := range visible {
+		if visible[i].Author == who && visible[i].At.After(open.At) {
+			reply = &visible[i]
+			break
+		}
+	}
+	for _, c := range after {
+		switch c.Action {
+		case actTurnOpen, actTurnRedispatch:
+			return supervisionDisconnected, label + ": the process ended before this turn closed; not answered by this attempt"
+		case actTurnClosed:
+			switch {
+			case c.Meta["abandoned"] == true:
+				return supervisionFailed, label + ": abandoned by the sweep after the retry cap; the thread says so"
+			case reply == nil:
+				return supervisionUnknown, label + ": closed without a visible agent reply"
+			case strings.HasPrefix(reply.Text, "⚠"):
+				return supervisionFailed, label + ": closed with failure note " + reply.ID
+			case c.Meta["repaired"] == true:
+				return supervisionReady, label + ": reply " + reply.ID + " on the thread; close marker repaired by the sweep"
+			default:
+				return supervisionReady, label + ": reply " + reply.ID + " on the thread"
+			}
+		}
+	}
+	if inFlight {
+		return supervisionRunning, label + ": invocation live in this process"
+	}
+	return supervisionDisconnected, label + ": owed — no close and no live invocation; the sweep re-dispatches within the retry cap"
+}
+
+func metaString(v any) string {
+	s, _ := v.(string)
+	return s
+}
+
+func metaInt(v any) int {
+	switch n := v.(type) {
+	case int:
+		return n
+	case float64:
+		return int(n)
+	}
+	return 0
 }

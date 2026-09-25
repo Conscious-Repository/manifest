@@ -311,7 +311,7 @@ func (s *Server) handleTaskThreadGet(w http.ResponseWriter, r *http.Request) {
 		httpError(w, errBadRequest("id is required"))
 		return
 	}
-	writeJSON(w, map[string]any{"thread": s.listThread(id)})
+	writeJSON(w, map[string]any{"thread": s.listThread(id), "supervision": s.taskThreadSupervision(id)})
 }
 
 // handleTaskThreadPost adds a comment. The composer uploads files first
@@ -330,14 +330,7 @@ func (s *Server) handleTaskThreadGet(w http.ResponseWriter, r *http.Request) {
 // and an optional AGENT token (the roster; default = the assignee, else
 // Alfred). The comment stays the record either way, with meta.mode/agent.
 func (s *Server) handleTaskThreadPost(w http.ResponseWriter, r *http.Request) {
-	var b struct {
-		ID, Text string
-		Context  []artifactContextRef
-		Mentions []string
-		Files    []threads.FileRef
-		Mode     string
-		Agent    string
-	}
+	var b taskThreadPost
 	if err := decode(r, &b); err != nil || strings.TrimSpace(b.ID) == "" {
 		httpError(w, errBadRequest("id is required"))
 		return
@@ -347,17 +340,37 @@ func (s *Server) handleTaskThreadPost(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "todo not found", http.StatusNotFound)
 		return
 	}
+	// A request ID makes the post idempotent (todo_thread_requests.go): a
+	// retry after a lost acknowledgment returns the recorded comment and
+	// dispatches nothing. Without one the route keeps its old contract.
+	var claim *taskThreadClaim
+	if b.RequestID != "" {
+		var prior *taskThreadReplay
+		var err error
+		claim, prior, err = s.claimTaskThreadRequest(id, b)
+		if err != nil {
+			writeTaskThreadError(w, err)
+			return
+		}
+		if prior != nil {
+			writeJSON(w, map[string]any{"ok": true, "replayed": true, "requestId": b.RequestID, "dispatch": prior.Dispatch, "comment": prior.Comment, "thread": s.listThread(id)})
+			return
+		}
+	}
 	contextText, err := s.taskArtifactContext(id, b.Context)
 	if err != nil {
+		claim.refused(err)
 		httpError(w, err)
 		return
 	}
 	c, err := s.postAndDispatchContext(id, b.Mode, b.Agent, b.Mentions, b.Files, b.Text, b.Context, contextText)
 	if err != nil {
+		claim.refused(err)
 		httpError(w, err)
 		return
 	}
-	writeJSON(w, map[string]any{"ok": true, "comment": c, "thread": s.listThread(id)})
+	claim.recorded(c)
+	writeJSON(w, map[string]any{"ok": true, "comment": c, "requestId": b.RequestID, "thread": s.listThread(id)})
 }
 
 // postAndDispatch records the owner's text as a thread comment (the record,
