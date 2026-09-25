@@ -91,14 +91,17 @@ func terminalChatCapabilities(se termSession) chatCapabilities {
 		return chatCapabilities{Adapter: adapterTmuxLegacy, Queue: "none", Interrupt: "unsupported", Stop: "process-kill", Steer: "unsupported",
 			Retry: "explicit-resubmit", Resume: "tmux-relaunch", AnswerQuestions: "terminal-only", Supervision: "observation-only", SkillInventory: "not-reported"}
 	}
+	// A shell has no provider session to resume; only the agents below do.
 	caps := chatCapabilities{Adapter: adapterHerdrOther, Queue: "none", Interrupt: "unsupported", Stop: "process-kill", Steer: "unsupported",
-		Retry: "explicit-resubmit", Resume: "exact-resume-id", AnswerQuestions: "unsupported", Supervision: "input-receipt+observation", SkillInventory: "not-reported"}
+		Retry: "explicit-resubmit", Resume: "unsupported", AnswerQuestions: "unsupported", Supervision: "input-receipt+observation", SkillInventory: "not-reported"}
 	switch se.Kind {
 	case "codex":
+		caps.Resume = "exact-resume-id"
 		caps.Adapter, caps.Queue, caps.CancelQueued, caps.Steer, caps.LiveSteering = adapterHerdrCodex, "durable", true, "explicit", true
 		caps.StructuredQuestions, caps.AnswerQuestions = true, "async-codex"
 		caps.SkillInventory = "on-disk"
 	case "claude":
+		caps.Resume = "exact-resume-id"
 		caps.Adapter, caps.Queue, caps.CancelQueued, caps.Steer, caps.LiveSteering = adapterHerdrClaude, "durable", true, "explicit", true
 		caps.AnswerQuestions = "terminal-only"
 		caps.SkillInventory = "on-disk"
@@ -115,6 +118,7 @@ func chatAdapterCapabilities() []chatCapabilities {
 		terminalChatCapabilities(termSession{Backend: "herdr", Kind: "claude"}),
 		terminalChatCapabilities(termSession{Kind: "claude"}),
 		terminalChatCapabilities(termSession{Kind: "claude", Device: "laptop"}),
+		terminalChatCapabilities(termSession{Backend: "herdr", Kind: "shell"}),
 		taskThreadCapabilities(),
 	}
 }

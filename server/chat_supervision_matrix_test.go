@@ -432,3 +432,25 @@ func TestSupervisedReceiptFinalisedAfterReplyIsReady(t *testing.T) {
 		t.Fatalf("a reply after submission but before finalisation is the answer: %s %s", got, why)
 	}
 }
+
+// Audit 2026-09-25: a herdr shell's matrix says it cannot steer or queue, but
+// the input handler refused only non-herdr backends, so steer:true reached the
+// shell as plain text. The handler now consults the matrix.
+func TestHerdrShellRefusesSteerAndQueueInWords(t *testing.T) {
+	s, _, _, prompts := herdrSupervisionFixture(t, "codex")
+	se := termSession{ID: "5e11000000000001", Backend: "herdr", Kind: "shell", Cwd: s.terminal.defaultWd, LaunchPhase: "active", Started: true, Runtime: herdrFixtureID(t, s.terminal.herdr)}
+	if err := s.terminal.upsertChecked(se); err != nil {
+		t.Fatal(err)
+	}
+	if caps := terminalChatCapabilities(se); caps.Steer != "unsupported" || caps.Queue != "none" || caps.Resume != "unsupported" {
+		t.Fatalf("%+v", caps)
+	}
+	for _, body := range []string{`{"text":"x","steer":true,"requestId":"shell-steer-01"}`, `{"text":"x","afterRun":true,"requestId":"shell-queue-01"}`} {
+		if w := receiptInput(s, se.ID, body); w.Code != 409 || !strings.Contains(w.Body.String(), adapterHerdrOther) || !strings.Contains(w.Body.String(), "nothing sent") {
+			t.Fatal("shell steer/queue accepted", w.Code, w.Body.String())
+		}
+	}
+	if prompts.Load() != 0 {
+		t.Fatal("refused input reached the runtime")
+	}
+}

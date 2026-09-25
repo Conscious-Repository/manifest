@@ -237,10 +237,12 @@ func (s *Server) handleTermInput(w http.ResponseWriter, r *http.Request) {
 		httpError(w, errBadRequest("artifact context is unavailable for this terminal backend; nothing sent"))
 		return
 	}
-	// Capability truth: the legacy runtime has no agent observation, so it can
-	// neither hold a message for an idle prompt nor steer a working agent.
-	// Refuse in words rather than sending the text as an ordinary keystroke.
-	if (b.Steer || b.AfterRun) && se.backend() != "herdr" {
+	// Capability truth: a runtime without agent observation (legacy tmux, a
+	// herdr shell, a kept remote) can neither hold a message for an idle
+	// prompt nor steer a working agent. Refuse in words, per the capability
+	// matrix, rather than sending the text as an ordinary keystroke (audit
+	// 2026-09-25: a herdr shell took steer:true as plain text).
+	if caps := terminalChatCapabilities(se); (b.Steer && caps.Steer != "explicit") || (b.AfterRun && caps.Queue != "durable") {
 		http.Error(w, "this runtime ("+terminalChatCapabilities(se).Adapter+") cannot queue or steer; nothing sent", http.StatusConflict)
 		return
 	}
