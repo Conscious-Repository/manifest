@@ -176,6 +176,11 @@ func (s *Server) chatShareReview(ctx context.Context, sess agentchat.Session, bo
 		}
 	}
 	for _, d := range sess.Deliveries {
+		// Cancelled queue entries never entered conversation history. Their
+		// retained private context is not part of the sharing envelope's files.
+		if d.State == agentchat.DeliveryCancelled {
+			continue
+		}
 		if d.Context != nil {
 			for _, ref := range d.Context.Artifacts {
 				artifact(ref, "delivery:"+d.ID)
