@@ -3612,9 +3612,10 @@ async function chatTermRequestFinalTail(o) {
 
 async function chatTermTail(o) {
   let d;
+  const fullRead=o.historyAvailable===false;
   const controller=new AbortController(),timeout=setTimeout(()=>controller.abort(),15000);
   try {
-    const response=await fetch(chatTermBase(o.id) + "/transcript?after=" + o.offset,{signal:controller.signal});
+    const response=await fetch(chatTermBase(o.id) + "/transcript?after=" + (fullRead?0:o.offset),{signal:controller.signal});
     if(!response.ok){chatTermReadHealth(o,true);return;}
     d=await response.json();
     if(!d||!Number.isSafeInteger(d.offset)||d.offset<0||(d.turns!=null&&!Array.isArray(d.turns))){chatTermReadHealth(o,true);return;}
@@ -3635,7 +3636,10 @@ async function chatTermTail(o) {
   o.proposals=d.proposals||[];
   const turns = d.turns || [];
   if (!missingHistory && o.turns.some((t) => t.pending && Date.now() - Date.parse(t.ts) > 15 * 60e3)) { o.turns = o.turns.filter((t) => !t.pending || Date.now() - Date.parse(t.ts) <= 15 * 60e3); chatTermPaintTurns(); }
-  if (d.offset < o.offset) { // the file was replaced/truncated: the reply is the whole projection
+  if(fullRead&&!missingHistory){
+    const pending=o.turns.filter(t=>t.pending).map(t=>({...t,since:turns.length}));
+    o.turns=turns.concat(pending);o.offset=d.offset;chatTermPaintTurns();
+  } else if (d.offset < o.offset) { // the file was replaced/truncated: the reply is the whole projection
     o.turns = turns;
     o.offset = d.offset || 0;
     chatTermPaintTurns();
@@ -3656,6 +3660,7 @@ async function chatTermTail(o) {
   if (d.title && d.title !== o.title) { o.title = d.title; headDirty = true; }
   if (d.cost && d.cost !== o.cost) { o.cost = d.cost; headDirty = true; }
   if (o.se.backend !== "herdr" && !!d.live !== o.live) { o.live = !!d.live; headDirty = true; renderChatComposer(chatTermComposerSession()); chatTermPaintStrip(); }
+  if(fullRead&&!missingHistory){o.title=d.title||'';o.cost=d.cost||0;headDirty=true;}
   if (headDirty) chatTermRepaintHead();
   if (o.live && (o.se.agentState==='blocked'||document.querySelector('.chat-terminal-workspace:not([hidden])'))) chatTermScreenFetch();
 }
