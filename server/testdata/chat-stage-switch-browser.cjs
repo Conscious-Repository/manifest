@@ -11,7 +11,8 @@ const {chromium,devices}=require('playwright'),fs=require('node:fs'),path=requir
 const web=path.join(__dirname,'../web');
 const types={'.html':'text/html','.js':'text/javascript','.css':'text/css','.svg':'image/svg+xml','.png':'image/png','.woff2':'font/woff2','.json':'application/json'};
 const LIST_DELAY=300,THREAD_DELAY=400;
-const thread=id=>({session:{id,title:'Thread '+id.toUpperCase(),status:'idle',agent:'alfred',turns:2,updated:'2026-09-12T10:0'+(id==='a'?1:2)+':00Z',created:'2026-09-12T10:00:00Z',spentUsd:0},
+const overrides={};
+const thread=id=>overrides[id]||({session:{id,title:'Thread '+id.toUpperCase(),status:'idle',agent:'alfred',turns:2,updated:'2026-09-12T10:0'+(id==='a'?1:2)+':00Z',created:'2026-09-12T10:00:00Z',spentUsd:0},
  body:'## Turn 1 — user · 2026-09-12T10:00:00Z\n\nhello from '+id.toUpperCase()+'\n\n## Turn 2 — alfred · 2026-09-12T10:01:00Z\n\nreply from '+id.toUpperCase(),
  conversation:{key:'conv-'+id},queued:[],operations:[],proposals:[],related:[],continuations:[],sharedFiles:[]});
 const log=[];
@@ -20,7 +21,7 @@ const server=http.createServer((req,res)=>{
  const url=new URL(req.url,'http://x');const p=url.pathname;
  if(p.startsWith('/api/')){
   log.push({p,at:Date.now()});
-  if(p==='/api/agents/chat/roster')return json(res,200,{agents:[{name:'alfred',label:'Alfred',enabled:true,model:'claude-x'}]});
+  if(p==='/api/agents/chat/roster')return json(res,200,{agents:[{name:'alfred',label:'Alfred',enabled:true,durableSend:true,model:'claude-x'}]});
   if(p==='/api/agents/chat/alfred/sessions')return json(res,200,{sessions:[thread('a').session,thread('b').session]},LIST_DELAY);
   const m=p.match(/^\/api\/agents\/chat\/alfred\/sessions\/([ab])$/);if(m)return json(res,200,thread(m[1]),THREAD_DELAY);
   if(p==='/api/agents/chat/alfred/sessions/missing')return json(res,404,{});
@@ -78,6 +79,21 @@ const server=http.createServer((req,res)=>{
   await page.evaluate(()=>{pendingFixture.session.deliveries[0].stopRequested=true;renderChatTranscript(pendingFixture);renderChatComposer(pendingFixture.session);});
   await page.getByText('✦ Interruption requested…',{exact:true}).waitFor();
   await page.getByPlaceholder('✦ Interruption requested — messages queue…',{exact:true}).waitFor();
+  assert.deepEqual(errors.filter(e=>!/EventSource|terminal\/events/.test(e)),[]);
+  // Polling must notice metadata-only changes from another device, even when
+  // second-resolution timestamps and the running state are unchanged.
+  const observed=thread('a');observed.session.status='thinking';observed.session.deliveries=[{id:'observed-run',state:'running',userTurn:1}];overrides.a=observed;
+  await page.evaluate(d=>{renderChatTranscript(d);renderChatComposer(d.session);chatOpenContext();ensureChatPoll(d.session,0);},observed);
+  const draft=page.locator('#chatComposer textarea');await draft.fill('Keep this unfinished instruction');
+  await draft.evaluate(e=>{window.originalComposer=e;e.focus();e.setSelectionRange(5,9);});
+  observed.session.deliveries[0].toolScope={source:'request',toolsets:'web,files'};
+  await page.getByText('Toolset scope at dispatch (request): web,files',{exact:true}).waitFor();
+  observed.session.deliveries[0].stopRequested=true;
+  await page.getByText('Interruption requested; waiting for the runner to return.',{exact:true}).waitFor();
+  assert.equal(await page.getByRole('button',{name:'Interrupt turn',exact:true}).isDisabled(),true);
+  assert.equal(await draft.inputValue(),'Keep this unfinished instruction');
+  assert.deepEqual(await draft.evaluate(e=>[e===originalComposer,e===document.activeElement,e.selectionStart,e.selectionEnd]),[true,true,5,9]);
+  await page.evaluate(()=>{clearInterval(chatPollTimer);chatPollTimer=null;});
   assert.deepEqual(errors.filter(e=>!/EventSource|terminal\/events/.test(e)),[]);
   // 3. on a phone the way back is chrome: a thread that fails to load still shows "‹ Chats" (2026-09-21)
   const phone=await browser.newContext({...devices['iPhone 13']});const pp=await phone.newPage();

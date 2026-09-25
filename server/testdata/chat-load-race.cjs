@@ -25,6 +25,13 @@ vm.runInContext(source.slice(source.indexOf('async function loadChatSession(id)'
  await ctx.loadChatSession('source');assert.equal(polled,1,'idle chat did not observe approvals');
  vm.runInContext(source.slice(source.indexOf('function chatTranscriptSignature(d)'),source.indexOf('function ensureChatPoll(session')),ctx);
  const idle={session:{id:'source',status:'idle',updated:'unchanged'},proposals:[]};
+ const receipt={id:'running-request',state:'running',userTurn:1};
+ const active={session:{id:'source',status:'thinking',updated:'same-second',deliveries:[receipt]}};
+ for(const [field,value] of Object.entries({stopRequested:true,toolScope:{source:'request',toolsets:'web'},historyOmitted:3,result:{sessionId:'native-session',reportedModel:'reported'},error:'Interrupted'})){
+  const prior=ctx.chatTranscriptSignature(active);receipt[field]=value;
+  assert.notEqual(ctx.chatTranscriptSignature(active),prior,field+' must refresh without state/timestamp change');
+  assert.equal(ctx.chatTranscriptSignature(structuredClone(active)),ctx.chatTranscriptSignature(active),'unchanged receipt stays stable');
+ }
  const before=ctx.chatTranscriptSignature(idle);
  idle.proposals=[{id:'approval',body:'Review this'}];const pendingSig=ctx.chatTranscriptSignature(idle);
  assert.notEqual(before,pendingSig,'new approval must trigger repaint without a new message');
