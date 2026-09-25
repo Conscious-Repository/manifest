@@ -91,6 +91,12 @@ function chatEnsureWorkspace(restoring=false){
  const clearChooser=()=>{chooserHost?.remove();chooserHost=null;pane.classList.remove('choosing');};
  const revealActive=()=>{const row=entries.get(active)?.row;if(!row||pane.hidden)return;const bounds=tabs.getBoundingClientRect(),selected=row.getBoundingClientRect();if(selected.left<bounds.left)tabs.scrollLeft-=bounds.left-selected.left;else if(selected.right>bounds.right)tabs.scrollLeft+=selected.right-bounds.right;};
  const tabResize=new ResizeObserver(revealActive);tabResize.observe(tabs);
+ // A rapid round trip through a wide viewport can clamp scrollLeft to zero
+ // while the observer sees the same final strip size. Reveal after layout on
+ // window resize as well, without moving focus or selecting another pane.
+ let revealFrame=0;
+ const revealAfterResize=()=>{cancelAnimationFrame(revealFrame);revealFrame=requestAnimationFrame(()=>{revealFrame=0;if(!disposed)revealActive();});};
+ window.addEventListener('resize',revealAfterResize);
  const w={pane,body,entries,restoring,
   save(){if(disposed||w.restoring||!savedState)return;for(const t of entries.values())if(!pane.hidden&&!t.host.hidden)t.view=t.api?.getView?.()||t.view;savedState.set({open:!pane.hidden,active,tabs:[...entries].filter(([,t])=>t.spec).map(([key,t])=>({key,spec:t.spec,view:t.restoreView||t.view||{}}))});},
   show(open=true){w.save();pane.hidden=!open;const layout=document.querySelector('.chat-layout-select');if(layout){if(!open)layout.value='focus';else if(layout.value==='focus'){const saved=chatRecall('manifest.chatLayout');layout.value=saved&&saved!=='focus'?saved:'split';}}if(typeof chatApplyWorkspaceLayout==='function')chatApplyWorkspaceLayout();shell.classList.toggle('has-artifact',open);shell._refreshPaneWidths?.();document.querySelectorAll('.chat-workspace-toggle').forEach(b=>b.setAttribute('aria-expanded',String(open)));if(!open)document.querySelector('#chatComposer textarea')?.focus();if(open){revealActive();const t=entries.get(active);if(t?.restoreView){const view=t.restoreView;Promise.resolve(t.api?.restoreView?.(view)).then(ok=>{if(ok&&t.restoreView===view)t.restoreView=null;});}}w.save();},
@@ -124,7 +130,7 @@ function chatEnsureWorkspace(restoring=false){
    return t;
   },
   chooser(){clearChooser();chooserHost=el('div','chat-workspace-picker');pane.classList.add('choosing');if(entries.size){chooserHost.classList.add('chat-workspace-popover');pane.append(chooserHost);}else body.append(chooserHost);chatWorkspaceChooser(chooserHost);w.show();},
-  close(){if(disposed)return;tabResize.disconnect();w.save();savedState?.flush();++chatWorkspaceRestoreTicket;disposed=true;for(const t of Array.from(entries.values()))t.api?.close?.();entries.clear();pane.remove();shell.classList.remove('has-artifact');chatWorkspaceTabs=null;chatWorkspace=null;shell._refreshPaneWidths?.();}
+  close(){if(disposed)return;tabResize.disconnect();window.removeEventListener('resize',revealAfterResize);cancelAnimationFrame(revealFrame);w.save();savedState?.flush();++chatWorkspaceRestoreTicket;disposed=true;for(const t of Array.from(entries.values()))t.api?.close?.();entries.clear();pane.remove();shell.classList.remove('has-artifact');chatWorkspaceTabs=null;chatWorkspace=null;shell._refreshPaneWidths?.();}
  };
  chatWorkspaceTabs=w;chatWorkspace=w;add.onclick=()=>{if(chooserHost&&entries.size)clearChooser();else w.chooser();};hide.onclick=()=>w.show(false);
  pane.addEventListener('keydown',e=>{if(e.key==='Escape'){if(chooserHost&&entries.size){clearChooser();add.focus();}else w.show(false);}});

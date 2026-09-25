@@ -159,6 +159,17 @@ const {chromium}=require('playwright'),fs=require('fs'),path=require('path'),ass
  assert.equal(await p.getByRole('button',{name:'open referenced artifact',exact:true}).getAttribute('title'),'Revision '+'b'.repeat(64));
  await p.evaluate(()=>{window.contextOriginalOpen=chatOpenWorkingArtifact;chatOpenWorkingArtifact=ref=>window.contextOpened=ref;});await p.getByRole('button',{name:'open referenced artifact',exact:true}).click();assert.equal(await p.evaluate(()=>contextOpened.revision),'b'.repeat(64));await p.evaluate(()=>chatOpenWorkingArtifact=contextOriginalOpen);
  assert.equal(await p.evaluate(()=>[...document.querySelectorAll('.chat-context-summary dd')].every(e=>e.scrollWidth<=e.clientWidth)),true,'full-length run identity fits phone');
+ // A wide viewport clamps tab scrolling; a rapid return can leave the size
+ // observer seeing its original width. Keep the active pane visible and focused.
+ await p.getByLabel('Recorded instruction').focus();
+ for(const widths of [[320,390,1440,390],[1440,320],[1440,390]]){
+  for(const width of widths)await p.setViewportSize({width,height:844});
+  await p.waitForFunction(()=>{const strip=document.querySelector('.chat-workspace-tabs').getBoundingClientRect(),tab=document.querySelector('[role=tab][aria-selected=true]').getBoundingClientRect();return tab.left>=strip.left&&tab.right<=strip.right;});
+  assert.equal(await p.getByLabel('Recorded instruction').inputValue(),'1');
+  assert.equal(await p.getByLabel('Recorded instruction').evaluate(e=>e===document.activeElement),true,'resize preserves focus');
+  assert.equal(await p.locator('.chat-context-instruction').evaluate(e=>e.open),true,'resize preserves disclosure');
+  assert.equal(await p.evaluate(()=>[...document.querySelectorAll('.chat-context-summary dd')].every(e=>e.scrollWidth<=e.clientWidth)),true,'run identity fits resized pane');
+ }
  await p.screenshot({path:'/tmp/manifest-native-result-phone.png'});
  assert.equal(await p.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);
  await p.getByLabel('Recorded instruction').selectOption('2');
