@@ -464,12 +464,16 @@ function chatOpenFiles(){
   scope.setAttribute('aria-label','File scope');
   for(const [value,label] of [...(source?[['conversation','this conversation']]:[]),['all','all registered files']]){const option=el('option','',label);option.value=value;scope.append(option);}
   search.type='search';search.placeholder='Filter files';search.setAttribute('aria-label','Filter files');list.tabIndex=0;status.setAttribute('role','status');toolbar.append(scope,search,refresh);pane.append(toolbar,status,list);host.append(pane);
-  let rows=[],closed=false,pending=null,timer=null,ready=Promise.resolve();
+  let rows=[],closed=false,pending=null,timer=null,loadedKey=null,ready=Promise.resolve();
   const render=()=>{
-   const scroll=list.scrollTop;list.replaceChildren();const q=search.value.trim().toLowerCase();
+   const scroll=list.scrollTop,top=list.getBoundingClientRect().top;
+   const visible=[...list.children].find(row=>row.dataset.fileKey&&row.getBoundingClientRect().bottom>top);
+   const anchor=visible?{key:visible.dataset.fileKey,offset:visible.getBoundingClientRect().top-top}:null;
+   list.replaceChildren();const q=search.value.trim().toLowerCase();
    for(const {artifact:a,roles,attachment} of rows){
     if(scope.value==='conversation'&&q&&![a.title,a.ref,a.kind,a.provenance?.run].join(' ').toLowerCase().includes(q))continue;
     const item=el('div','chat-file-row'),open=el('button','chat-file-open',a.title||a.ref||'Untitled file');open.disabled=!!a.unknown||!a.id;
+    item.dataset.fileKey=(attachment?'attachment:':'artifact:')+a.id;
     open.onclick=()=>attachment?chatOpenAttachment(attachment,"/api/chat/files/"+attachment.id):chatOpenWorkingArtifact({id:a.id,revision:a.head,task:scope.value==='conversation'?(a.provenance?.task||source?.task||''):'',contextDisabled:scope.value==='all'});
     const metadata=[...roles,a.kind,a.revisions?.length?'v'+a.revisions.length:'',a.provenance?.run?'Run '+a.provenance.run:''].filter(Boolean);
     item.append(open,el('div','chat-file-meta',metadata.join(' · ')));if(a.ref)item.append(el('div','chat-file-path',a.ref));
@@ -482,10 +486,14 @@ function chatOpenFiles(){
    }
    if(!list.childElementCount)list.append(emptyRow(search.value.trim()?'No matching files.':scope.value==='all'?'No registered files yet.':'No registered files for this conversation yet.'));
    list.scrollTop=scroll;
+   const retained=anchor&&[...list.children].find(row=>row.dataset.fileKey===anchor.key);
+   if(retained)list.scrollTop+=retained.getBoundingClientRect().top-top-anchor.offset;
   };
   const load=async()=>{
-   clearTimeout(timer);pending?.abort();const controller=new AbortController();pending=controller;refresh.disabled=true;status.textContent='loading…';list.replaceChildren(emptyRow('loading…'));
-   const all=scope.value==='all';search.placeholder=all?'Search names and current text':'Filter files';
+   const all=scope.value==='all',key=all?'all:'+search.value.trim():'conversation';
+   clearTimeout(timer);pending?.abort();const controller=new AbortController();pending=controller;refresh.disabled=true;status.textContent='loading…';
+   if(loadedKey!==key){loadedKey=null;rows=[];list.replaceChildren(emptyRow('loading…'));}
+   search.placeholder=all?'Search names and current text':'Filter files';
    try{
     const query=new URLSearchParams({sources:'1'});
     if(all)query.set('q',search.value.trim());
@@ -497,11 +505,11 @@ function chatOpenFiles(){
     const found=new Map();const add=(a,role)=>{const key=a.id||a.ref;if(!key)return;const row=found.get(key)||{artifact:a,roles:[]};if(!row.roles.includes(role))row.roles.push(role);found.set(key,row);};
     for(const a of foundScope.artifacts||[])add(a,all?'Registered file':'Conversation output');for(const a of task?.artifacts?.outputs||[])add(a,'Task output');for(const a of task?.artifacts?.inputs||[])add(a,'Task input');
     rows=[...(uploads.files||[]).map(f=>({artifact:{id:f.id,title:f.name,kind:f.type},attachment:{...f,owned:true},roles:[f.sent?"Attached context":"Draft attachment"]})),...found.values()];
-    status.textContent=rows.length+' file'+(rows.length===1?'':'s')+(all?' · searches names, provenance and current text up to 1 MiB; attachments stay in their conversation.':'')+(foundScope.contentSkipped?' · '+foundScope.contentSkipped+' nonmatching files could not be searched as text.':'');render();
-   }catch(e){if(!closed&&pending===controller&&e.name!=='AbortError'){status.textContent=e.message;list.replaceChildren(emptyRow('Files unavailable.'));}}
+    loadedKey=key;status.textContent=rows.length+' file'+(rows.length===1?'':'s')+(all?' · searches names, provenance and current text up to 1 MiB; attachments stay in their conversation.':'')+(foundScope.contentSkipped?' · '+foundScope.contentSkipped+' nonmatching files could not be searched as text.':'');render();
+   }catch(e){if(!closed&&pending===controller&&e.name!=='AbortError'){status.textContent=e.message;if(loadedKey!==key)list.replaceChildren(emptyRow('Files unavailable.'));}}
    finally{if(!closed&&pending===controller)refresh.disabled=false;}
   };
-  search.oninput=()=>{if(scope.value==='conversation'){render();return;}pending?.abort();pending=null;clearTimeout(timer);status.textContent='loading…';list.replaceChildren(emptyRow('loading…'));timer=setTimeout(()=>{ready=load();},250);};
+  search.oninput=()=>{if(scope.value==='conversation'){render();return;}pending?.abort();pending=null;clearTimeout(timer);loadedKey=null;rows=[];status.textContent='loading…';list.replaceChildren(emptyRow('loading…'));timer=setTimeout(()=>{ready=load();},250);};
   scope.onchange=()=>{ready=load();};refresh.onclick=()=>{ready=load();};ready=load();
   const changed=()=>{if(!closed)ready=load();};window.addEventListener('manifest-artifacts-changed',changed);
   return {element:pane,close:()=>{closed=true;window.removeEventListener('manifest-artifacts-changed',changed);clearTimeout(timer);pending?.abort();pane.remove();drop();},getView:()=>({scope:scope.value,query:search.value,scrollTop:list.scrollTop}),restoreView:async view=>{search.value=typeof view.query==='string'?view.query:'';const mode=view.scope==='all'||!source?'all':'conversation';if(scope.value!==mode){scope.value=mode;ready=load();}else if(mode==='all')ready=load();await ready;if(!host.isConnected||!host.clientHeight)return false;render();list.scrollTop=Math.max(0,Number(view.scrollTop)||0);return true;}};
