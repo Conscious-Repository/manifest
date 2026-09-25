@@ -384,3 +384,62 @@ func TestChatContextResolvesOnlyInsideTheAgentsDomain(t *testing.T) {
 		t.Fatalf("AION content resolved for the OODA agent: %s", oodaCtx)
 	}
 }
+
+// Audit 2026-09-25: the owner's Kairos/Zeck cockpit sends had no request
+// identity, so a retry after a lost acknowledgment recorded a second owner
+// message on the shared thread and started a second Kairos run; a lost
+// create-with-first-message made a second shared thread.
+func TestPortalCockpitSendRetryIsIdempotent(t *testing.T) {
+	srv, _ := chatFixture(t)
+	kairos := srv.findHarness("kairos").Spirits
+	drain := func() {
+		ents, _ := os.ReadDir(filepath.Join(kairos.Root(), "vessel", "spool"))
+		for _, e := range ents {
+			_ = os.Remove(filepath.Join(kairos.Root(), "vessel", "spool", e.Name()))
+		}
+	}
+	create := map[string]any{"audience": "team", "text": "first", "requestId": "create-request-000001"}
+	code, r := agentChatJSON(t, srv, "POST", "/api/agents/chat/kairos/sessions", create)
+	if code != 200 {
+		t.Fatalf("create %d %v", code, r)
+	}
+	id, _ := r["id"].(string)
+	threadsBefore := len(srv.chat.Threads())
+	if code, again := agentChatJSON(t, srv, "POST", "/api/agents/chat/kairos/sessions", create); code != 200 || again["id"] != id || again["replayed"] != true {
+		t.Fatalf("create retry must find its thread: %d %v", code, again)
+	}
+	if len(srv.chat.Threads()) != threadsBefore || len(kairos.Queued()) != 1 {
+		t.Fatalf("create retry made a thread or an order: threads %d orders %d", len(srv.chat.Threads()), len(kairos.Queued()))
+	}
+	fakeChatRun(t, srv, "cr1", id, srv.chat.Pending()[0].OrderID, "ask", "ok")
+	agentChatJSON(t, srv, "GET", "/api/agents/chat/kairos/sessions/"+id, nil)
+	drain()
+
+	body := map[string]any{"text": "send the summary to the team", "requestId": "0123456789abcdef0123456789abcdef"}
+	if c, r := agentChatJSON(t, srv, "POST", "/api/agents/chat/kairos/sessions/"+id+"/messages", body); c != 200 {
+		t.Fatal(c, r)
+	}
+	fakeChatRun(t, srv, "cr2", id, srv.chat.Pending()[0].OrderID, "ask", "done")
+	agentChatJSON(t, srv, "GET", "/api/agents/chat/kairos/sessions/"+id, nil)
+	drain()
+	c2, r2 := agentChatJSON(t, srv, "POST", "/api/agents/chat/kairos/sessions/"+id+"/messages", body)
+	if c2 != 200 || r2["replayed"] != true {
+		t.Fatalf("retry must be answered from the record: %d %v", c2, r2)
+	}
+	n := 0
+	for _, m := range srv.chat.Messages(id) {
+		if m.Text == "send the summary to the team" {
+			n++
+		}
+	}
+	if n != 1 || len(kairos.Queued()) != 0 {
+		t.Fatalf("one message and no second run for one request: messages %d orders %d", n, len(kairos.Queued()))
+	}
+	changed := map[string]any{"text": "a different message", "requestId": "0123456789abcdef0123456789abcdef"}
+	if c, _ := agentChatJSON(t, srv, "POST", "/api/agents/chat/kairos/sessions/"+id+"/messages", changed); c != 400 {
+		t.Fatalf("same ID, different message must be refused: %d", c)
+	}
+	if len(kairos.Queued()) != 0 {
+		t.Fatal("refused request spooled an order")
+	}
+}

@@ -298,6 +298,8 @@ type Server struct {
 	shareTeamFileEdit bool
 	// promoteMu serializes identified "→ task" promotes (agentchat_bridge.go).
 	promoteMu sync.Mutex
+	// portalSendMu serializes identified Kairos/Zeck cockpit sends.
+	portalSendMu sync.Mutex
 }
 
 // UseLedger wires the daily ledger.

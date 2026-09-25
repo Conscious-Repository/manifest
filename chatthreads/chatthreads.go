@@ -68,6 +68,11 @@ type Message struct {
 	// live in the artifact pool, and chat.json is rewritten whole on every
 	// message, so nothing large may live here.
 	Files []FileRef `json:"files,omitempty"`
+	// Request/RequestFingerprint identify an owner cockpit send (client request
+	// ID + payload fingerprint), so a retry after a lost acknowledgment is
+	// recognised instead of posting — and running — twice. Empty otherwise.
+	Request            string `json:"request,omitempty"`
+	RequestFingerprint string `json:"request_fingerprint,omitempty"`
 }
 
 // MessageSource retains the original conversation turn and its full recorded

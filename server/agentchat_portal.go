@@ -263,6 +263,22 @@ func nonEmpty(in ...string) []string {
 // ids resolved server-side, attachments composed from the artifact pool).
 // spirits.ErrAlreadyActive passes through for the 409.
 func (s *Server) portalChatSend(ag *chatAgent, threadID, text, ritual string, context []string, files []threads.FileRef) error {
+	return s.portalChatSendRequest(ag, threadID, text, ritual, context, files, "")
+}
+
+// portalChatSendRequest is portalChatSend under an optional client request ID
+// (the owner's cockpit): a retry of a recorded send returns errChatAskRecorded
+// and spools nothing; the same ID with another payload is refused.
+func (s *Server) portalChatSendRequest(ag *chatAgent, threadID, text, ritual string, context []string, files []threads.FileRef, request string) error {
+	fingerprint := ""
+	if request != "" {
+		if !agentchat.ValidRequestID(request) {
+			return errBadRequest("invalid request ID")
+		}
+		fingerprint = fingerprintJSON(ag.Name, threadID, strings.TrimSpace(text), strings.TrimSpace(ritual), context, files)
+		s.portalSendMu.Lock()
+		defer s.portalSendMu.Unlock()
+	}
 	text = strings.TrimSpace(text)
 	if len(text) > agentChatMaxChars {
 		text = text[:agentChatMaxChars]
@@ -279,7 +295,7 @@ func (s *Server) portalChatSend(ag *chatAgent, threadID, text, ritual string, co
 		return errBadRequest("empty message")
 	}
 	email, name := s.portalChatIdentity()
-	if err := s.chatAskFor(ag, threadID, text, ritual, context, email, name); err != nil {
+	if err := s.chatAskForRequest(ag, threadID, text, ritual, context, email, name, request, fingerprint); err != nil {
 		return err
 	}
 	s.ledger(ledger.Entry{Source: "chat", Kind: "chat.user", Actor: "owner",
@@ -323,15 +339,20 @@ func (s *Server) handlePortalChatSessions(ag *chatAgent, w http.ResponseWriter, 
 // behind.
 func (s *Server) handlePortalChatSessionCreate(ag *chatAgent, w http.ResponseWriter, r *http.Request) {
 	var b struct {
-		Audience string            `json:"audience"`
-		Title    string            `json:"title"`
-		Text     string            `json:"text"`
-		Ritual   string            `json:"ritual"`
-		Context  []string          `json:"context"`
-		Files    []threads.FileRef `json:"files"`
+		Audience  string            `json:"audience"`
+		Title     string            `json:"title"`
+		Text      string            `json:"text"`
+		Ritual    string            `json:"ritual"`
+		Context   []string          `json:"context"`
+		Files     []threads.FileRef `json:"files"`
+		RequestID string            `json:"requestId"`
 	}
 	if err := decode(r, &b); err != nil {
 		httpError(w, err)
+		return
+	}
+	if b.RequestID != "" && !agentchat.ValidRequestID(b.RequestID) {
+		httpError(w, errBadRequest("invalid request ID"))
 		return
 	}
 	if b.Audience != "team" {
@@ -339,7 +360,15 @@ func (s *Server) handlePortalChatSessionCreate(ag *chatAgent, w http.ResponseWri
 		return
 	}
 	sending := strings.TrimSpace(b.Text) != "" || len(b.Files) > 0
-	if sending {
+	// An identified create names its thread by the request, so a retry after a
+	// lost acknowledgment finds the thread it made instead of a second one.
+	id := fmt.Sprintf("t%d", time.Now().UnixNano())
+	retry := false
+	if b.RequestID != "" {
+		id = "t-" + b.RequestID
+		_, retry = portalChatThread(ag, id)
+	}
+	if sending && !retry {
 		// refuse BEFORE the thread exists: a harness that cannot take the
 		// order (not configured here) or is busy must not leave an empty
 		// shared thread behind in the portal
@@ -360,20 +389,23 @@ func (s *Server) handlePortalChatSessionCreate(ag *chatAgent, w http.ResponseWri
 		title = "untitled"
 	}
 	email, name := s.portalChatIdentity()
-	id := fmt.Sprintf("t%d", time.Now().UnixNano())
 	if _, err := s.chatThreadFor(ag, "create", id, title, "", email, name); err != nil {
 		httpError(w, errBadRequest(err.Error()))
 		return
 	}
 	status := "idle"
 	if sending {
-		if err := s.portalChatSend(ag, id, b.Text, b.Ritual, b.Context, b.Files); err != nil {
+		err := s.portalChatSendRequest(ag, id, b.Text, b.Ritual, b.Context, b.Files, b.RequestID)
+		if err != nil && !errors.Is(err, errChatAskRecorded) {
 			portalChatErr(ag, w, err)
 			return
 		}
 		status = "thinking"
+		if err != nil && !s.chatBusy(ag) {
+			status = "idle"
+		}
 	}
-	writeJSON(w, map[string]any{"id": id, "status": status})
+	writeJSON(w, map[string]any{"id": id, "status": status, "replayed": retry})
 }
 
 // GET /api/agents/chat/{agent}/sessions/{id} — the thread as a session +
@@ -424,10 +456,11 @@ func (s *Server) handlePortalChatSession(ag *chatAgent, w http.ResponseWriter, r
 // rule, §6 risk row).
 func (s *Server) handlePortalChatMessage(ag *chatAgent, w http.ResponseWriter, r *http.Request) {
 	var b struct {
-		Text    string            `json:"text"`
-		Ritual  string            `json:"ritual"`
-		Context []string          `json:"context"`
-		Files   []threads.FileRef `json:"files"`
+		Text      string            `json:"text"`
+		Ritual    string            `json:"ritual"`
+		Context   []string          `json:"context"`
+		Files     []threads.FileRef `json:"files"`
+		RequestID string            `json:"requestId"`
 	}
 	if err := decode(r, &b); err != nil {
 		httpError(w, err)
@@ -438,7 +471,15 @@ func (s *Server) handlePortalChatMessage(ag *chatAgent, w http.ResponseWriter, r
 		http.Error(w, "no such session", http.StatusNotFound)
 		return
 	}
-	if err := s.portalChatSend(ag, id, b.Text, b.Ritual, b.Context, b.Files); err != nil {
+	if err := s.portalChatSendRequest(ag, id, b.Text, b.Ritual, b.Context, b.Files, b.RequestID); err != nil {
+		if errors.Is(err, errChatAskRecorded) {
+			status := "idle"
+			if s.chatBusy(ag) {
+				status = "thinking"
+			}
+			writeJSON(w, map[string]any{"ok": true, "replayed": true, "status": status, "queued": 0})
+			return
+		}
 		portalChatErr(ag, w, err)
 		return
 	}

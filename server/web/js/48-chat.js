@@ -2724,7 +2724,9 @@ function renderChatComposer(session) {
     let remembered=null;
     try {
       const endpoint=chatBaseFor(sendAgent)+(sendSession?"/"+encodeURIComponent(sendSession)+"/messages":"");
-      if(durable)remembered=chatRememberDelivery(draftKey,sendAgent,endpoint,payload);
+      // Kairos/Zeck cockpit sends ride the same remembered request ID, so a
+      // retry after a lost acknowledgment is recognised by the server.
+      if(durable||chatIsPortal())remembered=chatRememberDelivery(draftKey,sendAgent,endpoint,payload);
       if (sendSession) {
         if(remembered)await chatDeliverRemembered(remembered);
         else await postJSONOk(endpoint, sendAgent ? payload : { text:messageText });

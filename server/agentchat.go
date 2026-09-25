@@ -952,6 +952,19 @@ func (s *Server) handleAgentChatDelivery(w http.ResponseWriter, r *http.Request)
 		http.Error(w, "invalid request", http.StatusBadRequest)
 		return
 	}
+	// A Kairos/Zeck cockpit send is recorded on its team-thread message.
+	if ag, _ := s.portalChatAgent(agent); ag != nil {
+		for _, t := range ag.Store.Threads() {
+			for _, m := range ag.Store.Messages(t.ID) {
+				if m.Request == requestID {
+					writeJSON(w, map[string]any{"id": t.ID, "delivery": map[string]any{"id": requestID, "state": "recorded"}})
+					return
+				}
+			}
+		}
+		http.NotFound(w, r)
+		return
+	}
 	for _, sess := range s.agentChat.store.List(agent) {
 		if d, ok := s.agentChat.store.Receipt(agent, sess.ID, requestID); ok {
 			writeJSON(w, map[string]any{"id": sess.ID, "delivery": d})

@@ -10,6 +10,7 @@ package server
 // aion: ids already post team-visibly through the shared teamportal store.
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -261,6 +262,32 @@ func (s *Server) OodaChatAsk(thread, text, ritual string, context []string, memb
 }
 
 func (s *Server) chatAskFor(ag *chatAgent, thread, text, ritual string, context []string, memberEmail, memberName string) error {
+	return s.chatAskForRequest(ag, thread, text, ritual, context, memberEmail, memberName, "", "")
+}
+
+// errChatAskRecorded: this request ID's message is already on the thread; the
+// retry is answered from the record and nothing is spooled again.
+var errChatAskRecorded = errors.New("already recorded")
+
+// chatAskRecorded finds an identified send on the thread: recorded (same
+// fingerprint) or a conflict (the ID names a different message).
+func chatAskRecorded(ag *chatAgent, thread, request, fingerprint string) error {
+	if request == "" {
+		return nil
+	}
+	for _, m := range ag.Store.Messages(thread) {
+		if m.Request != request {
+			continue
+		}
+		if m.RequestFingerprint != fingerprint {
+			return errBadRequest("request ID already used for a different message; nothing sent")
+		}
+		return errChatAskRecorded
+	}
+	return nil
+}
+
+func (s *Server) chatAskForRequest(ag *chatAgent, thread, text, ritual string, context []string, memberEmail, memberName, request, fingerprint string) error {
 	if ag == nil {
 		return errBadRequest("chat is not configured")
 	}
@@ -285,6 +312,9 @@ func (s *Server) chatAskFor(ag *chatAgent, thread, text, ritual string, context 
 			break
 		}
 	}
+	if err := chatAskRecorded(ag, thread, request, fingerprint); err != nil {
+		return err
+	}
 	orderID, err := s.spoolChatOrder(ag, thread, title, ritual, intent, text, context, memberName)
 	if err != nil {
 		return err // incl. spirits.ErrAlreadyActive → 409
@@ -293,6 +323,7 @@ func (s *Server) chatAskFor(ag *chatAgent, thread, text, ritual string, context 
 	_, _ = ag.Store.AddMessage(chatthreads.Message{
 		Thread: thread, Kind: "ask", Author: memberEmail, AuthName: memberName,
 		Text: text, Context: context, At: now, Files: s.chatMessageFiles(ag, context),
+		Request: request, RequestFingerprint: fingerprint,
 	}, now)
 	_ = ag.Store.SetPending(chatthreads.Pending{
 		OrderID: orderID, Thread: thread, By: memberName, ByEmail: memberEmail,
