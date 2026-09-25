@@ -12,7 +12,7 @@ import (
 
 func TestNativeInterruptCancelsRunnerAndQueue(t *testing.T) {
 	marker := filepath.Join(t.TempDir(), "started")
-	s, st, _ := agentChatFixture(t, "#!/bin/sh\nprintf started > '"+marker+"'\nexec sleep 60\n")
+	s, st, led := agentChatFixture(t, "#!/bin/sh\nprintf started > '"+marker+"'\nexec sleep 60\n")
 	id, _ := st.Create("alfred", "", "", "")
 	st.Accept("alfred", id, "active-request", "first")
 	st.Accept("alfred", id, "queued-request", "second")
@@ -55,6 +55,10 @@ func TestNativeInterruptCancelsRunnerAndQueue(t *testing.T) {
 	sess := waitIdle(t, st, "alfred", id)
 	if sess.Deliveries[0].State != agentchat.DeliveryInterrupted || sess.Deliveries[1].State != agentchat.DeliveryCancelled || sess.Deliveries[1].Text != "second" {
 		t.Fatal(sess.Deliveries)
+	}
+	event := waitAgentChatOutcome(t, led, "active-request")
+	if event.Kind != "run.interrupted" || event.Meta["deliveryState"] != agentchat.DeliveryInterrupted {
+		t.Fatal(event)
 	}
 	if w := interrupt(); w.Code != 200 {
 		t.Fatal("lost-response retry", w.Code)

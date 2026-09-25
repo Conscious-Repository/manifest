@@ -703,8 +703,6 @@ func (s *Server) runAgentChatTurnContext(ctx context.Context, agent, id, request
 	executionSession := sess
 	executionSession.Profile = recipient.Profile
 	executionSession.Model = recipient.Model
-	who := "agent:" + recipient.Agent
-	obj := ledger.Object{Kind: ledger.ObjSession, ID: id}
 	if o := executionSession.Origin; o != nil && o.Mode == "continue" && o.Backend == "terminal" {
 		if s.terminal == nil {
 			return failBeforeRun("Originating coding conversation is unavailable.")
@@ -745,9 +743,11 @@ func (s *Server) runAgentChatTurnContext(ctx context.Context, agent, id, request
 	if err != nil {
 		log.Printf("agent chat %s/%s: %v", agent, id, err)
 		saveErr := st.FinishWithResult(agent, id, requestID, "system", "⚠ "+agentDisplayName("agent:"+recipient.Agent)+" couldn't finish that — "+err.Error(), agentchat.DeliveryFailed, err.Error(), res.SpentUSD, result)
-		s.ledger(ledger.Entry{Source: "run", Kind: "run.failed", Actor: who, Object: obj, Session: id, Harness: "hermes",
-			Text: "chat turn failed — " + err.Error(), Meta: map[string]any{"agent": recipient.Agent, "sourceAgent": agent, "profile": recipient.Profile}})
-		return saveErr
+		if saveErr != nil {
+			return saveErr
+		}
+		s.recordAgentChatOutcome(agent, id, requestID, recipient, "", res.SpentUSD)
+		return nil
 	}
 	reply := strings.TrimSpace(res.Reply)
 	if reply == "" {
@@ -760,10 +760,7 @@ func (s *Server) runAgentChatTurnContext(ctx context.Context, agent, id, request
 	if err := st.FinishWithResult(agent, id, requestID, recipient.Agent, recordedReply, agentchat.DeliveryCompleted, "", res.SpentUSD, result); err != nil {
 		return err
 	}
-	s.ledger(ledger.Entry{Source: "chat", Kind: "chat.assistant", Actor: who, Object: obj, Session: id, Harness: "hermes",
-		Text: ledger.Snip(reply, 280),
-		Meta: map[string]any{"agent": recipient.Agent, "sourceAgent": agent, "profile": recipient.Profile, "sessionId": res.SessionID,
-			"spentUsd": res.SpentUSD, "model": firstNonEmpty(res.Model, recipient.Model)}})
+	s.recordAgentChatOutcome(agent, id, requestID, recipient, reply, res.SpentUSD)
 	return nil
 }
 
