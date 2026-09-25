@@ -21,9 +21,18 @@ import (
 	"manifest/recruiting/sources"
 )
 
-// This journey explicitly carries a reviewed recruiting draft into canonical
-// email preparation. It does not imply an automatic recruiting-log bridge.
+// This journey carries reviewed sourcing evidence through canonical approval,
+// delivery recovery, explicit recruiting outcome recording and reply notices.
 func TestWorkbenchSourcedCandidateToCanonicalOutreach(t *testing.T) {
+	for _, lostAck := range []bool{false, true} {
+		name := "confirmed"
+		if lostAck {
+			name = "lost-ack"
+		}
+		t.Run(name, func(t *testing.T) { workbenchSourcedOutreachJourney(t, lostAck) })
+	}
+}
+func workbenchSourcedOutreachJourney(t *testing.T, lostAck bool) {
 	s, _, vault, data := testRecruitingServer(t)
 	now := time.Date(2026, 9, 24, 12, 0, 0, 0, time.UTC)
 	candidate, err := s.recruiting.AcceptDraft(sources.CandidateDraft{SourceID: "manual", Name: "Journey Candidate", Role: "role/mri-engineer", Evidence: []sources.Evidence{{SourceID: "manual", URLOrFile: "https://example.test/source", RetrievedAt: now, Kind: sources.EvidencePage, Trust: sources.TrustMedium, Snippet: "Low-field MRI hardware, pulse sequence and coil design; available on-site in Saint Louis"}}}, now)
@@ -61,7 +70,7 @@ func TestWorkbenchSourcedCandidateToCanonicalOutreach(t *testing.T) {
 	var sends atomic.Int32
 	var deliveredBody atomic.Value
 	provider := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		sends.Add(1)
+		attempt := sends.Add(1)
 		var payload map[string]string
 		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
 			t.Error(err)
@@ -71,8 +80,22 @@ func TestWorkbenchSourcedCandidateToCanonicalOutreach(t *testing.T) {
 			t.Error(err)
 		}
 		deliveredBody.Store(string(raw))
+		if lostAck && attempt == 2 {
+			// The fake provider accepted these bytes, but its acknowledgement is lost.
+			connection, _, err := w.(http.Hijacker).Hijack()
+			if err != nil {
+				t.Error(err)
+				return
+			}
+			connection.Close()
+			return
+		}
 		w.Header().Set("Content-Type", "application/json")
-		w.Write([]byte(`{"id":"journey-message","threadId":"journey-thread"}`))
+		if attempt == 1 {
+			w.Write([]byte(`{"id":"journey-message","threadId":"journey-thread"}`))
+		} else {
+			w.Write([]byte(`{"id":"bridge-message","threadId":"bridge-thread"}`))
+		}
 	}))
 	defer provider.Close()
 	registry.Aion.UseEndpoint(provider.URL, provider.Client())
@@ -259,6 +282,56 @@ func TestWorkbenchSourcedCandidateToCanonicalOutreach(t *testing.T) {
 	if body, _ := deliveredBody.Load().(string); !strings.Contains(body, "BRIDGE_REVIEWED") || strings.Contains(body, "LATER_NOT_APPROVED") {
 		t.Fatal("bridge payload changed", body)
 	}
+	if lostAck {
+		projected = s.recruitingOutreachOperations(candidate.ID)
+		if len(projected) != 1 || projected[0]["record"].(*manifestmcp.OperationRecord).Status != "partial" {
+			t.Fatal("lost ack claimed success", projected)
+		}
+		body, _ := json.Marshal(map[string]string{"operationId": bridged.ID})
+		if refused := recruitingPost(t, s, s.handleRecruitingOutreachReconcile, "/", candidate.ID, string(body)); refused.Code == 200 {
+			t.Fatal("uncertain outcome recorded")
+		}
+		// Reopening and ordinary execution/observation must not cross the send boundary.
+		recoveredAdapter, err := manifestmcp.New(vault, data, "system")
+		if err != nil {
+			t.Fatal(err)
+		}
+		s.UseManifestOperations(recoveredAdapter)
+		if _, err := recoveredAdapter.Execute(context.Background(), bridged.ID); err != nil {
+			t.Fatal(err)
+		}
+		unavailable := httptest.NewRecorder()
+		unavailableRequest := httptest.NewRequest("POST", "/", strings.NewReader(`{}`))
+		unavailableRequest.SetPathValue("id", bridged.ID)
+		s.handleEmailReconcile(unavailable, unavailableRequest)
+		if unavailable.Code != 409 || sends.Load() != 2 {
+			t.Fatal("unconnected evidence check changed delivery", unavailable.Code, sends.Load())
+		}
+		reads := 0
+		lookup := func(ctx context.Context, sender, id string) (gmailsend.SentProof, error) {
+			reads++
+			raw, _ := deliveredBody.Load().(string)
+			if sender != "ben@aion.bio" || !strings.Contains(raw, "Message-ID: "+id+"\r\n") {
+				t.Fatal("recovery looked up another attempt", sender, id)
+			}
+			if _, ok := ctx.Deadline(); !ok {
+				t.Fatal("unbounded evidence read")
+			}
+			return gmailsend.SentProof{Mailbox: sender, Ref: gmailsend.Ref{ID: "bridge-message", ThreadID: "bridge-thread"}, Raw: []byte(raw)}, nil
+		}
+		for range 2 {
+			if _, err := recoveredAdapter.ReconcileEmail(context.Background(), bridged.ID, lookup); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if reads != 1 || sends.Load() != 2 {
+			t.Fatal("recovery replayed provider work", reads, sends.Load())
+		}
+		outcome, err := recoveredAdapter.ConfirmedEmail(bridged.ID)
+		if err != nil || outcome.Source == nil || outcome.Source.ID != candidate.ID || outcome.Source.Revision != revision || outcome.Message.Body != "BRIDGE_REVIEWED" {
+			t.Fatal("recovery lost source or frozen content", outcome, err)
+		}
+	}
 	projected = s.recruitingOutreachOperations(candidate.ID)
 	if len(projected) != 1 || projected[0]["record"].(*manifestmcp.OperationRecord).Status != "succeeded" {
 		t.Fatal("board lost canonical outcome", projected)
@@ -307,7 +380,7 @@ func TestWorkbenchSourcedCandidateToCanonicalOutreach(t *testing.T) {
 
 	observed := time.Now().UTC()
 	if err := s.manifestOperations.PollEmailReplies(context.Background(), observed, func(context.Context, string, string) ([]gmailsync.Msg, error) {
-		return []gmailsync.Msg{{ID: "journey-message", From: "ben@aion.bio", Internal: observed.Add(-time.Hour)}, {ID: "reply-notice", From: "candidate@example.test", Internal: observed.Add(-time.Minute), Body: "Reply for the owner"}}, nil
+		return []gmailsync.Msg{{ID: "bridge-message", From: "ben@aion.bio", Internal: observed.Add(-time.Hour)}, {ID: "reply-notice", From: "candidate@example.test", Internal: observed.Add(-time.Minute), Body: "Reply for the owner"}}, nil
 	}); err != nil {
 		t.Fatal(err)
 	}
