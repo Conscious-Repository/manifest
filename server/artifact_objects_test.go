@@ -409,3 +409,93 @@ func TestArtifactConversationListAgentScope(t *testing.T) {
 		t.Fatal(code, out)
 	}
 }
+
+// Saving an artifact version is not changing a working tree. The owner edit
+// path adds a registered version and leaves the file its ref names untouched;
+// the working-file projection reports which version that file actually holds.
+func TestArtifactSaveVersionLeavesWorkingFile(t *testing.T) {
+	srv, _, _ := artifactFixture(t)
+	primary := srv.eachHarness()[0].Spirits
+	const ref = "artifacts/library/2026-09-25-brief.md"
+	v1 := "# Brief\n\nfirst draft\n"
+	writeBrief(t, primary, "2026-09-25-brief.md", v1)
+	code, r := artifactsDo(t, srv, "POST", "/api/artifacts/create", `{"kind":"brief","ref":"`+ref+`"}`)
+	if code != 200 {
+		t.Fatal(code, r)
+	}
+	id := r["artifact"].(map[string]any)["id"].(string)
+	working := func() map[string]any {
+		t.Helper()
+		code, got := artifactsDo(t, srv, "GET", "/api/artifacts/get?id="+id+"&working=1", "")
+		if code != 200 {
+			t.Fatal(code, got)
+		}
+		w, _ := got["workingFile"].(map[string]any)
+		if w == nil {
+			t.Fatalf("no working-file projection: %+v", got)
+		}
+		return w
+	}
+	if w := working(); w["state"] != "matches" || w["version"].(float64) != 1 || w["ref"] != ref || w["harness"] != "excalibur" {
+		t.Fatalf("fresh registration: %+v", w)
+	}
+	if code, got := artifactsDo(t, srv, "GET", "/api/artifacts/get?id="+id, ""); code != 200 || got["workingFile"] != nil {
+		t.Fatalf("projection must be opt-in: %+v", got)
+	}
+
+	// Owner edit: version 2 exists; the file on disk still holds version 1.
+	code, r = artifactsDo(t, srv, "POST", "/api/artifacts/text", `{"id":"`+id+`","content":"# Brief\n\nsecond draft\n","expectedRevision":"`+artifacts.Hash([]byte(v1))+`","requestID":"save-working-0001"}`)
+	if code != 200 || r["savedVersion"].(float64) != 2 {
+		t.Fatal(code, r)
+	}
+	disk, err := os.ReadFile(filepath.Join(primary.Root(), filepath.FromSlash(ref)))
+	if err != nil || string(disk) != v1 {
+		t.Fatalf("saving a version changed the working file: %q %v", disk, err)
+	}
+	if w := working(); w["state"] != "differs" || w["version"].(float64) != 1 || w["hash"] != artifacts.Hash([]byte(v1)) {
+		t.Fatalf("after save: %+v", w)
+	}
+
+	// An outside edit leaves bytes no registered version holds: a stale base.
+	writeBrief(t, primary, "2026-09-25-brief.md", "# Brief\n\nedited in the tree\n")
+	if w := working(); w["state"] != "differs" || w["version"] != nil {
+		t.Fatalf("outside edit: %+v", w)
+	}
+	if err := os.Remove(filepath.Join(primary.Root(), filepath.FromSlash(ref))); err != nil {
+		t.Fatal(err)
+	}
+	if w := working(); w["state"] != "missing" {
+		t.Fatalf("removed file: %+v", w)
+	}
+	// Registry versions survive regardless of the working file.
+	if a, ok := srv.artifactReg.Get(id); !ok || len(a.Revisions) != 2 {
+		t.Fatalf("history: %+v", a)
+	}
+
+	// The tree path and hash are owner metadata: the team portal has no route.
+	portal, err := PortalHandler(PortalOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	rec := httptest.NewRecorder()
+	portal.ServeHTTP(rec, httptest.NewRequest("GET", "/api/artifacts/get?id="+id+"&working=1", nil))
+	if rec.Code == 200 {
+		t.Fatal("portal exposed the working-file projection")
+	}
+
+	// Manifest-only addresses report no working file rather than guessing.
+	saved, err := srv.artifactReg.Put(artifacts.Put{Harness: "vault", Ref: "tasks/x.md#plan", Content: []byte("plan")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if code, got := artifactsDo(t, srv, "GET", "/api/artifacts/get?id="+saved.Artifact.ID+"&working=1", ""); code != 200 || got["workingFile"].(map[string]any)["state"] != "none" {
+		t.Fatalf("section ref: %+v", got)
+	}
+	agentOutput, err := srv.artifactReg.Put(artifacts.Put{Harness: "codex", Ref: "artifacts/chat-outputs/x.md", Content: []byte("out")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if code, got := artifactsDo(t, srv, "GET", "/api/artifacts/get?id="+agentOutput.Artifact.ID+"&working=1", ""); code != 200 || got["workingFile"].(map[string]any)["state"] != "none" {
+		t.Fatalf("unknown harness: %+v", got)
+	}
+}

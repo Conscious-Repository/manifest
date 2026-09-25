@@ -735,15 +735,75 @@ function artifactDiffLine(kind,text,before,after,prefix='artifact-diff-'){
  row.append(el('code','diff-line-text',text));return row;
 }
 
-function artifactDiffView(before,after,label){
-  const changes=artifactLineChanges(before,after);
+// Unchanged runs longer than the surrounding context fold behind an explicit
+// control; each changed block names its exact lines in the newer text.
+function artifactDiffSegments(changes,context=3){
+  let before=1,after=1;
+  const rows=changes.map(c=>({...c,before:c.kind!=="added"?before++:null,after:c.kind!=="removed"?after++:null}));
+  const changed=rows.some(r=>r.kind!=="same"),out=[];
+  for(let i=0;i<rows.length;){
+    const same=rows[i].kind==="same";let j=i;
+    while(j<rows.length&&(rows[j].kind==="same")===same)j++;
+    const run=rows.slice(i,j);
+    if(!same){const added=run.filter(r=>r.kind==="added");out.push({type:"change",rows:run,start:added.length?added[0].after:0,end:added.length?added[added.length-1].after:0});}
+    else{
+      const head=i===0?0:context,tail=j===rows.length?0:context;
+      if(changed&&run.length-head-tail>=4)out.push({type:"rows",rows:run.slice(0,head)},{type:"fold",rows:run.slice(head,run.length-tail)},{type:"rows",rows:run.slice(run.length-tail)});
+      else out.push({type:"rows",rows:run});
+    }
+    i=j;
+  }
+  return out.filter(seg=>seg.rows.length);
+}
+
+function artifactDiffView(before,after,label,options){
+  const opts=options||{},changes=artifactLineChanges(before,after);
   const added=changes.filter(x=>x.kind==="added").length,removed=changes.filter(x=>x.kind==="removed").length;
   const view=el("div","artifact-diff-review");
   view.append(el("p","artifact-diff-summary",added||removed?`${added} lines added · ${removed} lines removed`:"No text changes."));
   const diff=el("pre","artifact-diff");diff.setAttribute("aria-label",label);
-  let beforeLine=1,afterLine=1;
-  for(const line of changes){const old=line.kind!=="added"?beforeLine++:null,next=line.kind!=="removed"?afterLine++:null;diff.append(artifactDiffLine(line.kind,(line.kind==="added"?"+ ":line.kind==="removed"?"− ":"  ")+line.text,old,next));}
+  const row=line=>artifactDiffLine(line.kind,(line.kind==="added"?"+ ":line.kind==="removed"?"− ":"  ")+line.text,line.before,line.after);
+  for(const seg of artifactDiffSegments(changes)){
+    if(seg.type==="fold"){
+      const fold=el("button","artifact-diff-fold","show "+seg.rows.length+" unchanged lines");fold.type="button";
+      fold.setAttribute("aria-label","Show "+seg.rows.length+" unchanged lines, "+seg.rows[0].after+" to "+seg.rows[seg.rows.length-1].after);
+      fold.onclick=()=>fold.replaceWith(...seg.rows.map(row));diff.append(fold);continue;
+    }
+    diff.append(...seg.rows.map(row));
+    if(seg.type==="change"&&seg.start&&opts.onReview){
+      const lines=seg.start===seg.end?"line "+seg.start:"lines "+seg.start+"–"+seg.end;
+      const review=el("button","sprt-quiet artifact-diff-review-block","request changes to "+lines);review.type="button";
+      review.setAttribute("aria-label","Request changes to "+lines+(opts.reviewLabel?" of "+opts.reviewLabel:""));
+      review.onclick=()=>opts.onReview({start:seg.start,end:seg.end});diff.append(review);
+    }
+  }
   view.append(diff);return view;
+}
+
+// SHA-256 of the exact selected lines, matching the server's range
+// fingerprint; undefined when this browser cannot compute it (the server
+// still fingerprints what it records).
+async function artifactRangeHash(text,start,end){
+  if(!start||typeof text!=="string"||!globalThis.crypto?.subtle)return undefined;
+  const lines=text.split("\n");if(end>lines.length)return undefined;
+  const digest=await crypto.subtle.digest("SHA-256",new TextEncoder().encode(lines.slice(start-1,end).join("\n")));
+  return [...new Uint8Array(digest)].map(b=>b.toString(16).padStart(2,"0")).join("");
+}
+
+// Where the file a ref names stands against the registered versions. Saving
+// here adds a version; it never writes that file.
+function artifactWorkingFileNote(artifact){
+  const w=artifact.workingFile;if(!w)return null;
+  const latest=(artifact.revisions||[]).length,where=(w.harness||"")+" · "+(w.ref||"");
+  const text={
+    none:"Saved in Manifest only. Saving adds a version here; no working file is written.",
+    matches:`Working file ${where} holds the latest version (v${latest}). Saving here adds a version; it does not write that file.`,
+    differs:w.version?`Working file ${where} holds version ${w.version}, not the latest version ${latest}. Saved versions have not been written to it.`:`Working file ${where} changed outside Manifest; its bytes match no saved version.`,
+    missing:`No working file at ${where} now. Saved versions remain here.`,
+    unavailable:`Working file ${where} could not be read. Saved versions remain here.`,
+  }[w.state];
+  if(!text)return null;
+  const note=el("p","artifact-working-file",text);note.dataset.state=w.state;return note;
 }
 
 // Review decisions are immutable, version-bound owner records. They do not
@@ -755,6 +815,7 @@ function artifactReviewControls(artifact,revision,number,onDiscuss){
  const note=document.createElement('textarea');note.rows=3;note.placeholder='Review notes';note.setAttribute('aria-label','Review notes');
  const range=el('details',''),start=document.createElement('input'),end=document.createElement('input');start.type=end.type='number';start.min=end.min='1';start.placeholder='First line';end.placeholder='Last line';start.setAttribute('aria-label','First reviewed line');end.setAttribute('aria-label','Last reviewed line');range.append(el('summary','','Specific lines'),start,end);range.hidden=artifact.preview?artifact.preview.kind!=='text'||/\.diff$/i.test(artifact.ref||''):/\.(diff|pdf|png|jpe?g|gif|webp)$/i.test(artifact.ref||'');
  const actions=el('div','form-actions'),save=el('button','','record decision');actions.append(save);form.append(choice,note,range,actions,el('p','artifact-review-help',onDiscuss?'Records your review. A change request is placed in the composer for you to send.':'Records your review of this version. No message is sent.'));
+ const stale=el('p','artifact-review-stale');stale.hidden=true;host.insertBefore(stale,form);
  const history=el('div','artifact-review-history');host.append(history);let snapshot=null,recorded=false,busy=false,pending=null;
  const endpoint='/api/artifacts/reviews?id='+encodeURIComponent(artifact.id)+'&revision='+encodeURIComponent(revision),storage='manifest.artifactReview.v1.'+artifact.id+'.'+revision;
  try{pending=JSON.parse(localStorage.getItem(storage)||'null');const draft=pending||JSON.parse(localStorage.getItem(storage+'.draft')||'null');if(draft){choice.value=draft.state;note.value=draft.note||'';start.value=draft.start||'';end.value=draft.end||'';}}catch(e){}
@@ -762,7 +823,10 @@ function artifactReviewControls(artifact,revision,number,onDiscuss){
  const clearPending=()=>{try{localStorage.removeItem(storage);localStorage.removeItem(storage+'.draft');}catch(e){}};
  const label=value=>({not_requested:'Not reviewed',ready_for_review:'Ready for review',accepted:'Accepted',changes_requested:'Changes requested',comment:'Comment'})[value]||value;
  const show=value=>{if(!value||value.revision!==revision||typeof value.record_version!=='string'||!Array.isArray(value.entries))throw Error('Invalid review response; reload before continuing.');snapshot=value;state.textContent=label(value.state)+' · version '+number;summary.textContent='Review · '+label(value.state);history.replaceChildren();
-  for(const item of value.entries.filter(e=>e.revision===revision).slice().reverse()){const row=el('div','artifact-review-entry');row.append(el('small','',label(item.state)+' · '+new Date(item.at).toLocaleString()+(item.start?' · '+(/\.diff$/i.test(artifact.ref||'')?'snapshot lines ':'lines ')+item.start+'–'+item.end:'')));if(item.note)row.append(el('p','',item.note));history.append(row);}
+  const latest=value.head_version;stale.hidden=!(value.head&&value.head!==revision);stale.textContent=stale.hidden?'':'Version '+latest+' is newer. Decisions here apply to version '+number+' only.';if(!stale.hidden)summary.textContent+=' · v'+latest+' is newer';
+  for(const item of value.entries.filter(e=>e.revision===revision).slice().reverse()){const row=el('div','artifact-review-entry');row.append(el('small','',label(item.state)+' · '+new Date(item.at).toLocaleString()+(item.start?' · '+(/\.diff$/i.test(artifact.ref||'')?'snapshot lines ':'lines ')+item.start+'–'+item.end:'')));
+   const anchor=value.anchors?.[item.id];if(anchor){const where={unchanged:'Same lines in latest version '+latest+'.',moved:'Now '+(anchor.start===anchor.end?'line '+anchor.start:'lines '+anchor.start+'–'+anchor.end)+' in latest version '+latest+'.',changed:'These lines changed in latest version '+latest+'.',repeated:'These lines appear more than once in latest version '+latest+'.',unavailable:'Latest version '+latest+' cannot be compared.'}[anchor.state];if(where){const note=el('small','artifact-review-anchor',where);note.dataset.anchor=anchor.state;row.append(note);}}
+   if(item.note)row.append(el('p','',item.note));history.append(row);}
  };
  const content=()=>({state:choice.value,note:note.value,start:Number(start.value)||0,end:Number(end.value||start.value)||0});
  const receipt=(value,request)=>value.entries?.find(e=>e.id===request.request_id&&e.revision===revision&&e.state===request.state&&(e.note||'')===request.note&&(e.start||0)===request.start&&(e.end||0)===request.end);
@@ -787,13 +851,18 @@ function artifactReviewControls(artifact,revision,number,onDiscuss){
  save.onclick=async()=>{
   if(busy||!snapshot||recorded)return;
   if(!pending&&['changes_requested','comment'].includes(choice.value)&&!note.value.trim()){note.focus();return;}
-  const request=pending||{...content(),request_id:crypto.randomUUID(),record_version:snapshot.record_version};
-  try{localStorage.setItem(storage,JSON.stringify(request));}catch(e){state.textContent='Could not preserve the decision for recovery. Nothing was submitted. Allow browser storage and retry.';return;}
+  let request=pending;
+  if(!request){
+   busy=true;lock();request={...content(),request_id:crypto.randomUUID(),record_version:snapshot.record_version};
+   try{const hash=await artifactRangeHash(artifact.content,request.start,request.end);if(hash)request.range_hash=hash;}catch(e){}
+   busy=false;
+  }
+  try{localStorage.setItem(storage,JSON.stringify(request));}catch(e){lock();state.textContent='Could not preserve the decision for recovery. Nothing was submitted. Allow browser storage and retry.';return;}
   pending=request;busy=true;lock();
   try{
    const r=await fetch(endpoint,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(request)});
    if(r.status===409){show(await r.json());pending=null;try{localStorage.removeItem(storage);localStorage.setItem(storage+'.draft',JSON.stringify(content()));}catch(e){}throw Error('Review changed elsewhere. Check the history, then record your decision again.');}
-   if(!r.ok){const message=await r.text();if([400,404,428].includes(r.status)){pending=null;try{localStorage.removeItem(storage);localStorage.setItem(storage+'.draft',JSON.stringify(content()));}catch(e){}}throw Error(message);}
+   if(!r.ok){const message=await r.text();if([400,404,412,428].includes(r.status)){pending=null;try{localStorage.removeItem(storage);localStorage.setItem(storage+'.draft',JSON.stringify(content()));}catch(e){}}throw Error(message);}
    const result=await r.json();if(!receipt(result,request))throw Error('Review acknowledgement is incomplete. Retry uses the same decision ID.');show(result);confirmed(request,!host.isConnected);
    window.dispatchEvent(new CustomEvent('artifact-review-recorded',{detail:{id:artifact.id,revision}}));
    if(host.isConnected&&request.state==='changes_requested'&&onDiscuss)draftRequest(request);
@@ -859,7 +928,7 @@ function artifactWorkspace(mount, options) {
     };
     await editState.refresh();
   }
-  const url = (a, hash) => "/api/artifacts/get?id="+encodeURIComponent(a.id)+"&preview=1&sources=1&rev="+encodeURIComponent(hash);
+  const url = (a, hash) => "/api/artifacts/get?id="+encodeURIComponent(a.id)+"&preview=1&sources=1&working=1&rev="+encodeURIComponent(hash);
   const fetchJSON = async (path) => { const r = await fetch(path); if (!r.ok) throw new Error(await r.text()); return r.json(); };
   async function show(a, hash, number) {
     const ticket = ++generation;
@@ -917,6 +986,7 @@ function artifactWorkspace(mount, options) {
     download.href = contentURL; download.target = "_blank"; download.rel = "noopener";
     controls.append(download);
     body.prepend(artifactProvenanceView(current,selected,selectedNumber));
+    const working=artifactWorkingFileNote(current);if(working)body.prepend(working);
     if(reviewControls)body.prepend(reviewControls);
     const previous=current.revisions.find(r=>r.n===selectedNumber-1);
     if(previous&&!binary){
@@ -928,7 +998,10 @@ function artifactWorkspace(mount, options) {
           const old=await fetchJSON(url(current,previous.hash));
           if(ticket!==generation||!pane.isConnected)return;
           if(old.preview&&old.preview.kind!=='text')throw new Error('The previous version has no text preview. Open that version to inspect the original file.');
-          body.replaceChildren(artifactDiffView(old.content||"",versionText,`Changes from version ${previous.n} to version ${selectedNumber}`));
+          // Change requests from the comparison anchor to the selected
+          // (newer) version's exact lines, through the same review record.
+          const onReview=reviewControls&&!/\.diff$/i.test(current.ref||"")?range=>reviewControls.prepareChange({path:current.ref||current.title||"artifact",...range}):null;
+          body.replaceChildren(...(onReview?[reviewControls]:[]),artifactDiffView(old.content||"",versionText,`Changes from version ${previous.n} to version ${selectedNumber}`,{onReview,reviewLabel:"version "+selectedNumber}));
           previewMode="compare";compare.textContent="Back to preview";compare.onclick=render;
         }catch(e){if(ticket===generation)notice.textContent="Could not compare versions: "+e.message;}
         finally{compare.disabled=false;}

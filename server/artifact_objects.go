@@ -22,6 +22,7 @@ package server
 import (
 	"errors"
 	"net/http"
+	"os"
 	"strings"
 	"time"
 
@@ -51,6 +52,58 @@ type artifactView struct {
 	Content string               `json:"content,omitempty"`
 	Preview *artifactPreview     `json:"preview,omitempty"`
 	Sources []artifactSourceLink `json:"sources,omitempty"`
+	Working *artifactWorkingFile `json:"workingFile,omitempty"`
+}
+
+// artifactWorkingFile says where a registered artifact stands against the
+// file its ref names. Saving an artifact version never writes that file, so
+// the two can diverge; this reports which registered version (if any) the
+// file holds right now, read through the same allow-list as every ref read.
+type artifactWorkingFile struct {
+	// none: no working file — the ref is a Manifest-only address
+	// matches: the file holds the latest version
+	// differs: the file holds an older registered version, or bytes that
+	//          match no registered version (changed outside Manifest)
+	// missing / unavailable: the file is gone / cannot be read now
+	State   string `json:"state"`
+	Harness string `json:"harness,omitempty"`
+	Ref     string `json:"ref,omitempty"`
+	Hash    string `json:"hash,omitempty"`
+	Version int    `json:"version,omitempty"` // registered version with the file's bytes; 0 = none
+}
+
+func (s *Server) artifactWorkingFile(a artifacts.Artifact) *artifactWorkingFile {
+	none := &artifactWorkingFile{State: "none"}
+	if a.Harness == "" || a.Ref == "" || strings.Contains(a.Ref, "#") {
+		return none
+	}
+	h := s.findHarness(a.Harness)
+	if h == nil || h.Spirits == nil || h.Name != a.Harness {
+		return none
+	}
+	out := &artifactWorkingFile{Harness: h.Name, Ref: a.Ref}
+	content, allowed, err := h.Spirits.ReadFile(a.Ref)
+	switch {
+	case !allowed:
+		return none
+	case errors.Is(err, os.ErrNotExist):
+		out.State = "missing"
+		return out
+	case err != nil:
+		out.State = "unavailable"
+		return out
+	}
+	out.Hash = artifacts.Hash([]byte(content))
+	for _, v := range a.Revisions {
+		if v.Hash == out.Hash {
+			out.Version = v.N
+		}
+	}
+	out.State = "differs"
+	if out.Hash == a.Head {
+		out.State = "matches"
+	}
+	return out
 }
 
 func (s *Server) artifactView(a artifacts.Artifact, links map[string]artifacts.Links) artifactView {
@@ -332,6 +385,9 @@ func (s *Server) handleArtifactGet(w http.ResponseWriter, r *http.Request) {
 	v := s.artifactView(a, s.artifactLinks([]artifacts.Artifact{a}))
 	if r.URL.Query().Get("sources") == "1" {
 		v.Sources = s.artifactSourceLinks([]artifacts.Artifact{a})[a.ID]
+	}
+	if r.URL.Query().Get("working") == "1" {
+		v.Working = s.artifactWorkingFile(a)
 	}
 	if r.URL.Query().Get("content") == "1" || r.URL.Query().Get("preview") == "1" {
 		hash := orStr(strings.TrimSpace(r.URL.Query().Get("rev")), a.Head)

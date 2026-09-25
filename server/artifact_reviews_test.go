@@ -179,3 +179,127 @@ func TestDiffHunkReviewAnchorsHistoricalSnapshot(t *testing.T) {
 		t.Fatal("old range accepted against shorter new snapshot", changed.Code)
 	}
 }
+
+// A review decision names the exact bytes it saw: an explicit revision, a
+// fingerprint of the selected lines, and — read against the latest version —
+// whether those lines still say the same thing.
+func TestArtifactReviewRangeAnchorsAndStaleBase(t *testing.T) {
+	s, vault, _ := artifactFixture(t)
+	s.UseVault(vaultwriter.New(vault).Grant(vaultwriter.Capability{Name: "artifact-reviews", Zone: record.ZoneSystem, Pattern: "system/workbench/reviews/**", Actor: vaultwriter.ActorUserAction}))
+	s.UseArtifactReviews("system/workbench/reviews")
+	v1, err := s.artifactReg.Put(artifacts.Put{Ref: "report.md", Content: []byte("title\nalpha\nbeta\ngamma\ndelta")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	id, rev1 := v1.Artifact.ID, v1.Artifact.Head
+	call := func(method, query string, body any) *httptest.ResponseRecorder {
+		raw, _ := json.Marshal(body)
+		w := httptest.NewRecorder()
+		s.Handler().ServeHTTP(w, httptest.NewRequest(method, "/api/artifacts/reviews?id="+id+query, bytes.NewReader(raw)))
+		return w
+	}
+	decode := func(w *httptest.ResponseRecorder) artifactReviews {
+		t.Helper()
+		if w.Code != 200 {
+			t.Fatal(w.Code, w.Body.String())
+		}
+		var out artifactReviews
+		if err := json.Unmarshal(w.Body.Bytes(), &out); err != nil {
+			t.Fatal(err)
+		}
+		return out
+	}
+	base := decode(call("GET", "&revision="+rev1, nil))
+	if base.Version != 1 || base.HeadVersion != 1 || base.Head != rev1 {
+		t.Fatalf("version projection: %+v", base)
+	}
+	// No silent head default for a decision.
+	accept := map[string]any{"request_id": "accept-no-rev", "record_version": base.RecordVersion, "state": "accepted"}
+	if w := call("POST", "", accept); w.Code != 428 {
+		t.Fatal("decision without an explicit revision accepted", w.Code)
+	}
+	// The selected lines are fingerprinted server-side; a caller naming other
+	// bytes at those numbers is refused before anything is written.
+	wrong := artifacts.Hash([]byte("alpha\nBETA"))
+	request := map[string]any{"request_id": "range-review-1", "record_version": base.RecordVersion, "state": "changes_requested", "note": "Tighten these", "start": 2, "end": 3, "range_hash": wrong}
+	if w := call("POST", "&revision="+rev1, request); w.Code != 412 {
+		t.Fatal("stale range accepted", w.Code, w.Body.String())
+	}
+	if len(decode(call("GET", "&revision="+rev1, nil)).Entries) != 0 {
+		t.Fatal("refused range wrote a record")
+	}
+	request["range_hash"] = artifacts.Hash([]byte("alpha\nbeta"))
+	recorded := decode(call("POST", "&revision="+rev1, request))
+	if len(recorded.Entries) != 1 || recorded.Entries[0].RangeHash != request["range_hash"] {
+		t.Fatalf("range fingerprint not recorded: %+v", recorded.Entries)
+	}
+	// Without a caller fingerprint the server still records one; a replay
+	// with the same identity reconciles.
+	if w := call("POST", "&revision="+rev1, request); w.Code != 200 {
+		t.Fatal("identical retry rejected", w.Code)
+	}
+	whole := map[string]any{"request_id": "range-review-2", "record_version": recorded.RecordVersion, "state": "comment", "note": "Last line", "start": 5, "end": 5}
+	recorded = decode(call("POST", "&revision="+rev1, whole))
+	if recorded.Entries[1].RangeHash != artifacts.Hash([]byte("delta")) {
+		t.Fatal("server did not fingerprint an unhashed range")
+	}
+	mixed := map[string]any{"request_id": "range-review-3", "record_version": recorded.RecordVersion, "state": "accepted", "range_hash": wrong}
+	if w := call("POST", "&revision="+rev1, mixed); w.Code != 400 {
+		t.Fatal("fingerprint without a range accepted", w.Code)
+	}
+
+	// v2 inserts a line above (range 2–3 moves) and rewrites the last line.
+	if _, err = s.artifactReg.Put(artifacts.Put{ID: id, Content: []byte("title\nintro\nalpha\nbeta\ngamma\nepsilon")}); err != nil {
+		t.Fatal(err)
+	}
+	old := decode(call("GET", "&revision="+rev1, nil))
+	if old.State != "changes_requested" || old.Version != 1 || old.HeadVersion != 2 || old.Head == rev1 {
+		t.Fatalf("stale base not reported: %+v", old)
+	}
+	if got := old.Anchors["range-review-1"]; got.State != "moved" || got.Start != 3 || got.End != 4 {
+		t.Fatalf("moved range: %+v", got)
+	}
+	if got := old.Anchors["range-review-2"]; got.State != "changed" {
+		t.Fatalf("changed range: %+v", got)
+	}
+	// Anchors are a projection: the persisted record carries none of them.
+	raw, _ := os.ReadFile(filepath.Join(vault, "system/workbench/reviews", id+".md"))
+	if bytes.Contains(raw, []byte("anchors")) || bytes.Contains(raw, []byte("head_version")) {
+		t.Fatal("projection persisted into the review record")
+	}
+	// v3 repeats the reviewed lines; a unique location can no longer be named.
+	if _, err = s.artifactReg.Put(artifacts.Put{ID: id, Content: []byte("title\nalpha\nbeta\nalpha\nbeta")}); err != nil {
+		t.Fatal(err)
+	}
+	if got := decode(call("GET", "&revision="+rev1, nil)).Anchors["range-review-1"]; got.State != "unchanged" {
+		t.Fatalf("same-place match should win: %+v", got)
+	}
+	if _, err = s.artifactReg.Put(artifacts.Put{ID: id, Content: []byte("x\ny\nalpha\nbeta\nalpha\nbeta")}); err != nil {
+		t.Fatal(err)
+	}
+	if got := decode(call("GET", "&revision="+rev1, nil)).Anchors["range-review-1"]; got.State != "repeated" {
+		t.Fatalf("repeated range: %+v", got)
+	}
+}
+
+func TestAnchorRange(t *testing.T) {
+	head := []string{"a", "b", "c", "b", "c"}
+	for _, tc := range []struct {
+		start int
+		want  []string
+		state string
+		at    int
+	}{
+		{1, []string{"a"}, "unchanged", 1},
+		{2, []string{"b", "c"}, "unchanged", 2},
+		{1, []string{"b", "c"}, "repeated", 0},
+		{3, []string{"a", "b"}, "moved", 1},
+		{1, []string{"z"}, "changed", 0},
+		{5, []string{"c", "d"}, "changed", 0},
+	} {
+		got := anchorRange(head, tc.start, tc.want)
+		if got.State != tc.state || got.Start != tc.at {
+			t.Errorf("%d %v: %+v", tc.start, tc.want, got)
+		}
+	}
+}

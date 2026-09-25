@@ -19,6 +19,24 @@ assert.equal(large.filter(l=>l.kind!=='added').map(l=>l.text).join('\n'),before)
 assert.equal(large.filter(l=>l.kind!=='removed').map(l=>l.text).join('\n'),after);
 console.log('Exact revision reconstruction, empty/trailing lines, and bounded large replacements passed');
 
+// Folding hides only unchanged rows, keeps context around each change, and
+// every changed block names its exact lines in the newer text.
+const oldText=Array.from({length:40},(_,i)=>'line '+(i+1)).join('\n');
+const newText=oldText.replace('line 10\n','line ten\n').replace('line 20\n','line 20\ninserted a\ninserted b\n').replace('\nline 28','');
+const segments=JSON.parse(JSON.stringify(ctx.artifactDiffSegments(compare(oldText,newText))));
+const flat=segments.flatMap(s=>s.rows);
+assert.equal(flat.filter(r=>r.kind!=='added').map(r=>r.text).join('\n'),oldText);
+assert.equal(flat.filter(r=>r.kind!=='removed').map(r=>r.text).join('\n'),newText);
+for(const s of segments)if(s.type==='fold')assert.ok(s.rows.length>=4&&s.rows.every(r=>r.kind==='same'));
+const folds=segments.filter(s=>s.type==='fold');assert.deepEqual(folds.map(f=>[f.rows[0].after,f.rows.length]),[[1,6],[14,4],[33,9]],'leading, long middle and trailing runs fold; a short middle run stays open');
+assert.deepEqual(segments[1].rows.map(r=>r.after),[7,8,9],'three context lines precede the first change');
+const newLines=newText.split('\n'),blocks=segments.filter(s=>s.type==='change');
+assert.equal(blocks.length,3);
+assert.deepEqual(blocks.map(b=>[b.start,b.end]),[[10,10],[21,22],[0,0]],'a pure deletion names no new lines');
+for(const b of blocks)if(b.start)assert.deepEqual(newLines.slice(b.start-1,b.end),b.rows.filter(r=>r.kind==='added').map(r=>r.text));
+const sameOnly=ctx.artifactDiffSegments(compare(oldText,oldText));assert.equal(sameOnly.length,1);assert.equal(sameOnly[0].type,'rows','identical text is never folded away');
+console.log('Folded context reconstructs both versions; change blocks anchor exact newer lines');
+
 vm.runInContext(src.slice(src.indexOf('function artifactWorkingDiffFiles(')),ctx);
 const snapshot='Working folder: /fixture\n\ndiff --git a/one.txt b/one.txt\n--- a/one.txt\n+++ b/one.txt\n@@ -1,2 +1,2 @@ first\n unchanged\n-old\n+new\n@@ -20,0 +21,2 @@ next\n+extra\n+line\n\\ No newline at end of file\ndiff --git a/two.txt b/two.txt\n--- a/two.txt\n+++ /dev/null\n@@ -1 +0,0 @@\n-last\n';
 const parsed=ctx.artifactWorkingDiffFiles(snapshot),lines=snapshot.split('\n');
