@@ -258,6 +258,7 @@ func (s *Server) handleArtifactsList(w http.ResponseWriter, r *http.Request) {
 		Run: strings.TrimSpace(q.Get("run")), Harness: strings.TrimSpace(q.Get("harness")),
 		Ref: strings.TrimSpace(q.Get("ref")),
 	}
+	outputScope := ""
 	if q.Has("conversation_backend") || q.Has("conversation_agent") || q.Has("conversation_id") {
 		backend, agent, id := q.Get("conversation_backend"), q.Get("conversation_agent"), q.Get("conversation_id")
 		if agent == "" || id == "" || (backend != "terminal" && backend != "agent") {
@@ -271,6 +272,7 @@ func (s *Server) handleArtifactsList(w http.ResponseWriter, r *http.Request) {
 		} else if backend == "agent" && s.agentChat != nil {
 			if se, _, _, ok := s.agentChat.store.Get(agent, id); ok {
 				f.Session = privateArtifactScope(se)
+				outputScope = sessionConversation(se).Key
 			}
 		}
 		if f.Session == "" {
@@ -284,7 +286,21 @@ func (s *Server) handleArtifactsList(w http.ResponseWriter, r *http.Request) {
 			f.Harness = h.Name
 		}
 	}
-	arts, skipped := s.searchArtifacts(s.artifactReg.List(f), q.Get("q"))
+	scope := f.Session
+	if outputScope != "" && outputScope != scope {
+		f.Session = ""
+	}
+	rows := s.artifactReg.List(f)
+	if outputScope != "" && outputScope != scope {
+		filtered := rows[:0]
+		for _, a := range rows {
+			if a.Provenance.Session == scope || (a.Provenance.Source == "chat-output" && a.Provenance.Session == outputScope) {
+				filtered = append(filtered, a)
+			}
+		}
+		rows = filtered
+	}
+	arts, skipped := s.searchArtifacts(rows, q.Get("q"))
 	var sources map[string][]artifactSourceLink
 	if q.Get("sources") == "1" {
 		sources = s.artifactSourceLinks(arts)
