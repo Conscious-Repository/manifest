@@ -39,7 +39,7 @@ const server=http.createServer((req,res)=>{
   const original='# Research brief\n\nOriginal findings with a source.',revised='# Research brief\n\nVerified findings and limitations.';
   const artifact={id,title:'Research brief',ref:'research.md',head:first,content:original,preview:{kind:'text'},provenance:{source:'chat',session:'alfred/a'},revisions:[{n:1,hash:first,actor:'alfred',at:'2026-09-25T10:00:00Z'}]};
   let receipt=null,loseAck=true;
-  await page.route('**/api/**',async route=>{
+  const handleRoute=async route=>{
    const req=route.request(),url=new URL(req.url()),p=url.pathname;
    const state=p.match(/^\/api\/chat\/state\/([^/]+)\/([^/]+)$/);
    if(state){
@@ -67,7 +67,8 @@ const server=http.createServer((req,res)=>{
    }
    if(req.method()!=='GET')throw Error('Unexpected mutation: '+p);
    return route.continue();
-  });
+  };
+  await page.route('**/api/**',handleRoute);
   await page.goto('http://127.0.0.1:'+server.address().port+'/#/chat/a/alfred/a');
   await page.getByText('reply from A',{exact:true}).waitFor();
   // Enter through the same workspace action used by Files and result cards.
@@ -98,7 +99,46 @@ const server=http.createServer((req,res)=>{
   assert.equal(await page.getByRole('button',{name:'Discussing: Research brief · v2',exact:true}).getAttribute('title'),'Exact revision '+second);
   assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
   await page.screenshot({path:'/tmp/manifest-research-revision-phone.png'});
+  // Two isolated browser contexts share only the fixture's persisted records.
+  // A newer remote draft cannot be silently overwritten by the older editor.
+  await page.getByRole('button',{name:'Discussing: Research brief · v2',exact:true}).click();
+  await page.getByRole('button',{name:'Edit',exact:true}).click();
+  await page.evaluate(id=>artifactEditDrafts.get(id).flush(),id);
+  const otherContext=await browser.newContext({viewport:{width:1200,height:900}});
+  const other=await otherContext.newPage();other.on('pageerror',e=>errors.push(e.message));
+  await other.route('**/api/**',handleRoute);
+  await other.goto('http://127.0.0.1:'+server.address().port+'/#/chat/a/alfred/a');
+  await other.getByText('reply from A',{exact:true}).waitFor();
+  await other.evaluate(id=>chatOpenWorkingArtifact({id,selectionKey:'chat:alfred/a'}),id);
+  await other.getByRole('button',{name:'Resume draft',exact:true}).click();
+  const remoteText='Desktop research draft: retain the source caveat.',localText='Phone research draft: verify the sample size.';
+  await other.getByLabel('File content').fill(remoteText);
+  await other.evaluate(id=>artifactEditDrafts.get(id).flush(),id);
+  await page.getByLabel('File content').fill(localText);
+  await page.getByRole('button',{name:'Save new version',exact:true}).click();
+  const conflict=page.locator('.artifact-edit-recovery');
+  await conflict.getByRole('button',{name:'Keep this draft',exact:true}).waitFor();
+  await conflict.getByText('View saved draft',{exact:true}).click();
+  await conflict.getByText('View this device’s draft',{exact:true}).click();
+  await conflict.getByText(remoteText,{exact:true}).waitFor();
+  await conflict.getByText(localText,{exact:true}).waitFor();
+  assert.equal(await page.getByLabel('File content').inputValue(),localText);
+  assert.equal(saves.length,2,'unresolved draft conflict must prevent artifact save');
+  assert.equal(artifact.content,revised,'draft conflict must not change the saved artifact');
+  assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
+  await page.screenshot({path:'/tmp/manifest-research-conflict-phone.png'});
+  await conflict.getByRole('button',{name:'Keep this draft',exact:true}).click();
+  await page.waitForFunction(id=>!artifactEditDrafts.get(id).dirty&&!artifactEditDrafts.get(id).conflict,id);
+  assert.equal(states.get('/api/chat/state/artifact-'+id+'/edit').value.text,localText);
+  // The older desktop editor can inspect and deliberately adopt that decision.
+  await other.getByLabel('File content').fill(remoteText+' Additional desktop note.');
+  await other.getByRole('button',{name:'Save new version',exact:true}).click();
+  await other.getByRole('button',{name:'Use saved draft',exact:true}).click();
+  assert.equal(await other.getByLabel('File content').inputValue(),localText);
+  assert.equal(saves.length,2,'resolving either draft conflict must not save a file');
+  assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
+  await otherContext.close();
   assert.deepEqual(errors,[]);
-  console.log('PASS: full frontend phone research edit, comparison, lost-ack reload, exact save retry and discussion');
+  console.log('PASS: phone research edit, lost-ack reload, exact retry/discussion and two-browser draft conflict resolution');
  }finally{await browser.close();server.close();}
 })().catch(e=>{console.error(e);process.exit(1);});
