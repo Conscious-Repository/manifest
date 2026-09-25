@@ -15,6 +15,7 @@ import (
 
 const (
 	DeliveryQueued      = "queued"
+	DeliveryCancelled   = "cancelled"
 	DeliveryRunning     = "running"
 	DeliveryCompleted   = "completed"
 	DeliveryFailed      = "failed"
@@ -39,6 +40,7 @@ type ToolScope struct {
 }
 
 type Delivery struct {
+	StopRequested  bool            `json:"stopRequested,omitempty"`
 	ToolScope      *ToolScope      `json:"toolScope,omitempty"`
 	ID             string          `json:"id"`
 	HistoryOmitted int             `json:"historyOmitted,omitempty"`
@@ -183,12 +185,20 @@ func (s *Store) Finish(agent, id, requestID, who, text, state, detail string, us
 			if d.ID != requestID {
 				continue
 			}
+			if d.StopRequested {
+				state = DeliveryInterrupted
+				detail = "Interrupted at owner request; already-started external effects may be uncertain"
+				if text == "" {
+					text = detail
+				}
+			}
 			if d.State == state {
 				return nil
 			}
 			if d.State != DeliveryRunning {
 				return errors.New("delivery is not running")
 			}
+
 			appendTurn(sess, body, who, text, usd)
 			if len(nativeSession) > 0 && strings.TrimSpace(nativeSession[0]) != "" {
 				sess.HermesSession = strings.TrimSpace(nativeSession[0])
@@ -350,4 +360,42 @@ func (s *Store) RecordToolScope(agent, id, requestID string, scope ToolScope) er
 		return errors.New("delivery not found")
 	})
 	return err
+}
+
+// RequestStop durably targets one running delivery. Replays never cancel work
+// accepted after the original stop request. Queued text remains in its receipt.
+func (s *Store) RequestStop(agent, id, requestID string) (Delivery, error) {
+	var out Delivery
+	_, err := s.update(agent, id, func(sess *Session, _ *string) error {
+		if sess.Sharing != nil {
+			return errors.New("private native conversation required")
+		}
+		for i := range sess.Deliveries {
+			d := &sess.Deliveries[i]
+			if d.ID != requestID {
+				continue
+			}
+			if d.StopRequested {
+				out = *d
+				return nil
+			}
+			if d.State != DeliveryRunning {
+				return errors.New("target delivery is not running")
+			}
+			d.StopRequested = true
+			d.Updated = now()
+			out = *d
+			for j := range sess.Deliveries {
+				q := &sess.Deliveries[j]
+				if q.State == DeliveryQueued {
+					q.State = DeliveryCancelled
+					q.Error = "Cancelled before dispatch at owner request"
+					q.Updated = now()
+				}
+			}
+			return nil
+		}
+		return errors.New("delivery not found")
+	})
+	return out, err
 }

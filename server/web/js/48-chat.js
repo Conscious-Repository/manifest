@@ -1090,8 +1090,8 @@ function chatEntryState(entry){
   if(execution!=='running'&&session.run?.state==='completed'&&session.run.evidence){execution='completed';label=ob.connectivity!=='connected'?'Run finished · disconnected':ob.agentState==='blocked'?'Run finished · input pending':'Run finished';}
   else if(execution==='unknown'&&session.run?.state==='failed'){execution='failed';label='Run failed';}
  }else{
-  const deliveries=session.deliveries||[],latest=deliveries.at(-1);
-  if(session.status==='thinking'){execution='running';label='Working';}
+  const deliveries=session.deliveries||[],latest=deliveries.filter(d=>d.state!=='cancelled').at(-1);
+  if(session.status==='thinking'){execution='running';label=deliveries.some(d=>d.state==='running'&&d.stopRequested)?'Interruption requested':'Working';}
   else if(latest?.state==='completed'){execution='completed';label='Run finished';}
   else if(latest?.state==='failed'||session.status==='error'){execution='failed';label='Run failed';}
   else if(latest?.state==='queued'){execution='queued';label='Queued';}
@@ -2275,6 +2275,7 @@ function renderChatTranscript(d) {
     b.classList.add("chat-queued");
     host.append(b);
   });
+  if(!portal&&!s.sharing){const base=chatBase();host.append(chatNativeInterruptionControls(s,base,()=>{if(base===chatBase()&&s.id===chatOpenId)refetchChatSession(s.id);}));}
   // the live layer's mount point (turn.started paints into it); when the ES
   // hasn't caught the turn yet — or there is no ES at all (agent sessions) —
   // the status flag still shows a quiet indicator
@@ -4393,4 +4394,18 @@ function chatInstallPaneResize(shell){
 
 function chatConversationInfo(title){
  const info=el("details","chat-conversation-info");info.append(el("summary","","Conversation details"),el("p","",title));return info;
+}
+
+function chatNativeInterruptionControls(session,base,refresh) {
+ const box=el('section','chat-native-interruption');
+ const running=(session.deliveries||[]).find(d=>d.state==='running');
+ if(running){
+  const count=(session.deliveries||[]).filter(d=>d.state==='queued').length;
+  const button=el('button','sprt-quiet',count?'Interrupt turn and cancel '+count+' queued':'Interrupt turn');
+  const status=el('p','chat-workspace-hint',running.stopRequested?'Interruption requested; waiting for the runner to return.':'Already-started external effects may continue.');status.setAttribute('role','status');button.disabled=!!running.stopRequested;
+  button.onclick=async()=>{button.disabled=true;status.textContent='Requesting interruption…';try{await postJSONOk(base+'/'+encodeURIComponent(session.id)+'/interrupt',{requestId:running.id});status.textContent='Interruption requested; waiting for the runner to return.';refresh();}catch(e){status.textContent=e.message||'Could not request interruption. Check status and retry.';button.disabled=false;}};
+  box.append(button,status);
+ }
+ for(const receipt of session.deliveries||[]){if(receipt.state!=='cancelled')continue;const note=el('details','chat-cancelled-instruction');note.append(el('summary','','Cancelled before dispatch'),el('pre','chat-activity-text',receipt.text||''));box.append(note);}
+ return box;
 }

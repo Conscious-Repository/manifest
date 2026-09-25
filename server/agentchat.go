@@ -38,7 +38,9 @@ import (
 
 // agentChatCfg is the store + the short-lived profile cache.
 type agentChatCfg struct {
-	store *agentchat.Store
+	runMu   sync.Mutex
+	running map[string]agentChatInvocation
+	store   *agentchat.Store
 
 	pmu      sync.Mutex
 	profiles []hermesProfile
@@ -644,7 +646,25 @@ func (s *Server) startAgentChatDelivery(agent, id string) {
 }
 func (s *Server) runAgentChatTurns(agent, id string, d agentchat.Delivery) {
 	for {
-		if err := s.runAgentChatTurn(agent, id, d.ID); err != nil {
+		ctx, cancel := context.WithCancel(context.Background())
+		key := agent + "/" + id
+		s.agentChat.runMu.Lock()
+		if s.agentChat.running == nil {
+			s.agentChat.running = map[string]agentChatInvocation{}
+		}
+		s.agentChat.running[key] = agentChatInvocation{requestID: d.ID, cancel: cancel}
+		if receipt, ok := s.agentChat.store.Receipt(agent, id, d.ID); ok && receipt.StopRequested {
+			cancel()
+		}
+		s.agentChat.runMu.Unlock()
+		err := s.runAgentChatTurnContext(ctx, agent, id, d.ID)
+		cancel()
+		s.agentChat.runMu.Lock()
+		if s.agentChat.running[key].requestID == d.ID {
+			delete(s.agentChat.running, key)
+		}
+		s.agentChat.runMu.Unlock()
+		if err != nil {
 			log.Printf("agent chat %s/%s: persist result: %v", agent, id, err)
 			return
 		}
@@ -659,6 +679,9 @@ func (s *Server) runAgentChatTurns(agent, id string, d agentchat.Delivery) {
 // runAgentChatTurn composes the window, invokes the CLI once, and lands the
 // reply (or the failure) as a turn.
 func (s *Server) runAgentChatTurn(agent, id, requestID string) error {
+	return s.runAgentChatTurnContext(context.Background(), agent, id, requestID)
+}
+func (s *Server) runAgentChatTurnContext(ctx context.Context, agent, id, requestID string) error {
 	st := s.agentChat.store
 	sess, body, _, ok := st.Get(agent, id)
 	if !ok {
@@ -666,6 +689,9 @@ func (s *Server) runAgentChatTurn(agent, id, requestID string) error {
 	}
 	failBeforeRun := func(message string) error {
 		return st.Finish(agent, id, requestID, "system", message+" No agent invocation started.", agentchat.DeliveryFailed, message, 0)
+	}
+	if ctx.Err() != nil {
+		return failBeforeRun("Turn interrupted before dispatch.")
 	}
 	if s.hermes == nil || s.hermes.runner == nil {
 		return failBeforeRun("Chat runner is unavailable.")
@@ -714,7 +740,7 @@ func (s *Server) runAgentChatTurn(agent, id, requestID string) error {
 	if err := st.RecordToolScope(agent, id, requestID, agentchat.ToolScope{Toolsets: scope, Source: scopeSource}); err != nil {
 		return err
 	}
-	res, err := s.hermes.runner.Run(context.Background(), request)
+	res, err := s.hermes.runner.Run(ctx, request)
 	if err != nil {
 		log.Printf("agent chat %s/%s: %v", agent, id, err)
 		saveErr := st.Finish(agent, id, requestID, "system", "⚠ "+agentDisplayName("agent:"+recipient.Agent)+" couldn't finish that — "+err.Error(), agentchat.DeliveryFailed, err.Error(), res.SpentUSD, res.SessionID)
