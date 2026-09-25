@@ -28,6 +28,10 @@ type taskThreadRow struct {
 	State      string    `json:"state,omitempty"` // delegation state (plan-running, running, plan-ready, …)
 	Phase      string    `json:"phase,omitempty"`
 	Open       bool      `json:"open"` // the task record is open, or could not be resolved
+	// Supervision is the turn-marker projection (taskThreadSupervision), only
+	// when it names an interrupted or failed turn — the rail otherwise read
+	// "Idle" while the thread said disconnected/failed.
+	Supervision *chatSupervision `json:"supervision,omitempty"`
 }
 
 // taskDomain is the id's namespace: "manifest/…" → manifest, "aion:…" → aion.
@@ -94,6 +98,9 @@ func (s *Server) taskThreads() []taskThreadRow {
 			if row.Agent == "" && d.Agent != "" {
 				row.Agent = d.Agent
 			}
+		}
+		if sv := s.taskThreadSupervision(id); sv.State == supervisionDisconnected || sv.State == supervisionFailed {
+			row.Supervision = &sv
 		}
 		out = append(out, row)
 	}

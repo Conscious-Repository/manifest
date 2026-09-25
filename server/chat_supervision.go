@@ -209,7 +209,7 @@ func (s *Server) terminalChatSupervision(se termSession, tr termTranscript, ob t
 		out.State, out.Evidence = supervisionUnknown, "legacy runtime keeps no input receipts; observation "+ob.Process+"/"+ob.AgentState+" is not completion evidence"
 		return out
 	}
-	receipts := s.terminal.continuationReceipts(se.ID, "")
+	receipts := s.terminal.inputReceiptList(se.ID)
 	receiptByID := map[string]bool{}
 	for _, r := range receipts {
 		receiptByID[r.ID] = true
@@ -236,11 +236,13 @@ func (s *Server) terminalChatSupervision(se termSession, tr termTranscript, ob t
 		}
 		out.Runs = append(out.Runs, run)
 	}
-	ordered := make([]terminalInputReceipt, 0, len(receipts))
-	for _, r := range receipts {
-		ordered = append(ordered, r)
-	}
-	sort.Slice(ordered, func(i, j int) bool { return ordered[i].Updated < ordered[j].Updated })
+	ordered := receipts
+	sort.Slice(ordered, func(i, j int) bool {
+		if ordered[i].Updated == ordered[j].Updated {
+			return ordered[i].ID < ordered[j].ID
+		}
+		return ordered[i].Updated < ordered[j].Updated
+	})
 	for _, r := range ordered {
 		run := supervisionRun{RunID: supervisionRunID(caps.Adapter, conversation, r.ID), Adapter: caps.Adapter, Conversation: conversation, RequestID: r.ID, Updated: r.Updated}
 		if since, ok := s.terminal.inflightSince(se.ID, r.ID); ok && r.State == "unconfirmed" && r.Error == "" {

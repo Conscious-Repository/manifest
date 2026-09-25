@@ -107,6 +107,32 @@ func (c *termCfg) continuationReceipts(id, source string) map[string]terminalInp
 	return out
 }
 
+// inputReceiptList is every submission receipt for terminal id, one per
+// request ID. continuationReceipts keys by submitted-text hash for transcript
+// attribution, which folds two identical messages into one; supervision needs
+// each request as its own run (audit 2026-09-25: the newest of two identical
+// sends vanished behind the older one's result).
+func (c *termCfg) inputReceiptList(id string) []terminalInputReceipt {
+	var out []terminalInputReceipt
+	entries, err := os.ReadDir(filepath.Join(c.regPath+".inputs", id))
+	if err != nil {
+		return nil
+	}
+	for _, e := range entries {
+		if e.IsDir() || filepath.Ext(e.Name()) != ".json" {
+			continue
+		}
+		request := e.Name()[:len(e.Name())-5]
+		if !agentchat.ValidRequestID(request) {
+			continue
+		}
+		if r, err := c.readInputReceipt(id, request); err == nil && len(r.SubmittedHash) == 64 {
+			out = append(out, r)
+		}
+	}
+	return out
+}
+
 func (c *termCfg) inputReceiptPath(id, request string) string {
 	return filepath.Join(c.regPath+".inputs", id, request+".json")
 }

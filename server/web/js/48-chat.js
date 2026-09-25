@@ -849,7 +849,7 @@ function chatEntryLifecycle(entry){return chatLifecycle[chatInboxKey(entry)]||(c
 function chatTaskEntry(t){
   const agent=(t.agent||"").replace(/^agent:/,"");
   return {agent, taskThread:true, session:{id:t.id, title:t.title||t.id, updated:t.updated, task:t.id, domain:t.domain||"", turns:t.comments||0, done:t.open===false,
-    taskState:t.state||"", phase:t.phase||"", lastAuthor:t.lastAuthor||"", lastAction:t.lastAction||"", lastText:t.lastText||""}};
+    taskState:t.state||"", phase:t.phase||"", lastAuthor:t.lastAuthor||"", lastAction:t.lastAction||"", lastText:t.lastText||"", supervision:t.supervision||null}};
 }
 function chatApplyPins(state){
   if(state.key!=="inbox"||state.slot!=="pins"||!Number.isSafeInteger(state.revision)||state.revision<0||state.revision<chatPinsRevision)return;
@@ -1081,6 +1081,10 @@ function chatEntryState(entry){
   else if(st==='done'){execution='completed';label='Run finished';}
   else if(!session.turns){execution='draft';label='Not started';}
   else label=(session.lastAuthor?session.lastAuthor+' · ':'')+'Idle';
+  // An interrupted or failed agent turn (turn markers) outranks an idle or
+  // finished-looking row; live delegation states keep their word.
+  const projected=chatSupervisionState(session.supervision);
+  if(projected&&!['running','queued','waiting_user'].includes(execution)&&['disconnected','failed'].includes(projected.execution)){execution=projected.execution;label=projected.label;evidence=projected.evidence;}
  }else if(entry.terminal){
   const ob=typeof terminalStates!=='undefined'&&terminalStates.get(session.id)||session;
   if(session.launchPhase==='draft'||ob.process==='not-started'){execution='draft';label='Not started';}
@@ -1097,7 +1101,10 @@ function chatEntryState(entry){
   // A submission this runtime never confirmed, or whose process is gone
   // without a provider record, is disconnected — an idle pane is not a result.
   const projected=chatSupervisionState(session.supervision);
-  if(projected&&execution!=='running'&&execution!=='waiting_user'&&(projected.execution==='disconnected'||(projected.execution==='completed'&&execution!=='completed'))){execution=projected.execution;label=projected.label;evidence=projected.evidence;}
+  // The projection names the latest submission, so its failed, queued and
+  // in-flight states also outrank an earlier run's "finished" (audit
+  // 2026-09-25: all three rendered "Run finished").
+  if(projected&&execution!=='running'&&execution!=='waiting_user'&&projected.execution!==execution&&['disconnected','completed','failed','queued','running'].includes(projected.execution)){execution=projected.execution;label=projected.label;evidence=projected.evidence;}
  }else{
   const deliveries=session.deliveries||[],latest=deliveries.filter(d=>d.state!=='cancelled').at(-1);
   const running=deliveries.find(d=>d.state==='running');

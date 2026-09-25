@@ -36,3 +36,22 @@ ctx.chatAttentionFilter='queued';
 assert.equal(ctx.chatEntryMatchesAttention(planning('thinking','queued')),true);
 ctx.chatAttentionFilter='running';
 assert.equal(ctx.chatEntryMatchesAttention(planning('thinking','queued')),true,'existing active-work filter includes queued work');
+
+// Audit 2026-09-25: a newer submission's failed/queued/in-flight projection
+// was hidden behind the previous run's "Run finished".
+for(const [state,execution,label] of [['failed','failed','Run failed'],['submitted','queued','Queued'],['running','running','Working'],['disconnected','disconnected','Disconnected · outcome uncertain']]){
+ const e=native('idle');e.session.run={state:'completed',evidence:'older-run'};e.session.supervision={state,evidence:'newer receipt',runs:[]};
+ const got=ctx.chatEntryState(e);assert.equal(got.execution,execution,state);assert.equal(got.label,label,state);
+}
+{const e=native('idle');e.session.run={state:'completed',evidence:'run'};e.session.supervision={state:'ready_for_review',evidence:'same run',runs:[]};assert.equal(ctx.chatEntryState(e).label,'Run finished','a landed run keeps its wording');}
+console.log('PASS newer submission states outrank an earlier finished run');
+
+// Audit 2026-09-25: a task row whose agent turn was interrupted or failed
+// (turn markers) read "Idle" and never matched the Disconnected filter.
+{const task=(sv,taskState='')=>({taskThread:true,session:{id:'inbox/a',turns:3,lastAuthor:'Alfred',taskState,supervision:sv}});
+ assert.equal(ctx.chatEntryState(task({state:'disconnected',evidence:'owed',runs:[]})).execution,'disconnected');
+ assert.equal(ctx.chatEntryState(task({state:'failed',evidence:'abandoned',runs:[]})).label,'Run failed');
+ assert.equal(ctx.chatEntryState(task({state:'disconnected',evidence:'owed',runs:[]},'running')).execution,'running','a live delegation keeps its word');
+ assert.equal(ctx.chatEntryState(task(null)).label,'Alfred · Idle');
+ ctx.chatAttentionFilter='disconnected';assert.equal(ctx.chatEntryMatchesAttention(task({state:'disconnected',evidence:'owed',runs:[]})),true);ctx.chatAttentionFilter='all';}
+console.log('PASS task rows carry interrupted/failed turn state');

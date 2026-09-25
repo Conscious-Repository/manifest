@@ -2,6 +2,7 @@ package server
 
 import (
 	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -341,4 +342,65 @@ func openTurn(srv *Server, id string) {
 func agentReply(srv *Server, id, text string) {
 	_, _ = srv.addThreadEntry(agentTokenIdentity("agent:alfred"), id, threads.ActComment, text, nil, nil, map[string]any{"hermes": true})
 	time.Sleep(2 * time.Millisecond)
+}
+
+// The CHAT rail's task row carries the turn projection when a turn is owed
+// or failed, and nothing otherwise.
+func TestTaskThreadRowCarriesInterruptedTurn(t *testing.T) {
+	srv := loopFixture(t)
+	id := "inbox/research-zoning"
+	if _, ok := srv.pinTaskID(id); !ok {
+		t.Fatal("pin")
+	}
+	if _, err := srv.addThreadEntry(srv.ownerIdentity(), id, threads.ActComment, "what is it zoned?", nil, nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	row := func() taskThreadRow {
+		for _, r := range srv.taskThreads() {
+			if r.ID == id {
+				return r
+			}
+		}
+		t.Fatal("row missing")
+		return taskThreadRow{}
+	}
+	if r := row(); r.Supervision != nil {
+		t.Fatalf("no turn, no projection: %+v", r.Supervision)
+	}
+	openTurn(srv, id)
+	if r := row(); r.Supervision == nil || r.Supervision.State != supervisionDisconnected {
+		t.Fatalf("owed turn must reach the rail: %+v", r.Supervision)
+	}
+	agentReply(srv, id, "ANSWER: R-1")
+	srv.hermesTurnMark(id, actTurnClosed, map[string]any{"agent": "agent:alfred"})
+	if r := row(); r.Supervision != nil {
+		t.Fatalf("an answered turn adds nothing to the row: %+v", r.Supervision)
+	}
+}
+
+// Audit 2026-09-25: two identical sends are two runs. Receipts were read
+// through the hash-keyed attribution map, so the newer send vanished behind
+// the older one's result.
+func TestTerminalIdenticalSendsAreSeparateRuns(t *testing.T) {
+	s, se, _, _ := herdrSupervisionFixture(t, "codex")
+	se.LaunchPhase, se.Started = "", true
+	se.Runtime = terminalIdentity{Workspace: "w1", Pane: "p1"}
+	s.terminal.upsert(se)
+	hash := hashTerminalText("run the tests")
+	for i, id := range []string{"same-text-first", "same-text-second"} {
+		if err := s.terminal.writeInputReceipt(se.ID, terminalInputReceipt{ID: id, Fingerprint: strings.Repeat("d", 64), State: "sent", SubmittedHash: hash, Updated: fmt.Sprintf("2026-09-25T10:0%d:00Z", i)}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	tr := termTranscript{Turns: []termTurn{{ID: "a1", Who: "assistant", TS: "2026-09-25T10:00:30Z"}}}
+	sv := s.terminalChatSupervision(se, tr, terminalObservation{Connectivity: "connected", Process: "running", AgentState: "working"})
+	if len(sv.Runs) != 2 {
+		t.Fatalf("two sends, two runs: %+v", sv.Runs)
+	}
+	if got := runState(sv, "same-text-second"); got.State != supervisionRunning {
+		t.Fatalf("the newer identical send must be visible as running: %+v", got)
+	}
+	if got := runState(sv, "same-text-first"); got.State != supervisionRunning && got.State != supervisionReady {
+		t.Fatalf("%+v", got)
+	}
 }
