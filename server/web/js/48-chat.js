@@ -2673,27 +2673,37 @@ function ensureChatPoll(session, queued) {
   if (!active) { if (chatPollTimer) { clearInterval(chatPollTimer); chatPollTimer = null; } return; }
   if (chatPollTimer) return;
   const every = chatIsPortal() ? 4000 : 1500;
+  let inFlight = false;
   chatPollTimer = setInterval(async () => {
-    if (els.chatView.hidden || !chatOpenId) {
-      clearInterval(chatPollTimer); chatPollTimer = null; return;
-    }
-    const id = chatOpenId, base = chatBase(), routeVersion = chatRouteVersion;
-    let d;
+    if (inFlight) return;
+    inFlight = true;
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 15000);
     try {
-      const res = await fetch(base + "/" + encodeURIComponent(id));
-      if (!res.ok) return;
-      d = await res.json();
-    } catch (e) { return; }
-    if (routeVersion !== chatRouteVersion || id !== chatOpenId || base !== chatBase() || els.chatView.hidden) return;
-    if(d.sharedConversation?.route){location.hash=d.sharedConversation.route;return;}
-    const sig = chatTranscriptSignature(d);
-    if (sig !== chatLastUpdated) {
-      renderChatTranscript(d);
-      renderChatComposer(d.session);
-      loadChatSessions().then(renderChatRail);
-    }
-    if (!d.session.shared && d.session.status !== "thinking" && !(d.queued || []).length && !(chatAgent && !chatIsPortal())) {
-      clearInterval(chatPollTimer); chatPollTimer = null;
+      if (els.chatView.hidden || !chatOpenId) {
+        clearInterval(chatPollTimer); chatPollTimer = null; return;
+      }
+      const id = chatOpenId, base = chatBase(), routeVersion = chatRouteVersion, observedSignature = chatLastUpdated;
+      let d;
+      try {
+        const res = await fetch(base + "/" + encodeURIComponent(id), {signal:controller.signal});
+        if (!res.ok) return;
+        d = await res.json();
+      } catch (e) { return; }
+      if (observedSignature !== chatLastUpdated || routeVersion !== chatRouteVersion || id !== chatOpenId || base !== chatBase() || els.chatView.hidden) return;
+      if(d.sharedConversation?.route){location.hash=d.sharedConversation.route;return;}
+      const sig = chatTranscriptSignature(d);
+      if (sig !== chatLastUpdated) {
+        renderChatTranscript(d);
+        renderChatComposer(d.session);
+        loadChatSessions().then(renderChatRail);
+      }
+      if (!d.session.shared && d.session.status !== "thinking" && !(d.queued || []).length && !(chatAgent && !chatIsPortal())) {
+        clearInterval(chatPollTimer); chatPollTimer = null;
+      }
+    } finally {
+      clearTimeout(timeout);
+      inFlight = false;
     }
   }, every);
 }
