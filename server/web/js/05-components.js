@@ -1012,6 +1012,7 @@ function artifactWorkspace(mount, options) {
         if(!pane.isConnected)return;
         const result=await opts.save(submitted.text, submitted.baseRevision,submitted.saveRequestID);
         if(opts.receiptSave&&(!result||result.id!==submitted.artifact||result.saveRequestID!==submitted.saveRequestID||!result.revisions?.some(r=>r.hash===result.savedRevision&&r.n===result.savedVersion)))throw new Error("Save receipt is incomplete. Retry retains the original request identity.");
+        window.dispatchEvent(new Event('manifest-artifacts-changed'));
         if(editState&&chatStateEqual(editState.value,submitted)){editState.set(null);await editState.flush();}
         const a = await opts.load();
         await show(a,opts.receiptSave?result.savedRevision:a.head,opts.receiptSave?result.savedVersion:undefined);

@@ -2169,6 +2169,7 @@ function chatSaveOutputButton(output){
  const button=el('button','chat-turn-act','Save output');button.title='Retain this exact reply as a private artifact for review and search';
  button.onclick=async()=>{button.disabled=true;try{
   const ref=await postJSONOk(base+'/'+encodeURIComponent(id)+'/output',{delivery:output.delivery,hash:output.hash});
+  window.dispatchEvent(new Event('manifest-artifacts-changed'));
   if(current())chatOpenWorkingArtifact({...ref,selectionKey:'chat:'+agent+'/'+id});
  }catch(e){if(current())showToast(e.message||'Could not retain this output.');}finally{button.disabled=false;}};
  return button;
@@ -2245,6 +2246,7 @@ function chatPaintCodingResults(host,results) {
       open.disabled=true;
       try {
         const ref=await postJSONOk(chatBaseFor(sourceAgent)+"/"+encodeURIComponent(sourceID)+"/coding-result",{agent:result.agent,run:result.id,hash:result.hash});
+        window.dispatchEvent(new Event('manifest-artifacts-changed'));
         if(route!==chatRouteVersion || chatAgent!==sourceAgent || chatOpenId!==sourceID)return;
         chatOpenWorkingArtifact({...ref,selectionKey:"chat:"+sourceAgent+"/"+sourceID});
       }catch(e){if(route===chatRouteVersion && chatAgent===sourceAgent && chatOpenId===sourceID)showToast(e.message||"Could not open this result.");}

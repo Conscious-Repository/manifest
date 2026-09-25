@@ -69,6 +69,13 @@ const server=http.createServer((req,res)=>{
   assert.equal(aFetches,2,'A was fetched on first open and once to revalidate');
   assert.deepEqual(errors.filter(e=>!/EventSource|terminal\/events/.test(e)),[]);
   const retainedOutputs=[];
+  let fileReads=0;
+  await page.route('**/api/artifacts?**',route=>{fileReads++;return route.fulfill({json:{artifacts:retainedOutputs.length?[{id:'cccccccccccccccc',title:'Saved native output',head:'c'.repeat(64),ref:'output.md',kind:'report'}]:[]}});});
+  await page.route('**/api/chat/files?**',route=>route.fulfill({json:{files:[]}}));
+  await page.evaluate(()=>chatOpenFiles());
+  await page.getByText('No registered files for this conversation yet.',{exact:true}).waitFor();
+  await page.getByLabel('Filter files',{exact:true}).fill('Saved');
+  await page.getByRole('button',{name:'Hide workspace',exact:true}).click();
   await page.route('**/api/agents/chat/alfred/sessions/a/output',route=>{retainedOutputs.push(route.request().postDataJSON());return route.fulfill({json:{id:'cccccccccccccccc',revision:'c'.repeat(64)}});});
   await page.route('**/api/artifacts/get?**',route=>route.fulfill({json:{id:'cccccccccccccccc',title:'Saved native output',ref:'output.md',head:'c'.repeat(64),content:'reply from A',preview:{kind:'text'},provenance:{source:'chat-output',session:'conv-a',delivery:'native-output-request'},revisions:[{n:1,hash:'c'.repeat(64),actor:'alfred'}]}}));
   await page.getByRole('button',{name:'Save output',exact:true}).click();
@@ -78,6 +85,15 @@ const server=http.createServer((req,res)=>{
   await outputPane.getByText('Origin and version details',{exact:true}).click();
   await outputPane.getByText('native-output-request',{exact:true}).waitFor();
   await page.screenshot({path:'/tmp/manifest-native-output-artifact.png'});
+  await page.getByRole('tab',{name:'Files',exact:true}).click();
+  await page.locator('.chat-files-list').getByRole('button',{name:'Saved native output',exact:true}).waitFor();
+  assert.equal(await page.getByLabel('Filter files',{exact:true}).inputValue(),'Saved');
+  assert.equal(await page.getByLabel('File scope',{exact:true}).inputValue(),'conversation');
+  assert.ok(fileReads>=2,'capture refreshed the already-open Files list');
+  await page.getByRole('button',{name:'Close Files tab',exact:true}).click();
+  const readsAfterClose=fileReads;
+  await page.evaluate(()=>window.dispatchEvent(new Event('manifest-artifacts-changed')));
+  await page.waitForTimeout(100);assert.equal(fileReads,readsAfterClose,'closed Files listener was removed');
   await page.getByRole('button',{name:'Hide workspace',exact:true}).click();
   // Receipt state drives both waiting indicator and composer guidance.
   const queued=thread('a');queued.session.status='thinking';queued.session.deliveries=[{id:'queued-request',state:'queued',text:'Pending instruction'}];
