@@ -2,6 +2,9 @@ package server
 
 import (
 	"fmt"
+	"manifest/aion"
+	"manifest/goals"
+	"manifest/vault"
 	"os"
 	"path/filepath"
 	"strings"
@@ -338,5 +341,46 @@ func TestOodaChatProposalAppliesPropertyStatus(t *testing.T) {
 	err = srv.OodaChatProposal("th/p", m4.ID, 0, true, "ben@ooda.group", "Ben", "BA", true)
 	if err == nil || !strings.Contains(err.Error(), "aren't applicable") {
 		t.Fatalf("section rewrite must refuse with guidance, got %v", err)
+	}
+}
+
+// Audit 2026-09-25: a teammate's portal chat context ids resolved without the
+// asking agent's domain — the AION chat could carry OODA property content, a
+// held-sourced backlog item the portal export withholds, or any personal goal
+// title. Each kind now resolves only inside its own domain.
+func TestChatContextResolvesOnlyInsideTheAgentsDomain(t *testing.T) {
+	srv, item := chatFixture(t)
+	held := &aion.BacklogItem{Kind: aion.KindTask, Text: "follow up on the confidential diligence call", Status: aion.StatusOpen, Sources: []string{"log/2026-09-20 secret call.md"}}
+	if err := srv.aion.AddItem(held); err != nil {
+		t.Fatal(err)
+	}
+	tm, err := aion.ParseTierMap([]byte(`{"2026-09-20 secret call.md":{"tier":"held"}}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv.aionLive = &AionLive{s: srv, tierMap: tm}
+	dir := t.TempDir()
+	goalsMD := "# Goals\n\n## Aion\n\n### Rocks (90-day)\n- [ ] Ship the pilot [goal:: aion/ship-pilot]\n\n## Personal\n\n### Rocks (90-day)\n- [ ] Private health goal [goal:: personal/health]\n"
+	if err := os.WriteFile(filepath.Join(dir, "goals.md"), []byte(goalsMD), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	idx, err := vault.NewIndex(vault.Config{Root: dir, GoalsName: "goals.md"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv.goals = goals.NewStore(idx, dir, "goals.md", testWrite)
+
+	aionCtx := srv.resolveChatContext([]string{"aion:" + item, "aion:" + held.ID, "aion/ship-pilot", "personal/health"}, "aion")
+	if !strings.Contains(aionCtx, "canonize the zoning memo") || !strings.Contains(aionCtx, "Ship the pilot") {
+		t.Fatalf("the domain's own context must still resolve: %s", aionCtx)
+	}
+	for _, leak := range []string{"confidential diligence", "Private health goal"} {
+		if strings.Contains(aionCtx, leak) {
+			t.Fatalf("resolved outside the tier/domain: %q in %s", leak, aionCtx)
+		}
+	}
+	oodaCtx := srv.resolveChatContext([]string{"aion:" + item, "aion/ship-pilot"}, "ooda")
+	if strings.Contains(oodaCtx, "canonize the zoning memo") || strings.Contains(oodaCtx, "Ship the pilot") {
+		t.Fatalf("AION content resolved for the OODA agent: %s", oodaCtx)
 	}
 }

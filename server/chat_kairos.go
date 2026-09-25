@@ -12,7 +12,9 @@ package server
 
 import (
 	"fmt"
+	"manifest/aion"
 	"regexp"
+	"slices"
 	"strings"
 	"time"
 
@@ -107,8 +109,14 @@ func (s *Server) chatAgents() []*chatAgent {
 }
 
 // resolveChatContext turns structural ids into real content the work order
-// carries (the client sends ids, never prose).
-func (s *Server) resolveChatContext(ids []string) string {
+// carries (the client sends ids, never prose). The ids come from a teammate's
+// browser, so each kind resolves only inside the asking agent's own domain
+// (audit 2026-09-25: the AION chat could pull OODA property financials, a
+// held-tier backlog item the portal export withholds, or any personal goal
+// title by id): aion: items for AION and never a held-sourced item, prop/ for
+// OODA, goal titles only from the domain's own goals area. Anything else is
+// echoed as the bare id the teammate already had.
+func (s *Server) resolveChatContext(ids []string, domain string) string {
 	if len(ids) == 0 {
 		return ""
 	}
@@ -121,9 +129,13 @@ func (s *Server) resolveChatContext(ids []string) string {
 		switch {
 		case strings.HasPrefix(id, attachPrefix):
 			continue // attachments compose their own block (chat_attach.go)
-		case strings.HasPrefix(id, "aion:") && s.aion != nil:
+		case strings.HasPrefix(id, "aion:") && s.aion != nil && domain == "aion":
 			bare := strings.TrimPrefix(id, "aion:")
-			if it := s.aion.LoadBacklog().Find(bare); it != nil {
+			tm := s.aionTierMap()
+			if tm == nil {
+				tm, _ = aion.LoadTierMap() // the embedded map, as the export reads it
+			}
+			if it := s.aion.LoadBacklog().Find(bare); it != nil && !slices.ContainsFunc(it.Sources, tm.HeldSource) {
 				b.WriteString("- item [" + id + "]: " + it.Text)
 				if it.Rock != "" {
 					b.WriteString(" (rock: " + it.Rock + ")")
@@ -135,7 +147,7 @@ func (s *Server) resolveChatContext(ids []string) string {
 				continue
 			}
 			b.WriteString("- item [" + id + "]\n")
-		case strings.HasPrefix(id, "prop/") && s.oodaLive != nil:
+		case strings.HasPrefix(id, "prop/") && s.oodaLive != nil && domain == "ooda":
 			// A REAL-ESTATE property (ooda-portal plan, Stage D). This branch is
 			// the whole reason zeck can be useful without reading the vault:
 			// manifest, running as the owner, resolves the id into real content
@@ -147,7 +159,7 @@ func (s *Server) resolveChatContext(ids []string) string {
 			// a rock / goal id — resolve the title if we can
 			title := id
 			if s.goals != nil {
-				if _, g := s.goals.Load().FindGoal(id); g != nil {
+				if a, g := s.goals.Load().FindGoal(id); g != nil && a != nil && chatDomainGoalArea(domain, a.Name) {
 					title = g.Text
 				}
 			}
@@ -158,6 +170,18 @@ func (s *Server) resolveChatContext(ids []string) string {
 		return ""
 	}
 	return "CONTEXT (what this ask is grounded in):\n" + b.String()
+}
+
+// chatDomainGoalArea: the goals area a team agent's context may name — the
+// area the domain's own portal publishes (AION exports `## Aion`).
+func chatDomainGoalArea(domain, area string) bool {
+	switch domain {
+	case "aion":
+		return strings.EqualFold(area, "Aion")
+	case "ooda":
+		return strings.EqualFold(area, "Real Estate") // the RE surface's goals area (re.go)
+	}
+	return false
 }
 
 func indent(s, pad string) string {
@@ -196,7 +220,7 @@ func (s *Server) spoolChatOrder(ag *chatAgent, threadID, threadTitle, ritual, in
 	}
 	b.WriteString(".\n")
 	b.WriteString(history)
-	if ctx := s.resolveChatContext(contextIDs); ctx != "" {
+	if ctx := s.resolveChatContext(contextIDs, ag.Domain); ctx != "" {
 		b.WriteString(ctx)
 	}
 	// Attachments take whatever room is left after everything else, so the

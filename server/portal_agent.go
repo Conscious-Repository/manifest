@@ -116,6 +116,9 @@ func (s *Server) AionAssign(itemID, owner, memberEmail, memberName string) error
 	if isCodingAgent(s.agentHarness(owner)) {
 		return errBadRequest("coding owners are assigned from the personal board")
 	}
+	if strings.HasPrefix(owner, "agent:") && !s.teamRosterAllows(owner) {
+		return errBadRequest(owner + " is not a team agent; personal agents are assigned from the personal board")
+	}
 	_, err := s.assignTask(threads.Identity{ID: memberEmail, Name: memberName}, s.aionTodoID(itemID), owner)
 	if err == nil && s.threads != nil && s.threads.aion != nil {
 		_ = s.threads.aion.LogAction(teamportal.Identity{Email: memberEmail, Name: memberName},

@@ -427,11 +427,27 @@ func (s *Server) threadDialogHook(taskID string, mentions []string, text string)
 	plan := s.resolveDispatch(taskID, "comment", "", mergeMentions(mentions, s.textMentions(text)))
 	// This hook is the team-portal entry; coding execution is authorized by
 	// Benjamin's personal board, whose composer uses postAndDispatch directly.
-	if plan != nil && isCodingAgent(s.agentHarness(plan.Agent)) {
+	// A teammate directs only the team roster: Alfred/Hermes and its profiles
+	// stay personal (owner decision 2026-08-16), so a portal "@alfred …" or a
+	// comment on an item the owner gave Alfred stays a comment — it never runs
+	// the owner's agent with his read tools and posts the reply to the team.
+	if plan != nil && (isCodingAgent(s.agentHarness(plan.Agent)) || !s.teamRosterAllows(plan.Agent)) {
 		return
 	}
 	s.dispatchAssign(taskID, plan)
 	s.dispatchRelay(taskID, plan, text)
+}
+
+// teamRosterAllows reports whether an agent token's base is on the team
+// surface's roster (rosterFor("team")) — the agents a teammate may direct.
+func (s *Server) teamRosterAllows(agent string) bool {
+	base, _ := splitAgentToken(agent)
+	for _, r := range s.teamAgentRoster() {
+		if id, _ := r["id"].(string); id != "" && id == base {
+			return true
+		}
+	}
+	return false
 }
 
 // textMentionRe finds @name with optional ::intent and ::model:slug segments.
