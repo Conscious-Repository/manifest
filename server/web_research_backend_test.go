@@ -6,6 +6,7 @@ import (
 	"manifest/artifacts"
 	"net/http/httptest"
 	"os/exec"
+	"strings"
 	"testing"
 	"time"
 )
@@ -58,5 +59,32 @@ func TestResearchRevisionBrowserWithBackend(t *testing.T) {
 	}
 	if value.Text != "Phone research draft: verify the sample size." || value.BaseRevision != got.Head {
 		t.Fatalf("explicit conflict resolution was not persisted: %+v", value)
+	}
+	conversation, err := s.chatState.Read("conversation-"+strings.Repeat("a", 32), "draft")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var pending struct {
+		Text      string
+		Selection struct{ ID, Revision string }
+	}
+	if err := json.Unmarshal(conversation.Value, &pending); err != nil {
+		t.Fatal(err)
+	}
+	if pending.Text != "Review the revised brief before applying it." || pending.Selection.ID != got.ID || pending.Selection.Revision != got.Head {
+		t.Fatalf("conversation draft lost exact context: %+v", pending)
+	}
+	workspace, err := s.chatState.Read("conversation-"+strings.Repeat("a", 32), "workspace")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var layout struct {
+		Tabs []struct{ Spec struct{ ID string } }
+	}
+	if err := json.Unmarshal(workspace.Value, &layout); err != nil {
+		t.Fatal(err)
+	}
+	if len(layout.Tabs) != 1 || layout.Tabs[0].Spec.ID != got.ID {
+		t.Fatalf("workspace did not retain the artifact tab: %+v", layout)
 	}
 }

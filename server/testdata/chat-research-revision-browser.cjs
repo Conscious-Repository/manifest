@@ -7,7 +7,7 @@ const LIST_DELAY=300,THREAD_DELAY=400;
 const overrides={};
 const thread=id=>overrides[id]||({session:{id,title:'Thread '+id.toUpperCase(),status:'idle',agent:'alfred',turns:2,updated:'2026-09-12T10:0'+(id==='a'?1:2)+':00Z',created:'2026-09-12T10:00:00Z',spentUsd:0},
  body:'## Turn 1 — user · 2026-09-12T10:00:00Z\n\nhello from '+id.toUpperCase()+'\n\n## Turn 2 — alfred · 2026-09-12T10:01:00Z\n\nreply from '+id.toUpperCase(),
- conversation:{key:'conv-'+id},queued:[],operations:[],proposals:[],related:[],continuations:[],sharedFiles:[]});
+ conversation:{key:'conversation-'+id.repeat(32)},queued:[],operations:[],proposals:[],related:[],continuations:[],sharedFiles:[]});
 const log=[];
 const json=(res,code,body,delay=0)=>setTimeout(()=>{res.writeHead(code,{'Content-Type':'application/json'});res.end(JSON.stringify(body));},delay);
 const server=http.createServer((req,res)=>{
@@ -42,7 +42,7 @@ const server=http.createServer((req,res)=>{
   let receipt=null,loseAck=true;
   const handleRoute=async route=>{
    const req=route.request(),url=new URL(req.url()),p=url.pathname;
-   if(backend&&(p.startsWith('/api/artifacts/')||p.startsWith('/api/chat/state/artifact-'))){
+   if(backend&&(p.startsWith('/api/artifacts/')||p.startsWith('/api/chat/state/'))){
     if(p==='/api/artifacts/text'){
      const body=req.postDataJSON();saves.push(body);
      const persisted=await (await fetch(backend.url+'/api/chat/state/artifact-'+id+'/edit')).json();
@@ -51,7 +51,7 @@ const server=http.createServer((req,res)=>{
     }
     const response=await fetch(backend.url+url.pathname+url.search,{method:req.method(),headers:{'Content-Type':'application/json'},body:req.method()==='GET'?undefined:req.postData()});
     const text=await response.text();
-    if(p.startsWith('/api/chat/state/artifact-')&&[200,409].includes(response.status))states.set(p,JSON.parse(text));
+    if(p.startsWith('/api/chat/state/')&&[200,409].includes(response.status))states.set(p,JSON.parse(text));
     if(p==='/api/artifacts/text'&&response.ok){
      const current=await fetch(backend.url+'/api/artifacts/get?id='+id+'&preview=1');
      assert.equal(current.status,200);Object.assign(artifact,await current.json());
@@ -114,6 +114,20 @@ const server=http.createServer((req,res)=>{
   await page.getByRole('button',{name:'Back to preview',exact:true}).click();
   await page.getByRole('button',{name:'Discuss',exact:true}).click();
   await page.getByRole('button',{name:'Discussing: Research brief · v2',exact:true}).waitFor();
+  assert.equal(await page.getByRole('button',{name:'Discussing: Research brief · v2',exact:true}).getAttribute('title'),'Exact revision '+second);
+  const instruction='Review the revised brief before applying it.';
+  await page.locator('#chatComposer textarea').fill(instruction);
+  await page.evaluate(async()=>{
+   chatWorkspaceTabs.save();
+   await chatSyncedDrafts.get('alfred/a').flush();
+   await chatWorkspaceStates.get('conversation-'+'a'.repeat(32)).flush();
+  });
+  // Clear browser recovery copies after all writes are confirmed, so this
+  // reload proves that server records can recover the composer and inspector.
+  await page.addInitScript(()=>localStorage.clear());
+  await page.reload();
+  await page.getByRole('button',{name:'Discussing: Research brief · v2',exact:true}).waitFor();
+  assert.equal(await page.locator('#chatComposer textarea').inputValue(),instruction);
   assert.equal(await page.getByRole('button',{name:'Discussing: Research brief · v2',exact:true}).getAttribute('title'),'Exact revision '+second);
   assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
   await page.screenshot({path:'/tmp/manifest-research-revision-phone.png'});
