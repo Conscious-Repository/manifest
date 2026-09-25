@@ -436,7 +436,7 @@ func (s *Server) taskThreadSupervision(taskID string) chatSupervision {
 				label = fmt.Sprintf("re-dispatch attempt %d of %d (replays %s after an interruption) — turn-open marker %s", run.Attempt, metaInt(pending["cap"]), run.ReplayOf, c.ID)
 				pending = nil
 			}
-			run.State, run.Evidence = taskTurnState(entries[i+1:], visible, c, label, inFlight)
+			run.State, run.Evidence = taskTurnState(entries[i+1:], visible, c, label, inFlight, s.hermesEnabled())
 			out.Runs = append(out.Runs, run)
 		}
 	}
@@ -447,7 +447,7 @@ func (s *Server) taskThreadSupervision(taskID string) chatSupervision {
 // taskTurnState settles one turn-open from what follows it: its close, a
 // later open (the process died and the chain moved on), the agent's reply, or
 // the in-memory invocation. Idle is never completion.
-func taskTurnState(after, visible []threads.Comment, open threads.Comment, label string, inFlight bool) (string, string) {
+func taskTurnState(after, visible []threads.Comment, open threads.Comment, label string, inFlight, canRun bool) (string, string) {
 	agent := metaString(open.Meta["agent"])
 	who := agentTokenIdentity(agent).ID
 	var reply *threads.Comment
@@ -478,6 +478,17 @@ func taskTurnState(after, visible []threads.Comment, open threads.Comment, label
 	}
 	if inFlight {
 		return supervisionRunning, label + ": invocation live in this process"
+	}
+	// The reply lands before the close marker (runHermesTurn's defer); the
+	// sweep closes such a turn in place rather than re-sending it.
+	if reply != nil {
+		if strings.HasPrefix(reply.Text, "⚠") {
+			return supervisionFailed, label + ": failure note " + reply.ID + " on the thread; close marker pending"
+		}
+		return supervisionReady, label + ": reply " + reply.ID + " on the thread; close marker pending"
+	}
+	if !canRun {
+		return supervisionUnknown, label + ": no close, and this process cannot run turns (runner off); another writer may hold it"
 	}
 	return supervisionDisconnected, label + ": owed — no close and no live invocation; the sweep re-dispatches within the retry cap"
 }

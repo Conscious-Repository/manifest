@@ -291,6 +291,10 @@ func TestSupervisionTaskThreadTransitionMatrix(t *testing.T) {
 	}{
 		{"open, live invocation→running", func(srv *Server, id string) { openTurn(srv, id) }, true, supervisionRunning, "invocation live"},
 		{"open, no close, no invocation→disconnected (owed)", func(srv *Server, id string) { openTurn(srv, id) }, false, supervisionDisconnected, "owed"},
+		{"reply on the thread before its close marker→ready_for_review", func(srv *Server, id string) {
+			openTurn(srv, id)
+			agentReply(srv, id, "ANSWER: R-1")
+		}, false, supervisionReady, "close marker pending"},
 		{"closed with the agent's reply→ready_for_review", func(srv *Server, id string) {
 			openTurn(srv, id)
 			agentReply(srv, id, "ANSWER: R-1")
@@ -323,8 +327,8 @@ func TestSupervisionTaskThreadTransitionMatrix(t *testing.T) {
 				t.Fatal("pin")
 			}
 			c.build(srv, id)
+			srv.UseHermes(hermes.NewRunner(hermes.Config{Enabled: true, Bin: "/bin/false"}), "")
 			if c.inFlight {
-				srv.UseHermes(hermes.NewRunner(hermes.Config{Enabled: true, Bin: "/bin/false"}), "")
 				srv.hermes.running[id] = hermesTurn{Phase: "comment", Agent: "agent:alfred", Since: time.Now()}
 			}
 			sv := srv.taskThreadSupervision(id)
@@ -349,6 +353,7 @@ func agentReply(srv *Server, id, text string) {
 // or failed, and nothing otherwise.
 func TestTaskThreadRowCarriesInterruptedTurn(t *testing.T) {
 	srv := loopFixture(t)
+	srv.UseHermes(hermes.NewRunner(hermes.Config{Enabled: true, Bin: "/bin/false"}), "")
 	id := "inbox/research-zoning"
 	if _, ok := srv.pinTaskID(id); !ok {
 		t.Fatal("pin")
@@ -452,5 +457,17 @@ func TestHerdrShellRefusesSteerAndQueueInWords(t *testing.T) {
 	}
 	if prompts.Load() != 0 {
 		t.Fatal("refused input reached the runtime")
+	}
+}
+
+func TestTaskThreadTurnUnknownWhenRunnerOff(t *testing.T) {
+	srv := loopFixture(t)
+	id := "inbox/research-zoning"
+	if _, ok := srv.pinTaskID(id); !ok {
+		t.Fatal("pin")
+	}
+	openTurn(srv, id)
+	if sv := srv.taskThreadSupervision(id); sv.State != supervisionUnknown || !strings.Contains(sv.Evidence, "runner off") {
+		t.Fatalf("a process that cannot run turns must not claim owed/disconnected: %+v", sv)
 	}
 }
