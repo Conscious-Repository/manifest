@@ -341,3 +341,24 @@ func TestManifestTurnContextIsBoundToChild(t *testing.T) {
 		t.Fatalf("context leaked into unrelated turn: %+v %v", result, err)
 	}
 }
+
+func TestToolsetScopeMatchesInvocation(t *testing.T) {
+	for _, tc := range []struct{ configured, requested, want, source string }{{"base", "override", "override", "request"}, {"base", "", "base", "runner"}, {"", "", "", "profile"}} {
+		r := NewRunner(Config{Toolsets: tc.configured})
+		req := Request{Toolsets: tc.requested}
+		scope, source := r.ToolsetScope(req)
+		if scope != tc.want || source != tc.source {
+			t.Fatal(scope, source)
+		}
+		args := r.buildArgs(req, "")
+		found := ""
+		for i, arg := range args {
+			if arg == "-t" {
+				found = args[i+1]
+			}
+		}
+		if found != scope {
+			t.Fatal(args, scope)
+		}
+	}
+}

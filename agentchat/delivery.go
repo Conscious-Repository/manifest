@@ -33,7 +33,13 @@ func NewRequestID() string {
 	return hex.EncodeToString(b)
 }
 
+type ToolScope struct {
+	Toolsets string `json:"toolsets"`
+	Source   string `json:"source"`
+}
+
 type Delivery struct {
+	ToolScope      *ToolScope      `json:"toolScope,omitempty"`
 	ID             string          `json:"id"`
 	HistoryOmitted int             `json:"historyOmitted,omitempty"`
 	Text           string          `json:"text,omitempty"`
@@ -307,6 +313,39 @@ func (s *Store) RecordHistoryOmission(agent, id, requestID string, count int) er
 				sess.Deliveries[i].HistoryOmitted = count
 				return nil
 			}
+		}
+		return errors.New("delivery not found")
+	})
+	return err
+}
+
+// RecordToolScope records dispatch metadata separately from accepted input
+// identity. Once recorded it cannot be replaced by later configuration.
+func (s *Store) RecordToolScope(agent, id, requestID string, scope ToolScope) error {
+	if scope.Source != "request" && scope.Source != "runner" && scope.Source != "profile" {
+		return errors.New("invalid tool scope source")
+	}
+	if (scope.Source == "profile") != (scope.Toolsets == "") {
+		return errors.New("invalid tool scope")
+	}
+	_, err := s.update(agent, id, func(sess *Session, _ *string) error {
+		for i := range sess.Deliveries {
+			d := &sess.Deliveries[i]
+			if d.ID != requestID {
+				continue
+			}
+			if d.ToolScope != nil {
+				if *d.ToolScope != scope {
+					return errors.New("recorded tool scope changed")
+				}
+				return nil
+			}
+			if d.State != DeliveryRunning {
+				return errors.New("running delivery required")
+			}
+			copy := scope
+			d.ToolScope = &copy
+			return nil
 		}
 		return errors.New("delivery not found")
 	})

@@ -696,14 +696,19 @@ func (s *Server) runAgentChatTurn(agent, id, requestID string) error {
 			prompt += s.planRevisionInstructions(receipt.Context.Artifacts)
 		}
 	}
-	res, err := s.hermes.runner.Run(context.Background(), hermes.Request{
+	request := hermes.Request{
 		ManifestConversation: id,
 		ManifestTurn:         fmt.Sprint(sess.Turns),
 		Prompt:               prompt,
 		Model:                recipient.Model,
 		Toolsets:             s.hermes.readTools, // chat turns are read-only (vault gate, §3.6)
 		Profile:              recipient.Profile,
-	})
+	}
+	scope, scopeSource := s.hermes.runner.ToolsetScope(request)
+	if err := st.RecordToolScope(agent, id, requestID, agentchat.ToolScope{Toolsets: scope, Source: scopeSource}); err != nil {
+		return err
+	}
+	res, err := s.hermes.runner.Run(context.Background(), request)
 	if err != nil {
 		log.Printf("agent chat %s/%s: %v", agent, id, err)
 		saveErr := st.Finish(agent, id, requestID, "system", "⚠ "+agentDisplayName("agent:"+recipient.Agent)+" couldn't finish that — "+err.Error(), agentchat.DeliveryFailed, err.Error(), res.SpentUSD, res.SessionID)

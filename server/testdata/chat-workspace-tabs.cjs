@@ -137,11 +137,13 @@ const {chromium}=require('playwright'),fs=require('fs'),path=require('path'),ass
  assert.ok((await p.locator('.chat-activity-event').innerText()).includes('rerun'));
  await p.setViewportSize({width:390,height:844});assert.equal(await p.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);await p.screenshot({path:'/tmp/manifest-workbench-activity-phone.png'});
  await p.evaluate(()=>{
-  chatWorkbenchActivityUpdate([{n:1,who:'user',text:'Use the original plan'},{n:2,who:'user',text:'Second request <button>literal</button>'}],[],[],{deliveries:[{userTurn:1,context:{recipient:{agent:'claude',model:'opus'},artifacts:[{id:'plan',revision:'b'.repeat(64)}]}}]});
+  chatWorkbenchActivityUpdate([{n:1,who:'user',text:'Use the original plan'},{n:2,who:'user',text:'Second request <button>literal</button>'}],[],[],{deliveries:[{userTurn:1,toolScope:{source:'request',toolsets:'web,files'},context:{recipient:{agent:'claude',model:'opus'},artifacts:[{id:'plan',revision:'b'.repeat(64)}]}}]});
   chatOpenContext();
  });
+ await p.getByText('Tool scope was not recorded for this instruction.',{exact:true}).waitFor();
  await p.getByLabel('Recorded instruction').selectOption('1');
  await p.getByText('Sent to claude · opus',{exact:true}).waitFor();
+ await p.getByText('Toolset scope at dispatch (request): web,files',{exact:true}).waitFor();
  await p.getByText('Instruction text',{exact:true}).click();
  await p.getByText('Use the original plan',{exact:true}).waitFor();
  await p.evaluate(async()=>{chatWorkspaceTabs.close();await Promise.all([...chatWorkspaceStates.values()].map(s=>s.flush()));chatWorkspaceStates.clear();await chatRestoreWorkspace();});

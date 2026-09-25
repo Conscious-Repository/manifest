@@ -197,6 +197,18 @@ func splitSkills(s string) []string {
 	return out
 }
 
+// ToolsetScope reports the same toolset override used by the invocation. An
+// empty scope delegates to CLI profile defaults, whose contents are not reported.
+func (r *Runner) ToolsetScope(req Request) (string, string) {
+	if value := firstNonEmpty(req.Toolsets); value != "" {
+		return value, "request"
+	}
+	if value := firstNonEmpty(r.cfg.Toolsets); value != "" {
+		return value, "runner"
+	}
+	return "", "profile"
+}
+
 // buildArgs assembles the argv for one turn (pure, unit-tested). The prompt
 // rides as the -z value — no shell is involved (exec, not sh -c), so arbitrary
 // text is safe. usageFile, when non-empty, adds --usage-file. A Profile goes
@@ -212,7 +224,7 @@ func (r *Runner) buildArgs(req Request, usageFile string) []string {
 	if m := firstNonEmpty(req.Model, r.cfg.Model); m != "" {
 		args = append(args, "-m", m)
 	}
-	if t := firstNonEmpty(req.Toolsets, r.cfg.Toolsets); t != "" {
+	if t, _ := r.ToolsetScope(req); t != "" {
 		args = append(args, "-t", t)
 	}
 	if usageFile != "" {

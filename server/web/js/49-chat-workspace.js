@@ -402,7 +402,7 @@ function chatContextInputs(data){
  return (data?.turns||[]).filter(t=>t.who==='user').map((turn,index)=>{
   const receipt=turn.delivery||(turn.n!==undefined?(data.context?.deliveries||[]).find(d=>d.userTurn===turn.n):null);
   const context=receipt?.context||{};
-  return {id:String(turn.id??turn.n??index),text:turn.text||'',recipient:context.recipient||turn.native||null,task:context.task||turn.submission?.task||'',artifacts:context.artifacts||turn.submission?.artifacts||[],explicitArtifacts:!!(context.explicitArtifacts||turn.submission?.explicitArtifacts),files:turn.submission?.files||[],omitted:receipt?.historyOmitted||turn.submission?.historyOmitted||0};
+  return {id:String(turn.id??turn.n??index),text:turn.text||'',toolScope:receipt?.toolScope||null,recipient:context.recipient||turn.native||null,task:context.task||turn.submission?.task||'',artifacts:context.artifacts||turn.submission?.artifacts||[],explicitArtifacts:!!(context.explicitArtifacts||turn.submission?.explicitArtifacts),files:turn.submission?.files||[],omitted:receipt?.historyOmitted||turn.submission?.historyOmitted||0};
  });
 }
 function chatOpenContext(){
@@ -426,6 +426,7 @@ function chatOpenContext(){
    const selector=document.createElement('select');selector.className='pp-in';selector.setAttribute('aria-label','Recorded instruction');
    inputs.forEach((input,i)=>{const option=el('option','','Instruction '+(i+1)+' · '+input.text.replace(/\s+/g,' ').slice(0,70));option.value=input.id;selector.append(option);});
    const input=inputs.find(x=>x.id===selected)||inputs.at(-1);selected=input.id;selector.value=selected;selector.onchange=()=>{selected=selector.value;instructionOpen=false;render();};section.append(selector);
+   const scope=input.toolScope;section.append(el('p','chat-workspace-hint',scope?(scope.source==='profile'?'Tool scope: profile defaults; tool list not reported.':'Toolset scope at dispatch ('+(scope.source==='request'?'request':'runner default')+'): '+scope.toolsets):'Tool scope was not recorded for this instruction.'));
    const target=input.recipient;if(target)section.append(el('p','chat-context-target','Sent to '+(target.agent||source.agent)+(target.model?' · '+target.model:'')));
    if(input.omitted)section.append(el('p','chat-workspace-hint',input.omitted+' earlier turns omitted from this submission.'));
    if(input.task&&input.task!==source.task){const task=el('button','sprt-quiet','open task supplied with this instruction');task.onclick=()=>openTodoPanel(input.task);section.append(task);}
