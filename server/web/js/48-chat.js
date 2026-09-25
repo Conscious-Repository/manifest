@@ -304,7 +304,7 @@ function chatStageRemember(key, entry) {
 }
 // the parts of an open terminal thread the transcript paint depends on
 function chatTermSignature(o) {
-  return JSON.stringify([o.turns, o.offset, o.title, o.cost, o.planningTimeline || null, o.planningOperations || [], o.planRevisions || {}, o.proposals || [], o.questions || [], o.related || [], o.sharedConversation || null, o.planningRecipients || [], o.codingRecipients || [], o.conversation?.key || ""]);
+  return JSON.stringify([o.turns, o.offset, o.title, o.cost, o.planningTimeline || null, o.planningOperations || [], o.planRevisions || {}, o.proposals || [], o.questions || [], o.related || [], o.sharedConversation || null, o.planningRecipients || [], o.codingRecipients || [], o.conversation?.key || "",o.historyAvailable]);
 }
 // the rail's open marker moves with the route, ahead of the list refresh
 function chatRailMarkOpen() {
@@ -3031,6 +3031,10 @@ async function loadChatTermSession(id) {
     d = await res.json();
   } catch (e) { return; }
   if (!unchanged()) return; // navigated away mid-fetch
+  if(d.historyAvailable===false&&!d.draft&&observed?.id===id){
+    const retained=observed.turns.slice();chatTermMerge(retained,d.turns||[]);d.turns=retained;d.offset=observed.offset;
+    d.run=d.run||observed.se.run;d.questions=observed.questions;d.title=d.title||observed.title;d.cost=d.cost||observed.cost;
+  }
   const selection=d.draft?await chatOriginArtifactSelection(d.origin):null;
   if (!unchanged()) return;
   const readingGestureBefore = chatReadingGestureUntil;
@@ -3064,7 +3068,7 @@ async function loadChatTermSession(id) {
     renderChatTermTranscript();
   }
   chatStageRemember(chatStageKey(chatAgent, id), { kind: "term", o: chatTermOpen });
-  chatTermReadHealth(chatTermOpen,false);
+  chatTermReadHealth(chatTermOpen,d.historyAvailable===false&&!d.draft);
   const painted=chatTermOpen;
   await preparation;
   if(!current()||chatTermOpen!==painted)return;
@@ -3085,6 +3089,7 @@ async function loadChatTermSession(id) {
 // built the same way by the loader and by a prefetch (2026-09-21).
 function chatTermOpenFrom(id, se, d) {
   return {
+    historyAvailable:d.historyAvailable,
     conversation:d.conversation,
     sharedConversation:d.sharedConversation,
     planningTimeline:d.planningTimeline,
@@ -3326,6 +3331,8 @@ function chatTermPaintTurns() {
   if (!(o.planningTimeline||o.turns).length) {
     body.append(el("div", "chat-term-line chat-term-sys chat-transcript-empty", o.se.launchPhase === "draft"
       ? "Review your draft below. Sending starts the coding session."
+      : o.historyAvailable===false
+      ? "Transcript history is unavailable. Open Terminal to inspect this session."
       : o.se.kind === "codex"
       ? "No Codex transcript turns are available yet; check the live screen or open Terminal"
       : (o.live ? "no turns in the session file yet" : "nothing in the session file — a send starts it")));
@@ -3613,7 +3620,11 @@ async function chatTermTail(o) {
     if(!d||!Number.isSafeInteger(d.offset)||d.offset<0||(d.turns!=null&&!Array.isArray(d.turns))){chatTermReadHealth(o,true);return;}
   } catch (e) { chatTermReadHealth(o,true);return; } finally { clearTimeout(timeout); }
   if (chatTermOpen !== o) return;
-  chatTermReadHealth(o,false);
+  const missingHistory=d.historyAvailable===false&&!d.draft;
+  if(missingHistory){d.offset=o.offset;d.run=d.run||o.se.run;d.questions=o.questions;d.title=d.title||o.title;d.cost=d.cost||o.cost;}
+  const historyChanged=o.historyAvailable!==d.historyAvailable;
+  o.historyAvailable=d.historyAvailable;
+  chatTermReadHealth(o,missingHistory);
   const runChanged=JSON.stringify(o.se.run||null)!==JSON.stringify(d.run||null);o.se.run=d.run||null;const listed=chatTermFind(o.id);if(listed){listed.run=o.se.run;listed.activityOffset=d.offset||0;}if(runChanged&&!document.querySelector('.chat-row-menu[open]'))renderChatInboxRows();
   const planningChanged=JSON.stringify([o.planningTimeline,o.planningOperations,o.planRevisions||{},o.proposals||[]])!==JSON.stringify([d.planningTimeline,d.planningOperations,d.planRevisions||{},d.proposals||[]]);
   o.questions=d.questions||[];
@@ -3623,7 +3634,7 @@ async function chatTermTail(o) {
   o.planRevisions=d.planRevisions||{};
   o.proposals=d.proposals||[];
   const turns = d.turns || [];
-  if (o.turns.some((t) => t.pending && Date.now() - Date.parse(t.ts) > 15 * 60e3)) { o.turns = o.turns.filter((t) => !t.pending || Date.now() - Date.parse(t.ts) <= 15 * 60e3); chatTermPaintTurns(); }
+  if (!missingHistory && o.turns.some((t) => t.pending && Date.now() - Date.parse(t.ts) > 15 * 60e3)) { o.turns = o.turns.filter((t) => !t.pending || Date.now() - Date.parse(t.ts) <= 15 * 60e3); chatTermPaintTurns(); }
   if (d.offset < o.offset) { // the file was replaced/truncated: the reply is the whole projection
     o.turns = turns;
     o.offset = d.offset || 0;
@@ -3637,7 +3648,7 @@ async function chatTermTail(o) {
   } else if (d.offset > o.offset) {
     o.offset = d.offset; // records that projected to nothing (cost-state, …)
   }
-  if(planningChanged)chatTermPaintTurns();
+  if(planningChanged||historyChanged)chatTermPaintTurns();
   let headDirty = runChanged;
   if(JSON.stringify(o.sharedConversation)!==JSON.stringify(d.sharedConversation)){o.sharedConversation=d.sharedConversation;headDirty=true;}
   if(JSON.stringify(o.planningRecipients)!==JSON.stringify(d.planningRecipients||[])){o.planningRecipients=d.planningRecipients||[];headDirty=true;}

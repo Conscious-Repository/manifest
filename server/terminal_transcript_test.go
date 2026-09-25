@@ -321,17 +321,43 @@ func TestTranscriptEndpoint(t *testing.T) {
 		t.Fatalf("status %d: %s", w.Code, w.Body.String())
 	}
 	var out struct {
-		Turns  []termTurn `json:"turns"`
-		Title  string     `json:"title"`
-		Cost   float64    `json:"cost"`
-		Live   bool       `json:"live"`
-		Offset int64      `json:"offset"`
+		HistoryAvailable *bool      `json:"historyAvailable"`
+		Turns            []termTurn `json:"turns"`
+		Title            string     `json:"title"`
+		Cost             float64    `json:"cost"`
+		Live             bool       `json:"live"`
+		Offset           int64      `json:"offset"`
 	}
 	if err := json.Unmarshal(w.Body.Bytes(), &out); err != nil {
 		t.Fatal(err)
 	}
-	if len(out.Turns) != 2 || out.Title == "" || out.Cost == 0 || out.Live || out.Offset == 0 {
+	if out.HistoryAvailable == nil || !*out.HistoryAvailable || len(out.Turns) != 2 || out.Title == "" || out.Cost == 0 || out.Live || out.Offset == 0 {
 		t.Fatalf("reply = %+v", out)
+	}
+	// A readable empty file is distinct from an unavailable file.
+	file := filepath.Join(projDir, rid+".jsonl")
+	for _, available := range []bool{true, false} {
+		if available {
+			if err := os.WriteFile(file, nil, 0600); err != nil {
+				t.Fatal(err)
+			}
+		} else {
+			if err := os.Remove(file); err != nil {
+				t.Fatal(err)
+			}
+		}
+		check := httptest.NewRecorder()
+		s.handleTermTranscript(check, req)
+		var status struct {
+			HistoryAvailable *bool      `json:"historyAvailable"`
+			Turns            []termTurn `json:"turns"`
+		}
+		if err := json.Unmarshal(check.Body.Bytes(), &status); err != nil {
+			t.Fatal(err)
+		}
+		if check.Code != 200 || status.HistoryAvailable == nil || *status.HistoryAvailable != available || len(status.Turns) != 0 {
+			t.Fatalf("availability: %s", check.Body.String())
+		}
 	}
 	// a virgin session (no file yet) answers empty, not 404
 	se2 := termSession{ID: "0123456789abcdef", Kind: "claude", Cwd: cwd, ResumeID: "11111111-2222-3333-4444-555555555555", Name: "cc2"}
@@ -340,7 +366,7 @@ func TestTranscriptEndpoint(t *testing.T) {
 	req.SetPathValue("id", se2.ID)
 	w = httptest.NewRecorder()
 	s.handleTermTranscript(w, req)
-	if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), `"turns":[]`) {
+	if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), `"historyAvailable":false`) || !strings.Contains(w.Body.String(), `"turns":[]`) {
 		t.Fatalf("virgin session: %d %s", w.Code, w.Body.String())
 	}
 }

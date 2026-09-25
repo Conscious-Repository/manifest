@@ -17,6 +17,11 @@ const assert=require('node:assert/strict'),fs=require('node:fs'),{chromium}=requ
  await page.setViewportSize({width:390,height:844});await page.screenshot({path:'/tmp/manifest-terminal-read-health.png'});
  await page.evaluate(()=>{fetch=async()=>({ok:true,json:async()=>({offset:10,turns:[],run:{state:'completed'}})});return chatTermTail(chatTermOpen)});
  assert.equal(await page.getByRole('status').count(),0,'successful read clears warning');
+ await page.addScriptTag({content:source.slice(source.indexOf('function chatTermPaintTurns()'),source.indexOf('// ---- the terminal painter ----'))});
+ await page.evaluate(()=>{const body=document.createElement('div');body.id='chatTermTurns';document.getElementById('chatTranscript').replaceChildren(body);chatTermOpen.historyAvailable=false;chatTermOpen.se.kind='claude';window.chatStick=false;window.chatPin=()=>{};window.chatTermPaintLines=()=>{};window.appendTaskApprovals=()=>{};chatTermPaintTurns();});
+ await page.getByText('Transcript history is unavailable. Open Terminal to inspect this session.',{exact:true}).waitFor();
+ await page.evaluate(()=>{chatTermOpen.se.launchPhase='draft';chatTermPaintTurns()});
+ await page.getByText('Review your draft below. Sending starts the coding session.',{exact:true}).waitFor();
  await page.evaluate(()=>{chatTermOpen={id:'two'};chatTermReadHealth(original,true)});assert.equal(await page.getByRole('status').count(),0,'late failure cannot mark another conversation');assert.deepEqual(errors,[]);
  console.log('PASS: visible transcript read failure, retained work/draft/focus, recovery and thread isolation');
 }finally{await browser.close()}})().catch(e=>{console.error(e);process.exitCode=1});

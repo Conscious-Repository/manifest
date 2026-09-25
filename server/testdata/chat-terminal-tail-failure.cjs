@@ -13,6 +13,8 @@ vm.runInContext(source.slice(source.indexOf('async function chatTermRequestFinal
   response=bad;const before=JSON.stringify(root);await ctx.chatTermRequestFinalTail(root);
   assert.equal(JSON.stringify(root),before,'failed reads preserve all retained evidence');assert.equal(ctx.chatTermTailing,false);assert.equal(timeout,null);
  }
+ response={ok:true,json:async()=>({historyAvailable:false,offset:0,turns:[],planningTimeline:['new planning result']})};
+ await ctx.chatTermRequestFinalTail(root);assert.equal(root.offset,12);assert.equal(root.turns[0].text,'Retained result');assert.equal(root.se.run.state,'completed');assert.deepEqual(root.planningTimeline,['new planning result']);assert.equal(root.historyAvailable,false);
  response=null;const beforeReads=reads,first=ctx.chatTermRequestFinalTail(root);
  await ctx.chatTermRequestFinalTail(root);assert.equal(root.finalTailPending,true);assert.equal(reads,beforeReads+1,'final read waits behind active read');
  timeout();await first;
