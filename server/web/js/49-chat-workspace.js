@@ -542,12 +542,14 @@ function chatOpenRecords(){
   for(const [value,label] of [['note','knowledge notes'],['task','open tasks'],['goal','goals and stages'],['person','people'],['project','projects'],['candidate','recruiting candidates'],['organization','marked organizations'],['schedule','saved schedule slots'],['calendar','calendar events']]){const o=el('option','',label);o.value=value;kind.append(o);}
   const hints={calendar:'Search calendar events for today by title, account or calendar. Enter YYYY-MM-DD to choose another date. A complete read is required. Preview includes available times and participants; descriptions, attachments and linked records are excluded.',schedule:'Search saved Day schedule slots for today by label or time. Enter YYYY-MM-DD to choose another date. Preview includes one saved slot; calendar events, journal, tasks and adjacent slots are excluded.',organization:'Search organizations explicitly marked by the owner in Contacts. Preview includes classification and the exact authored profile note if available; linked note contents, recruiting records and fundraising summaries are excluded.',candidate:'Search private recruiting candidates by name, ID, stage or role. Preview includes the exact candidate record; linked evidence files, outreach logs and role records are excluded. Selecting context does not approve outreach.',project:'Search saved projects by name or exact ID. Preview includes saved instructions, conversation references and folder associations; member transcripts and folder contents are excluded.',person:'Search existing contacts by name, key or profile alias. Preview includes the profile, relationship references and meeting evidence. Linked note contents, recruiting records and fundraising summaries are excluded.',note:'Search authored knowledge notes by name, path or alias. System and imported notes are excluded.',task:'Search open tasks by title, container or exact ID. Preview includes fields, description and plan; comments, run state and linked file contents are excluded.',goal:'Search current goals and stages by title, ancestry, ID or alias. Preview includes the selected branch and its ancestry; archived goals are excluded.'};
   status.setAttribute('role','status');status.textContent=hints.note;preview.tabIndex=0;
-  let closed=false,ticket=0,selected=null;
+  let closed=false,ticket=0,selected=null,searchRead=null,previewRead=null;
+  const cancelReads=()=>{searchRead?.abort();previewRead?.abort();};
   const current=()=>!closed&&key==='chat:'+chatAgent+'/'+chatOpenId&&chatCanSelectNoteContext();
   const load=async(id,expected)=>{
+   previewRead?.abort();searchRead?.abort();const read=previewRead=new AbortController();
    const turn=++ticket,selectedKind=kind.value;selected=null;preview.replaceChildren();status.textContent='Loading record…';
    try{
-    const r=await fetch('/api/chat/records/preview?kind='+encodeURIComponent(selectedKind)+'&id='+encodeURIComponent(id),{cache:'no-store'});if(!r.ok)throw Error(await r.text());const snapshot=await r.json(),record=snapshot.record;
+    const r=await fetch('/api/chat/records/preview?kind='+encodeURIComponent(selectedKind)+'&id='+encodeURIComponent(id),{cache:'no-store',signal:read.signal});if(!r.ok)throw Error(await r.text());const snapshot=await r.json(),record=snapshot.record;
     if(!current()||turn!==ticket||kind.value!==selectedKind)return;selected=snapshot;
     const title=el('h3','',record.title),identity=el('p','chat-workspace-hint',record.kind+' · '+record.id),source=el('a','sprt-quiet','open source '+record.kind),text=el('pre','chat-activity-text',snapshot.content),use=el('button','sprt-quiet','use in this private chat');source.href=record.route;source.target='_blank';source.rel='noopener';
     const revision=el('p','chat-workspace-hint','Revision '+snapshot.revision),scope=el('p','chat-workspace-hint',hints[selectedKind]);
@@ -563,18 +565,19 @@ function chatOpenRecords(){
      finally{use.disabled=false;}
     };
     preview.append(title,identity,source,revision,scope,text,use);
-   }catch(e){if(current()&&turn===ticket){status.textContent=e.message;const retry=el('button','sprt-quiet','retry preview');retry.onclick=()=>load(id,expected);preview.append(retry);}}
+   }catch(e){if(current()&&turn===ticket&&!read.signal.aborted){status.textContent=e.message;const retry=el('button','sprt-quiet','retry preview');retry.onclick=()=>load(id,expected);preview.append(retry);}}
   };
   const ta=typeahead({placeholder:'Find a record',minChars:1,keyboard:true,suggest:async(q,add)=>{
+   searchRead?.abort();const read=searchRead=new AbortController();
    const searchedKind=kind.value;
-   try{const r=await fetch('/api/chat/records?kind='+encodeURIComponent(searchedKind)+'&q='+encodeURIComponent(q),{cache:'no-store'});if(!r.ok)throw Error(await r.text());const data=await r.json();if(!current()||kind.value!==searchedKind)return;
+   try{const r=await fetch('/api/chat/records?kind='+encodeURIComponent(searchedKind)+'&q='+encodeURIComponent(q),{cache:'no-store',signal:read.signal});if(!r.ok)throw Error(await r.text());const data=await r.json();if(!current()||kind.value!==searchedKind||read.signal.aborted)return;
     for(const record of data.records||[])add(record.title+' · '+record.detail,record.kind,()=>{ta.commit(record.title===record.id?record.id:record.title+' · '+record.id);load(record.id);});
     if(ta.value().toLowerCase()===q)status.textContent=data.records?.length?data.records.length+' matches (up to 50) · select a record to review its snapshot.':'No matching records.';
-   }catch(e){if(current()&&kind.value===searchedKind&&ta.value().toLowerCase()===q)status.textContent=e.message;}
+   }catch(e){if(current()&&!read.signal.aborted&&kind.value===searchedKind&&ta.value().toLowerCase()===q)status.textContent=e.message;}
   }});ta.input.setAttribute('aria-label','Find a record');
-  kind.onchange=()=>{++ticket;selected=null;ta.setValue('');preview.replaceChildren();status.textContent=hints[kind.value];ta.focus();};
+  kind.onchange=()=>{cancelReads();++ticket;selected=null;ta.setValue('');preview.replaceChildren();status.textContent=hints[kind.value];ta.focus();};
   pane.append(kind,ta.el,status,preview);host.append(pane);
-  return {element:pane,close:()=>{closed=true;++ticket;pane.remove();drop();},getView:()=>({query:ta.value(),kind:kind.value,id:selected?.record.id,revision:selected?.revision,scrollTop:preview.scrollTop}),restoreView:async view=>{kind.value=['note','task','goal','person','project','candidate','organization','schedule','calendar'].includes(view.kind)?view.kind:'note';ta.setValue(view.query||'');status.textContent=hints[kind.value];if(view.id||view.path)await load(view.id||view.path,view.revision);preview.scrollTop=Math.max(0,Number(view.scrollTop)||0);return true;}};
+  return {element:pane,close:()=>{closed=true;cancelReads();++ticket;pane.remove();drop();},getView:()=>({query:ta.value(),kind:kind.value,id:selected?.record.id,revision:selected?.revision,scrollTop:preview.scrollTop}),restoreView:async view=>{kind.value=['note','task','goal','person','project','candidate','organization','schedule','calendar'].includes(view.kind)?view.kind:'note';ta.setValue(view.query||'');status.textContent=hints[kind.value];if(view.id||view.path)await load(view.id||view.path,view.revision);preview.scrollTop=Math.max(0,Number(view.scrollTop)||0);return true;}};
  },{kind:'records'});
 }
 

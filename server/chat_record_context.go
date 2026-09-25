@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -50,6 +51,9 @@ type goalContextBranch struct {
 }
 
 func (s *Server) chatContextRecords(kind string, q string) ([]chatContextRecord, error) {
+	return s.chatContextRecordsFor(context.Background(), kind, q)
+}
+func (s *Server) chatContextRecordsFor(ctx context.Context, kind string, q string) ([]chatContextRecord, error) {
 	out := []chatContextRecord{}
 	switch kind {
 	case "note":
@@ -64,7 +68,7 @@ func (s *Server) chatContextRecords(kind string, q string) ([]chatContextRecord,
 			out = append(out, chatContextRecord{Kind: kind, ID: n.Path, Title: n.Name, Detail: n.Path, Route: "#/note/" + url.PathEscape(n.Path)})
 		}
 	case "calendar":
-		return s.chatCalendarRecords(q)
+		return s.chatCalendarRecordsFor(ctx, q)
 	case "schedule":
 		return s.chatScheduleRecords(q)
 	case "organization":
@@ -129,7 +133,7 @@ func (s *Server) handleChatRecordSearch(w http.ResponseWriter, r *http.Request) 
 		http.Error(w, "query is too long", 400)
 		return
 	}
-	rows, err := s.chatContextRecords(r.URL.Query().Get("kind"), q)
+	rows, err := s.chatContextRecordsFor(r.Context(), r.URL.Query().Get("kind"), q)
 	if err != nil {
 		httpError(w, err)
 		return
@@ -191,6 +195,9 @@ func (s *Server) taskContextNarrative(id string) (planRecord, error) {
 }
 
 func (s *Server) chatContextRecordPreview(kind, id string) (chatContextRecord, []byte, error) {
+	return s.chatContextRecordPreviewFor(context.Background(), kind, id)
+}
+func (s *Server) chatContextRecordPreviewFor(ctx context.Context, kind, id string) (chatContextRecord, []byte, error) {
 	if kind == "note" {
 		b, err := s.contextNoteBytes(id)
 		return chatContextRecord{Kind: kind, ID: id, Title: id, Detail: id, Route: "#/note/" + url.PathEscape(id)}, b, err
@@ -199,7 +206,7 @@ func (s *Server) chatContextRecordPreview(kind, id string) (chatContextRecord, [
 	if kind == "schedule" || kind == "calendar" {
 		query = strings.SplitN(id, "/", 2)[0]
 	}
-	rows, err := s.chatContextRecords(kind, query)
+	rows, err := s.chatContextRecordsFor(ctx, kind, query)
 	if err != nil {
 		return chatContextRecord{}, nil, err
 	}
@@ -306,7 +313,7 @@ func (s *Server) chatContextRecordPreview(kind, id string) (chatContextRecord, [
 
 func (s *Server) handleChatRecordPreview(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "private, no-store")
-	row, b, err := s.chatContextRecordPreview(r.URL.Query().Get("kind"), r.URL.Query().Get("id"))
+	row, b, err := s.chatContextRecordPreviewFor(r.Context(), r.URL.Query().Get("kind"), r.URL.Query().Get("id"))
 	if err != nil {
 		httpError(w, err)
 		return
@@ -328,7 +335,7 @@ func (s *Server) handleChatRecordRetain(w http.ResponseWriter, r *http.Request) 
 		http.Error(w, "record identity and reviewed revision required", 400)
 		return
 	}
-	row, b, err := s.chatContextRecordPreview(req.Kind, req.ID)
+	row, b, err := s.chatContextRecordPreviewFor(r.Context(), req.Kind, req.ID)
 	if err != nil {
 		httpError(w, err)
 		return

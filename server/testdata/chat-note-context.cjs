@@ -49,6 +49,14 @@ const {chromium}=require('playwright'),fs=require('fs'),path=require('path'),ass
  await p.evaluate(async()=>{window.beforePartialFetch=fetch;window.fetch=async()=>({ok:false,text:async()=> 'Calendar read is incomplete'});await api.restoreView(api.getView());});
  await p.getByRole('status').filter({hasText:'Calendar read is incomplete'}).waitFor();assert.equal(await p.getByRole('button',{name:'use in this private chat',exact:true}).count(),0);
  await p.evaluate(()=>window.fetch=beforePartialFetch);await p.getByRole('button',{name:'retry preview',exact:true}).click();await p.getByRole('button',{name:'use in this private chat',exact:true}).waitFor();
+ // Replaced searches, kind changes and inspector closure abort read requests.
+ await p.evaluate(()=>{window.abortOriginalFetch=fetch;window.readSignals=[];window.fetch=(url,options)=>/cancel-|abort-preview/.test(url)?new Promise((resolve,reject)=>{readSignals.push(options.signal);options.signal.addEventListener('abort',()=>reject(new DOMException('Aborted','AbortError')),{once:true});}):abortOriginalFetch(url,options);});
+ await p.getByRole('combobox',{name:'Find a record'}).fill('cancel-first');await p.waitForFunction(()=>readSignals.length===1);
+ await p.getByRole('combobox',{name:'Find a record'}).fill('cancel-second');await p.waitForFunction(()=>readSignals.length===2);assert.equal(await p.evaluate(()=>readSignals[0].aborted),true);
+ await p.getByLabel('Record kind').selectOption('calendar');assert.equal(await p.evaluate(()=>readSignals[1].aborted),true);
+ await p.evaluate(()=>{window.pendingAbortPreview=api.restoreView({kind:'calendar',id:'abort-preview'});});await p.waitForFunction(()=>readSignals.length===3);
+ await p.evaluate(async()=>{api.close();await pendingAbortPreview;});assert.equal(await p.evaluate(()=>readSignals[2].aborted),true);
+ await p.evaluate(()=>{window.fetch=abortOriginalFetch;chatOpenRecords();});
  // An older-kind search must not repopulate the picker after switching kinds.
  await p.evaluate(()=>{window.realFetch=fetch;window.fetch=url=>url.includes('&q=delayed')?new Promise(resolve=>{window.finishDelayed=()=>resolve({ok:true,json:async()=>({records:[{kind:'person',id:'old-kind',title:'stale result',detail:'old'}]})});}):realFetch(url);});
  await p.getByRole('combobox',{name:'Find a record'}).fill('delayed');await p.waitForFunction(()=>typeof finishDelayed==='function');await p.getByLabel('Record kind').selectOption('task');await p.evaluate(()=>finishDelayed());await p.waitForTimeout(50);assert.equal(await p.locator('[role=option]').count(),0,'stale kind options stay hidden');

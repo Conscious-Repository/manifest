@@ -19,6 +19,9 @@ type calendarRecordSource interface {
 }
 
 func (s *Server) chatCalendarRecords(query string) ([]chatContextRecord, error) {
+	return s.chatCalendarRecordsFor(context.Background(), query)
+}
+func (s *Server) chatCalendarRecordsFor(parent context.Context, query string) ([]chatContextRecord, error) {
 	source := s.calendarRecords
 	if source == nil || !source.Enabled() {
 		return nil, fmt.Errorf("calendar connection unavailable")
@@ -32,10 +35,10 @@ func (s *Server) chatCalendarRecords(query string) ([]chatContextRecord, error) 
 		}
 	}
 	day, _ := time.ParseInLocation("2006-01-02", date, loc)
-	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	ctx, cancel := context.WithTimeout(parent, 15*time.Second)
 	defer cancel()
 	snapshot, err := source.EventsSnapshot(ctx, day, day.AddDate(0, 0, 1))
-	if err != nil {
+	if err != nil || ctx.Err() != nil {
 		return nil, fmt.Errorf("calendar could not be read; reconnect or retry before selecting context")
 	}
 	if snapshot.Partial || len(snapshot.Issues) > 0 {

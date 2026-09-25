@@ -112,3 +112,66 @@ func TestCalendarContextSourceVersionAndPrivacy(t *testing.T) {
 		t.Fatal("unqualified source accepted")
 	}
 }
+
+type canceledContextCalendar struct {
+	started  chan struct{}
+	finished chan struct{}
+}
+
+func (*canceledContextCalendar) Enabled() bool            { return true }
+func (*canceledContextCalendar) Location() *time.Location { return time.UTC }
+func (c *canceledContextCalendar) EventsSnapshot(ctx context.Context, _, _ time.Time) (calendar.EventSnapshot, error) {
+	close(c.started)
+	<-ctx.Done()
+	close(c.finished)
+	return calendar.EventSnapshot{}, ctx.Err()
+}
+func TestCalendarContextRequestCancellation(t *testing.T) {
+	for _, which := range []string{"search", "preview", "retain"} {
+		t.Run(which, func(t *testing.T) {
+			s := New(nil, nil, nil)
+			explicitArtifactFixture(t, s)
+			source := &canceledContextCalendar{started: make(chan struct{}), finished: make(chan struct{})}
+			s.calendarRecords = source
+			before := len(s.artifactReg.List(artifacts.Filter{}))
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			w := httptest.NewRecorder()
+			r := httptest.NewRequest("GET", "/api/chat/records?kind=calendar&q=2026-09-25&id=2026-09-25/gcal:event", nil).WithContext(ctx)
+			if which == "retain" {
+				r = httptest.NewRequest("POST", "/api/chat/records/retain", strings.NewReader(`{"kind":"calendar","id":"2026-09-25/gcal:event","revision":"`+strings.Repeat("a", 64)+`"}`)).WithContext(ctx)
+			}
+			done := make(chan struct{})
+			go func() {
+				defer close(done)
+				switch which {
+				case "search":
+					s.handleChatRecordSearch(w, r)
+				case "preview":
+					s.handleChatRecordPreview(w, r)
+				case "retain":
+					s.handleChatRecordRetain(w, r)
+				}
+			}()
+			select {
+			case <-source.started:
+			case <-time.After(2 * time.Second):
+				t.Fatal("provider read did not start")
+			}
+			cancel()
+			select {
+			case <-done:
+			case <-time.After(2 * time.Second):
+				t.Fatal("request cancellation did not stop read")
+			}
+			select {
+			case <-source.finished:
+			default:
+				t.Fatal("provider did not see cancellation")
+			}
+			if w.Code == 200 || len(s.artifactReg.List(artifacts.Filter{})) != before {
+				t.Fatal("canceled request succeeded or retained context", w.Code)
+			}
+		})
+	}
+}
