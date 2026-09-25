@@ -3064,6 +3064,7 @@ async function loadChatTermSession(id) {
     renderChatTermTranscript();
   }
   chatStageRemember(chatStageKey(chatAgent, id), { kind: "term", o: chatTermOpen });
+  chatTermReadHealth(chatTermOpen,false);
   const painted=chatTermOpen;
   await preparation;
   if(!current()||chatTermOpen!==painted)return;
@@ -3264,7 +3265,19 @@ function chatTermRepaintHead() {
   if (!cur || !chatTermOpen) return true;
   if (chatHeadRenaming(cur) || cur.querySelector(".chat-details[open],.chat-stop-agent.armed:not(:disabled)")) return false;
   chatMountHeader(chatTermHead(chatTermOpen));
+  chatTermReadHealth(chatTermOpen);
   return true;
+}
+
+function chatTermReadHealth(o,failed) {
+  if(!o||o!==chatTermOpen)return;
+  const announce=failed===true&&!o.transcriptReadFailed;
+  if(failed===true)o.transcriptReadFailed=true;
+  else if(failed===false)delete o.transcriptReadFailed;
+  const host=document.getElementById('chatThreadHeader');if(!host)return;
+  let notice=host.querySelector('.chat-transcript-read-status');
+  if(!o.transcriptReadFailed){notice?.remove();return;}
+  if(!notice){notice=el('p','chat-workspace-hint chat-transcript-read-status','Transcript updates unavailable. Showing the last received work.');notice.setAttribute('role','status');notice.setAttribute('aria-live',announce?'polite':'off');host.append(notice);}
 }
 
 function renderChatTermTranscript() {
@@ -3278,6 +3291,7 @@ function renderChatTermTranscript() {
   bindChatScroll();
   host.innerHTML = "";
   chatMountHeader(chatTermHead(o));
+  chatTermReadHealth(o);
   const body = el("div", "chat-term-turns");
   body.id = "chatTermTurns";
   host.append(body);
@@ -3594,11 +3608,12 @@ async function chatTermTail(o) {
   const controller=new AbortController(),timeout=setTimeout(()=>controller.abort(),15000);
   try {
     const response=await fetch(chatTermBase(o.id) + "/transcript?after=" + o.offset,{signal:controller.signal});
-    if(!response.ok)return;
+    if(!response.ok){chatTermReadHealth(o,true);return;}
     d=await response.json();
-    if(!d||!Number.isSafeInteger(d.offset)||d.offset<0||(d.turns!=null&&!Array.isArray(d.turns)))return;
-  } catch (e) { return; } finally { clearTimeout(timeout); }
+    if(!d||!Number.isSafeInteger(d.offset)||d.offset<0||(d.turns!=null&&!Array.isArray(d.turns))){chatTermReadHealth(o,true);return;}
+  } catch (e) { chatTermReadHealth(o,true);return; } finally { clearTimeout(timeout); }
   if (chatTermOpen !== o) return;
+  chatTermReadHealth(o,false);
   const runChanged=JSON.stringify(o.se.run||null)!==JSON.stringify(d.run||null);o.se.run=d.run||null;const listed=chatTermFind(o.id);if(listed){listed.run=o.se.run;listed.activityOffset=d.offset||0;}if(runChanged&&!document.querySelector('.chat-row-menu[open]'))renderChatInboxRows();
   const planningChanged=JSON.stringify([o.planningTimeline,o.planningOperations,o.planRevisions||{},o.proposals||[]])!==JSON.stringify([d.planningTimeline,d.planningOperations,d.planRevisions||{},d.proposals||[]]);
   o.questions=d.questions||[];

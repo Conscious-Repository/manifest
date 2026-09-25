@@ -3,7 +3,7 @@ const source=fs.readFileSync('server/web/js/48-chat.js','utf8');
 const deferred=()=>{let resolve;const promise=new Promise(r=>resolve=r);return{resolve,promise}};
 const requests=[],paint=[],landing=[],cached=[],composers=[];
 let preparation=null,runtimeName='Named by owner';
-const ctx=vm.createContext({chatTerminalLoadTicket:0,chatRouteVersion:1,chatAgent:'codex',chatOpenId:'one',chatTermOpen:null,
+const ctx=vm.createContext({chatTermReadHealth(){},chatTerminalLoadTicket:0,chatRouteVersion:1,chatAgent:'codex',chatOpenId:'one',chatTermOpen:null,
  chatTermFind:()=>({id:'one',name:runtimeName}),chatTermApplyState:s=>s,chatTermBase:()=>'/term/one',chatIsTerm:()=>true,els:{chatView:{hidden:false}},
  fetch:(url,opts)=>{assert.equal(opts,undefined,'no stale auto-name write');const d=deferred();requests.push(d);return d.promise},
  renderChatLanding:()=>landing.push(true),chatOriginArtifactSelection:async()=>null,

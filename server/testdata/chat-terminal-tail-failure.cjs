@@ -2,7 +2,7 @@ const assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('nod
 const source=fs.readFileSync('server/web/js/48-chat.js','utf8');
 let response,timeout,resolve,reads=0;
 const root={id:'one',offset:12,turns:[{who:'assistant',text:'Retained result'}],se:{backend:'herdr',run:{state:'completed'}},live:false,planningTimeline:['retained'],questions:['retained']};
-const ctx=vm.createContext({AbortController,chatTermOpen:root,chatTermTailing:false,chatTermBase:id=>'/term/'+id,
+const ctx=vm.createContext({chatTermReadHealth(){},AbortController,chatTermOpen:root,chatTermTailing:false,chatTermBase:id=>'/term/'+id,
  setTimeout:fn=>{timeout=fn;return 1},clearTimeout:()=>{timeout=null},
  fetch:async(_url,opts)=>{reads++;if(response)return response;return new Promise((yes,no)=>{resolve=yes;opts.signal.addEventListener('abort',()=>no(Error('timeout')))});},
  chatTermFind:()=>null,document:{querySelector:()=>null},renderChatInboxRows(){},chatQuestionPanel(){},chatTermPaintTurns(){},chatTermRepaintHead(){}
