@@ -148,3 +148,44 @@ func TestCandidateRecordContextNativeDelivery(t *testing.T) {
 		t.Fatal("private candidate reached shared input", w.Code)
 	}
 }
+
+func TestCandidateContextIsolatesUnavailableSources(t *testing.T) {
+	s, _, _, _ := testRecruitingServer(t)
+	if err := os.MkdirAll(s.recruiting.Path("candidates"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	good := "---\nid: cand/good\nname: Healthy candidate\n---\nVERIFIED_GOOD\n"
+	if err := os.WriteFile(s.recruiting.Path("candidates/good.md"), []byte(good), 0644); err != nil {
+		t.Fatal(err)
+	}
+	path := s.recruiting.Path("candidates/broken.md")
+	for _, bad := range []string{"---\nid: cand/wrong\nname: PRIVATE_BAD_NAME\n---\nPRIVATE_BAD_BODY", strings.Repeat("x", 64001), "\x00binary", string([]byte{0xff})} {
+		if err := os.WriteFile(path, []byte(bad), 0644); err != nil {
+			t.Fatal(err)
+		}
+		rows, err := s.chatCandidateRecords()
+		if err != nil || len(rows) != 2 {
+			t.Fatal("one broken source blocked search", rows, err)
+		}
+		for _, row := range rows {
+			if row.ID == "cand/broken" && (row.Title != "broken.md" || row.Route != "" || row.contextError == "" || strings.Contains(row.Detail, "PRIVATE_BAD")) {
+				t.Fatal("unavailable source misrepresented", row)
+			}
+		}
+		_, content, err := s.chatContextRecordPreview("candidate", "cand/good")
+		if err != nil || !strings.Contains(string(content), good) {
+			t.Fatal("healthy preview blocked", err)
+		}
+		if _, _, err := s.chatContextRecordPreview("candidate", "cand/broken"); err == nil {
+			t.Fatal("bad source preview accepted")
+		}
+	}
+	fixed := "---\nid: cand/broken\nname: Repaired candidate\n---\nREPAIRED\n"
+	if err := os.WriteFile(path, []byte(fixed), 0644); err != nil {
+		t.Fatal(err)
+	}
+	row, content, err := s.chatContextRecordPreview("candidate", "cand/broken")
+	if err != nil || row.contextError != "" || row.Route == "" || !strings.Contains(string(content), fixed) {
+		t.Fatal("repair not reflected", row, err)
+	}
+}

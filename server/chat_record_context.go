@@ -26,6 +26,7 @@ type chatContextRecord struct {
 	Title            string `json:"title"`
 	Detail           string `json:"detail"`
 	Route            string `json:"route"`
+	contextError     string
 	candidateSource  string
 	candidateText    string
 	aliases          string
@@ -199,6 +200,9 @@ func (s *Server) chatContextRecordPreview(kind, id string) (chatContextRecord, [
 	}
 	if selected == nil {
 		return chatContextRecord{}, nil, errBadRequest("record no longer available")
+	}
+	if selected.contextError != "" {
+		return *selected, nil, errBadRequest(selected.contextError)
 	}
 	var out strings.Builder
 	fmt.Fprintf(&out, "# %s\n\nRecord type: %s\nRecord ID: %s\n", selected.Title, kind, id)
