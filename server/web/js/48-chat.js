@@ -2236,7 +2236,7 @@ function chatPaintCodingResults(host,results) {
         const ref=await postJSONOk(chatBaseFor(sourceAgent)+"/"+encodeURIComponent(sourceID)+"/coding-result",{agent:result.agent,run:result.id,hash:result.hash});
         if(route!==chatRouteVersion || chatAgent!==sourceAgent || chatOpenId!==sourceID)return;
         chatOpenWorkingArtifact({...ref,selectionKey:"chat:"+sourceAgent+"/"+sourceID});
-      }catch(e){showToast(e.message||"Could not open this result.");}
+      }catch(e){if(route===chatRouteVersion && chatAgent===sourceAgent && chatOpenId===sourceID)showToast(e.message||"Could not open this result.");}
       finally{open.disabled=false;}
     };
     row.append(open);

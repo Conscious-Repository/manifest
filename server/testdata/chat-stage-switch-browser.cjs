@@ -97,10 +97,67 @@ const server=http.createServer((req,res)=>{
   assert.deepEqual(errors.filter(e=>!/EventSource|terminal\/events/.test(e)),[]);
   // 3. on a phone the way back is chrome: a thread that fails to load still shows "‹ Chats" (2026-09-21)
   const phone=await browser.newContext({...devices['iPhone 13']});const pp=await phone.newPage();
+  const phoneErrors=[];pp.on('pageerror',e=>phoneErrors.push(e.message));
   await pp.goto(base+'/#/chat/a/alfred/missing',{waitUntil:'networkidle'}).catch(()=>{});await pp.waitForTimeout(600);
   assert.equal(await pp.locator('.chat-load-error').count()>0,true,'the missing thread paints its error state');
   assert.equal(await pp.locator('#chatThreadHeader .mf-chat-back').isVisible(),true,'the back control stands on a bare head when the thread failed');
+  // A coding result stays attributed to its run while its exact captured
+  // version becomes an unsent discussion context in the planning thread.
+  const revision='a'.repeat(64),artifactID='0123456789abcdef',captures=[],mutations=[];
+  let captureFailure=false,releaseCapture;
+  const result={id:'coding-run',agent:'codex',task:'inbox/fence',outcome:'completed',body:'Coding deliverable from its own run.',hash:revision};
+  const planning=thread('b');planning.codingResults=[result];overrides.b=planning;
+  const artifact={id:artifactID,title:'Codex coding result',ref:'artifacts/runs/coding-run.md',head:'b'.repeat(64),provenance:{source:'run',run:result.id,task:result.task},revisions:[{n:1,hash:revision,actor:'codex',at:'2026-09-25T10:00:00Z'},{n:2,hash:'b'.repeat(64),actor:'owner',at:'2026-09-25T11:00:00Z'}]};
+  await pp.route('**/api/**',async route=>{
+   const req=route.request(),url=new URL(req.url());
+   if(req.method()!=='GET')mutations.push(url.pathname);
+   if(url.pathname.endsWith('/coding-result')){
+    captures.push(req.postDataJSON());
+    if(captureFailure){await new Promise(resolve=>releaseCapture=resolve);return route.fulfill({status:409,body:'The coding result changed. Reopen its current version.'});}
+    return route.fulfill({json:{id:artifactID,revision,task:result.task}});
+   }
+   if(url.pathname==='/api/artifacts/get')return route.fulfill({json:{...artifact,content:url.searchParams.get('rev')===revision?'Captured original coding result.':'Later unselected result.',preview:{kind:'text'}}});
+   if(url.pathname==='/api/artifacts/content')return route.fulfill({json:{...artifact,content:url.searchParams.get('rev')===revision?'Captured original coding result.':'Later unselected result.',preview:{kind:'text'}}});
+   if(url.pathname==='/api/artifacts/reviews')return route.fulfill({json:{revision,entries:[],state:'not_requested',record_version:'0'}});
+   return route.continue();
+  });
+  await pp.goto(base+'/#/chat/a/alfred/b');
+  await pp.getByText(result.body,{exact:true}).waitFor();
+  const phoneDraft=pp.locator('#chatComposer textarea');await phoneDraft.fill('Check this result before accepting it.');
+  await pp.getByRole('button',{name:'Open result / discuss',exact:true}).click();
+  await pp.getByText('Captured original coding result.',{exact:true}).waitFor();
+  assert.deepEqual(captures,[{agent:'codex',run:'coding-run',hash:revision}]);
+  assert.equal(await pp.getByRole('combobox',{name:'Artifact version'}).inputValue(),'1');
+  assert.equal(await pp.getByText('Later unselected result.',{exact:true}).count(),0);
+  await pp.getByRole('button',{name:'Discuss',exact:true}).click();
+  await pp.getByRole('button',{name:'Discussing: Codex coding result · v1',exact:true}).waitFor();
+  assert.equal(await phoneDraft.inputValue(),'Check this result before accepting it.');
+  assert.equal(await phoneDraft.evaluate(e=>e===document.activeElement),true);
+  assert.equal(await pp.getByRole('button',{name:'Discussing: Codex coding result · v1',exact:true}).getAttribute('title'),'Exact revision '+revision);
+  assert.equal(mutations.some(p=>p.endsWith('/messages')||p.endsWith('/input')||p==='/api/artifacts/text'),false,'review and discussion must not send or save');
+  assert.equal(await pp.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
+  await pp.screenshot({path:'/tmp/manifest-coding-result-discussion-phone.png'});
+  // An old capture failure cannot announce an error in another conversation.
+  captureFailure=true;
+  await pp.getByRole('button',{name:'Open result / discuss',exact:true}).click();
+  for(let attempt=0;!releaseCapture&&attempt<100;attempt++)await new Promise(resolve=>setTimeout(resolve,10));
+  assert.equal(typeof releaseCapture,'function','capture request reached the fixture');
+  await pp.evaluate(()=>location.hash='#/chat/a/alfred/a');
+  await pp.getByText('reply from A',{exact:true}).waitFor();
+  const failedResponse=pp.waitForResponse(r=>r.url().endsWith('/coding-result'));
+  releaseCapture();await failedResponse;
+  await pp.waitForTimeout(150);
+  assert.equal(await pp.getByText('The coding result changed. Reopen its current version.',{exact:true}).count(),0,'obsolete capture error leaked into another conversation');
+  releaseCapture=null;
+  await pp.evaluate(()=>location.hash='#/chat/a/alfred/b');
+  await pp.getByText(result.body,{exact:true}).waitFor();
+  await pp.getByRole('button',{name:'Open result / discuss',exact:true}).click();
+  for(let attempt=0;!releaseCapture&&attempt<100;attempt++)await new Promise(resolve=>setTimeout(resolve,10));
+  assert.equal(typeof releaseCapture,'function');releaseCapture();
+  await pp.getByText('The coding result changed. Reopen its current version.',{exact:true}).waitFor();
+  assert.equal(await pp.getByRole('button',{name:'Open result / discuss',exact:true}).isEnabled(),true,'current failure allows another attempt');
+  assert.deepEqual(phoneErrors,[]);
   await phone.close();
-  console.log('PASS: switching threads turns the stage over synchronously (unseen: empty stage + provisional head, eager fetch; seen: cached paint kept by an unchanged revalidation).');
+  console.log('PASS: thread switching, receipt polling, phone result capture/exact discussion, and current-versus-obsolete capture failures.');
  }finally{await browser.close();server.close();}
 })().catch(e=>{console.error(e);process.exit(1);});
