@@ -12,6 +12,7 @@ import (
 	"unicode/utf8"
 
 	"manifest/artifacts"
+	"manifest/calendar"
 	"manifest/daily"
 	"manifest/goals"
 	"manifest/mdfm"
@@ -27,6 +28,7 @@ type chatContextRecord struct {
 	Title            string `json:"title"`
 	Detail           string `json:"detail"`
 	Route            string `json:"route"`
+	calendarEvent    *calendar.Event
 	schedule         *daily.ScheduleRow
 	contextError     string
 	candidateSource  string
@@ -61,6 +63,8 @@ func (s *Server) chatContextRecords(kind string, q string) ([]chatContextRecord,
 		for _, n := range notes {
 			out = append(out, chatContextRecord{Kind: kind, ID: n.Path, Title: n.Name, Detail: n.Path, Route: "#/note/" + url.PathEscape(n.Path)})
 		}
+	case "calendar":
+		return s.chatCalendarRecords(q)
 	case "schedule":
 		return s.chatScheduleRecords(q)
 	case "organization":
@@ -113,7 +117,7 @@ func (s *Server) chatContextRecords(kind string, q string) ([]chatContextRecord,
 			walk(area.Rocks, "Rock", nil)
 		}
 	default:
-		return nil, errBadRequest("choose note, task, goal, person or project")
+		return nil, errBadRequest("choose a supported record kind")
 	}
 	return out, nil
 }
@@ -192,7 +196,7 @@ func (s *Server) chatContextRecordPreview(kind, id string) (chatContextRecord, [
 		return chatContextRecord{Kind: kind, ID: id, Title: id, Detail: id, Route: "#/note/" + url.PathEscape(id)}, b, err
 	}
 	query := ""
-	if kind == "schedule" {
+	if kind == "schedule" || kind == "calendar" {
 		query = strings.SplitN(id, "/", 2)[0]
 	}
 	rows, err := s.chatContextRecords(kind, query)
@@ -216,7 +220,9 @@ func (s *Server) chatContextRecordPreview(kind, id string) (chatContextRecord, [
 	}
 	var out strings.Builder
 	fmt.Fprintf(&out, "# %s\n\nRecord type: %s\nRecord ID: %s\n", selected.Title, kind, id)
-	if selected.schedule != nil {
+	if selected.calendarEvent != nil {
+		renderCalendarContext(&out, *selected.calendarEvent)
+	} else if selected.schedule != nil {
 		contextField(&out, "Date", strings.SplitN(id, "/", 2)[0])
 		contextField(&out, "Time slot", selected.schedule.Time)
 		contextField(&out, "Saved label", selected.schedule.Label)
@@ -352,7 +358,7 @@ func contextSnapshotSource(a artifacts.Artifact) (kind, id, route string) {
 	if path := knowledgeContextPath(a); path != "" {
 		return "note", path, "#/note/" + url.PathEscape(path)
 	}
-	if a.Harness != "manifest" || (a.Provenance.Source != "task-context" && a.Provenance.Source != "goal-context" && a.Provenance.Source != "person-context" && a.Provenance.Source != "project-context" && a.Provenance.Source != "candidate-context" && a.Provenance.Source != "organization-context" && a.Provenance.Source != "schedule-context") {
+	if a.Harness != "manifest" || (a.Provenance.Source != "task-context" && a.Provenance.Source != "goal-context" && a.Provenance.Source != "person-context" && a.Provenance.Source != "project-context" && a.Provenance.Source != "candidate-context" && a.Provenance.Source != "organization-context" && a.Provenance.Source != "schedule-context" && a.Provenance.Source != "calendar-context") {
 		return "", "", ""
 	}
 	i := strings.LastIndex(a.Ref, "#context-")
@@ -362,6 +368,9 @@ func contextSnapshotSource(a artifacts.Artifact) (kind, id, route string) {
 	kind = strings.TrimSuffix(a.Provenance.Source, "-context")
 	id = a.Ref[:i]
 	route = "#/" + kind + "s/" + url.PathEscape(id)
+	if kind == "calendar" {
+		route = calendarContextRoute(id)
+	}
 	if kind == "schedule" {
 		route = scheduleContextRoute(id)
 	}

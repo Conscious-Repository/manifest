@@ -375,7 +375,7 @@ function route() {
   if (!h.startsWith("#/note/") && !h.startsWith("#/artifact/") && !h.startsWith("#/read/")) _noteReturn = h === "#/" ? "#/" : h;
   const goals = h === "#/goals" || h.startsWith("#/goals/"); // #/goals/<id> deep-links a Rock
   const todosTab = h === "#/tasks" || h.startsWith("#/tasks/");
-  const cal = h === "#/calendar";
+  const cal = h === "#/calendar" || /^#\/calendar\/\d{4}-\d{2}-\d{2}$/.test(h);
   const fd = h === "#/feed";
   const chat = h === "#/chat" || h.startsWith("#/chat/");
   // FILES lives inside the terminal cockpit now (its stage tab)
@@ -439,7 +439,7 @@ function route() {
     if (h.startsWith("#/tasks/")) todoDeepLink = decodeURIComponent(h.slice("#/tasks/".length));
     loadTodos();
   }
-  else if (cal) loadCalendar();
+  else if (cal) { if(h.startsWith("#/calendar/")){const parts=h.slice(11).split("-").map(Number);state.cal={year:parts[0],month:parts[1]-1};} loadCalendar(); }
   else if (fd) showFeed(); // manifest's one inbox
   else if (chat) showChat(h); // conversations with chattable spirits
   else if (terminalTab) showTerminal(); // the cockpit: terminal / files / activity

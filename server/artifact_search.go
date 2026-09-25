@@ -95,6 +95,11 @@ func (s *Server) artifactSourceLinks(rows []artifacts.Artifact) map[string][]art
 				out[a.ID] = append(out[a.ID], artifactSourceLink{"note", rel, "#/note/" + url.PathEscape(rel), rel})
 			}
 		}
+		if kind, id, route := contextSnapshotSource(a); kind == "calendar" {
+			// Opening a saved source link must not fetch a calendar or run an agent.
+			out[a.ID] = append(out[a.ID], artifactSourceLink{kind, id, route, id})
+			continue
+		}
 		if kind, id, route := contextSnapshotSource(a); kind == "task" || kind == "goal" || kind == "person" || kind == "project" || kind == "candidate" || kind == "organization" || kind == "schedule" {
 			if kind == "schedule" {
 				if _, _, err := s.chatContextRecordPreview(kind, id); err == nil {

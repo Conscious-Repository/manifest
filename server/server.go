@@ -76,8 +76,9 @@ type Server struct {
 	tasksStore          *tasks.Store // the third surface — vault-root `tasks.md` (nilable)
 	// ownerInitials identify "me" in the unified todo projection (stage 4):
 	// empty/"me"/containing-these-initials owners are mine.
-	ownerInitials string
-	cal           *calendar.Client
+	ownerInitials   string
+	cal             *calendar.Client
+	calendarRecords calendarRecordSource
 	// Gmail read-only OAuth for the engine's ea-coordinator digest — manifest
 	// mints/validates the token the headless engine reads. Nilable.
 	gmail *gmailauth.Client
@@ -331,7 +332,11 @@ func (s *Server) AionLive() *AionLive { return s.aionLive }
 func (s *Server) UseAionSink(sink interface{ Notify([]string) }) { s.aionSink = sink }
 
 func New(svc *daily.Service, gs *goals.Store, cal *calendar.Client) *Server {
-	return &Server{svc: svc, goals: gs, cal: cal}
+	s := &Server{svc: svc, goals: gs, cal: cal}
+	if cal != nil {
+		s.calendarRecords = cal
+	}
+	return s
 }
 
 // UseApprovals / UseVault / UseSpirits wire the excalibur surfaces. All optional.
