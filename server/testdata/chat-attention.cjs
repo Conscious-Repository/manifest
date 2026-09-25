@@ -16,3 +16,23 @@ console.log('PASS attention projection: durable receipts, advisory terminal stat
 
 finished.session.agentState='blocked';assert.equal(ctx.chatEntryState(finished).label,'Run finished · input pending');
 finished.session.connectivity='unavailable';assert.equal(ctx.chatEntryState(finished).label,'Run finished · disconnected');
+
+// Accept marks the session thinking before Claim dispatches the instruction.
+assert.equal(ctx.chatEntryState(planning('thinking','queued')).execution,'queued');
+assert.equal(ctx.chatEntryState(planning('thinking','queued')).label,'Queued');
+const queue=planning('thinking','completed');
+queue.session.deliveries.push({id:'pending',state:'queued'});
+assert.equal(ctx.chatEntryState(queue).execution,'queued','queued receipt supersedes earlier completion');
+queue.session.deliveries.unshift({id:'active',state:'running',stopRequested:true});
+assert.equal(ctx.chatEntryState(queue).label,'Interruption requested','active stop remains visible with later queue');
+queue.session.status='idle';
+assert.equal(ctx.chatEntryState(queue).execution,'running','explicit running receipt wins over summary status');
+queue.session.deliveries[0].state='interrupted';
+assert.equal(ctx.chatEntryState(queue).execution,'queued','new pending work follows the interrupted turn');
+queue.session.deliveries.at(-1).state='cancelled';
+queue.session.deliveries.splice(1,1);
+assert.equal(ctx.chatEntryState(queue).label,'Interrupted · check run','cancelled text is not a running instruction');
+ctx.chatAttentionFilter='queued';
+assert.equal(ctx.chatEntryMatchesAttention(planning('thinking','queued')),true);
+ctx.chatAttentionFilter='running';
+assert.equal(ctx.chatEntryMatchesAttention(planning('thinking','queued')),true,'existing active-work filter includes queued work');

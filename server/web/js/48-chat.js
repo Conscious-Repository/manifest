@@ -1091,7 +1091,10 @@ function chatEntryState(entry){
   else if(execution==='unknown'&&session.run?.state==='failed'){execution='failed';label='Run failed';}
  }else{
   const deliveries=session.deliveries||[],latest=deliveries.filter(d=>d.state!=='cancelled').at(-1);
-  if(session.status==='thinking'){execution='running';label=deliveries.some(d=>d.state==='running'&&d.stopRequested)?'Interruption requested':'Working';}
+  const running=deliveries.find(d=>d.state==='running');
+  if(running){execution='running';label=running.stopRequested?'Interruption requested':'Working';}
+  else if(deliveries.some(d=>d.state==='queued')){execution='queued';label='Queued';}
+  else if(session.status==='thinking'){execution='running';label='Working';}
   else if(latest?.state==='completed'){execution='completed';label='Run finished';}
   else if(latest?.state==='failed'||session.status==='error'){execution='failed';label='Run failed';}
   else if(latest?.state==='queued'){execution='queued';label='Queued';}
@@ -2283,7 +2286,7 @@ function renderChatTranscript(d) {
   area.id = "chatLiveArea";
   host.append(area);
   if (s.status === "thinking" && !chatLive) {
-    area.append(el("div", "chat-thinking", portal ? "✦ order spooled — " + who + " answers when its run lands…" : "✦ thinking…"));
+    area.append(el("div", "chat-thinking", portal ? "✦ order spooled — " + who + " answers when its run lands…" : "✦ " + chatEntryState({session:s}).label + "…"));
   }
   chatStick = !keepPosition;
   if (keepPosition) host.scrollTop = previousY;
@@ -2395,7 +2398,7 @@ function renderChatComposer(session) {
       if (session && session.status === "thinking") return "✦ waiting on " + (a ? a.label : chatAgent) + "…";
       return "Message… · @ to tag an intent";
     }
-    return session && session.status === "thinking" ? "✦ thinking — messages queue…" : "Message…";
+    return session && session.status === "thinking" ? "✦ " + chatEntryState({session}).label + " — messages queue…" : "Message…";
   };
   // a portal agent takes one order at a time: a send while it runs 409s, so
   // the button says so instead (the placeholder already says why)

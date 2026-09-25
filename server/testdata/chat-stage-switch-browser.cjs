@@ -67,6 +67,18 @@ const server=http.createServer((req,res)=>{
   const aFetches=(await (await fetch(base+'/__log')).json()).filter(r=>r.p==='/api/agents/chat/alfred/sessions/a').length;
   assert.equal(aFetches,2,'A was fetched on first open and once to revalidate');
   assert.deepEqual(errors.filter(e=>!/EventSource|terminal\/events/.test(e)),[]);
+  // Receipt state drives both waiting indicator and composer guidance.
+  const queued=thread('a');queued.session.status='thinking';queued.session.deliveries=[{id:'queued-request',state:'queued',text:'Pending instruction'}];
+  await page.evaluate(d=>{clearInterval(chatPollTimer);chatPollTimer=null;window.pendingFixture=d;chatLive=null;renderChatTranscript(d);renderChatComposer(d.session);},queued);
+  await page.getByText('✦ Queued…',{exact:true}).waitFor();
+  await page.getByPlaceholder('✦ Queued — messages queue…',{exact:true}).waitFor();
+  await page.evaluate(()=>{pendingFixture.session.deliveries.unshift({id:'running-request',state:'running'});renderChatTranscript(pendingFixture);renderChatComposer(pendingFixture.session);});
+  await page.getByText('✦ Working…',{exact:true}).waitFor();
+  await page.getByPlaceholder('✦ Working — messages queue…',{exact:true}).waitFor();
+  await page.evaluate(()=>{pendingFixture.session.deliveries[0].stopRequested=true;renderChatTranscript(pendingFixture);renderChatComposer(pendingFixture.session);});
+  await page.getByText('✦ Interruption requested…',{exact:true}).waitFor();
+  await page.getByPlaceholder('✦ Interruption requested — messages queue…',{exact:true}).waitFor();
+  assert.deepEqual(errors.filter(e=>!/EventSource|terminal\/events/.test(e)),[]);
   // 3. on a phone the way back is chrome: a thread that fails to load still shows "‹ Chats" (2026-09-21)
   const phone=await browser.newContext({...devices['iPhone 13']});const pp=await phone.newPage();
   await pp.goto(base+'/#/chat/a/alfred/missing',{waitUntil:'networkidle'}).catch(()=>{});await pp.waitForTimeout(600);
