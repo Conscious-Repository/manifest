@@ -2163,6 +2163,16 @@ function chatPlanReviewButton(proposal){
  const review=el("button","sprt-quiet","Review proposed plan revision");
  review.onclick=()=>chatOpenWorkingArtifact({plan:true,task:proposal.task,revision:proposal.baseRevision,proposal,selectionKey:"chat:"+chatAgent+"/"+chatOpenId});return review;
 }
+function chatSaveOutputButton(output){
+ const agent=chatAgent,id=chatOpenId,route=chatRouteVersion,base=chatBase();
+ const current=()=>route===chatRouteVersion&&agent===chatAgent&&id===chatOpenId;
+ const button=el('button','chat-turn-act','Save output');button.title='Retain this exact reply as a private artifact for review and search';
+ button.onclick=async()=>{button.disabled=true;try{
+  const ref=await postJSONOk(base+'/'+encodeURIComponent(id)+'/output',{delivery:output.delivery,hash:output.hash});
+  if(current())chatOpenWorkingArtifact({...ref,selectionKey:'chat:'+agent+'/'+id});
+ }catch(e){if(current())showToast(e.message||'Could not retain this output.');}finally{button.disabled=false;}};
+ return button;
+}
 function chatPaintTurns(host, turns, ctx) {
   turns.forEach((t) => {
     if (t.who === "user") {
@@ -2215,6 +2225,7 @@ function chatPaintTurns(host, turns, ctx) {
       foot.append(promote);
     }
     if(typeof chatCopyResponseControl==="function"){const copy=chatCopyResponseControl(responseBlocks,t.n);if(copy)foot.append(copy);}
+    const output=ctx?.outputs?.find(output=>output.replyTurn===t.n);if(output&&!t.native)foot.append(chatSaveOutputButton(output));
     if (foot.childElementCount) wrap.append(foot);
     host.append(wrap);
   });
@@ -2269,7 +2280,7 @@ function renderChatTranscript(d) {
   chatMountHeader(chatHead(s));
 
   // → task (§3.4f): every agent turn in an agent section can become work
-  chatPaintTurns(host, d.timeline||parseChatTurns(d.body || ""), chatAgent ? { who, deliveries:s.deliveries||[], planRevisions:d.planRevisions||[],operations: d.operations || [], promote: (t) => chatPromoteTurn(s, t.n) } : null);
+  chatPaintTurns(host, d.timeline||parseChatTurns(d.body || ""), chatAgent ? { who, outputs:d.outputs||[],deliveries:s.deliveries||[], planRevisions:d.planRevisions||[],operations: d.operations || [], promote: (t) => chatPromoteTurn(s, t.n) } : null);
 
   const turnNumbers = new Set(parseChatTurns(d.body || "").filter(t => t.who !== "user" && t.who !== "system").map(t => t.n));
   (d.operations || []).filter(item => !turnNumbers.has(Number(item.record.turn) + 1)).forEach(item => host.append(manifestOperationCard(item)));
@@ -2669,7 +2680,7 @@ function renderChatComposer(session) {
 // there runs the server's chatSweep over the agent's run reports.
 
 function chatTranscriptSignature(d) {
-  return JSON.stringify((d.session.deliveries || []).map(x=>[x.id,x.state,x.userTurn,x.replyTurn,x.stopRequested,x.toolScope,x.historyOmitted,x.result,x.error])) + "|" + d.session.updated + "|" + d.session.status + "|" + (d.queued || []).length + "|" + JSON.stringify((d.operations || []).map(x => [x.record.operationId, x.record.status, x.record.result])) + "|" + JSON.stringify(d.session.sharing || null) + "|" + JSON.stringify(d.sharedOperations || []) + "|" + JSON.stringify(d.proposals || []) + "|" + JSON.stringify(d.codingResults || [])+"|"+JSON.stringify(d.continuations||[])+"|"+JSON.stringify(d.sharedFiles||[]);
+  return JSON.stringify((d.session.deliveries || []).map(x=>[x.id,x.state,x.userTurn,x.replyTurn,x.stopRequested,x.toolScope,x.historyOmitted,x.result,x.error])) + "|" + d.session.updated + "|" + d.session.status + "|" + (d.queued || []).length + "|" + JSON.stringify((d.operations || []).map(x => [x.record.operationId, x.record.status, x.record.result])) + "|" + JSON.stringify(d.session.sharing || null) + "|" + JSON.stringify(d.sharedOperations || []) + "|" + JSON.stringify(d.proposals || []) + "|" + JSON.stringify(d.codingResults || [])+"|"+JSON.stringify(d.outputs || [])+"|"+JSON.stringify(d.continuations||[])+"|"+JSON.stringify(d.sharedFiles||[]);
 }
 function ensureChatPoll(session, queued) {
   const active = session && (session.status === "thinking" || session.shared || queued > 0 || (chatAgent && !chatIsPortal()));

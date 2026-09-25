@@ -27,7 +27,7 @@ func (s *Server) searchArtifacts(rows []artifacts.Artifact, query string) ([]art
 	out := []artifacts.Artifact{}
 	skipped := 0
 	for _, a := range rows {
-		metadata := strings.Join([]string{a.ID, a.Title, a.Ref, a.Kind, a.Actor, a.Harness, a.Provenance.Task, a.Provenance.Run, a.Provenance.Session}, "\n")
+		metadata := strings.Join([]string{a.ID, a.Title, a.Ref, a.Kind, a.Actor, a.Harness, a.Provenance.Task, a.Provenance.Run, a.Provenance.Session, a.Provenance.Delivery}, "\n")
 		if matches(metadata) {
 			out = append(out, a)
 			continue

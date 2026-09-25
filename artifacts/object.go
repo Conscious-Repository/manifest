@@ -71,16 +71,17 @@ type Revision struct {
 // Provenance is where an artifact came from — the same refs the ledger uses,
 // so an artifact's origin and its event history name the same things.
 type Provenance struct {
-	Source  string   `json:"source,omitempty"`  // "run" | "delegate" | "chat" | "import" | "manual" | …
-	Task    string   `json:"task,omitempty"`    // the task that produced it (composite todo id)
-	Run     string   `json:"run,omitempty"`     // the harness run that wrote it
-	Session string   `json:"session,omitempty"` // the chat session it fell out of
-	Inputs  []string `json:"inputs,omitempty"`  // artifact ids consumed to make it
+	Source   string   `json:"source,omitempty"`   // "run" | "delegate" | "chat" | "import" | "manual" | …
+	Task     string   `json:"task,omitempty"`     // the task that produced it (composite todo id)
+	Run      string   `json:"run,omitempty"`      // the harness run that wrote it
+	Session  string   `json:"session,omitempty"`  // the chat session it fell out of
+	Delivery string   `json:"delivery,omitempty"` // exact native chat instruction receipt
+	Inputs   []string `json:"inputs,omitempty"`   // artifact ids consumed to make it
 }
 
 // IsZero reports an unset provenance.
 func (p Provenance) IsZero() bool {
-	return p.Source == "" && p.Task == "" && p.Run == "" && p.Session == "" && len(p.Inputs) == 0
+	return p.Source == "" && p.Task == "" && p.Run == "" && p.Session == "" && p.Delivery == "" && len(p.Inputs) == 0
 }
 
 // merge fills the empty halves of p from q and unions Inputs — a later
@@ -97,6 +98,9 @@ func (p Provenance) merge(q Provenance) Provenance {
 	}
 	if p.Session == "" {
 		p.Session = q.Session
+	}
+	if p.Delivery == "" {
+		p.Delivery = q.Delivery
 	}
 	p.Inputs = unionIDs(p.Inputs, q.Inputs)
 	return p
@@ -258,6 +262,16 @@ type PutResult struct {
 // revision. Bytes go first so a crash between the two leaves an orphan blob,
 // never an object whose content is missing.
 func (r *Registry) Put(p Put) (PutResult, error) {
+	return r.put(p, false)
+}
+
+// Retain registers an immutable source snapshot once. Repeating the capture
+// returns its original revision without moving a subsequently edited head.
+func (r *Registry) Retain(p Put) (PutResult, error) {
+	return r.put(p, true)
+}
+
+func (r *Registry) put(p Put, retain bool) (PutResult, error) {
 	if len(p.Content) == 0 {
 		return PutResult{}, errors.New("artifacts: empty content")
 	}
@@ -299,6 +313,15 @@ func (r *Registry) Put(p Put) (PutResult, error) {
 		}
 	case p.Ref != "":
 		cur, have = r.byRef(p.Harness, p.Ref)
+	}
+	if retain && !have {
+		cur, have = r.get(IDFor(p.Kind, p.Harness, p.Ref, hash))
+	}
+	if retain && have {
+		if len(cur.Revisions) == 0 || cur.Revisions[0].Hash != hash {
+			return PutResult{}, ErrRevisionConflict
+		}
+		return PutResult{Artifact: cur, Revision: cur.Revisions[0]}, nil
 	}
 	if p.RequestID != "" {
 		for _, receipt := range cur.Receipts {

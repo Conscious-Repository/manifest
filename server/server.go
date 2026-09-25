@@ -674,6 +674,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/agents/chat/{agent}/sessions/{id}/related", s.handleChatRelated)
 	mux.HandleFunc("POST /api/terminal/{agent}/session/{id}/related", s.handleTerminalChatRelated)
 	mux.HandleFunc("POST /api/agents/chat/{agent}/sessions/{id}/coding-result", s.handleChatCodingResult)
+	mux.HandleFunc("POST /api/agents/chat/{agent}/sessions/{id}/output", s.handleChatOutput)
 	mux.HandleFunc("POST /api/agents/chat/{agent}/sessions/{id}/messages", s.portalChatRoute(s.handlePortalChatMessage, s.handleAgentChatMessage))
 	mux.HandleFunc("POST /api/agents/chat/{agent}/sessions/{id}/rename", s.portalChatRoute(s.handlePortalChatRename, s.handleAgentChatRename))
 	mux.HandleFunc("DELETE /api/agents/chat/{agent}/sessions/{id}", s.portalChatRoute(s.handlePortalChatDelete, s.handleAgentChatDelete))

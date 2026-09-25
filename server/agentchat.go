@@ -430,6 +430,9 @@ func (s *Server) handleAgentChatSession(w http.ResponseWriter, r *http.Request) 
 	planRevisions := s.chatPlanRevisions(sess, body)
 	out := map[string]any{"session": sess, "body": body, "queued": queued, "operations": s.chatOperations(sess.ID),
 		"conversation": sessionConversation(sess), "related": s.relatedChats(sess), "proposals": s.chatTaskProposals(sess), "codingResults": s.chatCodingResults(sess), "continuations": views, "planRevisions": planRevisions}
+	if s.artifactReg != nil {
+		out["outputs"] = chatOutputs(sess, body)
+	}
 	if len(views) > 0 {
 		out["timeline"] = conversationTimeline(sess, body, views)
 	}

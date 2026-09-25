@@ -816,6 +816,7 @@ function artifactProvenanceView(artifact,hash,number) {
  const add=(label,value)=>{if(value)facts.append(el('dt','',label),el('dd','',String(value)));};
  add('Version',number);add('Revision',hash);add('Version recorded by',revision?.actor||'Not recorded');add('Version recorded at',revision?.at||'Not recorded');
  add('Artifact source',origin.source||'Not recorded');add('Recorded conversation',origin.session);add('Recorded run',origin.run);add('Recorded task',origin.task);
+ add('Recorded delivery',origin.delivery);
  view.append(facts);
  const links=(artifact.sources||[]).filter(link=>typeof link.route==='string'&&link.route.startsWith('#/'));
  for(const link of links){const row=el('p',''),a=el('a','',link.kind==='conversation'?'Open source conversation':link.kind==='execution'?'Open producing execution':link.kind==='run'?'Open producing run':'Open source '+link.kind);a.href=link.route;a.title=link.label||link.id||'';row.append(a);view.append(row);}

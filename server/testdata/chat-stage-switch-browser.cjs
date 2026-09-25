@@ -14,7 +14,7 @@ const LIST_DELAY=300,THREAD_DELAY=400;
 const overrides={};
 const thread=id=>overrides[id]||({session:{id,title:'Thread '+id.toUpperCase(),status:'idle',agent:'alfred',turns:2,updated:'2026-09-12T10:0'+(id==='a'?1:2)+':00Z',created:'2026-09-12T10:00:00Z',spentUsd:0},
  body:'## Turn 1 — user · 2026-09-12T10:00:00Z\n\nhello from '+id.toUpperCase()+'\n\n## Turn 2 — alfred · 2026-09-12T10:01:00Z\n\nreply from '+id.toUpperCase(),
- conversation:{key:'conv-'+id},queued:[],operations:[],proposals:[],related:[],continuations:[],sharedFiles:[]});
+ conversation:{key:'conv-'+id},outputs:id==='a'?[{delivery:'native-output-request',replyTurn:2,hash:'c'.repeat(64)}]:[],queued:[],operations:[],proposals:[],related:[],continuations:[],sharedFiles:[]});
 const log=[];
 const json=(res,code,body,delay=0)=>setTimeout(()=>{res.writeHead(code,{'Content-Type':'application/json'});res.end(JSON.stringify(body));},delay);
 const server=http.createServer((req,res)=>{
@@ -68,6 +68,17 @@ const server=http.createServer((req,res)=>{
   const aFetches=(await (await fetch(base+'/__log')).json()).filter(r=>r.p==='/api/agents/chat/alfred/sessions/a').length;
   assert.equal(aFetches,2,'A was fetched on first open and once to revalidate');
   assert.deepEqual(errors.filter(e=>!/EventSource|terminal\/events/.test(e)),[]);
+  const retainedOutputs=[];
+  await page.route('**/api/agents/chat/alfred/sessions/a/output',route=>{retainedOutputs.push(route.request().postDataJSON());return route.fulfill({json:{id:'cccccccccccccccc',revision:'c'.repeat(64)}});});
+  await page.route('**/api/artifacts/get?**',route=>route.fulfill({json:{id:'cccccccccccccccc',title:'Saved native output',ref:'output.md',head:'c'.repeat(64),content:'reply from A',preview:{kind:'text'},provenance:{source:'chat-output',session:'conv-a',delivery:'native-output-request'},revisions:[{n:1,hash:'c'.repeat(64),actor:'alfred'}]}}));
+  await page.getByRole('button',{name:'Save output',exact:true}).click();
+  const outputPane=page.getByRole('complementary',{name:'Artifact workspace',exact:true});
+  await outputPane.getByText('reply from A',{exact:true}).waitFor();
+  assert.deepEqual(retainedOutputs,[{delivery:'native-output-request',hash:'c'.repeat(64)}]);
+  await outputPane.getByText('Origin and version details',{exact:true}).click();
+  await outputPane.getByText('native-output-request',{exact:true}).waitFor();
+  await page.screenshot({path:'/tmp/manifest-native-output-artifact.png'});
+  await page.getByRole('button',{name:'Hide workspace',exact:true}).click();
   // Receipt state drives both waiting indicator and composer guidance.
   const queued=thread('a');queued.session.status='thinking';queued.session.deliveries=[{id:'queued-request',state:'queued',text:'Pending instruction'}];
   await page.evaluate(d=>{clearInterval(chatPollTimer);chatPollTimer=null;window.pendingFixture=d;chatLive=null;renderChatTranscript(d);renderChatComposer(d.session);},queued);
