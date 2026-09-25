@@ -67,6 +67,19 @@ type terminalInputReceipt struct {
 	ContextSource     string                   `json:"contextSource,omitempty"`
 	ContextHash       string                   `json:"contextHash,omitempty"`
 	HistoryOmitted    int                      `json:"historyOmitted,omitempty"`
+	// Submitted is when the receipt was first written — before the send
+	// crossed the runtime boundary — and never moves. Updated moves on every
+	// rewrite; a supervised send finalises after the reply has landed, so
+	// "a provider record after the submission" must compare with this.
+	Submitted string `json:"submitted,omitempty"`
+}
+
+// submittedAt is the receipt's submission time (older receipts: Updated).
+func (r terminalInputReceipt) submittedAt() string {
+	if r.Submitted != "" {
+		return r.Submitted
+	}
+	return r.Updated
 }
 
 func hashTerminalText(text string) string {
@@ -155,6 +168,13 @@ func (c *termCfg) readInputReceipt(id, request string) (terminalInputReceipt, er
 // a concurrent status read sees either complete version, never a partial receipt.
 func (c *termCfg) writeInputReceipt(id string, receipt terminalInputReceipt) error {
 	receipt.Updated = time.Now().UTC().Format(time.RFC3339Nano)
+	if receipt.Submitted == "" {
+		if prior, err := c.readInputReceipt(id, receipt.ID); err == nil && prior.Submitted != "" {
+			receipt.Submitted = prior.Submitted
+		} else if err != nil {
+			receipt.Submitted = receipt.Updated // the first write is the submission
+		}
+	}
 	raw, err := json.Marshal(receipt)
 	if err != nil {
 		return err

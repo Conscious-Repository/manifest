@@ -283,11 +283,12 @@ func terminalReceiptState(r terminalInputReceipt, tr termTranscript, ob terminal
 			return supervisionDisconnected, "input receipt " + r.ID + " unconfirmed: the send crossed the runtime boundary without a reply; not replayed"
 		}
 		confirmed := "input receipt " + r.ID + " unconfirmed by this process but recorded by the provider as user turn " + turn.ID + " (exact submitted bytes); "
-		state, evidence := terminalReceiptState(terminalInputReceipt{ID: r.ID, Fingerprint: r.Fingerprint, State: "sent", Updated: r.Updated, Runtime: r.Runtime, SubmittedHash: r.SubmittedHash}, tr, ob)
+		state, evidence := terminalReceiptState(terminalInputReceipt{ID: r.ID, Fingerprint: r.Fingerprint, State: "sent", Updated: r.Updated, Submitted: r.Submitted, Runtime: r.Runtime, SubmittedHash: r.SubmittedHash}, tr, ob)
 		return state, confirmed + evidence
 	}
 	// Provider lifecycle records after the submission are the proof of a result.
-	if tr.Run != nil && tr.Run.Evidence != "" && !laterConversationTimestamp(r.Updated, tr.Run.At) {
+	submitted := r.submittedAt()
+	if tr.Run != nil && tr.Run.Evidence != "" && !laterConversationTimestamp(submitted, tr.Run.At) {
 		switch tr.Run.State {
 		case "completed":
 			return supervisionReady, "input receipt " + r.ID + " sent; provider run " + tr.Run.ID + " " + tr.Run.State + " (" + tr.Run.Evidence + ")"
@@ -315,7 +316,7 @@ func terminalReceiptState(r terminalInputReceipt, tr termTranscript, ob terminal
 	}
 	for i := len(tr.Turns) - 1; i >= 0; i-- {
 		t := tr.Turns[i]
-		if t.Who == "assistant" && t.TS != "" && laterConversationTimestamp(t.TS, r.Updated) {
+		if t.Who == "assistant" && t.TS != "" && laterConversationTimestamp(t.TS, submitted) {
 			if ob.Connectivity == "connected" && ob.Process == "running" {
 				return supervisionReady, "input receipt " + r.ID + " sent; assistant turn " + t.ID + " recorded at " + t.TS + " after submission"
 			}

@@ -3,6 +3,7 @@ package server
 import (
 	"encoding/json"
 	"fmt"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -402,5 +403,32 @@ func TestTerminalIdenticalSendsAreSeparateRuns(t *testing.T) {
 	}
 	if got := runState(sv, "same-text-first"); got.State != supervisionRunning && got.State != supervisionReady {
 		t.Fatalf("%+v", got)
+	}
+}
+
+// Audit 2026-09-25: a supervised send rewrites its receipt after the reply
+// has landed, so comparing the reply with Updated read "no provider record"
+// (unknown) for a finished run. The write-once submission time decides.
+func TestSupervisedReceiptFinalisedAfterReplyIsReady(t *testing.T) {
+	c := &termCfg{regPath: filepath.Join(t.TempDir(), "terminals.json")}
+	r := terminalInputReceipt{ID: "supervised-1", Fingerprint: strings.Repeat("e", 64), State: "unconfirmed", SubmittedHash: hashTerminalText("do the thing")}
+	if err := c.writeInputReceipt("t1", r); err != nil {
+		t.Fatal(err)
+	}
+	first, _ := c.readInputReceipt("t1", r.ID)
+	time.Sleep(5 * time.Millisecond)
+	reply := time.Now().UTC().Format(time.RFC3339Nano)
+	time.Sleep(5 * time.Millisecond)
+	r.State = "sent" // finalised after the supervised prompt settled
+	if err := c.writeInputReceipt("t1", r); err != nil {
+		t.Fatal(err)
+	}
+	final, _ := c.readInputReceipt("t1", r.ID)
+	if final.Submitted == "" || final.Submitted != first.Submitted || !laterConversationTimestamp(final.Updated, reply) {
+		t.Fatalf("submission time must be write-once: first %+v final %+v", first, final)
+	}
+	tr := termTranscript{Turns: []termTurn{{ID: "a1", Who: "assistant", TS: reply}}}
+	if got, why := terminalReceiptState(final, tr, terminalObservation{Connectivity: "connected", Process: "running", AgentState: "idle"}); got != supervisionReady {
+		t.Fatalf("a reply after submission but before finalisation is the answer: %s %s", got, why)
 	}
 }
