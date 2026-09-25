@@ -248,6 +248,10 @@ func (s *Server) handleTermInput(w http.ResponseWriter, r *http.Request) {
 		mu := s.termInputMutex(se.ID)
 		mu.Lock()
 		defer mu.Unlock()
+		// While this process is inside the send, the submission is in progress
+		// here — not disconnected — even before its receipt exists or while the
+		// receipt is still unconfirmed (chat_recovery.go).
+		defer s.terminal.markInflight(se.ID, b.RequestID)()
 		current, exists, readErr := s.terminal.findChecked(se.ID)
 		if readErr != nil {
 			http.Error(w, readErr.Error(), http.StatusInternalServerError)
@@ -599,7 +603,11 @@ func (s *Server) handleTermInput(w http.ResponseWriter, r *http.Request) {
 		err = s.terminal.sendText(se.ID, b.Text)
 	}
 	if err != nil {
-		http.Error(w, "send: "+err.Error(), http.StatusBadGateway)
+		// The legacy runtime keeps no receipt and a multi-step send can fail
+		// after part of the text reached the pane. Never answer 502 here: the
+		// browser retries 502/503 automatically (they mean the proxy never
+		// reached Manifest), and that retry would type the text a second time.
+		http.Error(w, "send outcome uncertain: "+err.Error()+"; inspect the terminal before sending again (no automatic retry)", http.StatusInternalServerError)
 		return
 	}
 	se.LastUsed = time.Now().Format(time.RFC3339)

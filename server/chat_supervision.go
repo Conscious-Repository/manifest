@@ -204,8 +204,18 @@ func (s *Server) terminalChatSupervision(se termSession, tr termTranscript, ob t
 		out.State, out.Evidence = supervisionUnknown, "legacy runtime keeps no input receipts; observation "+ob.Process+"/"+ob.AgentState+" is not completion evidence"
 		return out
 	}
-	// Waiting outbox entries are submitted runs: durable, not started.
+	receipts := s.terminal.continuationReceipts(se.ID, "")
+	receiptByID := map[string]bool{}
+	for _, r := range receipts {
+		receiptByID[r.ID] = true
+	}
+	// Waiting outbox entries are submitted runs: durable, not started. Once a
+	// receipt exists for the same request the receipt is the record; the entry
+	// only awaits the sweep's cleanup and must not project a second run.
 	for _, item := range s.terminalQueuedFollowups(conversation, se.ID) {
+		if receiptByID[item.Payload.RequestID] {
+			continue
+		}
 		run := supervisionRun{RunID: supervisionRunID(caps.Adapter, conversation, item.Payload.RequestID), Adapter: caps.Adapter, Conversation: conversation, RequestID: item.Payload.RequestID, Updated: item.At}
 		switch {
 		case item.Staged && item.StagedError != "" && !item.WaitingForAgent:
@@ -213,11 +223,14 @@ func (s *Server) terminalChatSupervision(se termSession, tr termTranscript, ob t
 		case item.Staged:
 			run.State, run.Evidence = supervisionSubmitted, "outbox entry "+item.Payload.RequestID+" waiting for an idle prompt; nothing sent"
 		default:
-			run.State, run.Evidence = supervisionDisconnected, "outbox entry "+item.Payload.RequestID+" claimed for dispatch without a confirming receipt; not replayed"
+			if since, ok := s.terminal.inflightSince(se.ID, item.Payload.RequestID); ok {
+				run.State, run.Evidence = supervisionSubmitted, "outbox entry "+item.Payload.RequestID+" claimed; dispatch in progress in this process since "+since.Format(time.RFC3339)+"; the receipt follows the send"
+			} else {
+				run.State, run.Evidence = supervisionDisconnected, "outbox entry "+item.Payload.RequestID+" claimed for dispatch without a confirming receipt; not replayed"
+			}
 		}
 		out.Runs = append(out.Runs, run)
 	}
-	receipts := s.terminal.continuationReceipts(se.ID, "")
 	ordered := make([]terminalInputReceipt, 0, len(receipts))
 	for _, r := range receipts {
 		ordered = append(ordered, r)
@@ -225,7 +238,13 @@ func (s *Server) terminalChatSupervision(se termSession, tr termTranscript, ob t
 	sort.Slice(ordered, func(i, j int) bool { return ordered[i].Updated < ordered[j].Updated })
 	for _, r := range ordered {
 		run := supervisionRun{RunID: supervisionRunID(caps.Adapter, conversation, r.ID), Adapter: caps.Adapter, Conversation: conversation, RequestID: r.ID, Updated: r.Updated}
-		run.State, run.Evidence = terminalReceiptState(r, tr, ob)
+		if since, ok := s.terminal.inflightSince(se.ID, r.ID); ok && r.State == "unconfirmed" && r.Error == "" {
+			// The receipt is written before the daemon call; until that call
+			// returns in this process the send is running here, not lost.
+			run.State, run.Evidence = supervisionRunning, "input receipt "+r.ID+" unconfirmed; send in progress in this process since "+since.Format(time.RFC3339)
+		} else {
+			run.State, run.Evidence = terminalReceiptState(r, tr, ob)
+		}
 		out.Runs = append(out.Runs, run)
 	}
 	out.State, out.Evidence = conversationSupervisionState(out.Runs)
@@ -247,7 +266,18 @@ func terminalReceiptState(r terminalInputReceipt, tr termTranscript, ob terminal
 		if r.Error != "" {
 			return supervisionFailed, "input receipt " + r.ID + " unconfirmed with runtime error: " + r.Error
 		}
-		return supervisionDisconnected, "input receipt " + r.ID + " unconfirmed: the send crossed the runtime boundary without a reply; not replayed"
+		// A process that died between the receipt and the daemon's reply left
+		// the outcome unknown. The provider's own transcript can settle it: the
+		// exact submitted bytes recorded as a user turn prove the prompt landed,
+		// after which the ordinary sent-receipt rules apply. Without that record
+		// the run stays disconnected; it is never replayed.
+		turn, ok := receiptConfirmedByTranscript(r, tr)
+		if !ok {
+			return supervisionDisconnected, "input receipt " + r.ID + " unconfirmed: the send crossed the runtime boundary without a reply; not replayed"
+		}
+		confirmed := "input receipt " + r.ID + " unconfirmed by this process but recorded by the provider as user turn " + turn.ID + " (exact submitted bytes); "
+		state, evidence := terminalReceiptState(terminalInputReceipt{ID: r.ID, Fingerprint: r.Fingerprint, State: "sent", Updated: r.Updated, Runtime: r.Runtime, SubmittedHash: r.SubmittedHash}, tr, ob)
+		return state, confirmed + evidence
 	}
 	// Provider lifecycle records after the submission are the proof of a result.
 	if tr.Run != nil && tr.Run.Evidence != "" && !laterConversationTimestamp(r.Updated, tr.Run.At) {

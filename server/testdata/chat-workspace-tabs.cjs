@@ -103,10 +103,21 @@ const {chromium}=require('playwright'),fs=require('fs'),path=require('path'),ass
  const reloadedChild=await (await p.locator('.chat-side-frame').last().elementHandle()).contentFrame();
  await reloadedChild.evaluate(()=>{window.el=(tag,cls,text)=>{const e=document.createElement(tag);e.className=cls||'';e.textContent=text||'';return e;};});
  await reloadedChild.addScriptTag({content:fs.readFileSync(path.join(root,'js/49-chat-workspace.js'),'utf8')});
- await reloadedChild.evaluate(()=>document.body.append(chatCopyResponseControl([{t:'say',text:'Finding through the response action'}],'turn-one')));
- await reloadedChild.getByRole('button',{name:'Add to parent draft',exact:true}).click();
+ await reloadedChild.evaluate(()=>document.body.append(chatCopyResponseControl([{t:'say',text:'Finding through the response action'}],'turn-one'),chatCopyResponseControl([{t:'say',text:'Never returned'}],'turn-two')));
+ // The restored frame shows the persisted receipt without any click: the
+ // parent answers from the server-confirmed draft, not from frame memory.
  await reloadedChild.getByRole('button',{name:'Added to parent draft',exact:true}).waitFor();
+ assert.equal(await reloadedChild.getByRole('button',{name:'Add to parent draft',exact:true}).count(),1,'an unreturned response keeps its action');
+ await reloadedChild.getByRole('button',{name:'Added to parent draft',exact:true}).click();
+ await p.waitForTimeout(60);
  assert.equal(await p.locator('#chatComposer textarea').inputValue(),returned,'reload does not duplicate a returned finding');
+ // A definite refusal is named to the child instead of a blind retry offer.
+ await p.evaluate(()=>{const state=chatSyncedDrafts.get(chatDraftKey);state._addSideFinding=state.addSideFinding;state.addSideFinding=async function(){this.sideReturnError='Not added: the parent draft would exceed its size limit.';return false;};});
+ await reloadedChild.getByRole('button',{name:'Add to parent draft',exact:true}).click();
+ await reloadedChild.getByRole('button',{name:'Not added · retry',exact:true}).waitFor();
+ assert.match(await reloadedChild.getByRole('button',{name:'Not added · retry',exact:true}).getAttribute('title'),/size limit/);
+ await p.evaluate(()=>{const state=chatSyncedDrafts.get(chatDraftKey);state.addSideFinding=state._addSideFinding;});
+ assert.equal(await p.locator('#chatComposer textarea').inputValue(),returned,'a refused return changes nothing');
  await p.addScriptTag({content:components.slice(components.indexOf('function attachmentWorkspace('),components.indexOf('function artifactLineChanges('))});
  await p.addScriptTag({content:chat.slice(chat.indexOf('function chatOpenAttachment('),chat.indexOf('function chatChangesButton('))});
  await p.evaluate(()=>{

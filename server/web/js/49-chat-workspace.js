@@ -170,15 +170,33 @@ function chatMountSideFrame(host,spec){
  const frame=document.createElement('iframe');frame.title='Side chat · '+spec.title;frame.className='chat-side-frame';frame.src=location.pathname+'?chatPane=1'+spec.route;
  if(spec.existing){const tab=[...chatWorkspaceTabs.entries.values()].find(t=>t.host===host);link.textContent='↗';link.title='Open full conversation';link.setAttribute('aria-label','Open full conversation');link.classList.add('chat-tab-open');tab?.row.insertBefore(link,tab.row.lastChild);host.append(frame);}else{info.querySelector('summary').textContent='Context';info.title='Context from '+spec.title;host.append(strip,frame);}
  const parentKey=(chatAgent||'spirits')+'/'+chatOpenId;
+ // Receipts the child may show come from the server-confirmed draft (base),
+ // never from unsent local state: a receipt is a persisted fact.
+ const receipts=()=>{const base=chatSyncedDrafts.get(parentKey)?.base?.sideReturns||{};const prefix=spec.route+':';return Object.keys(base).filter(k=>k.startsWith(prefix)&&base[k]===true).map(k=>k.slice(prefix.length));};
  const receive=async e=>{
-  if(e.origin!==location.origin||e.source!==frame.contentWindow||!host.isConnected||e.data?.type!=='manifest-side-finding')return;
+  if(e.origin!==location.origin||e.source!==frame.contentWindow||!host.isConnected)return;
+  if(e.data?.type==='manifest-side-receipts-query'){
+   if(e.data.route!==spec.route)return;
+   const state=chatSyncedDrafts.get(parentKey);if(state&&!state.loaded)await state.refresh();
+   if(host.isConnected)frame.contentWindow.postMessage({type:'manifest-side-receipts',route:spec.route,ids:receipts()},location.origin);
+   return;
+  }
+  if(e.data?.type!=='manifest-side-finding')return;
   const {id,text,route}=e.data;if(route!==spec.route||typeof id!=='string'||!/^[a-f0-9]{64}$/.test(id)||typeof text!=='string'||!text.trim()||text.length>32000)return;
   const available=()=>host.isConnected&&chatDraftKey===parentKey&&!!document.querySelector('#chatComposer textarea')&&!document.querySelector('#chatComposer textarea').disabled;
   if(!available())return;
   const state=chatSyncedDrafts.get(parentKey);if(!state)return;
   chatCaptureSyncedDraft(parentKey);
   const saved=await state.addSideFinding(spec.route+':'+id,'From side chat ('+spec.route+'):\n'+text,available);
-  if(!saved||!available())return;
+  if(!host.isConnected)return;
+  if(!saved){
+   // A definite refusal (size, conflict, sync error) is named to the child so
+   // it does not offer a blind retry against the same wall.
+   const reason=state.sideReturnError||(state.conflict?'Not added: resolve the parent draft conflict first.':state.error?'Not added: '+state.error:'');
+   if(reason)frame.contentWindow.postMessage({type:'manifest-side-finding-nack',id,reason},location.origin);
+   return;
+  }
+  if(!available())return;
   frame.contentWindow.postMessage({type:'manifest-side-finding-ack',id},location.origin);if(window.matchMedia('(max-width: 900px)').matches)chatWorkspaceTabs?.show(false);document.querySelector('#chatComposer textarea')?.focus();
  };
  window.addEventListener('message',receive);return {close:()=>window.removeEventListener('message',receive)};
@@ -273,6 +291,26 @@ function chatUpdateJump(){
  if(!button.hidden){const bounds=transcript.getBoundingClientRect(),parent=main.getBoundingClientRect();button.style.top=Math.max(0,bounds.bottom-parent.top-52)+'px';}
 }
 
+// Return receipts the parent has persisted for this side chat. The child asks
+// once per route (and again after an unconfirmed return) so a reload, another
+// device or a restored workspace shows "Added to parent draft" from the saved
+// draft instead of remembering it in a mounted frame.
+const chatSideReceipts={ids:new Set(),asked:new Set(),listening:false,
+ query(route){
+  if(!chatEmbedded||typeof route!=='string')return;
+  if(!this.listening){this.listening=true;window.addEventListener('message',e=>{
+   if(e.origin!==location.origin||e.source!==window.parent||e.data?.type!=='manifest-side-receipts'||e.data.route!==location.hash||!Array.isArray(e.data.ids))return;
+   for(const id of e.data.ids)if(typeof id==='string'&&/^[a-f0-9]{64}$/.test(id))this.ids.add(id);
+   document.querySelectorAll('.chat-copy-response[data-side-id]').forEach(b=>{if(this.ids.has(b.dataset.sideId)&&!b.classList.contains('is-returned')){b.textContent='Added to parent draft';b.title='Already in the parent draft (saved). Use Copy to add it again deliberately.';b.classList.add('is-returned');}});
+  });}
+  if(this.asked.has(route))return;this.asked.add(route);
+  window.parent.postMessage({type:'manifest-side-receipts-query',route},location.origin);
+ },
+ refresh(route){this.asked.delete(route);this.query(route);}};
+async function chatSideReceiptID(identity){
+ try{const digest=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(identity));return Array.from(new Uint8Array(digest),b=>b.toString(16).padStart(2,'0')).join('');}
+ catch(e){return '';}
+}
 function chatCopyResponseControl(blocks,turnID){
  const text=blocks.filter(block=>block.t==='say').map(block=>block.text||'').filter(Boolean).join('\n\n');
  if(!text)return null;
@@ -290,15 +328,21 @@ function chatCopyResponseControl(blocks,turnID){
   // Source turn plus exact response bytes identify this return across renders
   // and reloads. Different turns with identical text remain distinct.
   const route=location.hash,identity=JSON.stringify([route,String(turnID),text]);
+  const returned=()=>{send.textContent='Added to parent draft';send.title='Already in the parent draft (saved). Use Copy to add it again deliberately.';send.classList.add('is-returned');};
+  chatSideReceiptID(identity).then(id=>{if(!id)return;send.dataset.sideId=id;if(chatSideReceipts.ids.has(id))returned();});
+  chatSideReceipts.query(route);
   send.onclick=async()=>{
    if(text.length>32000){send.textContent='Response too long · copy an excerpt';return;}
    send.disabled=true;
    try{
-    const digest=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(identity));
-    const id=Array.from(new Uint8Array(digest),b=>b.toString(16).padStart(2,'0')).join('');
-    const receive=e=>{if(e.origin!==location.origin||e.source!==window.parent||e.data?.type!=='manifest-side-finding-ack'||e.data.id!==id)return;clearTimeout(timer);window.removeEventListener('message',receive);send.textContent='Added to parent draft';};
+    const id=await chatSideReceiptID(identity);if(!id)throw Error('no digest');
+    const receive=e=>{
+     if(e.origin!==location.origin||e.source!==window.parent||e.data?.id!==id)return;
+     if(e.data?.type==='manifest-side-finding-ack'){clearTimeout(timer);window.removeEventListener('message',receive);chatSideReceipts.ids.add(id);returned();send.disabled=false;}
+     else if(e.data?.type==='manifest-side-finding-nack'){clearTimeout(timer);window.removeEventListener('message',receive);send.disabled=false;send.textContent='Not added · retry';send.title=String(e.data.reason||'The parent did not save this return.');}
+    };
     window.addEventListener('message',receive);
-    const timer=setTimeout(()=>{window.removeEventListener('message',receive);send.disabled=false;send.textContent='Retry adding to parent';send.title='Save not confirmed. Check the parent draft for sync errors or conflicts, then retry.';},5000);
+    const timer=setTimeout(()=>{window.removeEventListener('message',receive);send.disabled=false;send.textContent='Retry adding to parent';send.title='Save not confirmed. Check the parent draft for sync errors or conflicts, then retry.';chatSideReceipts.refresh(route);},5000);
     window.parent.postMessage({type:'manifest-side-finding',id,text,route},location.origin);
    }catch(e){send.disabled=false;send.textContent='Retry adding to parent';}
   };actions.append(button,send);return actions;

@@ -206,7 +206,9 @@ async function chatPrepareDraft(descriptor,key,initial){
   });
   chatSyncedDrafts.set(key,state);
   const local=chatDrafts.get(key);
-  if(local && (local.text || local.files?.length))state.set({...local,selection:chatArtifactSelections.get("chat:"+key)||null,task:chatConversationTasks.get("chat:"+key)||""});
+  // The seeded local draft carries its delivery target too; a first save
+  // without it would drop the chosen recipient or read as a conflict.
+  if(local && (local.text || local.files?.length))state.set({...local,selection:chatArtifactSelections.get("chat:"+key)||null,task:chatConversationTasks.get("chat:"+key)||"",recipient:chatRecipients.get(key)||null});
   await state.refresh();
   await chatLoadDeliveryRecovery(key);
   await chatReconcileAcceptedDrafts(key);

@@ -52,7 +52,10 @@ class ChatDraftState {
   schedule(){clearTimeout(this.timer);this.timer=setTimeout(()=>this.flush(),600);}
   async flush(){
     clearTimeout(this.timer);this.timer=null;
-    if(this.pending)return this.pending;
+    // Queue behind an in-flight write instead of returning its result: the
+    // newest value (a cleared sent draft, an appended receipt) must reach the
+    // server without waiting for the typing debounce.
+    if(this.pending){await this.pending;return this.flush();}
     if(!this.dirty)return true;
     if(this.conflict)return false;
     const value=this.value,revision=this.revision;
@@ -61,6 +64,9 @@ class ChatDraftState {
         const body=JSON.stringify({revision,value});
         const r=await fetch(this.url(),{method:"PUT",headers:{"Content-Type":"application/json"},body,keepalive:body.length<15000});
         if(r.status===409){this.conflict=this.snapshot(await r.json());return false;}
+        // The server refuses a draft over its size limit outright; say so
+        // instead of promising a sync that no retry can deliver.
+        if(r.status===400||r.status===413){this.error="Draft could not be saved: it exceeds the size limit. Shorten it or remove attached text, then retry.";return false;}
         if(!r.ok)throw new Error("Draft sync unavailable");
         const saved=this.snapshot(await r.json());
         if(saved.revision<revision || !chatStateEqual(saved.value,value))throw new Error("Invalid draft acknowledgement");
@@ -82,14 +88,20 @@ class ChatDraftState {
     this.dirty=!chatStateEqual(this.value,this.base);this.publish(useSaved);
     if(this.dirty)await this.flush();
   }
+  static sizeLimit=90000; // bytes of the whole value; the server refuses 96000
   async addSideFinding(id,text,canApply=()=>true){
     // Persist the appended text and its receipt in the same revision. No ack
     // until that revision is observed on the server; retry a lost ack safely.
+    this.sideReturnError="";
     await this.refresh();
     if(this.slot!=="draft"||!this.loaded||this.error||this.conflict||!canApply())return false;
     if(!this.value?.sideReturns?.[id]){
       const value=this.value||{};
-      this.set({...value,text:(value.text?.trim()?value.text+"\n\n":"")+text,sideReturns:{...value.sideReturns,[id]:true}});
+      const next={...value,text:(value.text?.trim()?value.text+"\n\n":"")+text,sideReturns:{...value.sideReturns,[id]:true}};
+      // Measure bytes the way the server does: a draft that could never sync
+      // must not be appended locally, or every later save fails too.
+      if(new TextEncoder().encode(JSON.stringify(next)).length>ChatDraftState.sizeLimit){this.sideReturnError="Not added: the parent draft would exceed its size limit. Send or trim the draft, or copy an excerpt.";return false;}
+      this.set(next);
       this.publish(true);
     }
     if(this.base?.sideReturns?.[id])return true;
@@ -100,7 +112,10 @@ class ChatDraftState {
   }
   clearSent(value){
     if(!chatStateEqual(this.value,value))return false;
-    this.set({...value,text:"",files:[],...(Array.isArray(value?.mentions)?{mentions:[]}: {})});return true;
+    this.set({...value,text:"",files:[],...(Array.isArray(value?.mentions)?{mentions:[]}: {})});
+    // A sent instruction is cleared immediately, not after the typing debounce:
+    // another device that reads the draft meanwhile would adopt and resend it.
+    this.flush();return true;
   }
   async reconcileSent(value){
     // Never discard an acknowledgement while an older draft write is in flight.

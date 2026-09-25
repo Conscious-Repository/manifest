@@ -672,28 +672,42 @@ func (s *Server) agentChatSendTo(agent, id, requestID, text string, files []thre
 	return receipt, nil
 }
 func (s *Server) startAgentChatDelivery(agent, id string) {
+	d, ctx, cancel, claimed := s.claimAgentChatDelivery(agent, id)
+	if claimed {
+		go s.runAgentChatTurns(agent, id, d, ctx, cancel)
+	}
+}
+
+// claimAgentChatDelivery claims the next queued delivery and registers its
+// live invocation in ONE critical section. A running receipt therefore never
+// exists without its invocation in this process: a concurrent supervision
+// read between the claim and the goroutine start would otherwise project a
+// turn this process owns as disconnected.
+func (s *Server) claimAgentChatDelivery(agent, id string) (agentchat.Delivery, context.Context, context.CancelFunc, bool) {
+	s.agentChat.runMu.Lock()
+	defer s.agentChat.runMu.Unlock()
 	d, claimed, err := s.agentChat.store.Claim(agent, id)
 	if err != nil {
 		log.Printf("agent chat %s/%s: claim delivery: %v", agent, id, err)
-		return
+		return agentchat.Delivery{}, nil, nil, false
 	}
-	if claimed {
-		go s.runAgentChatTurns(agent, id, d)
+	if !claimed {
+		return agentchat.Delivery{}, nil, nil, false
 	}
+	ctx, cancel := context.WithCancel(context.Background())
+	if s.agentChat.running == nil {
+		s.agentChat.running = map[string]agentChatInvocation{}
+	}
+	s.agentChat.running[agent+"/"+id] = agentChatInvocation{requestID: d.ID, cancel: cancel}
+	if receipt, ok := s.agentChat.store.Receipt(agent, id, d.ID); ok && receipt.StopRequested {
+		cancel()
+	}
+	return d, ctx, cancel, true
 }
-func (s *Server) runAgentChatTurns(agent, id string, d agentchat.Delivery) {
+
+func (s *Server) runAgentChatTurns(agent, id string, d agentchat.Delivery, ctx context.Context, cancel context.CancelFunc) {
 	for {
-		ctx, cancel := context.WithCancel(context.Background())
 		key := agent + "/" + id
-		s.agentChat.runMu.Lock()
-		if s.agentChat.running == nil {
-			s.agentChat.running = map[string]agentChatInvocation{}
-		}
-		s.agentChat.running[key] = agentChatInvocation{requestID: d.ID, cancel: cancel}
-		if receipt, ok := s.agentChat.store.Receipt(agent, id, d.ID); ok && receipt.StopRequested {
-			cancel()
-		}
-		s.agentChat.runMu.Unlock()
 		err := s.runAgentChatTurnContext(ctx, agent, id, d.ID)
 		cancel()
 		s.agentChat.runMu.Lock()
@@ -705,11 +719,11 @@ func (s *Server) runAgentChatTurns(agent, id string, d agentchat.Delivery) {
 			log.Printf("agent chat %s/%s: persist result: %v", agent, id, err)
 			return
 		}
-		next, claimed, err := s.agentChat.store.Claim(agent, id)
-		if err != nil || !claimed {
+		next, nextCtx, nextCancel, claimed := s.claimAgentChatDelivery(agent, id)
+		if !claimed {
 			return
 		}
-		d = next
+		d, ctx, cancel = next, nextCtx, nextCancel
 	}
 }
 

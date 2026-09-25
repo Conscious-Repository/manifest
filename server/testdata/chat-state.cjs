@@ -16,7 +16,7 @@ async function fetch(url,options={}){
  return {ok:true,json:async()=>clone(remote)};
 }
 function device(storage=new Map()){
- const context=vm.createContext({fetch,localStorage:{getItem:k=>storage.get(k),setItem:(k,v)=>storage.set(k,v)},setTimeout:()=>1,clearTimeout(){}});
+ const context=vm.createContext({fetch,TextEncoder,localStorage:{getItem:k=>storage.get(k),setItem:(k,v)=>storage.set(k,v)},setTimeout:()=>1,clearTimeout(){}});
  vm.runInContext(code+';globalThis.Draft=ChatDraftState;',context);
  return new context.Draft(key);
 }
@@ -80,6 +80,28 @@ function device(storage=new Map()){
  assert.equal(await other.addSideFinding('side:turn4','pending finding'),false);assert.ok(other.conflict);
  await other.resolve(false);assert.equal(await other.addSideFinding('side:turn3','remote finding'),true);
  assert.equal(other.value.text,'local competing draft');
+ // Clearing a sent draft reaches the server at once, not after the typing
+ // debounce (whose timer never fires in this harness): a second device that
+ // reads meanwhile must not adopt and resend the instruction.
+ const sender=device();await sender.refresh();sender.set({text:'about to send',files:[]});await sender.flush();
+ const sentNow=sender.value;assert.equal(sender.clearSent(sentNow),true);assert.ok(sender.pending,'clearSent writes immediately');await sender.pending;
+ assert.equal(remote.value.text,'','cleared draft persisted without an explicit flush');
+ const laterDevice=device();await laterDevice.refresh();assert.equal(laterDevice.value.text,'');
+ // A flush requested while a write is in flight lands the newest value.
+ sender.set({text:'first version',files:[]});const first=sender.flush();
+ sender.set({text:'second version',files:[]});const second=sender.flush();await first;await second;
+ assert.equal(remote.value.text,'second version','queued flush sends the newest value');
+ // A return that would push the draft over the server's size limit is refused
+ // before anything is appended, with a reason the child can show.
+ const bounded=device();await bounded.refresh();bounded.set({text:'small',files:[]});await bounded.flush();
+ const beforeBig=remote.revision;
+ assert.equal(await bounded.addSideFinding('side:big','x'.repeat(95000)),false);
+ assert.match(bounded.sideReturnError,/size limit/);assert.equal(bounded.value.text,'small');assert.equal(remote.revision,beforeBig);
+ assert.equal(await bounded.addSideFinding('side:fits','fits'),true);assert.equal(bounded.sideReturnError,'');
+ // A server refusal (400) is reported as such, not as a transient outage.
+ const refusing=vm.createContext({fetch:async(url,opts={})=>opts.method==='PUT'?{ok:false,status:400,json:async()=>({})}:{ok:true,json:async()=>({key,slot:'draft',revision:0,value:null})},TextEncoder,localStorage:{getItem:()=>null,setItem(){}},setTimeout:()=>1,clearTimeout(){}});
+ vm.runInContext(code+';globalThis.Draft=ChatDraftState;',refusing);const refused=new refusing.Draft(key);await refused.refresh();refused.set({text:'too big',files:[]});
+ assert.equal(await refused.flush(),false);assert.match(refused.error,/size limit/);assert.equal(refused.value.text,'too big');
  // The task UI restores/clears exact context independently for each task,
  // retaining its typed draft when a context chip changes.
  const selections=new Map(),painted=[];
@@ -99,12 +121,12 @@ function device(storage=new Map()){
   assert.equal(url,'/api/chat/state/artifact-0123456789abcdef/edit');
   if(opts.method==='PUT'){const b=JSON.parse(opts.body);editRemote={...editRemote,revision:editRemote.revision+1,value:b.value};}
   return {ok:true,json:async()=>clone(editRemote)};
- },localStorage:{getItem:k=>edits.get(k),setItem:(k,v)=>edits.set(k,v)},setTimeout:()=>1,clearTimeout(){}});
+ },TextEncoder,localStorage:{getItem:k=>edits.get(k),setItem:(k,v)=>edits.set(k,v)},setTimeout:()=>1,clearTimeout(){}});
  vm.runInContext(code+';globalThis.Draft=ChatDraftState;',editContext);
  const edit=new editContext.Draft(editRemote.key,null,'edit');await edit.refresh();edit.set({text:'revision in progress',baseRevision:'old-head',sourceRevision:'older-version'});await edit.flush();
  const reopen=new editContext.Draft(editRemote.key,null,'edit');await reopen.refresh();assert.equal(reopen.value.baseRevision,'old-head');assert.equal(reopen.value.text,'revision in progress');
  // Malformed responses must not replace the draft or count as saved.
- const ctx=vm.createContext({fetch:async()=>({ok:true,json:async()=>({revision:999,value:null})}),localStorage:{getItem:()=>null,setItem(){}},setTimeout:()=>1,clearTimeout(){}});
+ const ctx=vm.createContext({fetch:async()=>({ok:true,json:async()=>({revision:999,value:null})}),TextEncoder,localStorage:{getItem:()=>null,setItem(){}},setTimeout:()=>1,clearTimeout(){}});
  vm.runInContext(code+';globalThis.Draft=ChatDraftState;',ctx);const bad=new ctx.Draft(key);bad.set({text:'keep'});assert.equal(await bad.flush(),false);assert.equal(bad.value.text,'keep');assert.equal(bad.revision,0);
  console.log('Independent drafts, conflict resolution, stale reads, lost acknowledgements, safe clearing, offline recovery and malformed responses passed');
 })().catch(e=>{console.error(e);process.exitCode=1});

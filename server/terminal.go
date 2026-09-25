@@ -99,6 +99,13 @@ type termCfg struct {
 	// dead session within seconds must not spawn two tmuxes).
 	spawnMu sync.Mutex
 	spawnIn map[string]*sync.Mutex
+
+	// inflight names the identified herdr submissions this process is
+	// dispatching right now (chat_recovery.go). It is volatile by design: a
+	// restart empties it, which is exactly when an unconfirmed receipt or a
+	// claimed outbox entry stops being "in progress here" and becomes uncertain.
+	inflightMu sync.Mutex
+	inflight   map[string]time.Time
 }
 
 type remoteLiveEnt struct {
