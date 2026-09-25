@@ -527,7 +527,9 @@ func (s *Server) handleTermCreate(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if err := s.spawnTermTmux(se); err != nil {
-			http.Error(w, err.Error(), 502)
+			// the spawn may have started a tmux session: 500, so the client's
+			// 502 retry never creates a second one
+			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
 		se.Started = true

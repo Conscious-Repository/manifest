@@ -128,5 +128,17 @@ function device(storage=new Map()){
  // Malformed responses must not replace the draft or count as saved.
  const ctx=vm.createContext({fetch:async()=>({ok:true,json:async()=>({revision:999,value:null})}),TextEncoder,localStorage:{getItem:()=>null,setItem(){}},setTimeout:()=>1,clearTimeout(){}});
  vm.runInContext(code+';globalThis.Draft=ChatDraftState;',ctx);const bad=new ctx.Draft(key);bad.set({text:'keep'});assert.equal(await bad.flush(),false);assert.equal(bad.value.text,'keep');assert.equal(bad.revision,0);
+ // A save that committed but lost its acknowledgement, then Send clears the
+ // draft: the 409 names this device's own write, so it is adopted and the
+ // cleared draft saved — no false conflict, no sent text left for another
+ // device to adopt and resend (audit 2026-09-25).
+ {remote={key,slot:'draft',revision:0,value:null};const d=device();await d.refresh();const typed={text:'deploy to prod',files:[]};
+  d.set(typed);lose=true;assert.equal(await d.flush(),false);assert.equal(remote.value.text,'deploy to prod');
+  assert.equal(d.clearSent(typed),true);await d.pending;while(d.pending)await d.pending;await new Promise(r=>setImmediate(r));while(d.pending)await d.pending;
+  assert.equal(d.conflict,null,'own lost-ack write reported as a conflict');assert.equal(remote.value.text,'','sent text left as the server draft');
+  const rec=await d.reconcileSent(typed);assert.equal(rec,true,JSON.stringify({error:d.error,conflict:d.conflict,base:d.base,loaded:d.loaded,remote}));
+  // a genuinely different remote value is still a conflict
+  const other=device();await other.refresh();d.set({text:'mine',files:[]});other.set({text:'theirs',files:[]});await other.flush();
+  assert.equal(await d.flush(),false);assert.equal(d.conflict.value.text,'theirs');}
  console.log('Independent drafts, conflict resolution, stale reads, lost acknowledgements, safe clearing, offline recovery and malformed responses passed');
 })().catch(e=>{console.error(e);process.exitCode=1});

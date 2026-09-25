@@ -8,6 +8,11 @@ class ChatDraftState {
     this.slot=slot;this.storageKey="manifest.chatDraft.v1."+key+(slot==="draft"?"":"."+slot);
     this.key=key;this.changed=changed;this.revision=0;this.base=null;this.value=null;
     this.dirty=false;this.loaded=false;this.conflict=null;this.error="";this.pending=null;this.timer=null;
+    // The last write whose acknowledgement was lost: {revision, value}. If the
+    // server later holds exactly that value at the next revision, the write
+    // was ours — adopt it rather than report another device's conflict (a
+    // false conflict left an already-sent message as the server draft).
+    this.unacked=null;
     try {
       const saved=JSON.parse(localStorage.getItem(this.storageKey)||"null");
       if(saved && Number.isSafeInteger(saved.revision) && saved.revision>=0){
@@ -21,6 +26,10 @@ class ChatDraftState {
     catch(e){this.error="Local draft recovery is unavailable. Keep this tab open until the draft is saved.";}
     this.changed?.(this,apply);
   }
+  ownWrite(remote){
+    const mine=this.unacked;
+    return !!mine && remote.revision===mine.revision+1 && chatStateEqual(remote.value,mine.value);
+  }
   snapshot(v){
     if(!v || v.key!==this.key || v.slot!==this.slot || !Number.isSafeInteger(v.revision) || v.revision<0 || !(v.value===null || (typeof v.value==="object"&&!Array.isArray(v.value))))throw new Error("Invalid draft response");
     return v;
@@ -31,7 +40,8 @@ class ChatDraftState {
       const r=await fetch(this.url(),{cache:"no-store"});if(!r.ok)throw new Error("Draft sync unavailable");
       const remote=this.snapshot(await r.json());
       if(this.pending || remote.revision<this.revision)return this;
-      if(this.dirty && remote.revision!==this.revision && !chatStateEqual(remote.value,this.value))this.conflict=remote;
+      if(this.ownWrite(remote)){this.unacked=null;this.revision=remote.revision;this.base=remote.value;this.conflict=null;this.dirty=!chatStateEqual(this.value,this.base);}
+      else if(this.dirty && remote.revision!==this.revision && !chatStateEqual(remote.value,this.value))this.conflict=remote;
       else {
         this.revision=remote.revision;this.base=remote.value;
         if(!this.dirty || chatStateEqual(this.value,remote.value)){this.value=remote.value;this.dirty=false;}
@@ -63,21 +73,31 @@ class ChatDraftState {
       try {
         const body=JSON.stringify({revision,value});
         const r=await fetch(this.url(),{method:"PUT",headers:{"Content-Type":"application/json"},body,keepalive:body.length<15000});
-        if(r.status===409){this.conflict=this.snapshot(await r.json());return false;}
+        if(r.status===409){
+          const remote=this.snapshot(await r.json());
+          if(this.ownWrite(remote)){
+            // our earlier write landed; rebase on it and send the newer value
+            this.unacked=null;this.revision=remote.revision;this.base=remote.value;this.dirty=!chatStateEqual(this.value,this.base);
+            return "rebased";
+          }
+          this.conflict=remote;return false;
+        }
         // The server refuses a draft over its size limit outright; say so
         // instead of promising a sync that no retry can deliver.
         if(r.status===400||r.status===413){this.error="Draft could not be saved: it exceeds the size limit. Shorten it or remove attached text, then retry.";return false;}
         if(!r.ok)throw new Error("Draft sync unavailable");
         const saved=this.snapshot(await r.json());
         if(saved.revision<revision || !chatStateEqual(saved.value,value))throw new Error("Invalid draft acknowledgement");
-        this.revision=saved.revision;this.base=saved.value;
+        this.revision=saved.revision;this.base=saved.value;this.unacked=null;
         this.dirty=!chatStateEqual(this.value,saved.value);this.error="";this.loaded=true;
         return true;
-      }catch(e){this.error="Draft saved on this device; sync is unavailable.";return false;}
+      }catch(e){this.unacked={revision,value};this.error="Draft saved on this device; sync is unavailable.";return false;}
     });
     this.pending=job;
     const ok=await job;
-    this.pending=null;this.publish();
+    this.pending=null;
+    if(ok==="rebased")return this.flush(); // send the newer value now, not after the debounce
+    this.publish();
     if(ok&&this.dirty)this.schedule();return ok;
   }
   async resolve(useSaved){

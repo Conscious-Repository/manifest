@@ -234,7 +234,7 @@ func (s *Server) launchHerdrLocked(ctx context.Context, se termSession) (termSes
 			}
 			return se, err
 		}
-		return se, fmt.Errorf("launch allocation unobserved; do not retry automatically: %w", err)
+		return se, &terminalUncertainLaunch{fmt.Errorf("launch allocation unobserved; do not retry automatically: %w", err)}
 	}
 	se.Runtime = id
 	se.LaunchPhase = "allocated"
@@ -248,7 +248,7 @@ func (s *Server) launchHerdrLocked(ctx context.Context, se termSession) (termSes
 		return se, &terminalServerError{fmt.Errorf("launch submission posture could not be persisted; nothing launched: %w", err)}
 	}
 	if err = s.terminal.herdr.launch(ctx, id, launch); err != nil {
-		return se, fmt.Errorf("launch outcome unobserved; do not replay: %w", err)
+		return se, &terminalUncertainLaunch{fmt.Errorf("launch outcome unobserved; do not replay: %w", err)}
 	}
 	se.LaunchPhase = "active"
 	se.LastUsed = time.Now().Format(time.RFC3339)

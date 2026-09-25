@@ -20,9 +20,20 @@ type terminalServerError struct{ err error }
 func (e *terminalServerError) Error() string { return e.err.Error() }
 func (e *terminalServerError) Unwrap() error { return e.err }
 
+// terminalUncertainLaunch marks a launch error raised after the request
+// crossed into the runtime (allocation or launch sent, reply lost). It is a
+// 500, never a 502: the client's retry wrapper re-posts a 502 as "never
+// reached Manifest", and each re-post of a create allocates a new session and
+// process (audit 2026-09-25: one lost reply became four launches).
+type terminalUncertainLaunch struct{ err error }
+
+func (e *terminalUncertainLaunch) Error() string { return e.err.Error() }
+func (e *terminalUncertainLaunch) Unwrap() error { return e.err }
+
 func terminalLaunchStatus(err error) int {
 	var serverErr *terminalServerError
-	if errors.As(err, &serverErr) {
+	var uncertain *terminalUncertainLaunch
+	if errors.As(err, &serverErr) || errors.As(err, &uncertain) {
 		return http.StatusInternalServerError
 	}
 	var cwdErr *invalidTerminalCwd

@@ -140,6 +140,12 @@ func TestSupervisionTerminalReceiptTransitionMatrix(t *testing.T) {
 		{"sent, provider run completed after→ready_for_review", sent, termTranscript{Run: &terminalRunEvidence{ID: "run1", State: "completed", At: after, Evidence: "task_complete"}}, live, supervisionReady, "provider run run1 completed"},
 		{"sent, provider run failed after→failed", sent, termTranscript{Run: &terminalRunEvidence{ID: "run1", State: "failed", At: after, Evidence: "abort", Error: "rate limited"}}, live, supervisionFailed, "rate limited"},
 		{"sent, provider run completed BEFORE submission is not its answer", sent, termTranscript{Run: &terminalRunEvidence{ID: "run0", State: "completed", At: before, Evidence: "old"}}, live, supervisionUnknown, "no provider record"},
+		// ws-finish audit B/C3: a provider run still open (tool call, permission
+		// prompt) with an assistant turn already written is not the answer.
+		{"sent, provider run still open + assistant turn, idle→unknown (not ready)", sent, termTranscript{Run: &terminalRunEvidence{ID: "run1", State: "running", At: after, Evidence: "rec9"}, Turns: []termTurn{{ID: "a1", Who: "assistant", TS: after}}}, live, supervisionUnknown, "an open run is not completion"},
+		{"sent, provider run still open + assistant turn, blocked→running", sent, termTranscript{Run: &terminalRunEvidence{ID: "run1", State: "running", At: after, Evidence: "rec9"}, Turns: []termTurn{{ID: "a1", Who: "assistant", TS: after}}}, blocked, supervisionRunning, "blocked on interactive input"},
+		{"sent, provider run still open + assistant turn, process gone→disconnected", sent, termTranscript{Run: &terminalRunEvidence{ID: "run1", State: "running", At: after, Evidence: "rec9"}, Turns: []termTurn{{ID: "a1", Who: "assistant", TS: after}}}, stopped, supervisionDisconnected, "still open"},
+		{"sent, provider run still open, working→running", sent, termTranscript{Run: &terminalRunEvidence{ID: "run1", State: "running", At: after, Evidence: "rec9"}}, working, supervisionRunning, "still open"},
 		{"sent, runtime working→running", sent, termTranscript{}, working, supervisionRunning, "runtime observation working"},
 		{"sent, assistant turn after, live→ready_for_review", sent, termTranscript{Turns: []termTurn{{ID: "a1", Who: "assistant", TS: after}}}, live, supervisionReady, "after submission"},
 		{"sent, assistant turn after, process gone→ready_for_review (runtime named)", sent, termTranscript{Turns: []termTurn{{ID: "a1", Who: "assistant", TS: after}}}, stopped, supervisionReady, "runtime now stopped"},

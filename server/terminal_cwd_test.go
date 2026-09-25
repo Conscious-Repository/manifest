@@ -311,7 +311,7 @@ func TestTerminalMappingDeleteWaitsForAllocation(t *testing.T) {
 	case <-time.After(30 * time.Millisecond):
 	}
 	close(release)
-	if err := <-launched; err == nil || terminalLaunchStatus(err) != 502 {
+	if err := <-launched; err == nil || terminalLaunchStatus(err) != 500 { // uncertain launch: no client auto-retry
 		t.Fatal(err)
 	}
 	if w := <-deleted; w.Code != 200 {
@@ -340,7 +340,7 @@ func TestTerminalMappingLostAllocationReplyRetainsIntent(t *testing.T) {
 	})
 	s.terminal.herdr.server = s
 	se, err := s.launchHerdr(context.Background(), termSession{ID: "abcdef12", Kind: "shell"})
-	if err == nil || terminalLaunchStatus(err) != 502 {
+	if err == nil || terminalLaunchStatus(err) != 500 { // uncertain allocation: no client auto-retry
 		t.Fatal(err)
 	}
 	restart := &Server{terminal: &termCfg{regPath: s.terminal.regPath, herdr: s.terminal.herdr}}

@@ -291,6 +291,21 @@ func terminalReceiptState(r terminalInputReceipt, tr termTranscript, ob terminal
 			return supervisionReady, "input receipt " + r.ID + " sent; provider run " + tr.Run.ID + " " + tr.Run.State + " (" + tr.Run.Evidence + ")"
 		case "failed":
 			return supervisionFailed, "input receipt " + r.ID + " sent; provider run " + tr.Run.ID + " failed: " + tr.Run.Error
+		case "running":
+			// The provider's own record says the turn is still open (a tool
+			// call, a permission prompt): an assistant turn written mid-run is
+			// not its answer, so the observation decides and never "ready".
+			open := "input receipt " + r.ID + " sent; provider run " + tr.Run.ID + " still open (" + tr.Run.Evidence + ")"
+			switch {
+			case ob.Connectivity != "connected" || ob.Process != "running":
+				return supervisionDisconnected, open + " and the runtime is " + ob.Process + "/" + ob.Connectivity + "; not replayed"
+			case ob.AgentState == "working":
+				return supervisionRunning, open + "; runtime observation working"
+			case ob.AgentState == "blocked":
+				return supervisionRunning, open + "; runtime blocked on interactive input"
+			default:
+				return supervisionUnknown, open + "; runtime " + ob.AgentState + " — an open run is not completion"
+			}
 		}
 	}
 	if ob.Connectivity == "connected" && ob.Process == "running" && ob.AgentState == "working" {
