@@ -8,7 +8,7 @@ const src=fs.readFileSync(path.join(__dirname,'../web/js/48-chat.js'),'utf8');
 const slice=(start,end)=>{const s=src.indexOf(start);assert.ok(s>=0,'missing '+start);const e=src.indexOf(end,s+1);assert.ok(e>s,'missing '+end);return src.slice(s,e);};
 let tail={turns:[],offset:1},paints=0;
 const ctx=vm.createContext({
- fetch:async()=>({json:async()=>tail}),chatTermFind:()=>null,renderChatInboxRows(){},document:{querySelector:()=>null},
+ AbortController,setTimeout,clearTimeout,fetch:async()=>({ok:true,json:async()=>tail}),chatTermFind:()=>null,renderChatInboxRows(){},document:{querySelector:()=>null},
  chatQuestionPanel(){},chatTermPaintTurns:()=>paints++,chatTermRepaintHead(){},renderChatComposer(){},chatTermComposerSession:()=>({}),
  chatTermPaintStrip(){},chatTermScreenFetch(){},chatTermBase:id=>'/t/'+id,chatTermOpen:null,
 });

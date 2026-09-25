@@ -3591,7 +3591,13 @@ async function chatTermRequestFinalTail(o) {
 
 async function chatTermTail(o) {
   let d;
-  try { d = await (await fetch(chatTermBase(o.id) + "/transcript?after=" + o.offset)).json(); } catch (e) { return; }
+  const controller=new AbortController(),timeout=setTimeout(()=>controller.abort(),15000);
+  try {
+    const response=await fetch(chatTermBase(o.id) + "/transcript?after=" + o.offset,{signal:controller.signal});
+    if(!response.ok)return;
+    d=await response.json();
+    if(!d||!Number.isSafeInteger(d.offset)||d.offset<0||(d.turns!=null&&!Array.isArray(d.turns)))return;
+  } catch (e) { return; } finally { clearTimeout(timeout); }
   if (chatTermOpen !== o) return;
   const runChanged=JSON.stringify(o.se.run||null)!==JSON.stringify(d.run||null);o.se.run=d.run||null;const listed=chatTermFind(o.id);if(listed){listed.run=o.se.run;listed.activityOffset=d.offset||0;}if(runChanged&&!document.querySelector('.chat-row-menu[open]'))renderChatInboxRows();
   const planningChanged=JSON.stringify([o.planningTimeline,o.planningOperations,o.planRevisions||{},o.proposals||[]])!==JSON.stringify([d.planningTimeline,d.planningOperations,d.planRevisions||{},d.proposals||[]]);
