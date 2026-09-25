@@ -664,6 +664,12 @@ func (s *Server) runAgentChatTurn(agent, id, requestID string) error {
 	if !ok {
 		return errors.New("conversation unavailable")
 	}
+	failBeforeRun := func(message string) error {
+		return st.Finish(agent, id, requestID, "system", message+" No agent invocation started.", agentchat.DeliveryFailed, message, 0)
+	}
+	if s.hermes == nil || s.hermes.runner == nil {
+		return failBeforeRun("Chat runner is unavailable.")
+	}
 	recipient := agentchat.Recipient{Agent: agent, Profile: sess.Profile, Model: sess.Model}
 	if receipt, ok := st.Receipt(agent, id, requestID); ok && receipt.Context != nil && receipt.Context.Recipient != nil {
 		recipient = *receipt.Context.Recipient
@@ -675,11 +681,11 @@ func (s *Server) runAgentChatTurn(agent, id, requestID string) error {
 	obj := ledger.Object{Kind: ledger.ObjSession, ID: id}
 	if o := executionSession.Origin; o != nil && o.Mode == "continue" && o.Backend == "terminal" {
 		if s.terminal == nil {
-			return errors.New("originating coding conversation is unavailable")
+			return failBeforeRun("Originating coding conversation is unavailable.")
 		}
 		root, ok := s.terminal.find(o.ID)
 		if !ok || root.Kind != o.Agent || root.Device != "" {
-			return errors.New("originating coding conversation is unavailable")
+			return failBeforeRun("Originating coding conversation is unavailable.")
 		}
 	}
 	prompt, omitted := s.composeAgentChatPromptWindow(recipient.Agent, executionSession, body)
