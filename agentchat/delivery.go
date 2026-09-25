@@ -39,20 +39,29 @@ type ToolScope struct {
 	Source   string `json:"source"`
 }
 
+// InvocationResult retains only telemetry returned by the runner for this
+// delivery. Empty values are unknown, never inferred from requested settings
+// or another turn's session. A nil result means no result was recorded.
+type InvocationResult struct {
+	SessionID     string `json:"sessionId,omitempty"`
+	ReportedModel string `json:"reportedModel,omitempty"`
+}
+
 type Delivery struct {
-	StopRequested  bool            `json:"stopRequested,omitempty"`
-	ToolScope      *ToolScope      `json:"toolScope,omitempty"`
-	ID             string          `json:"id"`
-	HistoryOmitted int             `json:"historyOmitted,omitempty"`
-	Text           string          `json:"text,omitempty"`
-	Fingerprint    string          `json:"fingerprint"`
-	State          string          `json:"state"`
-	Accepted       string          `json:"accepted"`
-	Updated        string          `json:"updated"`
-	UserTurn       int             `json:"userTurn,omitempty"`
-	ReplyTurn      int             `json:"replyTurn,omitempty"`
-	Error          string          `json:"error,omitempty"`
-	Context        *MessageContext `json:"context,omitempty"`
+	Result         *InvocationResult `json:"result,omitempty"`
+	StopRequested  bool              `json:"stopRequested,omitempty"`
+	ToolScope      *ToolScope        `json:"toolScope,omitempty"`
+	ID             string            `json:"id"`
+	HistoryOmitted int               `json:"historyOmitted,omitempty"`
+	Text           string            `json:"text,omitempty"`
+	Fingerprint    string            `json:"fingerprint"`
+	State          string            `json:"state"`
+	Accepted       string            `json:"accepted"`
+	Updated        string            `json:"updated"`
+	UserTurn       int               `json:"userTurn,omitempty"`
+	ReplyTurn      int               `json:"replyTurn,omitempty"`
+	Error          string            `json:"error,omitempty"`
+	Context        *MessageContext   `json:"context,omitempty"`
 }
 
 type ArtifactReference struct {
@@ -176,6 +185,20 @@ func (s *Store) Claim(agent, id string) (Delivery, bool, error) {
 // reply. If the process dies before Finish, recovery reports uncertainty rather
 // than invoking the provider a second time.
 func (s *Store) Finish(agent, id, requestID, who, text, state, detail string, usd float64, nativeSession ...string) error {
+	var result *InvocationResult
+	if len(nativeSession) > 0 {
+		result = &InvocationResult{SessionID: nativeSession[0]}
+	}
+	return s.finish(agent, id, requestID, who, text, state, detail, usd, result)
+}
+
+// FinishWithResult lands the runner evidence atomically with the final receipt
+// and reply. Repeated completion cannot rewrite an earlier result.
+func (s *Store) FinishWithResult(agent, id, requestID, who, text, state, detail string, usd float64, result InvocationResult) error {
+	return s.finish(agent, id, requestID, who, text, state, detail, usd, &result)
+}
+
+func (s *Store) finish(agent, id, requestID, who, text, state, detail string, usd float64, result *InvocationResult) error {
 	if state != DeliveryCompleted && state != DeliveryFailed {
 		return errors.New("invalid completion state")
 	}
@@ -200,8 +223,11 @@ func (s *Store) Finish(agent, id, requestID, who, text, state, detail string, us
 			}
 
 			appendTurn(sess, body, who, text, usd)
-			if len(nativeSession) > 0 && strings.TrimSpace(nativeSession[0]) != "" {
-				sess.HermesSession = strings.TrimSpace(nativeSession[0])
+			if result != nil {
+				d.Result = &InvocationResult{SessionID: strings.TrimSpace(result.SessionID), ReportedModel: strings.TrimSpace(result.ReportedModel)}
+				if d.Result.SessionID != "" {
+					sess.HermesSession = d.Result.SessionID
+				}
 			}
 			d.State = state
 			d.ReplyTurn = sess.Turns

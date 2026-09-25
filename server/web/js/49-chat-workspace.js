@@ -402,7 +402,7 @@ function chatContextInputs(data){
  return (data?.turns||[]).filter(t=>t.who==='user').map((turn,index)=>{
   const receipt=turn.delivery||(turn.n!==undefined?(data.context?.deliveries||[]).find(d=>d.userTurn===turn.n):null);
   const context=receipt?.context||{};
-  return {id:String(turn.id??turn.n??index),text:turn.text||'',toolScope:receipt?.toolScope||null,recipient:context.recipient||turn.native||null,task:context.task||turn.submission?.task||'',artifacts:context.artifacts||turn.submission?.artifacts||[],explicitArtifacts:!!(context.explicitArtifacts||turn.submission?.explicitArtifacts),files:turn.submission?.files||[],omitted:receipt?.historyOmitted||turn.submission?.historyOmitted||0};
+  return {id:String(turn.id??turn.n??index),text:turn.text||'',deliveryId:receipt?.id||'',deliveryState:receipt?.state||'',result:receipt?.result||null,toolScope:receipt?.toolScope||null,recipient:context.recipient||turn.native||null,task:context.task||turn.submission?.task||'',artifacts:context.artifacts||turn.submission?.artifacts||[],explicitArtifacts:!!(context.explicitArtifacts||turn.submission?.explicitArtifacts),files:turn.submission?.files||[],omitted:receipt?.historyOmitted||turn.submission?.historyOmitted||0};
  });
 }
 function chatOpenContext(){
@@ -428,6 +428,14 @@ function chatOpenContext(){
    const input=inputs.find(x=>x.id===selected)||inputs.at(-1);selected=input.id;selector.value=selected;selector.onchange=()=>{selected=selector.value;instructionOpen=false;render();};section.append(selector);
    const scope=input.toolScope;section.append(el('p','chat-workspace-hint',scope?(scope.source==='profile'?'Tool scope: profile defaults; tool list not reported.':'Toolset scope at dispatch ('+(scope.source==='request'?'request':'runner default')+'): '+scope.toolsets):'Tool scope was not recorded for this instruction.'));
    const target=input.recipient;if(target)section.append(el('p','chat-context-target','Sent to '+(target.agent||source.agent)+(target.model?' · '+target.model:'')));
+   if(input.deliveryId){
+    const evidence=el('dl','chat-context-summary'),result=input.result;
+    const fact=(label,value)=>evidence.append(el('dt','',label),el('dd','',value));
+    fact('Delivery',input.deliveryId);fact('Delivery state',input.deliveryState||'Unknown');
+    fact('Reported model',result?.reportedModel||'Not reported');fact('Hermes session',result?.sessionId||'Not reported');
+    section.append(evidence);
+    if(!result)section.append(el('p','chat-workspace-hint','No runner result recorded for this instruction.'));
+   }
    if(input.omitted)section.append(el('p','chat-workspace-hint',input.omitted+' earlier turns omitted from this submission.'));
    if(input.task&&input.task!==source.task){const task=el('button','sprt-quiet','open task supplied with this instruction');task.onclick=()=>openTodoPanel(input.task);section.append(task);}
    const instruction=el('details','chat-context-instruction');instruction.open=instructionOpen;instruction.append(el('summary','','Instruction text'),el('pre','chat-activity-text',input.text));instruction.addEventListener('toggle',()=>{if(instruction.isConnected)instructionOpen=instruction.open;});section.append(instruction);

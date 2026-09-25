@@ -741,9 +741,10 @@ func (s *Server) runAgentChatTurnContext(ctx context.Context, agent, id, request
 		return err
 	}
 	res, err := s.hermes.runner.Run(ctx, request)
+	result := agentchat.InvocationResult{SessionID: res.SessionID, ReportedModel: res.Model}
 	if err != nil {
 		log.Printf("agent chat %s/%s: %v", agent, id, err)
-		saveErr := st.Finish(agent, id, requestID, "system", "⚠ "+agentDisplayName("agent:"+recipient.Agent)+" couldn't finish that — "+err.Error(), agentchat.DeliveryFailed, err.Error(), res.SpentUSD, res.SessionID)
+		saveErr := st.FinishWithResult(agent, id, requestID, "system", "⚠ "+agentDisplayName("agent:"+recipient.Agent)+" couldn't finish that — "+err.Error(), agentchat.DeliveryFailed, err.Error(), res.SpentUSD, result)
 		s.ledger(ledger.Entry{Source: "run", Kind: "run.failed", Actor: who, Object: obj, Session: id, Harness: "hermes",
 			Text: "chat turn failed — " + err.Error(), Meta: map[string]any{"agent": recipient.Agent, "sourceAgent": agent, "profile": recipient.Profile}})
 		return saveErr
@@ -756,7 +757,7 @@ func (s *Server) runAgentChatTurnContext(ctx context.Context, agent, id, request
 	if res.ReasoningTokens > 0 {
 		recordedReply = fmt.Sprintf("### Step 1 — thinking\n\n- tokens: %d\n\nHermes reported %d reasoning tokens at completion; reasoning text is unavailable.\n\n### Step 2 — say\n\n%s", res.ReasoningTokens, res.ReasoningTokens, reply)
 	}
-	if err := st.Finish(agent, id, requestID, recipient.Agent, recordedReply, agentchat.DeliveryCompleted, "", res.SpentUSD, res.SessionID); err != nil {
+	if err := st.FinishWithResult(agent, id, requestID, recipient.Agent, recordedReply, agentchat.DeliveryCompleted, "", res.SpentUSD, result); err != nil {
 		return err
 	}
 	s.ledger(ledger.Entry{Source: "chat", Kind: "chat.assistant", Actor: who, Object: obj, Session: id, Harness: "hermes",
