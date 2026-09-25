@@ -76,6 +76,17 @@ const server=http.createServer((req,res)=>{
   await page.evaluate(()=>{pendingFixture.session.deliveries.unshift({id:'running-request',state:'running'});renderChatTranscript(pendingFixture);renderChatComposer(pendingFixture.session);});
   await page.getByText('✦ Working…',{exact:true}).waitFor();
   await page.getByPlaceholder('✦ Working — messages queue…',{exact:true}).waitFor();
+  const interruptions=[];
+  await page.route('**/api/agents/chat/alfred/sessions/a/interrupt',route=>{interruptions.push(route.request().postDataJSON());return route.fulfill({status:409,body:'Fixture interruption target changed'});});
+  await page.locator('#chatComposer textarea').focus();
+  await page.keyboard.press('Control+Alt+x');await page.keyboard.press('Control+Alt+x');
+  const interrupt=page.getByRole('button',{name:'Interrupt turn and cancel 1 queued',exact:true});
+  assert.equal(await interrupt.evaluate(e=>e===document.activeElement),true);
+  assert.equal(await interrupt.getAttribute('aria-keyshortcuts'),'Control+Alt+x');
+  assert.equal(interruptions.length,0,'stop shortcut focuses without submission');
+  await page.keyboard.press('Enter');
+  await page.getByText('Fixture interruption target changed',{exact:true}).waitFor();
+  assert.deepEqual(interruptions,[{requestId:'running-request'}]);
   await page.evaluate(()=>{pendingFixture.session.deliveries[0].stopRequested=true;renderChatTranscript(pendingFixture);renderChatComposer(pendingFixture.session);});
   await page.getByText('✦ Interruption requested…',{exact:true}).waitFor();
   await page.getByPlaceholder('✦ Interruption requested — messages queue…',{exact:true}).waitFor();

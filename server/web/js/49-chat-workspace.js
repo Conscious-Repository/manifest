@@ -332,7 +332,7 @@ function chatWorkbenchShortcut(event){
   case 'KeyF':target=document.querySelector('.chat-inbox-search');break;
   case 'KeyM':target=document.querySelector('#chatComposer textarea');break;
   case 'KeyI':target=document.querySelector('.chat-head > .chat-workspace-toggle');break;
-  case 'KeyX':target=document.querySelector('#chatThreadHeader .chat-stop-agent');break;
+  case 'KeyX':target=document.querySelector('#chatThreadHeader .chat-stop-agent')||document.querySelector('#chatTranscript .chat-native-stop');break;
   case 'ArrowDown':case 'ArrowUp':case 'KeyJ':{
    const rows=[...document.querySelectorAll('#chatInboxRows .chat-rail-row')].filter(row=>row.getClientRects().length);
    const current=rows.findIndex(row=>row.classList.contains('open')),step=event.code==='ArrowUp'?-1:1;
@@ -342,7 +342,7 @@ function chatWorkbenchShortcut(event){
   default:return;
  }
  if(!target||target.disabled||!target.getClientRects().length)return;
- event.preventDefault();if(event.code==='KeyX'){target.focus();if(!target.classList.contains('armed'))target.click();return;}if(['KeyF','KeyM'].includes(event.code))target.focus();else target.click();
+ event.preventDefault();if(event.code==='KeyX'){target.focus();if(!target.classList.contains('chat-native-stop')&&!target.classList.contains('armed'))target.click();return;}if(['KeyF','KeyM'].includes(event.code))target.focus();else target.click();
 }
 document.addEventListener('keydown',chatWorkbenchShortcut);
 

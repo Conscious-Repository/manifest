@@ -4467,6 +4467,7 @@ function chatNativeInterruptionControls(session,base,refresh) {
  if(running){
   const count=(session.deliveries||[]).filter(d=>d.state==='queued').length;
   const button=el('button','sprt-quiet',count?'Interrupt turn and cancel '+count+' queued':'Interrupt turn');
+  button.classList.add('chat-native-stop');button.title='Request interruption · Ctrl+Alt+X, then Enter';button.setAttribute('aria-keyshortcuts','Control+Alt+x');
   const status=el('p','chat-workspace-hint',running.stopRequested?'Interruption requested; waiting for the runner to return.':'Already-started external effects may continue.');status.setAttribute('role','status');button.disabled=!!running.stopRequested;
   button.onclick=async()=>{button.disabled=true;status.textContent='Requesting interruption…';try{await postJSONOk(base+'/'+encodeURIComponent(session.id)+'/interrupt',{requestId:running.id});status.textContent='Interruption requested; waiting for the runner to return.';refresh();}catch(e){status.textContent=e.message||'Could not request interruption. Check status and retry.';button.disabled=false;}};
   box.append(button,status);
