@@ -38,17 +38,17 @@ async function loadCalendar() {
 
   const cells = monthGridDays(year, month);
   let events = [];
-  let eventsError = false;
+  let eventsError = false, partial = false;
   if (accounts.length) {
     // A dead refresh token makes this 500 (Google's invalid_grant). Surface it
     // instead of swallowing the error into a silently empty month.
     try {
       const resp = await fetch(`/api/calendar/events?start=${cells[0].iso}&end=${cells[cells.length - 1].iso}`);
       if (!resp.ok) { eventsError = true; }
-      else { events = (await resp.json()).events || []; }
+      else { const snapshot=await resp.json();events=snapshot.events||[];partial=!!snapshot.partial; }
     } catch (e) { eventsError = true; }
   }
-  renderCalError(eventsError, statuses);
+  renderCalError(eventsError, statuses, partial);
   renderMonth(cells, events);
 }
 
@@ -109,12 +109,12 @@ function renderCalAccounts(accounts, hasCreds, statuses) {
 // throttled per-account check hasn't caught up yet (the first load right after a
 // token dies). Once a status row is flagged needsReauth it carries its own
 // reconnect affordance, so the banner steps aside to avoid double-nagging.
-function renderCalError(eventsError, statuses) {
+function renderCalError(eventsError, statuses, partial=false) {
   document.getElementById("calErrBanner")?.remove();
   const anyReauth = (statuses || []).some((s) => s.needsReauth);
-  if (!eventsError || anyReauth) return;
+  if (!partial && (!eventsError || anyReauth)) return;
   const banner = el("div", "cal-err-banner",
-    "Couldn't load your events — your Google sign-in may have expired. Reconnect in Settings › Connections to restore them.");
+    partial ? "Some calendars could not be fully read. Showing available events; this is not your complete schedule." : "Couldn't load your events — your Google sign-in may have expired. Reconnect in Settings › Connections to restore them.");
   banner.id = "calErrBanner";
   const host = els.calAccounts.hidden ? els.calConnect : els.calAccounts;
   host.prepend(banner);

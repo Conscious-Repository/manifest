@@ -4,6 +4,8 @@
 package calendar
 
 import (
+	"crypto/sha256"
+	"encoding/json"
 	"fmt"
 	"sort"
 	"time"
@@ -11,13 +13,15 @@ import (
 
 // Event is a normalized calendar event (Google types are converted to this).
 type Event struct {
-	ID        string
-	Title     string
-	Start     time.Time
-	End       time.Time
-	AllDay    bool
-	Declined  bool       // self-attendee responseStatus == "declined"
-	Attendees []Attendee // non-self attendees (for contact matching)
+	Account    string
+	CalendarID string
+	ID         string
+	Title      string
+	Start      time.Time
+	End        time.Time
+	AllDay     bool
+	Declined   bool       // self-attendee responseStatus == "declined"
+	Attendees  []Attendee // non-self attendees (for contact matching)
 }
 
 // Attendee is one non-self participant on an event (name + email as Google has them).
@@ -120,4 +124,14 @@ func slotToken(min int) string {
 		h12 = 12
 	}
 	return fmt.Sprintf("%d:%02d%s", h12, m, suffix)
+}
+
+// Key identifies a provider event within its connected account and calendar.
+// Empty source metadata is deliberately not a selectable durable identity.
+func (e Event) Key() string {
+	if e.Account == "" || e.CalendarID == "" || e.ID == "" {
+		return ""
+	}
+	b, _ := json.Marshal([]string{e.Account, e.CalendarID, e.ID})
+	return fmt.Sprintf("gcal:%x", sha256.Sum256(b))
 }

@@ -164,83 +164,105 @@ func (c *Client) RemoveAccount(email string) error {
 // or calendar never aborts the rest; results are concatenated in stable account
 // order so EventsToSlots's start-time sort keeps "first wins" deterministic.
 func (c *Client) Events(ctx context.Context, start, end time.Time) ([]Event, error) {
+	snapshot, err := c.EventsSnapshot(ctx, start, end)
+	return snapshot.Events, err
+}
+
+// EventsSnapshot retains source identity and per-source completeness. Collection
+// order depends on account/calendar identity, never provider response timing.
+func (c *Client) EventsSnapshot(ctx context.Context, start, end time.Time) (EventSnapshot, error) {
+	result := EventSnapshot{Events: []Event{}, Issues: []EventIssue{}}
 	if _, err := oauthConfig(); err != nil {
-		return nil, err
+		return result, err
 	}
 	c.mu.Lock()
 	accts := append([]*account(nil), c.accounts...)
 	c.mu.Unlock()
 	if len(accts) == 0 {
-		return nil, ErrNotConfigured
+		return result, ErrNotConfigured
 	}
-
-	// Phase A: resolve each account's service + calendar ids (concurrent).
 	type run struct {
-		svc *gcal.Service
-		ids []string
-		err error
+		svc   *gcal.Service
+		ids   []string
+		email string
+		err   error
 	}
 	runs := make([]run, len(accts))
-	var wgA sync.WaitGroup
+	var phase sync.WaitGroup
 	for i, a := range accts {
-		wgA.Add(1)
+		phase.Add(1)
 		go func(i int, a *account) {
-			defer wgA.Done()
+			defer phase.Done()
 			svc, err := c.ensureSvc(a)
-			if err != nil {
-				runs[i].err = err
-				return
+			var ids []string
+			if err == nil {
+				ids, err = c.ensureCalIDs(ctx, a, svc)
 			}
-			ids, err := c.ensureCalIDs(ctx, a, svc)
-			runs[i] = run{svc: svc, ids: ids, err: err}
+			c.mu.Lock()
+			email := a.email
+			c.mu.Unlock()
+			ids = append([]string(nil), ids...)
+			sort.Strings(ids)
+			runs[i] = run{svc, ids, email, err}
 		}(i, a)
 	}
-	wgA.Wait()
-
-	// Phase B: fetch events per (account, calendar), bounded; collect per account.
-	perAcct := make([][]Event, len(accts))
-	errByAcct := make([]error, len(accts))
-	locks := make([]sync.Mutex, len(accts))
-	sem := make(chan struct{}, 8)
-	var wgB sync.WaitGroup
-	for i := range runs {
-		if runs[i].err != nil {
-			errByAcct[i] = runs[i].err
+	phase.Wait()
+	type job struct {
+		run      int
+		calendar string
+		events   []Event
+		err      error
+	}
+	jobs := []job{}
+	successful := 0
+	var firstErr error
+	for i, r := range runs {
+		if r.err != nil {
+			result.Issues = append(result.Issues, EventIssue{Account: r.email, Scope: "calendar-list"})
+			if firstErr == nil {
+				firstErr = r.err
+			}
 			continue
 		}
-		for _, calID := range runs[i].ids {
-			wgB.Add(1)
-			sem <- struct{}{}
-			go func(i int, svc *gcal.Service, calID string) {
-				defer wgB.Done()
-				defer func() { <-sem }()
-				evs, err := fetchCalendar(ctx, svc, calID, start, end, c.loc)
-				locks[i].Lock()
-				perAcct[i] = append(perAcct[i], evs...)
-				if err != nil && errByAcct[i] == nil {
-					errByAcct[i] = err
-				}
-				locks[i].Unlock()
-			}(i, runs[i].svc, calID)
+		if len(r.ids) == 0 {
+			successful++
+		}
+		for _, id := range r.ids {
+			jobs = append(jobs, job{run: i, calendar: id})
 		}
 	}
-	wgB.Wait()
-
-	var merged []Event
-	anyOK := false
-	var firstErr error
-	for i := range accts {
-		merged = append(merged, perAcct[i]...)
-		if errByAcct[i] == nil {
-			anyOK = true
-		} else if firstErr == nil {
-			firstErr = errByAcct[i]
+	sem := make(chan struct{}, 8)
+	for i := range jobs {
+		phase.Add(1)
+		sem <- struct{}{}
+		go func(i int) {
+			defer phase.Done()
+			defer func() { <-sem }()
+			j := &jobs[i]
+			j.events, j.err = fetchCalendar(ctx, runs[j.run].svc, j.calendar, start, end, c.loc)
+		}(i)
+	}
+	phase.Wait()
+	for _, j := range jobs {
+		if j.err != nil {
+			result.Issues = append(result.Issues, EventIssue{Account: runs[j.run].email, CalendarID: j.calendar, Scope: "events"})
+			if firstErr == nil {
+				firstErr = j.err
+			}
+		} else {
+			successful++
+		}
+		for _, e := range j.events {
+			e.Account = runs[j.run].email
+			e.CalendarID = j.calendar
+			result.Events = append(result.Events, e)
 		}
 	}
-	if !anyOK && firstErr != nil {
-		return nil, firstErr // every account failed -> let Source fall back to cache
+	result.Partial = len(result.Issues) > 0
+	if successful == 0 && len(result.Events) == 0 && firstErr != nil {
+		return result, firstErr
 	}
-	return merged, nil
+	return result, nil
 }
 
 func (c *Client) ensureSvc(a *account) (*gcal.Service, error) {

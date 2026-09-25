@@ -21,11 +21,14 @@ func (s *Server) handleCalStatus(w http.ResponseWriter, r *http.Request) {
 }
 
 type calEventView struct {
-	ID     string `json:"id"`
-	Title  string `json:"title"`
-	Start  string `json:"start"`
-	End    string `json:"end"`
-	AllDay bool   `json:"allDay"`
+	Key        string `json:"key,omitempty"`
+	Account    string `json:"account,omitempty"`
+	CalendarID string `json:"calendarId,omitempty"`
+	ID         string `json:"id"`
+	Title      string `json:"title"`
+	Start      string `json:"start"`
+	End        string `json:"end"`
+	AllDay     bool   `json:"allDay"`
 }
 
 // handleCalEvents returns events in [start, end) merged across all connected
@@ -44,19 +47,19 @@ func (s *Server) handleCalEvents(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
 	defer cancel()
-	events, err := s.cal.Events(ctx, start, end.AddDate(0, 0, 1))
+	snapshot, err := s.cal.EventsSnapshot(ctx, start, end.AddDate(0, 0, 1))
 	if err != nil {
 		httpError(w, err)
 		return
 	}
-	views := make([]calEventView, 0, len(events))
-	for _, e := range events {
+	views := make([]calEventView, 0, len(snapshot.Events))
+	for _, e := range snapshot.Events {
 		views = append(views, calEventView{
-			ID: e.ID, Title: e.Title, AllDay: e.AllDay,
+			Key: e.Key(), Account: e.Account, CalendarID: e.CalendarID, ID: e.ID, Title: e.Title, AllDay: e.AllDay,
 			Start: e.Start.Format(time.RFC3339), End: e.End.Format(time.RFC3339),
 		})
 	}
-	writeJSON(w, map[string]any{"configured": true, "events": views})
+	writeJSON(w, map[string]any{"configured": true, "events": views, "partial": snapshot.Partial, "issues": snapshot.Issues})
 }
 
 // handleCalConnectStart begins the paste-back OAuth flow — the ONE connect path.

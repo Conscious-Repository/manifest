@@ -33,12 +33,14 @@ func (s *Source) Slots(date string) ([]daily.CalSlot, error) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), s.timeout)
 	defer cancel()
-	events, err := s.client.Events(ctx, day, day.Add(24*time.Hour))
+	snapshot, err := s.client.EventsSnapshot(ctx, day, day.AddDate(0, 0, 1))
 	if err != nil {
 		return s.readCache(date), nil // offline / API error -> cached mirror
 	}
-	slots := EventsToSlots(events, day, s.client.Location())
-	s.writeCache(date, slots) // best-effort offline mirror, only on change
+	slots := EventsToSlots(snapshot.Events, day, s.client.Location())
+	if !snapshot.Partial {
+		s.writeCache(date, slots)
+	} // never replace a complete mirror with a partial read
 	out := make([]daily.CalSlot, 0, len(slots))
 	for _, sl := range slots {
 		out = append(out, daily.CalSlot{Token: sl.Token, Title: sl.Title, EventID: sl.EventID})
