@@ -177,6 +177,12 @@ type Config struct {
 	// Telegram — instead of the excalibur-harness copy. Off by default, so this
 	// lands dark: enabled=false keeps the legacy harness path unchanged.
 	Hermes HermesConfig `json:"hermes"`
+	// ShareTeamFileEditEligibility (default OFF) adds a per-file edit
+	// eligibility to every file in a chat share review — the mechanical half of
+	// authorized team-file editing. It grants nothing: the owner's per-file
+	// consent wording and its default are an open owner decision, and no team
+	// edit route exists. Turning it on changes new share-review fingerprints.
+	ShareTeamFileEditEligibility bool `json:"shareTeamFileEditEligibility"`
 }
 
 // HermesConfig configures the local Hermes Agent CLI runner (see the hermes

@@ -293,6 +293,9 @@ type Server struct {
 	// taskThreadInflight holds the claims this process is still recording.
 	taskThreadReqMu    sync.Mutex
 	taskThreadInflight map[string]bool
+	// shareTeamFileEdit: default-OFF switch for per-file edit eligibility in
+	// share reviews (chat_share_file_edit.go). Grants nothing by itself.
+	shareTeamFileEdit bool
 }
 
 // UseLedger wires the daily ledger.

@@ -46,6 +46,11 @@ type chatShareFile struct {
 	// ("task inbox/first", "note people/alice.md"), so the owner reviewing a
 	// share sees which private records leave with it, not only a file name.
 	Record string `json:"record,omitempty"`
+	// Edit is present only when the share-team-file-edit switch is on: whether
+	// this exact version could be offered for team editing, and why. It is part
+	// of the reviewed bytes (Revision), so the eligibility the owner saw is the
+	// eligibility that is stored. Absent when off, so fingerprints are unchanged.
+	Edit *chatShareFileEdit `json:"edit,omitempty"`
 }
 
 func (s *Server) handleChatShareReview(w http.ResponseWriter, r *http.Request) {
@@ -134,6 +139,7 @@ func (s *Server) chatShareReview(ctx context.Context, sess agentchat.Session, bo
 		}
 	}
 	files := map[string]int{}
+	fileBytes := map[string][]byte{} // artifact id:revision → the exact bytes read above
 	add := func(file chatShareFile, reference string) {
 		key := file.ArtifactID + ":" + file.Hash + ":" + file.Name
 		if i, ok := files[key]; ok {
@@ -176,6 +182,7 @@ func (s *Server) chatShareReview(ctx context.Context, sess agentchat.Session, bo
 		if kind, id, _ := contextSnapshotSource(a); kind != "" {
 			file.Record = kind + " " + id
 		}
+		fileBytes[ref.ID+":"+ref.Revision] = data
 		add(file, source)
 	}
 	if sess.Origin != nil {
@@ -232,6 +239,10 @@ func (s *Server) chatShareReview(ctx context.Context, sess agentchat.Session, bo
 	// Map traversal order must not change the reviewed approval fingerprint.
 	for i := range r.Files {
 		sort.Strings(r.Files[i].References)
+		if s.shareTeamFileEdit {
+			edit := teamFileEditEligibility(r.Files[i], fileBytes[r.Files[i].ArtifactID+":"+r.Files[i].Hash])
+			r.Files[i].Edit = &edit
+		}
 	}
 	sort.Slice(r.Files, func(i, j int) bool {
 		a, b := r.Files[i], r.Files[j]

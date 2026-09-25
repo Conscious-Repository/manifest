@@ -913,6 +913,7 @@ func main() {
 		if len(hs) > 0 && hs[0].Spirits != nil && hs[0].Spirits.Root() != "" {
 			srv.UseAgentChat(agentchat.New(filepath.Join(hs[0].Spirits.Root(), "artifacts", "chats")))
 		}
+		srv.UseShareTeamFileEditEligibility(cfg.ShareTeamFileEditEligibility)
 		// Hermes routes off the excalibur harness onto the owner's REAL do-bot
 		// (the local Hermes Agent CLI) when enabled; plan/comment turns run with
 		// a read-only toolset scope (the approval-gate pre-stage). Off → the
