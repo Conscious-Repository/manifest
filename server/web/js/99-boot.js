@@ -453,6 +453,7 @@ function route() {
   else if (note) showNote(decodeURIComponent(h.slice("#/note/".length))); // universal note view
   else if (artifact) showArtifact(h.slice("#/artifact/".length));
   else if (read) showRead(decodeURIComponent(h.slice("#/read/".length))); // full-page agent-artifact reader
+  else if (/^#\/day\/\d{4}-\d{2}-\d{2}$/.test(h)) load(h.slice(6));
   else load(state.date); // reload so goal/calendar edits reflect in the day
 }
 window.addEventListener("hashchange", route);

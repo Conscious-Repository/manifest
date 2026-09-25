@@ -12,6 +12,7 @@ import (
 	"unicode/utf8"
 
 	"manifest/artifacts"
+	"manifest/daily"
 	"manifest/goals"
 	"manifest/mdfm"
 	"manifest/record"
@@ -26,6 +27,7 @@ type chatContextRecord struct {
 	Title            string `json:"title"`
 	Detail           string `json:"detail"`
 	Route            string `json:"route"`
+	schedule         *daily.ScheduleRow
 	contextError     string
 	candidateSource  string
 	candidateText    string
@@ -59,6 +61,8 @@ func (s *Server) chatContextRecords(kind string, q string) ([]chatContextRecord,
 		for _, n := range notes {
 			out = append(out, chatContextRecord{Kind: kind, ID: n.Path, Title: n.Name, Detail: n.Path, Route: "#/note/" + url.PathEscape(n.Path)})
 		}
+	case "schedule":
+		return s.chatScheduleRecords(q)
 	case "organization":
 		return s.chatOrganizationRecords()
 	case "candidate":
@@ -187,7 +191,11 @@ func (s *Server) chatContextRecordPreview(kind, id string) (chatContextRecord, [
 		b, err := s.contextNoteBytes(id)
 		return chatContextRecord{Kind: kind, ID: id, Title: id, Detail: id, Route: "#/note/" + url.PathEscape(id)}, b, err
 	}
-	rows, err := s.chatContextRecords(kind, "")
+	query := ""
+	if kind == "schedule" {
+		query = strings.SplitN(id, "/", 2)[0]
+	}
+	rows, err := s.chatContextRecords(kind, query)
 	if err != nil {
 		return chatContextRecord{}, nil, err
 	}
@@ -208,7 +216,12 @@ func (s *Server) chatContextRecordPreview(kind, id string) (chatContextRecord, [
 	}
 	var out strings.Builder
 	fmt.Fprintf(&out, "# %s\n\nRecord type: %s\nRecord ID: %s\n", selected.Title, kind, id)
-	if selected.Kind == "organization" {
+	if selected.schedule != nil {
+		contextField(&out, "Date", strings.SplitN(id, "/", 2)[0])
+		contextField(&out, "Time slot", selected.schedule.Time)
+		contextField(&out, "Saved label", selected.schedule.Label)
+		fmt.Fprintf(&out, "Focused: %t\n\nSource: saved Day schedule only. Calendar events, journal, tasks and adjacent slots are excluded. Selection does not reschedule anything.\n", selected.schedule.Focused)
+	} else if selected.Kind == "organization" {
 		if err := s.renderOrganizationContext(&out, *selected); err != nil {
 			return *selected, nil, err
 		}
@@ -339,7 +352,7 @@ func contextSnapshotSource(a artifacts.Artifact) (kind, id, route string) {
 	if path := knowledgeContextPath(a); path != "" {
 		return "note", path, "#/note/" + url.PathEscape(path)
 	}
-	if a.Harness != "manifest" || (a.Provenance.Source != "task-context" && a.Provenance.Source != "goal-context" && a.Provenance.Source != "person-context" && a.Provenance.Source != "project-context" && a.Provenance.Source != "candidate-context" && a.Provenance.Source != "organization-context") {
+	if a.Harness != "manifest" || (a.Provenance.Source != "task-context" && a.Provenance.Source != "goal-context" && a.Provenance.Source != "person-context" && a.Provenance.Source != "project-context" && a.Provenance.Source != "candidate-context" && a.Provenance.Source != "organization-context" && a.Provenance.Source != "schedule-context") {
 		return "", "", ""
 	}
 	i := strings.LastIndex(a.Ref, "#context-")
@@ -349,6 +362,9 @@ func contextSnapshotSource(a artifacts.Artifact) (kind, id, route string) {
 	kind = strings.TrimSuffix(a.Provenance.Source, "-context")
 	id = a.Ref[:i]
 	route = "#/" + kind + "s/" + url.PathEscape(id)
+	if kind == "schedule" {
+		route = scheduleContextRoute(id)
+	}
 	if kind == "candidate" {
 		route = candidateContextRoute(id)
 	}
