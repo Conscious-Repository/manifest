@@ -6,7 +6,7 @@ let start=source.indexOf('function attachTerm('),end=source.indexOf('\nfunction 
 vm.runInContext('attachTerm("exact")',ctx);assert.ok(classes.has('term-session-active'));assert.ok(!classes.has('term-nav-open'));assert.equal(ctx.termInst.id,'exact');
 console.log('PASS: reopening an already attached exact session reveals its terminal without reconnecting or launching.');
 const panel=fs.readFileSync(path.join(__dirname,'../web/js/93-todo-panel.js'),'utf8');
-const route={hash:'#/chat/a/codex/exact'},panelCtx=vm.createContext({todoSelId:null,todoPanelOrigin:null,todoPanelData:null,todoPanelReturnRoute:'',todoComposerPreset:null,location:route,history:{replaceState:(_a,_b,url)=>route.hash=url},document:{activeElement:null,querySelectorAll:()=>[]},ensureTodoPanelPoll(){},renderTodoPanel(){}});
-for(const name of ['openTodoPanel','closeTodoPanel']){const start=panel.indexOf('function '+name+'('),end=panel.indexOf('\nfunction ',start+1);vm.runInContext(panel.slice(start,end),panelCtx);}
+const route={hash:'#/chat/a/codex/exact'},panelCtx=vm.createContext({todoSelId:null,todoPanelOrigin:null,todoPanelData:null,todoPanelReturnRoute:'',todoComposerPreset:null,location:route,history:{replaceState:(_a,_b,url)=>route.hash=url},document:{activeElement:null,getElementById:()=>null,querySelectorAll:()=>[]},ensureTodoPanelPoll(){},renderTodoPanel(){}});
+for(const name of ['todoPanelPlace','openTodoPanel','closeTodoPanel']){const start=panel.indexOf('function '+name+'('),end=panel.indexOf('\nfunction ',start+1);vm.runInContext(panel.slice(start,end),panelCtx);}
 vm.runInContext('openTodoPanel("task-id",{returnRoute:location.hash});closeTodoPanel();',panelCtx);assert.equal(route.hash,'#/chat/a/codex/exact');
 console.log('PASS: task details preserves the originating coding-chat route through open and close.');

@@ -25,6 +25,7 @@ let chatSpiritsCache = null;
 let chatPollTimer = null;
 let chatRouteVersion = 0;
 let chatSessionLoadTicket = 0;
+let chatTerminalLoadTicket = 0;
 let chatSending = false;
 let chatLastUpdated = "";   // change-detection for transcript re-render
 
@@ -3017,21 +3018,27 @@ function chatTermOpenInTerminal(se) {
 async function loadChatTermSession(id) {
   let se = chatTermFind(id);
   if (!se) { chatOpenId = ""; chatLanding = true; renderChatLanding(); return; }
+  const ticket=++chatTerminalLoadTicket, routeVersion=chatRouteVersion, agent=chatAgent, base=chatTermBase(id), observed=chatTermOpen;
+  const snapshot=o=>o?JSON.stringify([chatTermSignature(o),o.se.run||null]):'';
+  const observedSignature=snapshot(observed);
+  const current=()=>ticket===chatTerminalLoadTicket&&routeVersion===chatRouteVersion&&agent===chatAgent&&id===chatOpenId&&chatIsTerm()&&!els.chatView.hidden;
+  const unchanged=()=>current()&&chatTermOpen===observed&&snapshot(observed)===observedSignature;
   let d;
   try {
-    const res = await fetch(chatTermBase(id) + "/transcript");
+    const res = await fetch(base + "/transcript");
+    if (!unchanged()) return;
     if (!res.ok) { renderChatLanding(); return; }
     d = await res.json();
   } catch (e) { return; }
-  if (id !== chatOpenId || !chatIsTerm()) return; // navigated away mid-fetch
+  if (!unchanged()) return; // navigated away mid-fetch
   const selection=d.draft?await chatOriginArtifactSelection(d.origin):null;
-  if (id !== chatOpenId || !chatIsTerm()) return;
+  if (!unchanged()) return;
   const readingGestureBefore = chatReadingGestureUntil;
   const preparation = Promise.all([
     chatPrepareDraft(d.conversation,chatAgent+"/"+id,d.draft&&d.origin?{text:d.origin.prompt||"",files:[],task:d.origin.task||"",selection}:null),
     chatPrepareReadingPosition(d.conversation),
   ]);
-  if (id !== chatOpenId || !chatIsTerm()) return;
+  if (!unchanged()) return;
   se = chatTermApplyState(chatTermFind(id) || se);
   se.run=d.run||null;se.activityOffset=d.offset||0;
   // the other backends' channels have nothing to say here
@@ -3057,14 +3064,15 @@ async function loadChatTermSession(id) {
     renderChatTermTranscript();
   }
   chatStageRemember(chatStageKey(chatAgent, id), { kind: "term", o: chatTermOpen });
+  const painted=chatTermOpen;
   await preparation;
-  if(id!==chatOpenId||!chatIsTerm())return;
+  if(!current()||chatTermOpen!==painted)return;
   if(!onStage && readingGestureBefore===chatReadingGestureUntil){const host=document.getElementById("chatTranscript");if(host)chatRestoreReadingPosition(host,chatReadingStates.get(d.conversation?.key)?.value);}
   renderChatComposer(chatTermComposerSession());
   // the CLI's own title names a row still wearing its minted placeholder
   // (the autoName path — an owner-typed name is never overwritten)
   if (d.title && chatTermPlaceholderRe.test(se.name || "")) {
-    fetch(chatTermBase(id), {
+    fetch(base, {
       method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ autoName: d.title }),
     }).then(() => loadChatTermSessions(true)).catch(() => {});
   }
