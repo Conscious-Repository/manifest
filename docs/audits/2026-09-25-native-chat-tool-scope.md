@@ -20,3 +20,11 @@ dispatch through the fake runner. Chromium verifies recorded scope versus missin
 historical scope within the real context pane and existing pane-state restoration.
 Full-suite/build/deployment results are recorded in the plan checkpoint. Skills,
 other adapter capabilities and the broader workbench requirements remain open.
+
+The runner edit triggered the canary source-hash gate. Branch-sensitive re-audit
+confirmed that fixed MigratedDuty still returns through runSuccessor before
+legacy argument building. ToolsetScope is pure first-nonempty selection and adds
+no import, I/O, authority, fallback or routing change. Only runner.go's reviewed
+hash was updated. Hermes tests pass; the canary retains its two pre-existing
+hash failures for authority.go and claude_successor.go. Those entries were not
+refreshed as part of this review.

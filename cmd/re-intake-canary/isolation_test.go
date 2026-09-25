@@ -145,9 +145,12 @@ func TestCanarySourceCallGraphIsolation(t *testing.T) {
 // Re-audited 2026-09-21: legacy one-shot usage now carries reasoning tokens.
 // The fixed MigratedDuty still returns before that parse; no successor calls,
 // imports, authority, or effects changed. Result only gains an integer field.
+// Re-audited 2026-09-25: ToolsetScope extracts pure request/default selection
+// from legacy buildArgs. Run still returns from the fixed MigratedDuty branch
+// before buildArgs; no successor routing, imports, authority or effects changed.
 var reviewedSuccessorSources = map[string]string{
 	"../../hermes/claude_successor.go": "8033ce4e155e64208fd75bad4dc16406b0a5688b4d306a48b5c4253032ef5de6",
-	"../../hermes/runner.go":           "e323689e94193bc2af0d93591e06ae1efb44bed4215ab62b7d0bd88d0a0ea0c5",
+	"../../hermes/runner.go":           "7b23d917498fdb0ff058076080575a8f12d70e3fb19b07e5615eb401d18ebaac",
 	"../../hermes/successor.go":        "b154048dfe670b02c46d4d2302d17ac9bc8d58ca499c0445e8d7bbd818d0e8af",
 	"../../hermes/successor.py":        "a7737229609b18c627c720f466858045b7aa06b4e03ed29ce1c0774d8385ae5c",
 	"../../hermes/authority.go":        "fef7b7a179b9f62bb53e910381c4ea3bca198a3743432a8f7541abe334585b32",
