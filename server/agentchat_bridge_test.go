@@ -251,3 +251,55 @@ func TestTaskChatLinkFallsBackToTheSection(t *testing.T) {
 		}
 	}
 }
+
+// Audit 2026-09-25: "→ task" had no request identity, so a retry after a lost
+// acknowledgment created a second task and moved the conversation's link to
+// it. An identified retry returns the first task; a deliberate second promote
+// (a new ID) is unchanged and still creates one.
+func TestPromoteRetryWithRequestIDCreatesOneTask(t *testing.T) {
+	srv := seedPersonasInto(t, loopFixture(t))
+	st := agentchat.New(filepath.Join(t.TempDir(), "chats"))
+	srv.UseAgentChat(st)
+	id, err := st.Create("alfred", "", "gutter contractors", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, turn := range [][2]string{{"user", "find gutter contractors"}, {"alfred", "### Step 1 — say\n\nA, B, C."}} {
+		if _, err := st.AppendTurn("alfred", id, turn[0], turn[1], 0); err != nil {
+			t.Fatal(err)
+		}
+	}
+	promote := func(body string) (int, map[string]any) {
+		req := httptest.NewRequest("POST", "/", strings.NewReader(body))
+		req.SetPathValue("agent", "alfred")
+		req.SetPathValue("id", id)
+		w := httptest.NewRecorder()
+		srv.handleAgentChatPromote(w, req)
+		var out map[string]any
+		_ = json.Unmarshal(w.Body.Bytes(), &out)
+		return w.Code, out
+	}
+	code, first := promote(`{"turn":2,"requestId":"promote-request-1"}`)
+	if code != 200 {
+		t.Fatal(code, first)
+	}
+	code, again := promote(`{"turn":2,"requestId":"promote-request-1"}`)
+	if code != 200 || again["created"] != first["created"] || again["replayed"] != true {
+		t.Fatalf("retry must return the first task: %d %+v vs %+v", code, again, first)
+	}
+	if code, _ := promote(`{"turn":2,"text":"other line","requestId":"promote-request-1"}`); code != 409 {
+		t.Fatal("same ID, different promote must conflict", code)
+	}
+	raw, _ := os.ReadFile(srv.tasksStore.Path())
+	if n := strings.Count(string(raw), "gutter contractors"); n != 1 {
+		t.Fatalf("one task line for one request, got %d:\n%s", n, raw)
+	}
+	for _, c := range srv.listThread(first["created"].(string)) {
+		if c.Action == actChatPromote {
+			t.Fatal("the receipt marker leaked into the thread view")
+		}
+	}
+	if code, second := promote(`{"turn":2,"requestId":"promote-request-2"}`); code != 200 || second["created"] == first["created"] {
+		t.Fatalf("a deliberate second promote keeps its contract: %d %+v", code, second)
+	}
+}

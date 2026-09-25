@@ -1,6 +1,9 @@
 package server
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"net/http"
 	"sort"
 	"strings"
@@ -114,13 +117,35 @@ func (s *Server) handleAgentChatPromote(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	var b struct {
-		Turn   int    `json:"turn"`
-		Text   string `json:"text"`
-		Domain string `json:"domain"`
+		Turn      int    `json:"turn"`
+		Text      string `json:"text"`
+		Domain    string `json:"domain"`
+		RequestID string `json:"requestId"`
 	}
 	if err := decode(r, &b); err != nil {
 		httpError(w, err)
 		return
+	}
+	// A request ID makes a retry after a lost acknowledgment return the task
+	// it created instead of a second task (audit 2026-09-25). A deliberate
+	// second promote (a new ID) still creates a new task, as before.
+	fingerprint := ""
+	if b.RequestID != "" {
+		if !agentchat.ValidRequestID(b.RequestID) {
+			httpError(w, errBadRequest("invalid request ID"))
+			return
+		}
+		fingerprint = fingerprintJSON(agent, id, b.Turn, strings.TrimSpace(b.Text), b.Domain)
+		s.promoteMu.Lock()
+		defer s.promoteMu.Unlock()
+		if task, fp, found := s.promotedByRequest(b.RequestID); found {
+			if fp != fingerprint {
+				http.Error(w, "request ID already used for a different promote; nothing created", http.StatusConflict)
+				return
+			}
+			writeJSON(w, map[string]any{"created": task, "replayed": true, "agent": "agent:" + agent, "linked": true})
+			return
+		}
 	}
 	turns, title, label, ok := s.chatTurnsFor(agent, id)
 	if !ok {
@@ -159,6 +184,11 @@ func (s *Server) handleAgentChatPromote(w http.ResponseWriter, r *http.Request) 
 	}
 	if pinned, ok := s.pinTaskID(taskID); ok {
 		taskID = pinned
+	}
+	if b.RequestID != "" && s.threads != nil && s.threads.private != nil {
+		// the receipt: a private marker on the new task, written before anything
+		// else touches it (promotedByRequest reads it back)
+		s.markerAddMeta(taskID, actChatPromote, "", map[string]any{"requestId": b.RequestID, "fingerprint": fingerprint, "session": agent + "/" + id})
 	}
 
 	token := "agent:" + agent
@@ -234,4 +264,30 @@ func (s *Server) handleAgentChatTasks(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	writeJSON(w, map[string]any{"agent": agent, "tasks": out})
+}
+
+// actChatPromote is the private receipt marker of an identified "→ task".
+const actChatPromote = "chat-promote"
+
+// promotedByRequest finds the task an identified promote created.
+func (s *Server) promotedByRequest(requestID string) (task, fingerprint string, found bool) {
+	if s.threads == nil || s.threads.private == nil {
+		return "", "", false
+	}
+	for _, taskID := range s.threads.private.TaskIDs() {
+		for _, c := range s.threads.private.Thread(taskID) {
+			if c.Action == actChatPromote && metaString(c.Meta["requestId"]) == requestID {
+				return taskID, metaString(c.Meta["fingerprint"]), true
+			}
+		}
+	}
+	return "", "", false
+}
+
+// fingerprintJSON is the payload fingerprint of the idempotency rule: SHA-256
+// over the JSON of the request's identifying fields.
+func fingerprintJSON(parts ...any) string {
+	raw, _ := json.Marshal(parts)
+	sum := sha256.Sum256(raw)
+	return hex.EncodeToString(sum[:])
 }

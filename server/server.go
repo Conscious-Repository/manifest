@@ -296,6 +296,8 @@ type Server struct {
 	// shareTeamFileEdit: default-OFF switch for per-file edit eligibility in
 	// share reviews (chat_share_file_edit.go). Grants nothing by itself.
 	shareTeamFileEdit bool
+	// promoteMu serializes identified "→ task" promotes (agentchat_bridge.go).
+	promoteMu sync.Mutex
 }
 
 // UseLedger wires the daily ledger.

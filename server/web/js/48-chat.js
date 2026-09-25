@@ -1457,7 +1457,14 @@ function chatPromoteTurn(session, turnN) {
   const title = session.title || "";
   askText("Task from this conversation — " + chatAgentLabel(agent) + " takes it", title ? "the todo line · empty = “" + title + "”" : "the todo line…", async (t) => {
     try {
-      const r = await postJSONOk(chatBaseFor(agent) + "/" + encodeURIComponent(session.id) + "/promote", { turn: turnN, text: (t || "").trim() });
+      // The request ID is remembered with the exact payload so a retry after a
+      // lost acknowledgment returns the task already created, not a second one.
+      const body = { turn: turnN, text: (t || "").trim() }, storage = "manifest.chatPromote.v1." + agent + "/" + session.id, signature = JSON.stringify(body);
+      let saved = null; try { saved = JSON.parse(localStorage.getItem(storage) || "null"); } catch (e) {}
+      const requestId = saved?.signature === signature ? saved.requestId : Array.from(crypto.getRandomValues(new Uint8Array(16)), (b) => b.toString(16).padStart(2, "0")).join("");
+      try { localStorage.setItem(storage, JSON.stringify({ signature, requestId })); } catch (e) {}
+      const r = await postJSONOk(chatBaseFor(agent) + "/" + encodeURIComponent(session.id) + "/promote", { ...body, requestId });
+      try { localStorage.removeItem(storage); } catch (e) {}
       const where = "#/tasks/"+encodeURIComponent(r.created);
       chatConversationTasks.set("chat:"+agent+"/"+session.id,r.created);
       showToast("Task created" + (r.assigned ? " — " + (r.name || chatAgentLabel(agent)) + " holds it" : "") + " · open", () => { location.hash = where; }, "info");
