@@ -3,9 +3,9 @@ const source=fs.readFileSync('server/web/js/48-chat.js','utf8');
 const deferred=()=>{let resolve;const promise=new Promise(r=>resolve=r);return{resolve,promise}};
 const requests=[],paint=[],landing=[],cached=[],composers=[];
 let preparation=null,runtimeName='Named by owner';
-const ctx=vm.createContext({chatTermMerge:(a,b)=>a.push(...b),chatTermReadHealth(){},chatTerminalLoadTicket:0,chatRouteVersion:1,chatAgent:'codex',chatOpenId:'one',chatTermOpen:null,
+const ctx=vm.createContext({AbortController,setTimeout,clearTimeout,chatTermMerge:(a,b)=>a.push(...b),chatTermReadHealth(){},chatTerminalLoadTicket:0,chatRouteVersion:1,chatAgent:'codex',chatOpenId:'one',chatTermOpen:null,
  chatTermFind:()=>({id:'one',name:runtimeName}),chatTermApplyState:s=>s,chatTermBase:()=>'/term/one',chatIsTerm:()=>true,els:{chatView:{hidden:false}},
- fetch:(url,opts)=>{assert.equal(opts,undefined,'no stale auto-name write');const d=deferred();requests.push(d);return d.promise},
+ fetch:(url,opts)=>{assert.equal(opts?.method,undefined,'no stale auto-name write');const d=deferred();requests.push(d);return d.promise},
  renderChatLanding:()=>landing.push(true),chatOriginArtifactSelection:async()=>null,
  chatPrepareDraft:()=>preparation?preparation.promise:Promise.resolve(),chatPrepareReadingPosition:async()=>{},chatReadingGestureUntil:0,
  chatPollTimer:null,chatES:null,chatLive:null,document:{querySelector:()=>null,getElementById:()=>null},chatTermSurface(){},chatRemember(){},
@@ -15,7 +15,7 @@ const ctx=vm.createContext({chatTermMerge:(a,b)=>a.push(...b),chatTermReadHealth
  ensureChatTermFast(){},chatReadingStates:new Map()
 });
 vm.runInContext(source.slice(source.indexOf('async function loadChatTermSession(id)'),source.indexOf('// chatTermOpenFrom')),ctx);
-const response=signature=>({ok:true,json:async()=>({signature,title:'Automatic title',run:{state:'completed'},conversation:{key:'one'}})});
+const response=signature=>({ok:true,json:async()=>({offset:0,turns:[],signature,title:'Automatic title',run:{state:'completed'},conversation:{key:'one'}})});
 (async()=>{
  for(const outcome of ['success','404']){
   const old=ctx.loadChatTermSession('one'),request=requests.at(-1);

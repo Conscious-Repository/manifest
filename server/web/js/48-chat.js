@@ -3023,13 +3023,16 @@ async function loadChatTermSession(id) {
   const observedSignature=snapshot(observed);
   const current=()=>ticket===chatTerminalLoadTicket&&routeVersion===chatRouteVersion&&agent===chatAgent&&id===chatOpenId&&chatIsTerm()&&!els.chatView.hidden;
   const unchanged=()=>current()&&chatTermOpen===observed&&snapshot(observed)===observedSignature;
+  const failed=()=>{if(!unchanged())return;if(observed?.id===id)chatTermReadHealth(observed,true);else renderChatEmpty('Terminal transcript could not load. Check your connection and retry.');};
+  const controller=new AbortController(),timeout=setTimeout(()=>controller.abort(),15000);
   let d;
   try {
-    const res = await fetch(base + "/transcript");
+    const res = await fetch(base + "/transcript",{signal:controller.signal});
     if (!unchanged()) return;
-    if (!res.ok) { renderChatLanding(); return; }
+    if (!res.ok) { failed();return; }
     d = await res.json();
-  } catch (e) { return; }
+    if(!d||!Number.isSafeInteger(d.offset)||d.offset<0||(d.turns!=null&&!Array.isArray(d.turns))){failed();return;}
+  } catch (e) { failed();return; } finally { clearTimeout(timeout); }
   if (!unchanged()) return; // navigated away mid-fetch
   if(d.historyAvailable===false&&!d.draft&&observed?.id===id){
     const retained=observed.turns.slice();chatTermMerge(retained,d.turns||[]);d.turns=retained;d.offset=observed.offset;
