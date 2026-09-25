@@ -3106,21 +3106,23 @@ const chatPrefetching = new Set();
 function chatPrefetchEntry(entry) {
   if (!entry || entry.taskThread) return;
   const agent = entry.agent || "", id = entry.session.id, key = chatStageKey(agent, id);
-  if (chatStageCache.has(key) || chatPrefetching.has(key)) return;
+  const routeVersion=chatRouteVersion;
+  const current=()=>routeVersion===chatRouteVersion&&!chatStageCache.has(key)&&key!==chatStageKey(chatAgent,chatOpenId);
+  if (!current() || chatPrefetching.has(key)) return;
   chatPrefetching.add(key);
   const done = () => chatPrefetching.delete(key);
   if (entry.terminal) {
     fetch(chatTermBase(id) + "/transcript").then((r) => r.ok ? r.json() : null).then((d) => {
       const se = d && chatTermFind(id);
-      if (!se) return;
-      const row = chatTermApplyState(se);
+      if (!se || !current()) return;
+      const row = chatTermApplyState({...se});
       row.run = d.run || null; row.activityOffset = d.offset || 0;
       chatStageRemember(key, { kind: "term", o: chatTermOpenFrom(id, row, d) });
     }).catch(() => {}).finally(done);
     return;
   }
   fetch(chatBaseFor(agent) + "/" + encodeURIComponent(id)).then((r) => r.ok ? r.json() : null).then((d) => {
-    if (d && d.session && !d.sharedConversation?.route) chatStageRemember(key, { kind: "agent", d });
+    if (current() && d && d.session && !d.sharedConversation?.route) chatStageRemember(key, { kind: "agent", d });
   }).catch(() => {}).finally(done);
 }
 
