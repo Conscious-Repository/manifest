@@ -2505,6 +2505,78 @@ function renderChatComposer(session) {
   };
   ta.addEventListener("input", syncMention);
   ta.addEventListener("blur", () => { mention.hidden = true; });
+  // [[ record typeahead (private durable chats only, the Records gate): the
+  // text after [[ at the caret searches records across kinds through the
+  // owner-only records API; choosing one opens its reviewed snapshot in
+  // Records, where explicit selection retains the exact version. Nothing is
+  // inserted into the message and nothing is retained from here. Shared and
+  // portal conversations never show it.
+  const records = el("div", "chat-mention chat-record-mention");
+  records.hidden = true;
+  records.setAttribute("role", "listbox");
+  records.setAttribute("aria-label", "Record suggestions");
+  let recordTimer = null, recordRead = null, recordRows = [], recordActive = -1, recordNote = "";
+  const recordPrefix = () => {
+    if (typeof chatCanSelectNoteContext !== "function" || !chatCanSelectNoteContext()) return null;
+    const head = ta.value.slice(0, ta.selectionStart);
+    const m = head.match(/\[\[([^\[\]\n]{0,80})$/);
+    return m ? m[1] : null;
+  };
+  const closeRecords = () => { clearTimeout(recordTimer); recordRead?.abort(); records.hidden = true; records.replaceChildren(); recordRows = []; recordActive = -1; recordNote = ""; };
+  const paintRecords = () => {
+    records.replaceChildren();
+    recordRows.forEach((row, i) => {
+      const b = el("button", "chat-mention-row" + (i === recordActive ? " is-active" : ""));
+      b.type = "button"; b.setAttribute("role", "option"); b.setAttribute("aria-selected", String(i === recordActive));
+      b.append(el("span", "chat-mention-tok", row.title), el("span", "chat-mention-note", row.kind + " · " + row.detail));
+      b.onmousedown = (e) => { e.preventDefault(); pickRecord(row); };
+      records.append(b);
+    });
+    if (recordNote) records.append(el("p", "chat-mention-note chat-record-mention-note", recordNote));
+    records.hidden = !records.childElementCount;
+  };
+  const pickRecord = (row) => {
+    const at = ta.selectionStart, head = ta.value.slice(0, at).replace(/\[\[[^\[\]\n]{0,80}$/, "");
+    ta.value = head + ta.value.slice(at);
+    ta.selectionStart = ta.selectionEnd = head.length;
+    closeRecords(); grow(); chatSaveDraft();
+    const tab = typeof chatOpenRecords === "function" ? chatOpenRecords() : null;
+    if (tab?.api?.restoreView) tab.api.restoreView({ kind: row.kind, id: row.id, query: row.title === row.id ? row.id : row.title + " · " + row.id });
+  };
+  const syncRecords = () => {
+    const q = recordPrefix();
+    if (q === null) { closeRecords(); return; }
+    clearTimeout(recordTimer);
+    recordTimer = setTimeout(async () => {
+      recordRead?.abort();
+      const read = recordRead = new AbortController();
+      try {
+        const r = await fetch("/api/chat/records?kind=any&q=" + encodeURIComponent(q), { cache: "no-store", signal: read.signal });
+        if (!r.ok) throw Error(await r.text());
+        const data = await r.json();
+        if (read.signal.aborted || recordPrefix() !== q) return;
+        recordRows = (data.records || []).slice(0, 12);
+        recordActive = recordRows.length ? 0 : -1;
+        const unavailable = (data.unavailable || []).map((u) => u.kind);
+        recordNote = recordRows.length ? (unavailable.length ? "Not searched: " + unavailable.join(", ") : "") : "No matching records" + (unavailable.length ? " · not searched: " + unavailable.join(", ") : "");
+        paintRecords();
+      } catch (e) {
+        if (read.signal.aborted || recordPrefix() !== q) return;
+        recordRows = []; recordActive = -1; recordNote = "Record search unavailable: " + (e.message || e); paintRecords();
+      }
+    }, 150);
+  };
+  ta.addEventListener("input", syncRecords);
+  ta.addEventListener("keydown", (e) => {
+    if (records.hidden || e.isComposing || e.keyCode === 229) return;
+    if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+      if (!recordRows.length) return;
+      e.preventDefault(); recordActive = (recordActive + (e.key === "ArrowDown" ? 1 : recordRows.length - 1)) % recordRows.length; paintRecords();
+    } else if (e.key === "Enter" && !e.shiftKey && recordActive >= 0) {
+      e.preventDefault(); e.stopImmediatePropagation(); pickRecord(recordRows[recordActive]);
+    } else if (e.key === "Escape") { e.preventDefault(); e.stopImmediatePropagation(); closeRecords(); }
+  });
+  ta.addEventListener("blur", closeRecords);
   const chips = el("div", "chat-attach-chips");
   chips.hidden = true;
   const fi = document.createElement("input");
@@ -2689,7 +2761,7 @@ function renderChatComposer(session) {
   });
   if(typeof chatInstallCommands==='function')chatInstallCommands(host,ta);
   send.onclick = submit;
-  host.append(chips, mention, ta, fi, attach, ritual, send);
+  host.append(chips, mention, records, ta, fi, attach, ritual, send);
   chatRenderDeliveryNotice(host,draftKey);
   chatRenderArtifactContext(session?.task,"chat:"+draftKey);
   chatRenderDraftNotice(host,draftKey);

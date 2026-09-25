@@ -42,6 +42,10 @@ type chatShareFile struct {
 	Name       string   `json:"name"`
 	Size       int64    `json:"size"`
 	References []string `json:"references"`
+	// Record names the private record a context snapshot was taken from
+	// ("task inbox/first", "note people/alice.md"), so the owner reviewing a
+	// share sees which private records leave with it, not only a file name.
+	Record string `json:"record,omitempty"`
 }
 
 func (s *Server) handleChatShareReview(w http.ResponseWriter, r *http.Request) {
@@ -168,7 +172,11 @@ func (s *Server) chatShareReview(ctx context.Context, sess agentchat.Session, bo
 			block("An attached artifact version is unreadable or changed: " + ref.ID)
 			return
 		}
-		add(chatShareFile{ArtifactID: ref.ID, Hash: ref.Revision, Name: version.Ref, Size: int64(len(data))}, source)
+		file := chatShareFile{ArtifactID: ref.ID, Hash: ref.Revision, Name: version.Ref, Size: int64(len(data))}
+		if kind, id, _ := contextSnapshotSource(a); kind != "" {
+			file.Record = kind + " " + id
+		}
+		add(file, source)
 	}
 	if sess.Origin != nil {
 		for _, ref := range sess.Origin.Artifacts {

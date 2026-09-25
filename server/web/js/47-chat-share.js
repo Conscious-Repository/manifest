@@ -45,7 +45,11 @@ const CHAT_SHARE = (() => {
         const files=node("ul","chat-share-files");
         for(const file of review.files){const li=node("li",""),a=node("a","",file.name);a.target="_blank";a.rel="noopener";
           a.href=file.artifactId?`/api/artifacts/content?id=${encodeURIComponent(file.artifactId)}&rev=${encodeURIComponent(file.hash)}`:`/api/tasks/thread/file/${encodeURIComponent(file.hash)}?id=agentchat`;
-          li.append(a);files.append(li);
+          li.append(a);
+          // A context snapshot is named by the private record it came from,
+          // so the owner sees which records leave with the share.
+          if(file.record)li.append(node("span","chat-share-record"," · private record snapshot: "+file.record));
+          files.append(li);
         }body.append(files);
       }
       section("Review full conversation",(review.timeline||[]).map(t=>`${t.who||"Message"}${t.ts?" · "+t.ts:""}\n${t.text||JSON.stringify(t,null,2)}`).join("\n\n")||review.body||"No messages yet.");

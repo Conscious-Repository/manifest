@@ -459,7 +459,7 @@ function chatOpenContext(){
  if(chatIsPortal())return;
  return chatEnsureWorkspace().tab('context','Context',(host,drop)=>{
   const key=chatAgent+'/'+chatOpenId,pane=el('section','chat-context-inspector'),body=el('div','chat-context-body');body.tabIndex=0;host.append(pane);pane.append(body);
-  let closed=false,selected=null,instructionOpen=false,capabilitiesOpen=false;
+  let closed=false,selected=null,instructionOpen=false,capabilitiesOpen=false,skillsOpen=false,skillInventory=null,skillsRead=null;
   const render=()=>{
    if(closed||!host.isConnected||key!==chatAgent+'/'+chatOpenId)return;
    const source=chatWorkspaceSource();if(!source)return;
@@ -489,9 +489,41 @@ function chatOpenContext(){
     fact('Retry','Explicit resubmit only; an uncertain send is never replayed');
     fact('Resume',{'fresh-session-per-turn':'Fresh Hermes session per turn; nothing to resume','exact-resume-id':'Exact conversation ID resume on an explicit send','tmux-relaunch':'tmux relaunch on send'}[capabilities.resume]||(capabilities.resume==='unsupported'?'Not supported':'Not reported'));
     fact('Supervision evidence',{'delivery-receipt':'Durable delivery receipts in the session file','input-receipt+observation':'Input receipts plus live runtime observation','observation-only':'Observation only; no receipts, so idle is never completion'}[capabilities.supervision]||'Not reported');
-    fact('Enabled skills','Not reported by this adapter');
     details.open=capabilitiesOpen;details.addEventListener('toggle',()=>{if(details.isConnected)capabilitiesOpen=details.open;});
-    details.append(facts);body.append(details);
+    details.append(facts);
+    if(capabilities.skillInventory==='on-disk'){
+     // Skill context (server chat_skills.go): the skill folders this runtime
+     // reads, listed at read time. Never a claim about what a turn loaded.
+     const skills=el('details','chat-context-skills'),skillsBody=el('div','chat-context-skills-body');
+     skills.append(el('summary','','Skills on disk'),el('p','chat-workspace-hint','Skill folders this runtime reads, listed when opened. A turn loads a skill only when it names it; the runtime does not report which skills a turn used.'),skillsBody);
+     const endpoint=source.backend==='terminal'?'/api/terminal/session/'+encodeURIComponent(source.id)+'/skills':'/api/agents/chat/'+encodeURIComponent(source.agent)+'/sessions/'+encodeURIComponent(source.id)+'/skills';
+     const paintSkills=()=>{
+      skillsBody.replaceChildren();const inv=skillInventory;
+      if(!inv){skillsBody.append(el('p','chat-workspace-hint','Loading skill folders…'));return;}
+      if(inv.error){const retry=el('button','sprt-quiet','retry');retry.onclick=()=>loadSkills(true);skillsBody.append(el('p','chat-workspace-hint','Skill folders could not be read: '+inv.error),retry);return;}
+      const roots=el('dl','chat-context-summary');
+      for(const root of inv.roots||[]){roots.append(el('dt','',root.label),el('dd','',root.available?root.path+' · '+root.count+(root.count===1?' skill':' skills'):root.path+' · '+(root.error||'unavailable')));}
+      skillsBody.append(roots);
+      if(inv.skills?.length){
+       const list=el('ul','chat-context-skill-list');
+       for(const sk of inv.skills){const item=el('li','chat-context-skill'),name=el('strong','',sk.name);item.append(name);if(sk.description)item.append(document.createTextNode(' — '+sk.description));item.append(el('span','chat-workspace-hint',sk.root+' · '+sk.path));list.append(item);}
+       skillsBody.append(list);
+       if(inv.truncated)skillsBody.append(el('p','chat-workspace-hint','Listing stopped at '+inv.limit+' skills.'));
+      }else skillsBody.append(el('p','chat-workspace-hint','No SKILL.md files found in these folders.'));
+      const reload=el('button','sprt-quiet','read again');reload.onclick=()=>loadSkills(true);skillsBody.append(reload);
+     };
+     const loadSkills=async(force)=>{
+      if(skillInventory&&!skillInventory.error&&!force)return;
+      skillsRead?.abort();const read=skillsRead=new AbortController();skillInventory=null;paintSkills();
+      try{const r=await fetch(endpoint,{cache:'no-store',signal:read.signal});if(!r.ok)throw Error(await r.text());const inv=await r.json();if(read.signal.aborted)return;skillInventory=inv;}
+      catch(e){if(read.signal.aborted)return;skillInventory={error:e.message||String(e)};}
+      if(!closed&&skills.isConnected)paintSkills();
+     };
+     skills.open=skillsOpen;skills.addEventListener('toggle',()=>{if(!skills.isConnected)return;skillsOpen=skills.open;if(skills.open)loadSkills(false);});
+     if(skillsOpen){paintSkills();loadSkills(false);}
+     details.append(skills);
+    }else facts.append(el('dt','','Skills'),el('dd','','Not reported by this adapter'));
+    body.append(details);
    }
    const section=el('section','chat-context-section');section.append(el('h3','','Recorded inputs'));body.append(section);
    if(!inputs.length){section.append(emptyRow('No recorded inputs available yet.'));body.scrollTop=scroll;return;}
@@ -518,7 +550,7 @@ function chatOpenContext(){
    body.scrollTop=scroll;
   };
   window.addEventListener('chat-workbench-activity',render);render();
-  return {element:pane,close:()=>{closed=true;window.removeEventListener('chat-workbench-activity',render);pane.remove();drop();},getView:()=>({selected,scrollTop:body.scrollTop,capabilitiesOpen:body.querySelector('.chat-context-capabilities')?.open||false,instructionOpen:body.querySelector('.chat-context-instruction')?.open||false}),restoreView:async view=>{if(!host.isConnected||!host.clientHeight)return false;selected=view.selected||null;instructionOpen=!!view.instructionOpen;capabilitiesOpen=!!view.capabilitiesOpen;render();body.scrollTop=Math.max(0,Number(view.scrollTop)||0);return true;}};
+  return {element:pane,close:()=>{closed=true;skillsRead?.abort();window.removeEventListener('chat-workbench-activity',render);pane.remove();drop();},getView:()=>({selected,scrollTop:body.scrollTop,capabilitiesOpen:body.querySelector('.chat-context-capabilities')?.open||false,skillsOpen:body.querySelector('.chat-context-skills')?.open||false,instructionOpen:body.querySelector('.chat-context-instruction')?.open||false}),restoreView:async view=>{if(!host.isConnected||!host.clientHeight)return false;selected=view.selected||null;instructionOpen=!!view.instructionOpen;capabilitiesOpen=!!view.capabilitiesOpen;skillsOpen=!!view.skillsOpen;render();body.scrollTop=Math.max(0,Number(view.scrollTop)||0);return true;}};
  },{kind:'context'});
 }
 

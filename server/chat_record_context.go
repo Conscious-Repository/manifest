@@ -126,6 +126,16 @@ func (s *Server) chatContextRecordsFor(ctx context.Context, kind string, q strin
 	return out, nil
 }
 
+// chatContextAnyKinds are the kinds a cross-kind composer typeahead reads.
+// Schedule and calendar are excluded: both are date-scoped and calendar
+// search reaches the provider, which a keystroke must not do.
+var chatContextAnyKinds = []string{"task", "goal", "note", "person", "project", "candidate", "organization"}
+
+type chatContextUnavailable struct {
+	Kind  string `json:"kind"`
+	Error string `json:"error"`
+}
+
 func (s *Server) handleChatRecordSearch(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "private, no-store")
 	q := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("q")))
@@ -133,10 +143,31 @@ func (s *Server) handleChatRecordSearch(w http.ResponseWriter, r *http.Request) 
 		http.Error(w, "query is too long", 400)
 		return
 	}
-	rows, err := s.chatContextRecordsFor(r.Context(), r.URL.Query().Get("kind"), q)
-	if err != nil {
-		httpError(w, err)
-		return
+	kind := r.URL.Query().Get("kind")
+	var rows []chatContextRecord
+	unavailable := []chatContextUnavailable{}
+	if kind == "any" {
+		// One kind's failure (a missing store, a bad property read) is reported
+		// beside the others' results rather than hiding every other kind.
+		for _, k := range chatContextAnyKinds {
+			part, err := s.chatContextRecordsFor(r.Context(), k, q)
+			if err != nil {
+				if r.Context().Err() != nil {
+					httpError(w, err)
+					return
+				}
+				unavailable = append(unavailable, chatContextUnavailable{k, err.Error()})
+				continue
+			}
+			rows = append(rows, part...)
+		}
+	} else {
+		var err error
+		rows, err = s.chatContextRecordsFor(r.Context(), kind, q)
+		if err != nil {
+			httpError(w, err)
+			return
+		}
 	}
 	found := []chatContextRecord{}
 	for _, row := range rows {
@@ -154,7 +185,7 @@ func (s *Server) handleChatRecordSearch(w http.ResponseWriter, r *http.Request) 
 	if len(found) > 50 {
 		found = found[:50]
 	}
-	writeJSON(w, map[string]any{"records": found, "limit": 50})
+	writeJSON(w, map[string]any{"records": found, "limit": 50, "unavailable": unavailable})
 }
 
 func contextField(out *strings.Builder, name, value string) {

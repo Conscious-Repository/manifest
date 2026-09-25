@@ -20,7 +20,7 @@ func TestNativeConversationCapabilities(t *testing.T) {
 	if !ok || caps["adapter"] != "hermes-oneshot" || caps["queue"] != "durable" || caps["cancelQueued"] != true || caps["interrupt"] != "request-and-cancel-queued" {
 		t.Fatal("missing supported native controls", caps)
 	}
-	if caps["liveSteering"] != false || caps["structuredQuestions"] != false || caps["skillInventory"] != "not-reported" {
+	if caps["liveSteering"] != false || caps["structuredQuestions"] != false || caps["skillInventory"] != "on-disk" {
 		t.Fatal("invented adapter support or skill telemetry", caps)
 	}
 	// Reading capabilities must not manufacture run evidence.

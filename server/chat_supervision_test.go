@@ -472,8 +472,13 @@ func TestTerminalSupervisionProjectionAndRefusals(t *testing.T) {
 func TestChatAdapterCapabilityMatrix(t *testing.T) {
 	seen := map[string]chatCapabilities{}
 	for _, c := range chatAdapterCapabilities() {
-		if c.Retry != "explicit-resubmit" || c.SkillInventory != "not-reported" {
+		if c.Retry != "explicit-resubmit" || (c.SkillInventory != "not-reported" && c.SkillInventory != "on-disk") {
 			t.Fatalf("invented capability: %+v", c)
+		}
+		// An on-disk inventory is a claim about readable skill folders, not about
+		// runtime telemetry; only adapters with a known skill root make it.
+		if onDisk := c.Adapter == adapterHermesOneshot || c.Adapter == adapterHerdrCodex || c.Adapter == adapterHerdrClaude; onDisk != (c.SkillInventory == "on-disk") {
+			t.Fatalf("skill inventory claim without a known root: %+v", c)
 		}
 		if (c.Queue == "durable") != c.CancelQueued || (c.Steer == "explicit") != c.LiveSteering || (c.AnswerQuestions == "async-codex") != c.StructuredQuestions {
 			t.Fatalf("inconsistent claims: %+v", c)

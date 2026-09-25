@@ -149,6 +149,14 @@ button.chat-attach-chip { min-height: 44px; max-width: 100%; background: transpa
 .chat-mention-row:hover { background: var(--hover); }
 .chat-mention-tok { color: var(--accent); font-family: var(--mono, monospace); }
 .chat-mention-note { color: var(--base-40); }
+.chat-mention-row.is-active { background: var(--hover); }
+.chat-record-mention { max-height: 40vh; overflow-y: auto; }
+.chat-record-mention-note { margin: 0; padding: var(--sp-2) var(--sp-5); font-size: var(--fs-xs); }
+.chat-share-record { color: var(--base-40); font-size: var(--fs-xs); }
+.chat-context-skills { margin-top: var(--sp-3); }
+.chat-context-skill-list { margin: var(--sp-2) 0; padding-left: var(--sp-5); font-size: var(--fs-xs); }
+.chat-context-skill { margin: var(--sp-2) 0; overflow-wrap: anywhere; }
+.chat-context-skill .chat-workspace-hint { display: block; }
 
 /* the chat ↔ task bridges (agent-chat plan Phase 4, §3.4f): "→ task" on an
    agent turn (hover-revealed, the turn's quiet foot), the "☐ task ↗" head

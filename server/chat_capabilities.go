@@ -16,7 +16,7 @@ package server
 //	Resume          fresh-session-per-turn | exact-resume-id | tmux-relaunch | unsupported
 //	AnswerQuestions unsupported | async-codex | terminal-only
 //	Supervision     delivery-receipt | input-receipt+observation | observation-only
-//	SkillInventory  not-reported
+//	SkillInventory  on-disk | not-reported          (on-disk = skill folders readable now via …/skills; never what a turn loaded)
 type chatCapabilities struct {
 	Adapter             string `json:"adapter"`
 	Queue               string `json:"queue"`
@@ -52,7 +52,7 @@ func nativeChatCapabilities() chatCapabilities {
 		Adapter: adapterHermesOneshot, Queue: "durable", CancelQueued: true,
 		Interrupt: "request-and-cancel-queued", Stop: "request", Steer: "unsupported",
 		Retry: "explicit-resubmit", Resume: "fresh-session-per-turn",
-		AnswerQuestions: "unsupported", Supervision: "delivery-receipt", SkillInventory: "not-reported",
+		AnswerQuestions: "unsupported", Supervision: "delivery-receipt", SkillInventory: "on-disk",
 	}
 }
 
@@ -78,9 +78,11 @@ func terminalChatCapabilities(se termSession) chatCapabilities {
 	case "codex":
 		caps.Adapter, caps.Queue, caps.CancelQueued, caps.Steer, caps.LiveSteering = adapterHerdrCodex, "durable", true, "explicit", true
 		caps.StructuredQuestions, caps.AnswerQuestions = true, "async-codex"
+		caps.SkillInventory = "on-disk"
 	case "claude":
 		caps.Adapter, caps.Queue, caps.CancelQueued, caps.Steer, caps.LiveSteering = adapterHerdrClaude, "durable", true, "explicit", true
 		caps.AnswerQuestions = "terminal-only"
+		caps.SkillInventory = "on-disk"
 	}
 	return caps
 }
