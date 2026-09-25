@@ -619,7 +619,7 @@ func (s *Server) agentChatSendTo(agent, id, requestID, text string, files []thre
 		if sess.Origin != nil {
 			handed = sess.Origin.Artifacts
 		}
-		if _, err := s.selectedArtifactContext(explicit, ctx.Task, privateArtifactScope(sess), refs, handed); err != nil {
+		if _, err := s.selectedArtifactContext(explicit, ctx.Task, privateArtifactScope(sess), refs, handed, sessionConversation(sess).Key); err != nil {
 			return agentchat.Delivery{}, err
 		}
 		if _, err := s.ownedChatContext("agent:"+agent+"/"+id, text); err != nil {

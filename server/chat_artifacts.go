@@ -149,7 +149,7 @@ func (s *Server) originArtifactScope(o agentchat.Origin) string {
 
 // A standalone conversation can discuss its own snapshot without inventing a
 // task. Related conversations receive only versions explicitly handed to them.
-func (s *Server) scopedArtifactContext(task, scope string, refs, handed []artifactContextRef) (string, error) {
+func (s *Server) scopedArtifactContext(task, scope string, refs, handed []artifactContextRef, sourceScopes ...string) (string, error) {
 	if len(refs) == 0 {
 		return "", nil
 	}
@@ -158,8 +158,17 @@ func (s *Server) scopedArtifactContext(task, scope string, refs, handed []artifa
 	}
 	for _, ref := range refs {
 		allowed := false
-		if a, ok := s.artifactReg.Get(ref.ID); ok && a.Provenance.Source == "runtime-changes" {
-			allowed = scope != "" && a.Provenance.Session == scope
+		if a, ok := s.artifactReg.Get(ref.ID); ok {
+			if a.Provenance.Source == "runtime-changes" || a.Provenance.Source == "chat-output" {
+				allowed = scope != "" && a.Provenance.Session == scope
+			}
+			if a.Provenance.Source == "chat-output" {
+				for _, key := range sourceScopes {
+					if key != "" && a.Provenance.Session == key {
+						allowed = true
+					}
+				}
+			}
 		}
 		// These exact references came from a validated, persisted creation handoff.
 		for _, h := range handed {
@@ -283,9 +292,9 @@ func (s *Server) handleArtifactContent(w http.ResponseWriter, r *http.Request) {
 
 // Only private owner message acceptance may opt into unlinked exact versions.
 // The opt-in is part of the durable message fingerprint, not a reusable grant.
-func (s *Server) selectedArtifactContext(explicit bool, task, scope string, refs, handed []artifactContextRef) (string, error) {
+func (s *Server) selectedArtifactContext(explicit bool, task, scope string, refs, handed []artifactContextRef, sourceScopes ...string) (string, error) {
 	if explicit {
 		return s.retainedArtifactContext(refs)
 	}
-	return s.scopedArtifactContext(task, scope, refs, handed)
+	return s.scopedArtifactContext(task, scope, refs, handed, sourceScopes...)
 }

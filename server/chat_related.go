@@ -140,7 +140,11 @@ func (s *Server) handleChatRelated(w http.ResponseWriter, r *http.Request) {
 	if source.Origin != nil {
 		handed = source.Origin.Artifacts
 	}
-	if _, err = s.selectedArtifactContext(b.ExplicitArtifacts, task, s.originArtifactScope(origin), b.Artifacts, handed); err != nil {
+	sourceScope := ""
+	if origin.Backend == "" {
+		sourceScope = sessionConversation(source).Key
+	}
+	if _, err = s.selectedArtifactContext(b.ExplicitArtifacts, task, s.originArtifactScope(origin), b.Artifacts, handed, sourceScope); err != nil {
 		httpError(w, err)
 		return
 	}
