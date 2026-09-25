@@ -14,6 +14,7 @@ func TestPortalCannotAccessPrivateEmailNotices(t *testing.T) {
 	for _, tc := range []struct{ method, path, body string }{
 		{"GET", "/api/manifest/operations/sha256:" + strings.Repeat("a", 64) + "/email-receipt", ""},
 		{"POST", "/api/manifest/operations/sha256:" + strings.Repeat("a", 64) + "/email-watch", `{"enabled":true}`},
+		{"POST", "/api/manifest/operations/sha256:" + strings.Repeat("a", 64) + "/email-reconcile", `{}`},
 		{"POST", "/api/portals/item/dismiss", `{"id":"email-reply:private"}`},
 	} {
 		w := httptest.NewRecorder()

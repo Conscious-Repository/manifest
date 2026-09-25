@@ -1811,6 +1811,21 @@ function manifestOperationCard(item) {
     if (chatOpenId && chatAgent) refetchChatSession(chatOpenId);
     loadFeed();
   });
+  if(p.email && ["partial","executing"].includes(o.status)) {
+    const recovery=el("section","chat-email-recovery");
+    recovery.append(el("p","","Delivery is unresolved. Check the sender’s Sent mailbox for this exact approved message. This does not send again."));
+    const check=el("button","ghost","Check delivery"), status=el("p","");status.setAttribute("role","status");
+    check.onclick=async()=>{
+      check.disabled=true;status.textContent="Checking delivery…";
+      try {
+        const out=await postJSONOk("/api/manifest/operations/"+encodeURIComponent(o.operationId)+"/email-reconcile",{});
+        if(!out?.record||out.record.status!=="succeeded")throw new Error("Delivery remains unresolved. You can check again.");
+        const next=manifestOperationCard({...item,record:out.record});card.replaceWith(next);next.tabIndex=-1;next.focus({preventScroll:true});
+        window.dispatchEvent(new Event("manifest-approval-updated"));
+      } catch(e) {status.textContent=e.message||"Could not check delivery. You can check again.";check.disabled=false;}
+    };
+    recovery.append(check,status);card.append(recovery);
+  }
   if(p.email && o.status==="succeeded") {
     const watch=o.emailWatch;
     const section=el("section","chat-email-watch");
