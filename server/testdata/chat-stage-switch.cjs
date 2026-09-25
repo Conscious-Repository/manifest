@@ -111,7 +111,7 @@ const tick=()=>new Promise(r=>setTimeout(r,0));
 {
  const host={dataset:{readKey:''}};const calls={transcript:0,composer:[],empty:0};
  let payload={conversation:{key:'conv-b'},session:{id:'b',status:'idle',updated:'t1'},proposals:[]},status=200;
- const ctx=vm.createContext({
+ const ctx=vm.createContext({chatSessionLoadTicket:0,chatRouteVersion:0,
   chatIsTerm:()=>false,chatAgent:'alfred',chatOpenId:'b',chatBase:()=>'/chat/alfred',els:{chatView:{hidden:false}},
   chatPrepareDraft:async()=>{},chatPrepareReadingPosition:async()=>{},
   fetch:async()=>({ok:status===200,status,json:async()=>payload}),

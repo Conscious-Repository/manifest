@@ -24,6 +24,7 @@ let chatOpenId = "";        // the open session id ("" = none)
 let chatSpiritsCache = null;
 let chatPollTimer = null;
 let chatRouteVersion = 0;
+let chatSessionLoadTicket = 0;
 let chatSending = false;
 let chatLastUpdated = "";   // change-detection for transcript re-render
 
@@ -1658,10 +1659,11 @@ function renderChatEmpty(note) {
 async function loadChatSession(id) {
   if (chatIsTerm()) { loadChatTermSession(id); return; }
   let d;
-  const base = chatBase(), agent = chatAgent;
+  const base = chatBase(), agent = chatAgent, routeVersion = chatRouteVersion, ticket = ++chatSessionLoadTicket, observedSignature = chatLastUpdated;
+  const current = () => ticket === chatSessionLoadTicket && routeVersion === chatRouteVersion && observedSignature === chatLastUpdated && id === chatOpenId && base === chatBase() && !els.chatView.hidden;
   try {
     const res = await fetch(base + "/" + encodeURIComponent(id));
-    if (id !== chatOpenId || base !== chatBase() || els.chatView.hidden) return;
+    if (!current()) return;
     if (!res.ok) {
       chatStageCache.delete(chatStageKey(agent, id));
       renderChatEmpty(res.status === 404
@@ -1671,18 +1673,18 @@ async function loadChatSession(id) {
     }
     d = await res.json();
   } catch (e) {
-    if (id === chatOpenId && base === chatBase() && !els.chatView.hidden) renderChatEmpty("Conversation could not load. Check your connection and retry.");
+    if (current()) renderChatEmpty("Conversation could not load. Check your connection and retry.");
     return;
   }
-  if (id !== chatOpenId || base !== chatBase()) return; // navigated away mid-fetch
+  if (!current()) return; // navigated away mid-fetch
   if(d.sharedConversation?.route){location.hash=d.sharedConversation.route;return;}
   const originSelection=d.session.turns===0?await chatOriginArtifactSelection(d.session.origin):null;
-  if (id !== chatOpenId || base !== chatBase() || els.chatView.hidden) return;
+  if (!current()) return;
   await Promise.all([
     chatPrepareDraft(d.conversation,(agent||"spirits")+"/"+id,d.session.origin&&d.session.turns===0?{text:d.session.origin.prompt||"",files:[],task:d.session.origin.task||"",selection:originSelection}:null),
     chatPrepareReadingPosition(d.conversation),
   ]);
-  if (id !== chatOpenId || base !== chatBase()) return;
+  if (!current()) return;
   const main = document.querySelector(".chat-main");
   if (main) main.classList.remove("landing");
   chatRemember(chatAgent || "spirits", id);
