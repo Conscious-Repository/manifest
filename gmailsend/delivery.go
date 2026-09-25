@@ -20,11 +20,12 @@ import (
 type DeliveryStore struct{ Dir string }
 
 type Delivery struct {
-	ID      string  `json:"id"`
-	Hash    string  `json:"hash"`
-	Message Message `json:"message"`
-	Status  string  `json:"status"` // prepared, uncertain, sent
-	Ref     Ref     `json:"ref"`
+	ID       string            `json:"id"`
+	Hash     string            `json:"hash"`
+	Message  Message           `json:"message"`
+	Status   string            `json:"status"` // prepared, uncertain, sent
+	Ref      Ref               `json:"ref"`
+	Evidence *DeliveryEvidence `json:"evidence,omitempty"`
 }
 
 var deliveryKey = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_-]{7,95}$`)
