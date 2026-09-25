@@ -399,3 +399,40 @@ func (s *Store) RequestStop(agent, id, requestID string) (Delivery, error) {
 	})
 	return out, err
 }
+
+// CancelQueued withdraws only an unstarted instruction. If dispatch won the
+// race, refuse rather than turning a queue edit into an interruption.
+func (s *Store) CancelQueued(agent, id, requestID string) (Delivery, error) {
+	var out Delivery
+	_, err := s.update(agent, id, func(sess *Session, _ *string) error {
+		if sess.Sharing != nil {
+			return errors.New("private native conversation required")
+		}
+		for i := range sess.Deliveries {
+			d := &sess.Deliveries[i]
+			if d.ID != requestID {
+				continue
+			}
+			if d.State == DeliveryCancelled {
+				out = *d
+				return nil
+			}
+			if d.State != DeliveryQueued {
+				return errors.New("instruction is no longer queued; no running turn was interrupted")
+			}
+			d.State = DeliveryCancelled
+			d.Error = "Cancelled before dispatch at owner request"
+			d.Updated = now()
+			out = *d
+			sess.Status = StatusIdle
+			for _, pending := range sess.Deliveries {
+				if pending.State == DeliveryQueued || pending.State == DeliveryRunning {
+					sess.Status = StatusThinking
+				}
+			}
+			return nil
+		}
+		return errors.New("delivery not found")
+	})
+	return out, err
+}

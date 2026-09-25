@@ -1,6 +1,9 @@
 package agentchat
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestStopTargetsRunningAndRetainsCancelledQueue(t *testing.T) {
 	s := New(t.TempDir())
@@ -76,6 +79,15 @@ func TestStopSurvivesCrashBeforeRunnerReturn(t *testing.T) {
 	}
 	fresh := New(s.Root())
 	fresh.Recover()
+	_, body, _, _ := fresh.Get("alfred", id)
+	if !strings.Contains(body, "after interruption was requested") {
+		t.Fatal(body)
+	}
+	fresh.Recover()
+	_, again, _, _ := fresh.Get("alfred", id)
+	if body != again {
+		t.Fatal("recovery duplicated explanation")
+	}
 	current, _ := fresh.Receipt("alfred", id, "first-request")
 	queued, _ := fresh.Receipt("alfred", id, "queued-request")
 	if current.State != DeliveryInterrupted || !current.StopRequested || queued.State != DeliveryCancelled || queued.Text != "retain" {
@@ -83,5 +95,48 @@ func TestStopSurvivesCrashBeforeRunnerReturn(t *testing.T) {
 	}
 	if _, claimed, err := fresh.Claim("alfred", id); err != nil || claimed {
 		t.Fatal("cancelled queue restarted", claimed, err)
+	}
+}
+
+func TestCancelQueuedDoesNotInterruptActive(t *testing.T) {
+	s := New(t.TempDir())
+	id, _ := s.Create("alfred", "", "", "")
+	s.Accept("alfred", id, "active-request", "active")
+	s.Claim("alfred", id)
+	s.Accept("alfred", id, "queued-request", "preserve this")
+	for range 2 {
+		d, err := s.CancelQueued("alfred", id, "queued-request")
+		if err != nil || d.State != DeliveryCancelled || d.Text != "preserve this" {
+			t.Fatal(d, err)
+		}
+	}
+	active, _ := s.Receipt("alfred", id, "active-request")
+	if active.State != DeliveryRunning || active.StopRequested {
+		t.Fatal(active)
+	}
+	if _, err := s.CancelQueued("alfred", id, "active-request"); err == nil {
+		t.Fatal("queue cancel interrupted active turn")
+	}
+}
+func TestCancelQueuedRacesClaim(t *testing.T) {
+	for range 20 {
+		s := New(t.TempDir())
+		id, _ := s.Create("alfred", "", "", "")
+		s.Accept("alfred", id, "queued-request", "text")
+		start := make(chan struct{})
+		claimed := make(chan bool, 1)
+		cancelled := make(chan error, 1)
+		go func() { <-start; _, ok, _ := s.Claim("alfred", id); claimed <- ok }()
+		go func() { <-start; _, err := s.CancelQueued("alfred", id, "queued-request"); cancelled <- err }()
+		close(start)
+		ran, err := <-claimed, <-cancelled
+		d, _ := s.Receipt("alfred", id, "queued-request")
+		if ran {
+			if err == nil || d.State != DeliveryRunning || d.StopRequested {
+				t.Fatal(ran, err, d)
+			}
+		} else if err != nil || d.State != DeliveryCancelled {
+			t.Fatal(ran, err, d)
+		}
 	}
 }

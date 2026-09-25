@@ -4406,6 +4406,12 @@ function chatNativeInterruptionControls(session,base,refresh) {
   button.onclick=async()=>{button.disabled=true;status.textContent='Requesting interruption…';try{await postJSONOk(base+'/'+encodeURIComponent(session.id)+'/interrupt',{requestId:running.id});status.textContent='Interruption requested; waiting for the runner to return.';refresh();}catch(e){status.textContent=e.message||'Could not request interruption. Check status and retry.';button.disabled=false;}};
   box.append(button,status);
  }
+ for(const receipt of session.deliveries||[]){if(receipt.state!=='queued')continue;
+  const row=el('div','chat-queued-control'),cancel=el('button','sprt-quiet','Cancel queued instruction'),status=el('p','chat-workspace-hint');status.setAttribute('role','status');
+  cancel.setAttribute('aria-label','Cancel queued instruction: '+(receipt.text||'').replace(/\s+/g,' ').slice(0,80));
+  cancel.onclick=async()=>{cancel.disabled=true;try{await postJSONOk(base+'/'+encodeURIComponent(session.id)+'/cancel-queued',{requestId:receipt.id});status.textContent='Instruction cancelled before dispatch.';refresh();}catch(e){status.textContent=e.message||'Could not cancel queued instruction. Check status and retry.';cancel.disabled=false;}};
+  row.append(el('p','chat-workspace-hint',(receipt.text||'').replace(/\s+/g,' ').slice(0,120)),cancel,status);box.append(row);
+ }
  for(const receipt of session.deliveries||[]){if(receipt.state!=='cancelled')continue;const note=el('details','chat-cancelled-instruction');note.append(el('summary','','Cancelled before dispatch'),el('pre','chat-activity-text',receipt.text||''));box.append(note);}
  return box;
 }

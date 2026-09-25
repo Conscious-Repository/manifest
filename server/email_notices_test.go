@@ -16,6 +16,7 @@ func TestPortalCannotAccessPrivateEmailNotices(t *testing.T) {
 		{"POST", "/api/manifest/operations/sha256:" + strings.Repeat("a", 64) + "/email-watch", `{"enabled":true}`},
 		{"POST", "/api/manifest/operations/sha256:" + strings.Repeat("a", 64) + "/email-reconcile", `{}`},
 		{"POST", "/api/agents/chat/alfred/sessions/private/interrupt", `{"requestId":"private-request"}`},
+		{"POST", "/api/agents/chat/alfred/sessions/private/cancel-queued", `{"requestId":"private-request"}`},
 		{"POST", "/api/portals/item/dismiss", `{"id":"email-reply:private"}`},
 	} {
 		w := httptest.NewRecorder()

@@ -29,6 +29,18 @@ func TestNativeInterruptCancelsRunnerAndQueue(t *testing.T) {
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
+	cancelRequest := httptest.NewRequest("POST", "/", strings.NewReader(`{"requestId":"queued-request"}`))
+	cancelRequest.SetPathValue("agent", "alfred")
+	cancelRequest.SetPathValue("id", id)
+	cancelled := httptest.NewRecorder()
+	s.handleAgentChatCancelQueued(cancelled, cancelRequest)
+	if cancelled.Code != 200 {
+		t.Fatal(cancelled.Code, cancelled.Body.String())
+	}
+	active, _ := st.Receipt("alfred", id, "active-request")
+	if active.State != agentchat.DeliveryRunning || active.StopRequested {
+		t.Fatal("queued cancellation touched active turn", active)
+	}
 	interrupt := func() *httptest.ResponseRecorder {
 		r := httptest.NewRequest("POST", "/", strings.NewReader(`{"requestId":"active-request"}`))
 		r.SetPathValue("agent", "alfred")

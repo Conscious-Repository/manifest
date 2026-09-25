@@ -37,3 +37,22 @@ func (s *Server) handleAgentChatInterrupt(w http.ResponseWriter, r *http.Request
 	}
 	writeJSON(w, map[string]any{"delivery": receipt})
 }
+
+func (s *Server) handleAgentChatCancelQueued(w http.ResponseWriter, r *http.Request) {
+	if !s.agentChatReady(w) {
+		return
+	}
+	var input struct {
+		RequestID string `json:"requestId"`
+	}
+	if err := decode(r, &input); err != nil {
+		httpError(w, err)
+		return
+	}
+	receipt, err := s.agentChat.store.CancelQueued(r.PathValue("agent"), r.PathValue("id"), input.RequestID)
+	if err != nil {
+		http.Error(w, err.Error(), 409)
+		return
+	}
+	writeJSON(w, map[string]any{"delivery": receipt})
+}

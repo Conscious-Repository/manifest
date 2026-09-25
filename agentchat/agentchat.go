@@ -547,6 +547,7 @@ func (s *Store) Recover() []string {
 			}
 			_, err := s.update(agent, sess.ID, func(x *Session, body *string) error {
 				interrupted := false
+				stopRequested := false
 				queued := false
 				for i := range x.Deliveries {
 					d := &x.Deliveries[i]
@@ -554,6 +555,10 @@ func (s *Store) Recover() []string {
 					case DeliveryRunning:
 						d.State = DeliveryInterrupted
 						d.Error = "Server restarted; provider delivery is uncertain and was not replayed"
+						if d.StopRequested {
+							stopRequested = true
+							d.Error = "Server restarted after interruption was requested; external effects remain uncertain and the turn was not replayed"
+						}
 						d.Updated = now()
 						interrupted = true
 					case DeliveryQueued:
@@ -562,7 +567,11 @@ func (s *Store) Recover() []string {
 				}
 				// Sessions created by the old transport have no receipt for the active turn.
 				if interrupted || len(x.Deliveries) == 0 {
-					appendTurn(x, body, "system", "The previous turn was interrupted by a restart. It was not replayed; review its result before asking to run it again.", 0)
+					message := "The previous turn was interrupted by a restart. It was not replayed; review its result before asking to run it again."
+					if stopRequested {
+						message = "The server restarted after interruption was requested. The turn was not replayed, and cancelled instructions remain cancelled. Already-started external effects may be uncertain."
+					}
+					appendTurn(x, body, "system", message, 0)
 				}
 				x.Status = StatusIdle
 				if queued {
