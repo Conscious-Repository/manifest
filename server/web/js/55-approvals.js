@@ -1260,11 +1260,7 @@ async function postApprovalDecision(id, kind, body) {
     showToast("Couldn't reach the server — " + String(e.message || e).slice(0, 100), null, "error");
   }
   cards.forEach((card) => card.querySelectorAll("button").forEach((b) => { b.disabled = b.dataset.wasDisabled === "true"; }));
-  if (typeof chatOpenId !== "undefined" && chatOpenId && chatAgent) refetchChatSession(chatOpenId);
-  if (typeof chatTaskID !== "undefined" && chatTaskID) renderTaskChat(chatTaskID, true);
-  if (typeof loadTodos === "function") loadTodos();
-  window.dispatchEvent(new CustomEvent("manifest-approval-updated",{detail:{id}}));
-  loadFeed(); // each surface converges to the same decision
+  manifestRefreshOperationSurfaces(id);
 }
 
 if (els.feedRunNowBtn) els.feedRunNowBtn.addEventListener("click", spiritRunNow);
@@ -1821,7 +1817,7 @@ function manifestOperationCard(item) {
         const out=await postJSONOk("/api/manifest/operations/"+encodeURIComponent(o.operationId)+"/email-reconcile",{});
         if(!out?.record||out.record.status!=="succeeded")throw new Error("Delivery remains unresolved. You can check again.");
         const next=manifestOperationCard({...item,record:out.record});card.replaceWith(next);next.tabIndex=-1;next.focus({preventScroll:true});
-        window.dispatchEvent(new Event("manifest-approval-updated"));
+        manifestRefreshOperationSurfaces(a.id);
       } catch(e) {status.textContent=e.message||"Could not check delivery. You can check again.";check.disabled=false;}
     };
     recovery.append(check,status);card.append(recovery);
@@ -1836,7 +1832,7 @@ function manifestOperationCard(item) {
     rule.value=watch ? (watch.stopAfterReply ? "reply" : "manual") : "reply";
     if(!watch?.enabled)section.append(rule);
     const toggle=el("button","ghost",watch?.enabled?"Stop tracking":"Track replies");
-    toggle.onclick=async()=>{toggle.disabled=true;rule.disabled=true;try{await postJSONOk("/api/manifest/operations/"+encodeURIComponent(o.operationId)+"/email-watch",watch?.enabled?{enabled:false}:{enabled:true,stopAfterReply:rule.value==="reply"});window.dispatchEvent(new Event("manifest-approval-updated"));if(typeof chatOpenId!=="undefined"&&chatOpenId)refetchChatSession(chatOpenId);loadFeed();}catch(e){showToast(e.message||"Could not update reply tracking");toggle.disabled=false;rule.disabled=false;}};
+    toggle.onclick=async()=>{toggle.disabled=true;rule.disabled=true;try{await postJSONOk("/api/manifest/operations/"+encodeURIComponent(o.operationId)+"/email-watch",watch?.enabled?{enabled:false}:{enabled:true,stopAfterReply:rule.value==="reply"});manifestRefreshOperationSurfaces(a.id);}catch(e){showToast(e.message||"Could not update reply tracking");toggle.disabled=false;rule.disabled=false;}};
     section.append(toggle);
     section.append(el("p","sprt-sub","Checks this sent thread every five minutes while enabled. Requires this sender's read-only Gmail connection."));
     if(watch?.enabled)section.append(el("p","sprt-sub",watch.stopAfterReply ? "Stops when a reply is found. You can stop sooner." : "Continues until you stop tracking."));
@@ -1861,6 +1857,14 @@ function manifestOperationCard(item) {
     receipt.append(el("pre", "", JSON.stringify(o.result, null, 2))); card.append(receipt);
   }
   return card;
+}
+// Canonical operation mutations must invalidate every retained projection.
+function manifestRefreshOperationSurfaces(id) {
+  if (typeof chatOpenId !== "undefined" && chatOpenId && typeof refetchChatSession === "function") refetchChatSession(chatOpenId);
+  if (typeof chatTaskID !== "undefined" && chatTaskID && typeof renderTaskChat === "function") renderTaskChat(chatTaskID, true);
+  if (typeof loadTodos === "function") loadTodos();
+  window.dispatchEvent(new CustomEvent("manifest-approval-updated", {detail:{id}}));
+  if (typeof loadFeed === "function") loadFeed();
 }
 let manifestRevealTarget = "";
 function manifestRevealElement(node, id) {

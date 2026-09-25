@@ -10,14 +10,17 @@ const {chromium}=require('playwright'),fs=require('node:fs'),path=require('node:
  const source=fs.readFileSync(path.join(__dirname,'../web/js/55-approvals.js'),'utf8');await page.addScriptTag({content:source.slice(source.indexOf('function manifestOperationCard'),source.indexOf('let manifestRevealTarget'))});
  await page.evaluate(()=>{window.fixture={record:{operationId:'sha256:fixture',policy:'human_approval',status:'partial',arguments:{email:{from:'ben@ooda.group',to:['contractor@example.com'],subject:'Bid request',body:'Please quote'},domain:'ooda'},result:{deliveryStatus:'sent'},emailWatch:{enabled:true,total:1,checkedAt:'2026-09-11T12:00:00Z',replies:[{from:'Contractor',at:'2026-09-11T11:00:00Z',body:'<script>literal message</script>',clipped:true}]}},proposal:{id:'approval-fixture',action:'email',body:'fixture'}};document.getElementById('root').append(manifestOperationCard(fixture));});
 
+ await page.evaluate(()=>{window.refreshes=[];window.chatOpenId='chat-one';window.chatTaskID='task-one';window.refetchChatSession=id=>refreshes.push(['chat',id]);window.renderTaskChat=(id,force)=>refreshes.push(['task',id,force]);window.loadTodos=()=>refreshes.push(['todos']);window.loadFeed=()=>refreshes.push(['feed']);window.addEventListener('manifest-approval-updated',e=>refreshes.push(['event',e.detail.id]));});
  await page.getByRole('button',{name:'Check delivery',exact:true}).waitFor();
  await page.evaluate(()=>{window.postJSONOk=async(url,body)=>{actions.push({url,body});throw new Error('Delivery remains uncertain')};});
  await page.getByRole('button',{name:'Check delivery',exact:true}).click();
  await page.getByRole('status').filter({hasText:'Delivery remains uncertain'}).waitFor();
  assert.equal(await page.getByRole('button',{name:'Check delivery',exact:true}).isEnabled(),true);
+ assert.deepEqual(await page.evaluate(()=>refreshes),[]);
  await page.evaluate(()=>{window.postJSONOk=async(url,body)=>{actions.push({url,body});return {record:{...fixture.record,status:'succeeded'}}};});
  await page.getByRole('button',{name:'Check delivery',exact:true}).click();
  await page.getByText('Email sent',{exact:true}).waitFor();
+ assert.deepEqual(await page.evaluate(()=>refreshes),[['chat','chat-one'],['task','task-one',true],['todos'],['event','approval-fixture'],['feed']]);
  assert.equal(await page.getByRole('button',{name:'Check delivery',exact:true}).count(),0);
  assert.deepEqual(await page.evaluate(()=>actions),[1,2].map(()=>({url:'/api/manifest/operations/sha256%3Afixture/email-reconcile',body:{}})));
  for(const status of ['pending_approval','failed','succeeded']){await page.evaluate(status=>{fixture.record.status=status;document.getElementById('root').replaceChildren(manifestOperationCard(fixture));},status);assert.equal(await page.getByRole('button',{name:'Check delivery',exact:true}).count(),0);}

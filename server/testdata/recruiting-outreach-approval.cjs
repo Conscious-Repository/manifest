@@ -13,6 +13,13 @@ const {chromium}=require('playwright'),fs=require('fs'),path=require('path'),ass
  await p.getByRole('button',{name:'prepare approval',exact:true}).click();await p.getByText('Review email',{exact:true}).waitFor();
  const calls=await p.evaluate(()=>window.calls);assert.deepEqual(calls.at(-1),calls.at(-2),'retry sends the exact reviewed revision');assert.ok(calls.every(c=>!c.url.includes('/send/')));
  await p.getByRole('button',{name:'Approve',exact:true}).click();await p.getByText('Email sent',{exact:true}).waitFor();assert.deepEqual(await p.evaluate(()=>decisions),['/api/spirits/approvals/approval-one/confirm']);
+ // Recovery must refresh the enclosing recruiting actions, not just its email card.
+ await p.evaluate(()=>{operation.record.status='partial';window.recoveryCalls=[];window.postJSONOk=async(url,body)=>{recoveryCalls.push({url,body});operation.record={...operation.record,status:'succeeded'};return {record:operation.record};};renderAion();});
+ assert.equal(await p.getByRole('button',{name:'record sent outcome',exact:true}).count(),0);
+ await p.getByRole('button',{name:'Check delivery',exact:true}).click();
+ await p.getByRole('button',{name:'record sent outcome',exact:true}).waitFor();
+ assert.deepEqual(await p.evaluate(()=>recoveryCalls),[{url:'/api/manifest/operations/op-one/email-reconcile',body:{}}]);
+ assert.equal(await p.evaluate(()=>decisions.length),1,'recovery cannot approve or send again');
  await p.locator('textarea').evaluate(e=>e.value='Unsaved new text');await p.getByRole('button',{name:'view saved approval',exact:true}).click();assert.ok((await p.evaluate(()=>toast)).includes('Finish saving'));
  for(const width of [320,390,1440]){await p.setViewportSize({width,height:844});assert.equal(await p.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);}
  await p.getByRole('button',{name:'record sent outcome',exact:true}).click();await p.getByText('Sent outcome recorded in recruiting.',{exact:true}).waitFor();assert.equal(await p.getByRole('button',{name:'prepare approval',exact:true}).count(),0);assert.equal(await p.evaluate(()=>recOutreachCurrentDraft([{seq:1,status:'draft'},{seq:2,status:'draft'},{seq:3,status:'sent',draftSeq:1}]).seq),2);assert.equal(await p.evaluate(()=>decisions.length),1,'recording cannot approve or send again');
