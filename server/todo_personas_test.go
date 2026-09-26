@@ -227,7 +227,11 @@ func TestMentionIntentRidesRelay(t *testing.T) {
 	hermes := srv.eachHarness()[1].Spirits
 	// intent-tagged mention on an unassigned todo: auto-assign to the BASE
 	// token, spool carries the persona
-	srv.threadDialogHook(id, []string{"agent:hermes::brief"}, "what's the setback?")
+	// personal board Comment mode: threadDialogHook is the portal entry and,
+	// since 0d41e43, refuses the personal agent (see TestRelayAlwaysAndAutoAssign)
+	if _, err := srv.postAndDispatch(id, "comment", "", []string{"agent:hermes::brief"}, nil, "what's the setback?"); err != nil {
+		t.Fatal(err)
+	}
 	if got := srv.readPlanRecord(id).Assignee; got != "agent:hermes" {
 		t.Fatalf("auto-assign must use the bare token: %q", got)
 	}

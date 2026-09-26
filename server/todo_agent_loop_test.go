@@ -197,8 +197,20 @@ func TestRelayAlwaysAndAutoAssign(t *testing.T) {
 	srv := loopFixture(t)
 	id := "inbox/research-zoning"
 	hermes := srv.eachHarness()[1].Spirits
+	// Hermes is the owner's PERSONAL agent, so this drives the personal
+	// board's Comment mode (postAndDispatch). It used threadDialogHook until
+	// 0d41e43 made that hook the portal-only, team-roster-gated entry (a
+	// teammate must not direct Hermes — owner decision 2026-08-16, pinned by
+	// TestPortalCannotDirectPersonalAgent); both entries share resolveDispatch
+	// → dispatchAssign → dispatchRelay, which is what this test is about.
+	comment := func(mentions []string, text string) {
+		t.Helper()
+		if _, err := srv.postAndDispatch(id, "comment", "", mentions, nil, text); err != nil {
+			t.Fatal(err)
+		}
+	}
 	// mention on an UNASSIGNED todo → auto-assign + comment-phase spool
-	srv.threadDialogHook(id, []string{"agent:hermes"}, "take a pass at a plan?")
+	comment([]string{"agent:hermes"}, "take a pass at a plan?")
 	if got := srv.readPlanRecord(id).Assignee; got != "agent:hermes" {
 		t.Fatalf("mention must auto-assign: %q", got)
 	}
@@ -217,12 +229,12 @@ func TestRelayAlwaysAndAutoAssign(t *testing.T) {
 	for _, f := range mustGlob(t, filepath.Join(hermes.Root(), "vessel", "spool", "*.json")) {
 		_ = os.Remove(f)
 	}
-	srv.threadDialogHook(id, nil, "prefer the cheaper vendor")
+	comment(nil, "prefer the cheaper vendor")
 	if q = hermes.Queued(); len(q) != 0 {
 		t.Fatalf("plain comment must NOT relay (reply guard): %+v", q)
 	}
 	// a typed @mention in free text IS an ask — one comment-phase turn
-	srv.threadDialogHook(id, nil, "@hermes prefer the cheaper vendor")
+	comment(nil, "@hermes prefer the cheaper vendor")
 	q = hermes.Queued()
 	if len(q) != 1 || !strings.Contains(q[0].Request, "prefer the cheaper vendor") ||
 		!strings.Contains(q[0].Request, "[phase:: comment]") {

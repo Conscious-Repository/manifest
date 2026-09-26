@@ -202,10 +202,17 @@ const slice=(src,start,end)=>{const s=src.indexOf(start);assert.ok(s>=0,'missing
   assert.equal(await page.locator('.chat-head > .chat-workspace-toggle').isVisible(),true,'desktop keeps the workspace icon button');
   await page.locator('.chat-details > summary').click();assert.equal(await entry.isVisible(),false,'desktop ··· has no Workspace entry');
   await page.evaluate(()=>{document.querySelector('.chat-details').open=false;document.activeElement?.blur();});
-  for(const width of [861,1000,1280]){
+  // 862 guards the other side of the 860/861 phone-band edge.
+  for(const width of [861,862,1000,1280]){
    await page.setViewportSize({width,height:900});await clear();
    const dInput=await box('#chatComposer textarea'),dSend=await box('.chat-send'),dPaint=await paint('.chat-send'),dModel=await paint('.chat-composer-recipient');
-   assert.ok(dInput.y<dSend.y&&dInput.h>=72,`${width}: desktop composer is unchanged: full-width textarea (min 72px) over the controls`);
+   // The desktop floor was 72px (calc(var(--sp-9) * 3)) when this fixture was
+   // written on 2026-09-12; the owner's b2ed83a (2026-09-24, "main and embedded
+   // composer spacing is closer") set 48-chat.css `.chat-main .chat-composer
+   // textarea.chat-input` to min-height: 56px on purpose, at every desktop
+   // width. The anatomy under test is unchanged: textarea on its own row above
+   // the controls (the phone band instead folds everything into one row).
+   assert.ok(dInput.y<dSend.y&&dInput.h>=56,`${width}: desktop composer is unchanged: full-width textarea (min 56px) over the controls`);
    assert.equal(dPaint.bg,hexToRgb(dPaint.accent),`${width}: desktop send keeps the accent fill`);assert.equal(dPaint.visualW,dSend.w,`${width}: desktop send has no hit-box border`);
    assert.ok(dModel.fontSize===13&&/mono|Carbon/i.test(dModel.fontFamily),`${width}: desktop model label keeps its mono type`);
    await ta.fill('ok');await page.evaluate(()=>document.querySelector('#chatComposer textarea').dispatchEvent(new Event('input',{bubbles:true})));
@@ -216,6 +223,6 @@ const slice=(src,start,end)=>{const s=src.indexOf(start);assert.ok(s>=0,'missing
   assert.equal(await page.locator('.chat-shell > .mf-chat-toggle').isVisible(),false,'no fold toggle on desktop');
 
   assert.deepEqual(errors,[]);
-  console.log('PASS: phone composer stays one 50–58px row until the text wraps, then grows with it; quiet model label and neutral send with 44px targets; Back to chats in the head with Close chats hand-off; workspace opener behind ···, and choosing Rename/Workspace from ··· closes it with the rename input on top; desktop head and composer unchanged at 861/1000/1280.');
+  console.log('PASS: phone composer stays one 50–58px row until the text wraps, then grows with it; quiet model label and neutral send with 44px targets; Back to chats in the head with Close chats hand-off; workspace opener behind ···, and choosing Rename/Workspace from ··· closes it with the rename input on top; desktop head and composer unchanged at 861/862/1000/1280.');
  }finally{await browser.close();}
 })().catch(e=>{console.error(e);process.exit(1);});
