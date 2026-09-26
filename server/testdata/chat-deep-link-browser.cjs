@@ -2,8 +2,9 @@
 //   1. a cold #/chat/<id> for an Alfred thread (the spirits store answers
 //      404) lands on #/chat/a/alfred/<id> and paints the transcript — no
 //      failure block on the way;
-//   2. an id no store holds says so truthfully, offers the way back, and
-//      leaves no field to type into;
+//   2. an id no store holds says so truthfully, offers the way back to the
+//      last section the reader was in (Spirits, marked a fallback, when none
+//      is recorded), and leaves no field to type into;
 //   3. an outage while opening a thread shows what happened with Retry,
 //      the composer closed; Retry after recovery loads the thread and the
 //      composer comes back with the saved draft.
@@ -34,8 +35,19 @@ const {makeStub}=require('./chat-stub-api.cjs');
    assert.doesNotMatch(await box.innerText(),/archived/);
    assert.equal(await page.locator('#chatComposer textarea').count(),0,'nothing to type into');
    assert.match(await page.locator('#chatComposer').innerText(),/did not load/);
-   await box.getByRole('button',{name:'Back to Spirits'}).click();
-   await page.waitForFunction(()=>location.hash==='#/chat/spirits');
+   // the reader came from Alfred (step 1): Back returns to the last section
+   // (owner decision 2026-09-26), not to the bare route's Spirits
+   await box.getByRole('button',{name:'Back to Alfred'}).click();
+   await page.waitForFunction(()=>location.hash==='#/chat/a/alfred');
+   // nothing recorded (a first visit straight to a dead link): Spirits, labelled a fallback
+   const fresh=await browser.newContext({viewport:{width,height:900}});const cold=await fresh.newPage();
+   await cold.goto(base+'/#/chat/zz-missing');
+   await cold.waitForFunction(()=>/No conversation has this id/.test(document.querySelector('#chatTranscript .chat-load-error')?.innerText||''));
+   const coldBack=cold.locator('#chatTranscript .chat-load-error').getByRole('button',{name:'Back to Spirits'});
+   assert.match(await coldBack.getAttribute('title'),/No earlier section is recorded/);
+   assert.equal(await cold.evaluate(()=>localStorage.getItem('manifest.chatSection')),null,'a dead link is not remembered as a section');
+   await coldBack.click();await cold.waitForFunction(()=>location.hash==='#/chat/spirits');
+   await fresh.close();
    // 3. outage while opening; draft survives the closed composer
    await page.evaluate(()=>{location.hash='#/chat/a/alfred/a';});await page.locator('#chatComposer textarea').waitFor();
    await page.locator('#chatComposer textarea').fill('draft kept');await page.waitForTimeout(400);

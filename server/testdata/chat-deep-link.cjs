@@ -27,7 +27,7 @@ composer.dataset.built='1';composer.append(node('textarea','chat-input'));
 const ctx=vm.createContext({console,encodeURIComponent,Error,String,Promise,
  chatSessionLoadTicket:0,chatRouteVersion:0,chatAgent:'',chatOpenId:'',chatLastUpdated:'',chatCurSession:null,chatPendingWorkspace:null,
  els:{chatView:{hidden:false}},chatStageCache:new Map(),chatStageKey:(a,id)=>a+'/'+id,chatStageRemember(){},chatConversationTasks:new Map(),
- chatIsTerm:()=>false,chatRemember(){},chatPrepareDraft:async()=>{},chatPrepareReadingPosition:async()=>{},chatOriginArtifactSelection:async()=>null,
+ chatIsTerm:a=>['claude','codex'].includes(a),chatRemember(){},chatBareFrom:'',chatRosterEntry:a=>['alfred','kairos'].includes(a)?{name:a}:null,chatPrepareDraft:async()=>{},chatPrepareReadingPosition:async()=>{},chatOriginArtifactSelection:async()=>null,
  chatBaseFor:a=>a?'/api/agents/chat/'+encodeURIComponent(a)+'/sessions':'/api/chat/sessions',
  chatAgentLabel:a=>({alfred:'Alfred',kairos:'Kairos · team',claude:'Claude Code'})[a]||a,
  chatSectionHash:a=>a?'#/chat/a/'+encodeURIComponent(a):'#/chat/spirits',
@@ -73,7 +73,10 @@ const reset=()=>{fetched=[];replaced=[];painted=[];};
  await open('#/chat/'+GONE);
  assert.deepEqual(painted,[]);assert.match(text(transcript),/No conversation has this id/);
  assert.match(text(transcript),/Every chat store was checked/);
- assert.ok(find(transcript,n=>n.tag==='button'&&/Back to Spirits/.test(n.textContent)),'not found offers the way back');
+ // no section recorded before the link: Back falls back to Spirits, and says why
+ const backBtn=()=>find(transcript,n=>n.tag==='button'&&/^Back to /.test(n.textContent));
+ assert.equal(backBtn()?.textContent,'Back to Spirits','not found offers the way back');
+ assert.match(backBtn().title||'',/No earlier section is recorded/,'the fallback says it is one');
  assert.ok(!find(composer,n=>n.tag==='textarea'),'a failed load leaves nothing to type into');
  assert.ok(composer.classList.contains('closed')&&composer.attrs['aria-disabled']==='true'&&composer.dataset.built==='','the composer is closed and rebuilds on the next load');
  // 7. a store that could not be asked: never "not found"
@@ -82,5 +85,20 @@ const reset=()=>{fetched=[];replaced=[];painted=[];};
  assert.match(text(transcript),/terminal could not be checked/);
  assert.ok(find(transcript,n=>n.tag==='button'&&n.textContent==='Retry'));
  unavailable=[];
+ // 8. owner decision 2026-09-26 "last section": Back from a bare not-found
+ //    link returns to the section the reader was in when they opened it
+ for(const [from,label,hash] of [['alfred','Alfred','#/chat/a/alfred'],['claude','Claude Code','#/chat/a/claude'],['spirits','Spirits','#/chat/spirits']]){
+  reset();ctx.chatBareFrom=from;await open('#/chat/'+GONE);
+  assert.equal(backBtn()?.textContent,'Back to '+label,'a bare not-found link goes back to the last section ('+from+')');
+  assert.ok(!backBtn().title,'a recorded section is not labelled a guess');
+  ctx.location.hash='';backBtn().onclick();assert.equal(ctx.location.hash,hash);
+ }
+ // a remembered section gone from the roster is not trusted
+ reset();ctx.chatBareFrom='retired-agent';await open('#/chat/'+GONE);
+ assert.equal(backBtn()?.textContent,'Back to Spirits');assert.match(backBtn().title,/No earlier section/);
+ // a route that names its section keeps it, whatever was remembered
+ reset();ctx.chatBareFrom='claude';await open('#/chat/a/alfred/'+GONE);
+ assert.equal(backBtn()?.textContent,'Back to Alfred','an agent route goes back to its own section');
+ ctx.chatBareFrom='';
  console.log('Chat cold deep links passed');
 })().catch(e=>{console.error(e);process.exitCode=1});

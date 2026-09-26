@@ -41,6 +41,7 @@ let chatAgentSessions = {};  // agent slug → its session list
 let chatAgentTasks = {};     // agent slug → the open todos it holds (Phase 4 bridge)
 let chatTaskThreads = [];    // every task conversation (GET /api/tasks/threads) — rail rows beside the sessions (2026-09-21)
 let chatCurSession = null;   // the open session object as last fetched (head repaint after rename)
+let chatBareFrom = "";       // the remembered section as it stood when a bare #/chat/<id> was opened ("" = none recorded)
 
 // the last section + last-open thread per section survive a reload
 // (manifest.termStage precedent) — bare #/chat restores them; a SECTION switch
@@ -416,13 +417,15 @@ function showChat(h) {
   // landing; a thread opens only when the hash names one, or on bare #/chat
   // (the remembered thread of the remembered section).
   let restore = false;
+  // a bare #/chat/<id> names no section; the id's store is found on load
+  const bare = !!head && head !== "a" && head !== "spirits" && head !== "new";
   if (head === "a") {
     chatAgent = seg[1] || "alfred";
     const sub = seg.slice(2).join("/");
     if (sub && sub !== "new") { chatOpenId = sub; chatLanding = false; }
     else { chatOpenId = ""; chatLanding = true; }
   } else if (head === "spirits" || head === "new") { chatAgent = ""; chatOpenId = ""; chatLanding = true; }
-  else if (head) { chatAgent = ""; chatOpenId = seg.join("/"); chatLanding = false; }
+  else if (head) { chatAgent = ""; chatOpenId = seg.join("/"); chatLanding = false; chatBareFrom = chatRecall("manifest.chatSection"); }
   else { restore = true; chatOpenId = ""; chatLanding = false; }
   // the stage turns over now (cached paint or an empty stage under the
   // thread's head), and when the section's list already names the thread
@@ -457,7 +460,10 @@ function showChat(h) {
       if (last && list.some((s) => s.id === last)) chatOpenId = last;
       else chatLanding = true;
     }
-    chatRemember(chatAgent || "spirits", chatOpenId || undefined);
+    // a bare link is remembered once it loads (loadChatSession) or resolves to
+    // its owner's route — until then the reader is still in the section they
+    // came from, which is where a not-found link's Back returns
+    if (!bare) chatRemember(chatAgent || "spirits", chatOpenId || undefined);
     renderChatRail();
     if (!eager) renderChatComposer(); // the eager path's composer already stands for the thread
     if (chatOpenId) { if (!eager) loadChatSession(chatOpenId); }
@@ -1721,8 +1727,10 @@ function renderChatEmpty(note) {
     retry.onclick = () => { retry.disabled = true; retry.textContent = "Retrying…"; loadChatSession(chatOpenId); };
     actions.append(retry);
   } else if (action === "back") {
-    const back = el("button", "pill", "Back to " + (chatAgent ? chatAgentLabel(chatAgent) : "Spirits"));
-    back.onclick = () => { location.hash = chatSectionHash(chatAgent); };
+    const to = chatBackSection();
+    const back = el("button", "pill", "Back to " + chatStoreLabel(to.agent));
+    if (to.fallback) back.title = "No earlier section is recorded; bare links belong to Spirits.";
+    back.onclick = () => { location.hash = chatSectionHash(to.agent); };
     actions.append(back);
   }
   if (actions.childNodes.length) box.append(actions);
@@ -1743,6 +1751,20 @@ function chatCloseComposer(line) {
 
 // chatStoreLabel names a backend for the not-found copy.
 function chatStoreLabel(agent) { return agent ? chatAgentLabel(agent) : "Spirits"; }
+
+// chatBackSection — where Back goes from a not-found stage. A route that names
+// its section keeps it. A bare #/chat/<id> names none, so Back returns to the
+// section the reader was last in (owner decision 2026-09-26: "last section"),
+// captured before the bare route could overwrite it; Spirits — the bare
+// route's own section — only when none is recorded or it is no longer on the
+// roster ({agent: "" = Spirits, fallback: true when nothing was recorded}).
+function chatBackSection() {
+  if (chatAgent) return { agent: chatAgent, fallback: false };
+  const from = chatBareFrom;
+  if (from === "spirits") return { agent: "", fallback: false };
+  if (from && (chatRosterEntry(from) || chatIsTerm(from))) return { agent: from, fallback: false };
+  return { agent: "", fallback: true };
+}
 
 // chatResolveMissing — the backend the route named said 404. A bare
 // #/chat/<id> is the spirit route's shape, so a pasted Alfred id landed on the
