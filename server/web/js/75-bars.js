@@ -100,10 +100,14 @@ window.addEventListener("keydown", (e) => {
       (e.metaKey || e.ctrlKey) && ["j", "i", "/"].includes(e.key.toLowerCase())) {
     e.preventDefault(); return;
   }
-  if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") { e.preventDefault(); openCmdbar(); }
-  else if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "j") { e.preventDefault(); toggleQuickChat(); }
-  else if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "i") { e.preventDefault(); toggleSticky(); }
-  else if ((e.metaKey || e.ctrlKey) && e.key === "/") { e.preventDefault(); toggleRawOverlay(); }
+  // Ctrl+Alt chords belong to the chat workbench (49-chat-workspace.js):
+  // Ctrl+Alt+I opened the sticky over the workspace it toggled, Ctrl+Alt+J
+  // quick chat over "next needing attention" (Phase C screen 2026-09-26).
+  const mod = (e.metaKey || e.ctrlKey) && !e.altKey;
+  if (mod && e.key.toLowerCase() === "k") { e.preventDefault(); openCmdbar(); }
+  else if (mod && e.key.toLowerCase() === "j") { e.preventDefault(); toggleQuickChat(); }
+  else if (mod && e.key.toLowerCase() === "i") { e.preventDefault(); toggleSticky(); }
+  else if (mod && e.key === "/") { e.preventDefault(); toggleRawOverlay(); }
   else if (e.key === "Escape" && !e.defaultPrevented && els.castbar && !els.castbar.hidden) { closeCastbar(); }
   else if (e.key === "Escape" && !e.defaultPrevented && rawOpen) { closeRawOverlay(); }
   else if (e.key === "Escape" && !els.cmdbar.hidden) { closeCmdbar(); }

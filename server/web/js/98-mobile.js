@@ -108,8 +108,14 @@
   // Phone nav = the SAME rail (groups/order/counts), slid in as an overlay.
   // Never writes manifest.rail.collapsed — phone use must not pollute the
   // desktop preference.
-  function openDrawer() { if (mqPhone.matches) shell.classList.add("drawer-open"); }
-  function closeDrawer() { shell.classList.remove("drawer-open"); }
+  // The closed drawer sits off screen, not hidden: without inert every rail
+  // link stayed a Tab stop at x=-300 (Phase C screen 2026-09-26, 320–412px).
+  const railNav = document.getElementById("rail");
+  function syncDrawerInert() { if (railNav) railNav.inert = mqPhone.matches && !shell.classList.contains("drawer-open"); }
+  function openDrawer() { if (mqPhone.matches) shell.classList.add("drawer-open"); syncDrawerInert(); }
+  function closeDrawer() { shell.classList.remove("drawer-open"); syncDrawerInert(); }
+  mqPhone.addEventListener("change", syncDrawerInert);
+  syncDrawerInert();
   scrim.addEventListener("click", closeDrawer);
   // every rail item is an <a href="#/...">: hashchange covers all navigation.
   window.addEventListener("hashchange", closeDrawer);

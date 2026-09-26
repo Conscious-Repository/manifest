@@ -672,11 +672,16 @@ function chatFitShell() {
   if(typeof chatUpdateJump==="function")chatUpdateJump();
 }
 
+// chatInboxLoadFailed — the last inbox refresh could not read the server.
+// The rail keeps the last good list and says so instead of "No conversations
+// yet" (audit 2026-09-25: an outage emptied the rail with no error shown).
+let chatInboxLoadFailed = false;
 async function loadChatRoster() {
   try {
     const res = await fetch("/api/agents/chat/roster");
-    chatRoster = res.ok ? (((await res.json()).agents) || []) : [];
-  } catch (e) { chatRoster = []; }
+    if (res.ok) chatRoster = ((await res.json()).agents) || [];
+    else chatInboxLoadFailed = true; // retain the last good roster
+  } catch (e) { chatInboxLoadFailed = true; }
   if (chatAgent && !chatRosterEntry(chatAgent)) {
     // the section vanished (profile deleted / runner off) → fall back
     chatAgentSessions[chatAgent] = chatAgentSessions[chatAgent] || [];
@@ -730,6 +735,7 @@ async function chatLoadInbox(quiet) {
       if (res.ok) {
         const d = await res.json();
         if (chatApplyInbox(d, quiet)) {
+          chatInboxLoadFailed = false;
           chatInboxAt = Date.now();
           try { localStorage.setItem(chatInboxSnapshotKey, JSON.stringify(d)); } catch (e) {}
           return true;
@@ -737,8 +743,10 @@ async function chatLoadInbox(quiet) {
       }
     } catch (e) {}
     // an older server: the per-list loaders, as before
+    chatInboxLoadFailed = false;
     await loadChatRoster();
     await Promise.all([loadChatSessions(), loadChatTermSessions(quiet)]);
+    if (chatInboxLoadFailed) return false; // not fresh: the next render retries
     chatInboxAt = Date.now();
     return true;
   })().finally(() => { chatInboxInflight = null; });
@@ -793,9 +801,8 @@ function renderChatHeadActions() {
   const host = document.getElementById("chatHeadActions");
   if (!host || host.dataset.built) return;
   host.dataset.built = "1";
-  const add = el("button", "sprt-ghost", "＋ new");
-  add.title = "Start a conversation with an agent";
-  add.textContent = "New chat";
+  const add = el("button", "sprt-ghost", "New chat");
+  add.title = "Start a conversation with an agent · Ctrl+Alt+N";add.setAttribute("aria-keyshortcuts", "Control+Alt+n");
   add.onclick = () => reviewDialog("New chat",({body,actions,close})=>{
     body.closest('dialog').classList.add('chat-new-dialog');
     const cancel=el('button','sprt-quiet','Cancel');cancel.onclick=close;actions.append(cancel);
@@ -1029,7 +1036,7 @@ function chatEditProject(id){
     await draft.refresh();if(closed)return;applyDraft();
    }
   }catch(e){status.textContent=e.message;}finally{if(!closed){name.disabled=notes.disabled=!snapshot;save.disabled=!snapshot||!!draft?.conflict||sourceConflict;}}};
-  const conflictActions=el('div','form-actions chat-project-edit-actions'),keep=el('button','sprt-quiet','keep my draft'),use=el('button','sprt-quiet','use saved draft');conflictActions.hidden=true;conflictActions.append(keep,use);host.append(conflictActions);
+  const conflictActions=el('div','form-actions chat-project-edit-actions'),keep=el('button','sprt-quiet','keep this draft'),use=el('button','sprt-quiet','use saved draft');conflictActions.hidden=true;conflictActions.append(use,keep);host.append(conflictActions);
   keep.onclick=async()=>{await draft.resolve(false);conflictActions.hidden=true;save.disabled=sourceConflict;};use.onclick=async()=>{await draft.resolve(true);conflictActions.hidden=true;save.disabled=sourceConflict;applyDraft();};
   const changed=()=>{dirty=true;status.textContent='Unsaved changes';draft?.set({name:name.value,instructions:notes.value,recordVersion:draft?.value?.recordVersion||snapshot?.record_version});};name.oninput=notes.oninput=changed;
   reload.onclick=()=>{if(dirty){status.textContent='Discard this unfinished edit? ';const discard=el('button','sprt-quiet','discard draft and reload');discard.onclick=()=>{draft?.set(null);draft?.flush();dirty=false;sourceConflict=false;host.querySelector('.chat-project-compare')?.remove();load();};status.append(discard);return;}load();};
@@ -1173,7 +1180,14 @@ function renderChatInboxRows() {
   const filterLabel=document.querySelector(".chat-filter-menu > summary");if(filterLabel)filterLabel.textContent="Filters"+((chatInboxFilter!=="all"||chatWorkstreamFilter!=="all"||chatAttentionFilter!=="all")?" · on":"");
   const entries = chatInboxEntries();
   if(chatLifecycleFilter==="deleted")host.append(el("p","chat-head-meta","Deleted from your Chats. Restore anytime. Task and provider history are retained."));
-  if (!entries.length) host.append(emptyRow(chatSearchQuery || chatWorkstreamFilter!=="all" || chatInboxFilter!=="all" || chatAttentionFilter!=="all" ? "No matching conversations" : "No conversations yet"));
+  if (chatInboxLoadFailed) {
+    const row = emptyRow(entries.length ? "Couldn't refresh conversations · showing the last list" : "Couldn't load conversations");
+    row.setAttribute("role", "status");
+    const retry = el("button", "sprt-quiet", "retry");
+    retry.onclick = async () => { retry.disabled = true; chatInboxAt = 0; await chatLoadInbox(true); renderChatInboxRows(); };
+    row.append(" ", retry);
+    host.append(row);
+  } else if (!entries.length) host.append(emptyRow(chatSearchQuery || chatWorkstreamFilter!=="all" || chatInboxFilter!=="all" || chatAttentionFilter!=="all" ? "No matching conversations" : "No conversations yet"));
   const rows=entries.map(entry => {
     const row = entry.taskThread ? chatTaskRow(entry.session) : entry.terminal ? chatTermRow(entry.session) : chatRailRow(entry.session, entry.agent);
     row.addEventListener("pointerdown", () => chatPrefetchEntry(entry), { passive: true });
@@ -1264,7 +1278,7 @@ function renderChatRail() {
     const controls = el("div", "chat-inbox-controls");
     const search = document.createElement("input");
     search.type = "search"; search.className = "chat-inbox-search";
-    search.placeholder = "Search chats"; search.setAttribute("aria-label", "Search chats");
+    search.placeholder = "Search chats"; search.setAttribute("aria-label", "Search chats"); search.title = "Search chats · Ctrl+Alt+F"; search.setAttribute("aria-keyshortcuts", "Control+Alt+f");
     search.value = chatSearchQuery;
     search.oninput = () => { chatSearchQuery = search.value; renderChatInboxRows(); };
     const select = document.createElement("select");
@@ -2164,7 +2178,7 @@ function chatTurnBlocks(t) {
 function chatBlockEl(b) {
   if (b.t === "say") {
     const say = el("div", "chat-say");
-    if (b.plain) { say.textContent = b.text || ""; return say; }
+    if (b.plain) { say.classList.add("chat-say-plain"); say.textContent = b.text || ""; return say; }
     try { say.append(renderMarkdown(b.text || "", "", { readOnly: true })); }
     catch (e) { say.textContent = b.text || ""; }
     return say;
@@ -2337,13 +2351,41 @@ function renderChatTranscript(d) {
   const area = el("div", "chat-live-area");
   area.id = "chatLiveArea";
   host.append(area);
-  if (s.status === "thinking" && !chatLive) {
-    area.append(el("div", "chat-thinking", portal ? "✦ order spooled — " + who + " answers when its run lands…" : "✦ " + chatEntryState({session:s}).label + "…"));
+  // One terse run-state line under the transcript (Phase C 2026-09-26): the
+  // rail row was the only place queued / disconnected / failed showed, and
+  // the rail is folded away on phones and behind an open workspace. The ✦
+  // accent stays for work in progress; ready says nothing.
+  const run = portal ? null : chatEntryState({session:s});
+  if (portal ? s.status === "thinking" && !chatLive : run.execution === "running" && !chatLive) {
+    area.append(el("div", "chat-thinking", portal ? "✦ order spooled — " + who + " answers when its run lands…" : "✦ " + run.label + "…"));
+  } else if (run && ["queued", "disconnected", "failed"].includes(run.execution)) {
+    const failed = run.execution === "failed" ? (s.deliveries || []).filter(x => x.state === "failed").at(-1)?.error : "";
+    const line = el("div", "chat-run-state", run.execution === "queued" ? "Queued · accepted, not started" : run.label + (failed ? " · " + String(failed).slice(0, 160) : ""));
+    line.dataset.execution = run.execution; line.setAttribute("role", "status");
+    if (run.evidence) line.title = run.evidence;
+    area.append(line);
   }
   chatStick = !keepPosition;
   if (keepPosition) host.scrollTop = previousY;
   chatPin();
   if (changedConversation) chatRestoreReadingPosition(host, chatReadingStates.get(readKey)?.value);
+}
+
+// chatSendEcho — the sending → accepted line under the transcript. The
+// session refetch that follows acceptance repaints the stage with the real
+// turn and its run state; settle() removes an echo that was never accepted.
+function chatSendEcho(text) {
+  const area = document.getElementById("chatLiveArea");
+  if (!area || chatLive || !text) return { accept() {}, settle() {} };
+  const turn = chatUserTurn(text);turn.classList.add("chat-queued", "chat-send-echo");
+  const status = el("div", "chat-run-state chat-send-echo", "Sending…");
+  status.dataset.execution = "sending";status.setAttribute("role", "status");
+  area.append(turn, status);chatStick = true;chatPin();
+  let accepted = false;
+  return {
+    accept() { accepted = true;status.dataset.execution = "accepted";status.textContent = "Accepted · not started yet"; },
+    settle() { if (!accepted) { turn.remove();status.remove(); } },
+  };
 }
 
 // ---- composer ----
@@ -2450,7 +2492,10 @@ function renderChatComposer(session) {
       if (session && session.status === "thinking") return "✦ waiting on " + (a ? a.label : chatAgent) + "…";
       return "Message… · @ to tag an intent";
     }
-    return session && session.status === "thinking" ? "✦ " + chatEntryState({session}).label + " — messages queue…" : "Message…";
+    // the live mark follows the run state, not the raw status flag: a stale
+    // "thinking" under a disconnected projection is not work in progress
+    const run = session ? chatEntryState({session}) : null;
+    return run && run.execution === "running" ? "✦ " + run.label + " — messages queue…" : run && run.execution === "queued" ? "Queued — messages queue…" : "Message…";
   };
   // a portal agent takes one order at a time: a send while it runs 409s, so
   // the button says so instead (the placeholder already says why)
@@ -2472,7 +2517,7 @@ function renderChatComposer(session) {
   }
   host.dataset.built = "1";
   const ta = document.createElement("textarea");
-  ta.className = "chat-input";
+  ta.className = "chat-input";ta.setAttribute("aria-keyshortcuts", "Control+Alt+m");
   ta.rows = 1;
   chatDraftKey = draftKey;
   const draft = chatDrafts.get(draftKey);
@@ -2662,9 +2707,14 @@ function renderChatComposer(session) {
     send.textContent = "…";
     send.setAttribute("aria-label", "Sending message");
     send.title="Sending message…";
+    // Enter → on screen at once: the message paints as a pending line while
+    // the server acknowledges (Phase C 2026-09-26: 1.2 s of nothing but a
+    // "…" button); acceptance says so, a refusal takes it away.
+    const echo=chatIsTerm()?{accept(){},settle(){}}:chatSendEcho(text); // terminal threads echo via chatTermEcho
     // Keep the submitted draft visible until acceptance. Navigation or a lost
     // acknowledgement must not save an empty replacement on another device.
     const acceptedDraft=()=>{
+      echo.accept();
       if(sentDraft)draftState.clearSent(sentDraft);
       const current=chatDrafts.get(draftKey);
       if(current?.text.trim()===text && chatStateEqual(current.files,files))chatDrafts.delete(draftKey);
@@ -2678,7 +2728,7 @@ function renderChatComposer(session) {
     const payload = chatIsPortal() ? { text:messageText, files:sendFiles, ritual: chatRitual } : { text:initialText, files:sendFiles };
     const selected=chatArtifactSelections.get("chat:"+draftKey);
     const chosenRecipient=chatRecipients.get(draftKey);
-    if(session?.shared && (session.continuations||[]).length && !chosenRecipient){showToast("Choose the agent for this message above the conversation.");chatSending=false;renderChatComposer(chatCurSession);return;}
+    if(session?.shared && (session.continuations||[]).length && !chosenRecipient){showToast("Choose the agent for this message above the conversation.");echo.settle();chatSending=false;renderChatComposer(chatCurSession);return;}
     if(chatIsTerm()&&chosenRecipient?.backend==="hermes"){
       try{
         const target=chosenRecipient;
@@ -2687,7 +2737,7 @@ function renderChatComposer(session) {
         acceptedDraft();
         if(sendRoute===chatRouteVersion&&chatTermOpen)await chatTermRequestFinalTail(chatTermOpen);
       }catch(e){showToast(e.message||"Send not confirmed. Your draft is retained.");}
-      finally{chatSending=false;renderChatComposer(chatCurSession);}
+      finally{echo.settle();chatSending=false;renderChatComposer(chatCurSession);}
       return;
     }
     if(chosenRecipient?.backend==="terminal"){
@@ -2704,7 +2754,7 @@ function renderChatComposer(session) {
         acceptedDraft();
         if(sendRoute===chatRouteVersion)await refetchChatSession(sendSession);
       }catch(e){showToast(e.message||"Send not confirmed. Your draft is retained.");}
-      finally{chatSending=false;renderChatComposer(chatCurSession);}
+      finally{echo.settle();chatSending=false;renderChatComposer(chatCurSession);}
       return;
     }
     if(durable){
@@ -2718,7 +2768,7 @@ function renderChatComposer(session) {
       try { if (!await chatTermSend(initialText,selected?{task:selected.task,...chatArtifactPayload(selected)}:{})) {
         showToast("Send not confirmed. Your draft is retained.");
       }else acceptedDraft(); }
-      finally { chatSending = false; renderChatComposer(chatCurSession); }
+      finally { echo.settle(); chatSending = false; renderChatComposer(chatCurSession); }
       return;
     }
     let remembered=null;
@@ -2765,7 +2815,7 @@ function renderChatComposer(session) {
         // The submitted text remains in the composer; preserve any newer edits.
       }
     }
-    finally { chatSending = false; renderChatComposer(chatCurSession); }
+    finally { echo.settle(); chatSending = false; renderChatComposer(chatCurSession); }
   };
   ta.addEventListener("keydown", (e) => {
     if (e.isComposing || e.keyCode === 229) return;
@@ -3562,7 +3612,7 @@ function chatTermCmdLine(t) {
 function chatTermBlockEl(b) {
   if (b.t === "say") {
     const say = el("div", "chat-term-say");
-    if (b.plain) { say.textContent = b.text || ""; return say; }
+    if (b.plain) { say.classList.add("chat-say-plain"); say.textContent = b.text || ""; return say; }
     try { say.append(renderMarkdown(b.text || "", "", { readOnly: true })); }
     catch (e) { say.textContent = b.text || ""; }
     return say;
@@ -4325,7 +4375,7 @@ function chatRenderDeliveryNotice(host,scope){
   const row=el("div","chat-delivery-row");
   const preview=el("span","",(item.accepted?"Sent · draft sync pending: ":"Send not confirmed: ")+String(item.payload.text||"Attachment").slice(0,90));
   const label=el('span','chat-delivery-status');label.setAttribute('role','status');
-  const metadata=el('span','chat-delivery-status',item.agent+(item.at?' · '+new Date(item.at).toLocaleString():''));
+  const metadata=el('span','chat-delivery-status',item.agent+(item.at?' · '+fmtWhen(item.at):''));
   const dismiss=el('button','sprt-quiet','Dismiss notice');
   dismiss.onclick=()=>reviewDialog('Dismiss saved send?',({body,actions,close})=>{
    body.append(el('p','','This removes the saved retry for this message. It does not send anything, stop the agent, or delete conversation history. Delivery may still have occurred.'));
@@ -4607,7 +4657,7 @@ function chatNativeInterruptionControls(session,base,refresh) {
   const row=el('div','chat-queued-control'),cancel=el('button','sprt-quiet','Cancel queued instruction'),status=el('p','chat-workspace-hint');status.setAttribute('role','status');
   cancel.setAttribute('aria-label','Cancel queued instruction: '+(receipt.text||'').replace(/\s+/g,' ').slice(0,80));
   cancel.onclick=async()=>{cancel.disabled=true;try{await postJSONOk(base+'/'+encodeURIComponent(session.id)+'/cancel-queued',{requestId:receipt.id});status.textContent='Instruction cancelled before dispatch.';refresh();}catch(e){status.textContent=e.message||'Could not cancel queued instruction. Check status and retry.';cancel.disabled=false;}};
-  row.append(el('p','chat-workspace-hint',(receipt.text||'').replace(/\s+/g,' ').slice(0,120)),cancel,status);box.append(row);
+  row.append(el('p','chat-workspace-hint','Queued: '+(receipt.text||'').replace(/\s+/g,' ').slice(0,120)),cancel,status);box.append(row);
  }
  for(const receipt of session.deliveries||[]){if(receipt.state!=='cancelled')continue;const note=el('details','chat-cancelled-instruction');note.append(el('summary','','Cancelled before dispatch'),el('pre','chat-activity-text',receipt.text||''));box.append(note);}
  return box;

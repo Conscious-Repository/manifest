@@ -11,44 +11,7 @@
 //   4. desktop (1280) never shows the phone toggle.
 // Run: NODE_PATH=<node_modules with playwright> node server/testdata/chat-phone-responsive.cjs
 const {chromium}=require('playwright'),assert=require('node:assert/strict');
-const fs=require('node:fs'),path=require('node:path'),http=require('node:http');
-const web=path.join(__dirname,'../web');
-const types={'.html':'text/html','.js':'text/javascript','.css':'text/css','.svg':'image/svg+xml','.png':'image/png','.woff2':'font/woff2','.json':'application/json'};
-const caps={adapter:'hermes-oneshot',queue:'durable',cancelQueued:true,interrupt:'request-and-cancel-queued',stop:'request',steer:'unsupported',liveSteering:false,retry:'explicit-resubmit',resume:'fresh-session-per-turn',structuredQuestions:false,answerQuestions:'unsupported',supervision:'delivery-receipt',skillInventory:'on-disk'};
-const long=n=>Array.from({length:n},(_,i)=>'## Turn '+(i+1)+' — '+(i%2?'alfred':'user')+' · 2026-09-25T10:'+String(i).padStart(2,'0')+':00Z\n\n'+(i%2?'Reply paragraph '+(i+1)+'. '+'Lorem ipsum dolor sit amet, consectetur adipiscing elit. '.repeat(6):'Question '+(i+1)+'?')).join('\n\n');
-function makeStub(){
- const sessions={a:{id:'a',title:'Long research thread',status:'idle',agent:'alfred',turns:40,updated:'2026-09-25T11:00:00Z',created:'2026-09-25T10:00:00Z',spentUsd:0,deliveries:[]},
-  b:{id:'b',title:'Second thread',status:'idle',agent:'alfred',turns:2,updated:'2026-09-25T09:00:00Z',created:'2026-09-25T09:00:00Z',spentUsd:0,deliveries:[]}};
- const bodies={a:long(40),b:long(2)};
- const state=new Map();const streams=[];const log=[];
- const json=(res,code,body)=>{res.writeHead(code,{'Content-Type':'application/json'});res.end(JSON.stringify(body));};
- const server=http.createServer((req,res)=>{
-  const url=new URL(req.url,'http://x');const p=url.pathname;
-  if(p==='/__push'){const ev=url.searchParams.get('ev'),data=url.searchParams.get('data')||'{}';streams.forEach(s=>s.write('event: '+ev+'\ndata: '+JSON.stringify({data:JSON.parse(data)})+'\n\n'));return json(res,200,{n:streams.length});}
-  if(p==='/__log')return json(res,200,{log});
-  if(p.startsWith('/api/')){
-   log.push(req.method+' '+p+url.search);
-   if(p==='/api/agents/chat/roster')return json(res,200,{agents:[{name:'alfred',label:'Alfred',enabled:true,durableSend:true,model:'claude-x'}]});
-   if(p==='/api/agents/chat/alfred/sessions')return json(res,200,{sessions:Object.values(sessions)});
-   const sm=p.match(/^\/api\/agents\/chat\/alfred\/sessions\/([ab])(\/stream)?$/);
-   if(sm&&sm[2]){res.writeHead(200,{'Content-Type':'text/event-stream','Cache-Control':'no-store'});res.write(':ok\n\n');streams.push(res);req.on('close',()=>streams.splice(streams.indexOf(res),1));return;}
-   if(sm)return json(res,200,{session:sessions[sm[1]],body:bodies[sm[1]],conversation:{key:'conv-'+sm[1]},capabilities:caps,supervision:{adapter:'hermes-oneshot',state:'unknown',evidence:'x',capabilities:caps,runs:[]},outputs:[],queued:[],operations:[],proposals:[],related:[],continuations:[],sharedFiles:[]});
-   if(p==='/api/chat/inbox')return json(res,404,{});
-   if(p==='/api/chat/sessions')return json(res,200,{sessions:[]});
-   if(p==='/api/terminal/sessions')return json(res,200,{sessions:[],enabled:true});
-   if(p==='/api/chat/review-status')return json(res,200,{by_scope:{},by_task:{}});
-   const st=p.match(/^\/api\/chat\/state\/([^/]+)\/([^/]+)$/);
-   if(st){const k=st[1]+'/'+st[2];if(req.method==='PUT'){let b='';req.on('data',c=>b+=c);req.on('end',()=>{const v=JSON.parse(b||'{}');const cur=state.get(k)||{revision:0};const next={key:decodeURIComponent(st[1]),slot:decodeURIComponent(st[2]),revision:cur.revision+1,value:v.value};state.set(k,next);json(res,200,next);});return;}
-    return json(res,200,state.get(k)||{key:decodeURIComponent(st[1]),slot:decodeURIComponent(st[2]),revision:0,value:null});}
-   return json(res,404,{});
-  }
-  const file=path.join(web,p==='/'?'index.html':p);
-  if(!file.startsWith(web)||!fs.existsSync(file)||fs.statSync(file).isDirectory()){res.writeHead(404);return res.end();}
-  res.writeHead(200,{'Content-Type':types[path.extname(file)]||'application/octet-stream'});fs.createReadStream(file).pipe(res);
- });
- return {server,state,log};
-}
-
+const {makeStub}=require('./chat-stub-api.cjs');
 (async()=>{
  const {server}=makeStub();await new Promise(r=>server.listen(0,'127.0.0.1',r));const base='http://127.0.0.1:'+server.address().port;
  const push=(ev,data)=>fetch(base+'/__push?ev='+ev+'&data='+encodeURIComponent(JSON.stringify(data||{})));

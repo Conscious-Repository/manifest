@@ -373,19 +373,34 @@ function chatWorkbenchShortcut(event){
  let target=null;
  switch(event.code){
   case 'KeyN':target=document.querySelector('#chatHeadActions button');break;
-  case 'KeyF':target=document.querySelector('.chat-inbox-search');break;
+  case 'KeyF':{
+   target=document.querySelector('.chat-inbox-search');
+   // The rail can be hidden by the sidebar toggle (reveal it) or by an open
+   // workspace (say how to reach it) — never a silent no-op.
+   if(target&&!target.getClientRects().length){
+    const shell=document.querySelector('.chat-shell');
+    if(shell?.classList.contains('chat-list-hidden')&&!shell.classList.contains('has-artifact'))document.querySelector('.chat-sidebar-toggle')?.click();
+    else{event.preventDefault();showToast('Conversation search is in the list, hidden while the workspace is open · Ctrl+Alt+I closes the workspace');return;}
+   }
+   break;
+  }
   case 'KeyM':target=document.querySelector('#chatComposer textarea');break;
   case 'KeyI':target=document.querySelector('.chat-head > .chat-workspace-toggle');break;
   case 'KeyX':target=document.querySelector('#chatThreadHeader .chat-stop-agent')||document.querySelector('#chatTranscript .chat-native-stop');break;
   case 'ArrowDown':case 'ArrowUp':case 'KeyJ':{
-   const rows=[...document.querySelectorAll('#chatInboxRows .chat-rail-row')].filter(row=>row.getClientRects().length);
+   // Rows count when the list shows them, or when only the hidden rail (the
+   // sidebar toggle or an open workspace) keeps them off screen: switching
+   // still works then (audit 2026-09-25: the shortcuts did nothing).
+   const rail=document.querySelector('#chatRail'),railHidden=!!rail&&!rail.getClientRects().length;
+   const rows=[...document.querySelectorAll('#chatInboxRows .chat-rail-row')].filter(row=>row.getClientRects().length||(railHidden&&!row.hidden&&!row.closest('[hidden],details:not([open])')));
    const current=rows.findIndex(row=>row.classList.contains('open')),step=event.code==='ArrowUp'?-1:1;
    for(let n=1;n<=rows.length;n++){const row=rows[(current+step*n+rows.length*2)%rows.length];if(event.code!=='KeyJ'||row.dataset.execution==='waiting_user'||row.dataset.execution==='failed'||row.querySelector('.chat-row-attention')){target=row;break;}}
    break;
   }
   default:return;
  }
- if(!target||target.disabled||!target.getClientRects().length)return;
+ const offRail=['ArrowDown','ArrowUp','KeyJ'].includes(event.code)&&target&&!target.getClientRects().length&&target.closest('#chatRail');
+ if(!target||target.disabled||(!target.getClientRects().length&&!offRail))return;
  event.preventDefault();if(event.code==='KeyX'){target.focus();if(!target.classList.contains('chat-native-stop')&&!target.classList.contains('armed'))target.click();return;}if(['KeyF','KeyM'].includes(event.code))target.focus();else target.click();
 }
 document.addEventListener('keydown',chatWorkbenchShortcut);

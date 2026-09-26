@@ -127,8 +127,10 @@ const server=http.createServer((req,res)=>{
   // Receipt state drives both waiting indicator and composer guidance.
   const queued=thread('a');queued.session.status='thinking';queued.session.deliveries=[{id:'queued-request',state:'queued',text:'Pending instruction'}];
   await page.evaluate(d=>{clearInterval(chatPollTimer);chatPollTimer=null;window.pendingFixture=d;chatLive=null;renderChatTranscript(d);renderChatComposer(d.session);},queued);
-  await page.getByText('✦ Queued…',{exact:true}).waitFor();
-  await page.getByPlaceholder('✦ Queued — messages queue…',{exact:true}).waitFor();
+  // queued is accepted-not-started: a neutral line, never the live ✦ accent
+  await page.getByText('Queued · accepted, not started',{exact:true}).waitFor();
+  assert.equal(await page.getByText('✦ Queued…',{exact:true}).count(),0);
+  await page.getByPlaceholder('Queued — messages queue…',{exact:true}).waitFor();
   await page.evaluate(()=>{pendingFixture.session.deliveries.unshift({id:'running-request',state:'running'});renderChatTranscript(pendingFixture);renderChatComposer(pendingFixture.session);});
   await page.getByText('✦ Working…',{exact:true}).waitFor();
   await page.getByPlaceholder('✦ Working — messages queue…',{exact:true}).waitFor();

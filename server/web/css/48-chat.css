@@ -163,7 +163,7 @@ button.chat-attach-chip { min-height: 44px; max-width: 100%; background: transpa
    link, the ☐ mark on a promoted thread row, and the TASKS list under an
    agent's threads — all modifiers on the rail/turn idioms, no new tokens. */
 .chat-turn-foot { display: flex; align-items: baseline; gap: var(--sp-5); margin-top: var(--sp-2); }
-.chat-turn-act { border: 0; background: none; padding: 0; cursor: pointer; font-family: var(--mono); font-size: var(--fs-2xs); color: var(--base-30); opacity: 0; transition: opacity 0.12s; }
+.chat-turn-act { border: 0; background: none; padding: 0; cursor: pointer; font-family: var(--mono); font-size: var(--fs-2xs); color: var(--base-30); opacity: 0; transition: opacity 0.12s; min-height: var(--control-min); display: inline-flex; align-items: center; }
 .chat-turn:hover .chat-turn-act, .chat-turn-act:focus { opacity: 1; }
 .chat-turn-act:hover { color: var(--accent); }
 .chat-head-task { flex: none; }
@@ -871,3 +871,15 @@ label.chat-artifact-handoff{display:flex;flex-direction:row;align-items:flex-sta
 .chat-draft-field strong{font-weight:500;}
 .chat-draft-field pre{margin:var(--sp-1) 0;white-space:pre-wrap;overflow-wrap:anywhere;font:inherit;max-height:180px;overflow:auto;}
 .chat-composer > .chat-draft-notice,.tdo-p-composer > .chat-draft-notice{max-height:min(50dvh,440px);overflow-y:auto;}
+/* Finish-pass audit 2026-09-25. Plain (step-less) agent turns keep their line
+   breaks; the dense head toggles meet the 24px pointer-target floor. */
+.chat-say-plain { white-space: pre-wrap; overflow-wrap: anywhere; }
+.chat-sidebar-toggle, #chatHeadActions > .sprt-ghost { min-height: var(--control-min); display: inline-flex; align-items: center; }
+/* Phase C 2026-09-26. The turn's run state under the transcript: one quiet
+   line, colour by what it means (accent stays LIVE-only, on .chat-thinking);
+   the send echo's "Sending…" / "Accepted" line uses the same anatomy. The
+   hover-revealed turn acts keep the 24px pointer floor (.chat-turn-act above;
+   touch in 95-mobile). */
+.chat-run-state { font-size: var(--fs-sm); color: var(--muted); padding: var(--sp-3) 0; }
+.chat-run-state[data-execution="disconnected"] { color: var(--warn); }
+.chat-run-state[data-execution="failed"] { color: var(--danger); }

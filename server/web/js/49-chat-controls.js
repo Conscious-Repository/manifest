@@ -23,11 +23,23 @@ function chatWorkspaceControls(host){
  toggle.onclick=()=>{try{localStorage.setItem('manifest.chatSidebarHidden',shell.classList.contains('chat-list-hidden')?'0':'1');}catch(e){}apply();};host.prepend(toggle);apply();
  const layout=el('select','chat-layout-select');layout.setAttribute('aria-label','Workspace layout');
  for(const [v,label]of [['focus','Focus'],['split','Split · 2 panes'],['workbench','Workbench · 3 panes'],['four','Four panes']]){const o=el('option','',label);o.value=v;layout.append(o);}
- layout.value=chatRecall('manifest.chatLayout')||'focus';
+ layout.value=chatRecall('manifest.chatLayout')||'focus';chatLayoutTruth();
  layout.onchange=()=>{try{localStorage.setItem('manifest.chatLayout',layout.value);}catch(e){}if(layout.value==='focus'){chatWorkspaceTabs?.show(false);}else{chatEnsureWorkspace().show(true);}chatApplyWorkspaceLayout();};host.append(layout);
 
 }
+// chatLayoutTruth — at ≤1100px the workspace shows one pane whatever layout
+// is chosen (the responsive fallback). The select says so on the chosen
+// option instead of claiming panes it will not show (audit 2026-09-25).
+function chatLayoutTruth(){
+ const select=document.querySelector('.chat-layout-select');if(!select)return;
+ const narrow=window.matchMedia('(max-width: 1100px)').matches;
+ // the chosen option's pane count becomes "1 pane here" (the longer suffix
+ // clipped in the 180px select at 861, Phase C 2026-09-26)
+ for(const o of select.options){o.dataset.label??=o.textContent;o.textContent=narrow&&o.value!=='focus'&&o.selected?o.dataset.label.split(' · ')[0]+' · 1 pane here':o.dataset.label;}
+ select.title=narrow&&select.value!=='focus'?'This width shows one workspace pane; widen the window for more.':'';
+}
 function chatApplyWorkspaceLayout(){
+ chatLayoutTruth();
  const w=chatWorkspaceTabs;if(!w)return;
  const mode=document.querySelector('.chat-layout-select')?.value||chatRecall('manifest.chatLayout')||'split';
  const count=mode==='four'?3:mode==='workbench'?2:1;
