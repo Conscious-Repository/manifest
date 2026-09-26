@@ -132,9 +132,22 @@ const server=http.createServer((req,res)=>{
   await page.evaluate(()=>{window.chatWorkspace?.close?.();});
   await page.setViewportSize({width:390,height:844});
   await page.goto(base+'/#/chat/a/alfred/a');
-  await page.locator('#chatTranscript').getByText('reply from A').waitFor();
+  // The thread is loaded (attached, not yet visible: at 390px an open
+  // workspace hides the conversation column).
+  await page.locator('#chatTranscript').getByText('reply from A').waitFor({state:'attached'});
   // A restored open workspace covers the phone composer; hide it as the owner would.
+  // Step 3 saved thread A's workspace open, and chatRestoreWorkspace reopens it
+  // only after a state round trip, so a one-shot check can run before the
+  // restore lands and leave the composer hidden (1 in ~10 runs). Wait for the
+  // restore to finish first; it is the only thing that creates the workspace
+  // here, since step 4 closed the previous one.
+  const restoreStarted=Date.now();
+  await page.waitForFunction(()=>!!chatWorkspaceTabs&&!chatWorkspaceTabs.restoring,null,{timeout:10000}).catch(async e=>{
+   const seen=await page.evaluate(()=>({workspace:chatWorkspaceTabs?{restoring:chatWorkspaceTabs.restoring,hidden:chatWorkspaceTabs.pane.hidden}:null,shell:document.querySelector('.chat-shell')?.className,readKey:document.getElementById('chatTranscript')?.dataset.readKey}));
+   throw new Error('saved workspace for thread A not restored after '+(Date.now()-restoreStarted)+'ms: '+JSON.stringify(seen)+'\n'+e.message);
+  });
   await page.evaluate(()=>{if(document.querySelector('.chat-shell.has-artifact'))chatEnsureWorkspace().show(false);});
+  await page.locator('#chatTranscript').getByText('reply from A').waitFor();
   await page.locator('#chatComposer textarea').waitFor({state:'visible'});
   const tp=page.locator('#chatComposer textarea');await tp.click();await tp.type('[[same');
   await page.locator('.chat-record-mention').waitFor({state:'visible'});
