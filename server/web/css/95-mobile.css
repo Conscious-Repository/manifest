@@ -312,8 +312,12 @@
   .feed-card { border-radius: var(--radius-lg); }
   .feed-card .appr-actions { display: flex; gap: var(--sp-4); flex-wrap: wrap; }
   /* every card's clearing row hits the 44px touch target now, not just the
-     approvals lane (C2 — every card builds through cardShell's .feed-actions) */
-  .feed-actions .pill, .appr-actions .pill { flex: 1; min-height: 44px; justify-content: center; }
+     approvals lane (C2 — every card builds through cardShell's .feed-actions).
+     `flex: 1 1 auto` (not `flex: 1`): the pills share the spare width, but a
+     basis of 0 divided the row evenly and starved the longest label —
+     "Confirm & apply" needed 143px, got 116px, and painted over both edges
+     of its own button (2026-09-26). A verdict is never narrower than its word. */
+  .feed-actions .pill, .appr-actions .pill { flex: 1 1 auto; min-height: 44px; justify-content: center; }
   /* the contract card: the figure keeps the phone's full width, its scope
      line wraps under it, the proportion bar drops, the gate note gets a row */
   .re-intake-total { flex-wrap: wrap; gap: var(--sp-4); }
@@ -322,8 +326,7 @@
   .appr-gate { margin-left: 0; width: 100%; }
   /* ---- approval cards (aion / RE task, decision, heuristic): the payload
      form stacks each label over a full-width 44px field, the apply path wraps,
-     the evidence reads at body size, and the verdicts stay pinned to the
-     bottom of the screen while a long card scrolls (2026-09-13) ---- */
+     and the evidence reads at body size ---- */
   #feedView .appr-body { font-size: 16px; line-height: 1.5; }
   .appr-apply { flex-wrap: wrap; row-gap: var(--sp-2); }
   .appr-apply-path { white-space: normal; overflow-wrap: anywhere; }
@@ -334,10 +337,15 @@
   .aion-appr-form .ta-drop { left: 0; right: 0; min-width: 0; }
   .aion-appr-preview > summary { min-height: var(--touch-sm); display: flex; align-items: center; }
   .aion-appr-line { font-size: var(--fs-2xs); }
-  /* save edit rides the pinned verdict row as a quiet third control */
-  #feedView .approval-card > .feed-actions > .pill { min-width: 0; }
-  #feedView .approval-card > .feed-actions > .appr-save { flex: 0 0 auto; min-height: var(--touch); padding-inline: var(--sp-2); border-color: transparent; background: transparent; margin-left: auto; }
-  #feedView .approval-card > .feed-actions { position: sticky; bottom: 0; z-index: 2; background: var(--bg); padding: var(--sp-4) 0 max(var(--sp-4), env(safe-area-inset-bottom)); border-top: 1px solid var(--line); }
+  /* save edit rides the verdict row as a quiet third control, wrapping to
+     its own line only when the two verdicts have taken the width.
+     The row sat `position: sticky; bottom: 0` from 2026-09-13 so verdicts
+     stayed reachable down a long card — but the FEED is a LIST: every card
+     pinned its own row at once, so a row floated in the gap below its card
+     while the next card's row covered that card's evidence. A card's
+     verdicts belong to the end of that card (2026-09-26). */
+  #feedView .approval-card > .feed-actions { padding-top: var(--sp-4); border-top: 1px solid var(--line); }
+  #feedView .approval-card > .feed-actions > .appr-save { flex: 0 0 auto; min-height: var(--touch); padding-inline: var(--sp-2); border-color: transparent; background: transparent; }
 
   /* ---- CALENDAR: cells become day number + ≤3 accent dots; no titles ---- */
   .cal-grid { grid-auto-rows: minmax(56px, auto); }
