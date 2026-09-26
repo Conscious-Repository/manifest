@@ -65,3 +65,30 @@ func teamFileEditEligibility(file chatShareFile, data []byte) chatShareFileEdit 
 	}
 	return chatShareFileEdit{Eligible: true, Base: file.Hash, Reason: "registered text artifact; an edit would save a new version checked against this exact revision"}
 }
+
+// teamFileEditStatus is what the owner is told about team editing of shared
+// files, beside the share review and the shared conversation's Files list.
+// It is a statement of the current state, not consent wording: no edit
+// permission exists in either position of the switch, so both say teammates
+// cannot edit. It rides OUTSIDE the reviewed envelope (the response wrapper,
+// never chatShareReview), so fingerprints stay exactly as the switch leaves
+// them. The consent wording and the switch's default remain the owner's.
+type teamFileEditStatus struct {
+	Enabled bool   `json:"enabled"` // eligibility is computed per file; still grants nothing
+	State   string `json:"state"`   // "off" | "eligibility-only"
+	Message string `json:"message"`
+}
+
+func (s *Server) teamFileEditStatus() teamFileEditStatus {
+	if !s.shareTeamFileEdit {
+		return teamFileEditStatus{State: "off", Message: "Teammates can open and discuss shared files but cannot edit them: team file editing is off."}
+	}
+	return teamFileEditStatus{Enabled: true, State: "eligibility-only", Message: "Teammates can open and discuss shared files but cannot edit them yet: each file shows whether its version could be offered for editing, and no edit permission exists."}
+}
+
+// chatShareReviewResponse is the share-review wire shape: the reviewed
+// envelope (fingerprinted, unchanged) plus the team-edit status beside it.
+type chatShareReviewResponse struct {
+	chatShareReview
+	TeamFileEdit teamFileEditStatus `json:"teamFileEdit"`
+}

@@ -7,6 +7,7 @@
 //                         deliveries…) — the next read sees them
 //   /__delay?ms=N         hold a send's acknowledgement N ms
 //   /__legacy?on=1        404 /api/chat/inbox (an older server)
+// /api/chat/resolve names alfred as the owner of a/b; spirit reads are 404.
 // A send (POST …/messages) appends the user turn, records a queued delivery
 // and a "submitted" supervision state: accepted, not started.
 const fs=require('node:fs'),path=require('node:path'),http=require('node:http');
@@ -46,6 +47,8 @@ function makeStub(){
    if(sm)return json(res,200,detail(sm[1]));
    if(p==='/api/chat/inbox'){if(legacy)return json(res,404,{});return json(res,200,{roster,agents:{alfred:{sessions:Object.values(sessions)}},spirits:{sessions:[]},terminal:{sessions:[],enabled:true},state:{},review:{by_scope:{},by_task:{}},taskThreads:{threads:[]}});}
    if(p==='/api/chat/sessions')return json(res,200,{sessions:[]});
+   // which store owns an id: the agent threads here; spirit ids are never served
+   if(p==='/api/chat/resolve'){const id=url.searchParams.get('id');return json(res,200,{id,owners:sessions[id]?[{backend:'hermes',agent:'alfred',route:'#/chat/a/alfred/'+id}]:[],checked:['spirits','alfred','terminal'],unavailable:[]});}
    if(p==='/api/terminal/sessions')return json(res,200,{sessions:[],enabled:true});
    if(p==='/api/chat/review-status')return json(res,200,{by_scope:{},by_task:{}});
    const st=p.match(/^\/api\/chat\/state\/([^/]+)\/([^/]+)$/);

@@ -74,7 +74,7 @@ func (s *Server) handleChatShareReview(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		w.Header().Set("Cache-Control", "no-store")
-		writeJSON(w, review)
+		writeJSON(w, chatShareReviewResponse{review, s.teamFileEditStatus()})
 		return
 	}
 	review := s.chatShareReview(r.Context(), sess, body, s.codingContinuations(r.Context(), sess))
@@ -86,7 +86,7 @@ func (s *Server) handleChatShareReview(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Cache-Control", "no-store")
-	writeJSON(w, review)
+	writeJSON(w, chatShareReviewResponse{review, s.teamFileEditStatus()})
 }
 
 func (s *Server) chatShareReview(ctx context.Context, sess agentchat.Session, body string, views []codingContinuationView) chatShareReview {

@@ -1695,15 +1695,87 @@ async function renderCompare(ids) {
 
 // ---- transcript ----
 
-// Keep failed thread loads distinct from a new conversation.
+// Keep failed thread loads distinct from a new conversation. The block says
+// what happened, what is being tried, and carries the one action that helps
+// (retry, back to the section, or open the store that owns the id); the
+// composer closes while the load stands failed — there is nothing to send to.
+// note: a string (title only) or {title, detail, pending, action, owners}
+// where action is "retry" (default) | "back" | "none".
 function renderChatEmpty(note) {
   const host = document.getElementById("chatTranscript");
   if (!host) return;
-  host.replaceChildren(el("div", "chat-load-error", note || "Conversation unavailable"));
-  const retry = el("button", "sprt-quiet", "Retry");
-  retry.onclick = () => { retry.disabled = true; loadChatSession(chatOpenId); };
-  host.append(retry);
-  renderChatComposer({ busy: true });
+  const spec = typeof note === "string" ? { title: note } : (note || {});
+  const box = el("div", "chat-load-error");
+  box.setAttribute("role", spec.pending ? "status" : "alert");
+  box.append(el("p", "chat-load-error-title", spec.title || "Conversation unavailable"));
+  if (spec.detail) box.append(el("p", "chat-load-error-detail", spec.detail));
+  const actions = el("div", "chat-load-error-actions");
+  for (const o of spec.owners || []) {
+    const open = el("button", "pill", "Open in " + (o.agent ? chatAgentLabel(o.agent) : "Spirits"));
+    open.onclick = () => { location.hash = o.route; };
+    actions.append(open);
+  }
+  const action = spec.pending ? "none" : spec.action || "retry";
+  if (action === "retry") {
+    const retry = el("button", "pill", "Retry");
+    retry.onclick = () => { retry.disabled = true; retry.textContent = "Retrying…"; loadChatSession(chatOpenId); };
+    actions.append(retry);
+  } else if (action === "back") {
+    const back = el("button", "pill", "Back to " + (chatAgent ? chatAgentLabel(chatAgent) : "Spirits"));
+    back.onclick = () => { location.hash = chatSectionHash(chatAgent); };
+    actions.append(back);
+  }
+  if (actions.childNodes.length) box.append(actions);
+  host.replaceChildren(box);
+  chatCloseComposer(spec.pending ? "Looking for this conversation…" : "Nothing to send to — this conversation did not load.");
+}
+
+// chatCloseComposer swaps the composer for one quiet line; the next
+// renderChatComposer rebuilds it from the saved draft.
+function chatCloseComposer(line) {
+  const host = document.getElementById("chatComposer");
+  if (!host) return;
+  host.dataset.built = "";
+  host.classList.add("closed");
+  host.setAttribute("aria-disabled", "true");
+  host.replaceChildren(el("p", "chat-composer-closed", line));
+}
+
+// chatStoreLabel names a backend for the not-found copy.
+function chatStoreLabel(agent) { return agent ? chatAgentLabel(agent) : "Spirits"; }
+
+// chatResolveMissing — the backend the route named said 404. A bare
+// #/chat/<id> is the spirit route's shape, so a pasted Alfred id landed on the
+// spirits store and the stage told the owner it had been deleted
+// while Alfred served it (2026-09-26). Ask the server which store owns the id
+// (it asks every store directly) and follow the owner; say "not found" only
+// when every store was asked and none has it.
+async function chatResolveMissing(id, agent, current) {
+  renderChatEmpty({ pending: true, title: "Looking for this conversation…", detail: chatStoreLabel(agent) + " does not hold it; checking the other chat stores." });
+  let r;
+  try {
+    const res = await fetch("/api/chat/resolve?id=" + encodeURIComponent(id));
+    if (!current()) return;
+    if (!res.ok) throw Error(String(res.status));
+    r = await res.json();
+  } catch (e) {
+    if (current()) renderChatEmpty({ title: "This conversation didn't load", detail: chatStoreLabel(agent) + " does not hold it, and the other chat stores could not be checked. Retry to ask again." });
+    return;
+  }
+  if (!current()) return;
+  const here = chatHash(id), owners = r.owners || [];
+  const elsewhere = owners.filter((o) => o.route && o.route !== here);
+  if (owners.some((o) => o.route === here)) {
+    renderChatEmpty({ title: "This conversation didn't load", detail: chatStoreLabel(agent) + " holds it but did not return it just now. Retry." });
+  } else if (elsewhere.length === 1) {
+    location.replace(elsewhere[0].route);
+  } else if (elsewhere.length > 1) {
+    renderChatEmpty({ title: "More than one conversation has this id", detail: "Choose the one you meant.", owners: elsewhere, action: "none" });
+  } else if ((r.unavailable || []).length) {
+    renderChatEmpty({ title: "This conversation wasn't found yet", detail: "No store that answered holds it, but " + r.unavailable.join(", ") + " could not be checked — it may be there. Retry once it is back." });
+  } else {
+    renderChatEmpty({ title: "No conversation has this id", detail: "Every chat store was checked (" + (r.checked || []).join(", ") + ") and none holds it. It was deleted, or the link is wrong.", action: "back" });
+  }
 }
 
 async function loadChatSession(id) {
@@ -1716,14 +1788,13 @@ async function loadChatSession(id) {
     if (!current()) return;
     if (!res.ok) {
       chatStageCache.delete(chatStageKey(agent, id));
-      renderChatEmpty(res.status === 404
-        ? "that conversation is no longer here — it may have been deleted or archived"
-        : "that conversation didn't load (" + res.status + ")");
+      if (res.status === 404) await chatResolveMissing(id, agent, current);
+      else renderChatEmpty({ title: "This conversation didn't load", detail: "The server answered " + res.status + ". Retry to ask again." });
       return;
     }
     d = await res.json();
   } catch (e) {
-    if (current()) renderChatEmpty("Conversation could not load. Check your connection and retry.");
+    if (current()) renderChatEmpty({ title: "This conversation didn't load", detail: "The request did not reach the server. Check your connection and retry." });
     return;
   }
   if (!current()) return; // navigated away mid-fetch
@@ -1947,7 +2018,39 @@ function bindChatScroll() {
     chatLastY = y;
     if(typeof chatUpdateJump==="function")chatUpdateJump();
     if (Date.now() < chatReadingGestureUntil) chatSaveReadingPosition();
+    chatNoteViewAnchor(host);
   });
+  chatTrackStageVisibility(host);
+}
+
+// The stage is display:none at ≤900px while the workspace is open. The
+// browser hands a returning scroller its old pixel offset, which at another
+// width is another turn: 1440→861→1440 left the reader five turns off
+// (measured 2026-09-26). Keep the reading anchor while the stage is shown and
+// put the reader back on that turn when it returns.
+let chatViewAnchor = null, chatStageShown = true, chatViewAnchorFrame = 0;
+function chatNoteViewAnchor(host) {
+  if (chatViewAnchorFrame) return;
+  const note = () => {
+    chatViewAnchorFrame = 0;
+    if (!(host.clientHeight > 0)) return;
+    const value = chatReadingAnchor(host);
+    if (value) chatViewAnchor = { key: host.dataset.readKey || "", value };
+  };
+  // taken after layout; outside a browser there is no layout to anchor
+  if (typeof requestAnimationFrame === "function") chatViewAnchorFrame = requestAnimationFrame(note);
+}
+function chatTrackStageVisibility(host) {
+  if (typeof ResizeObserver !== "function") return;
+  new ResizeObserver(() => {
+    const shown = host.clientHeight > 0;
+    if (shown && !chatStageShown && chatViewAnchor && chatViewAnchor.key === (host.dataset.readKey || "")) {
+      if (chatViewAnchor.value.following) { host.scrollTop = host.scrollHeight; chatStick = true; }
+      else chatRestoreReadingPosition(host, chatViewAnchor.value);
+    }
+    chatStageShown = shown;
+    if (shown) chatNoteViewAnchor(host);
+  }).observe(host);
 }
 function chatPin() {
   const host = document.getElementById("chatTranscript");
@@ -2057,7 +2160,9 @@ function chatUserTurn(text) {
 // meta (fmtWhen(updated) · charge) · trailing actions (☐ task ↗ · delete).
 function chatSharedFilePicker(session,agent){
   const key=agent+"/"+session.id,base=chatAttachBase(),dialog=el("dialog","chat-workstream-dialog"),list=el("div","");
-  dialog.append(el("h3","","Conversation files"),list);
+  dialog.append(el("h3","","Conversation files"));
+  if(session.teamFileEdit?.message)dialog.append(el("p","chat-head-meta",session.teamFileEdit.message));
+  dialog.append(list);
   for(const file of session.sharedFiles||[]){
     const row=el("p",""),open=el("button","sprt-quiet",file.name),discuss=el("button","sprt-quiet","Discuss");
     open.onclick=()=>{dialog.close();if(chatDraftKey===key)chatOpenAttachment(file,base+"/"+file.hash);};
@@ -2322,7 +2427,7 @@ function renderChatTranscript(d) {
   const s = d.session;
   const activeTask=chatConversationTasks.get("chat:"+chatAgent+"/"+s.id);
   if(activeTask)s.task=activeTask;
-  s.related=d.related||[];s.handoffBody=d.body||"";s.continuations=d.continuations||[];s.sharedFiles=d.sharedFiles||[];
+  s.related=d.related||[];s.handoffBody=d.body||"";s.continuations=d.continuations||[];s.sharedFiles=d.sharedFiles||[];s.teamFileEdit=d.teamFileEdit||null;
   s.capabilities=d.capabilities||null;s.supervision=d.supervision||null;
   chatCurSession = s;
   if(typeof chatWorkbenchActivityUpdate==="function")chatWorkbenchActivityUpdate(d.timeline||parseChatTurns(d.body||""),[...(d.operations||[]),...(d.sharedOperations||[])],d.proposals||[],{deliveries:s.deliveries||[],origin:s.origin||null,capabilities:d.capabilities||null});
@@ -2451,7 +2556,9 @@ function renderChatComposer(session) {
   const host = document.getElementById("chatComposer");
   if (!host) return;
   host.classList.add("input-surface");
-  if(session?.sharing && session.sharing.state!=="shared"){host.replaceChildren(el("p","chat-load-error","Sharing is awaiting recovery. Use Recover sharing above to finish, then continue in the team conversation."));return;}
+  if(session?.sharing && session.sharing.state!=="shared"){host.dataset.built="";host.classList.add("closed");host.replaceChildren(el("p","chat-load-error","Sharing is awaiting recovery. Use Recover sharing above to finish, then continue in the team conversation."));return;}
+  // a closed composer (failed load, sharing recovery) rebuilds from the draft
+  if(host.classList.contains("closed")){host.classList.remove("closed");host.removeAttribute("aria-disabled");host.replaceChildren();host.dataset.built="";if(typeof mountMics==="function")setTimeout(mountMics,0);}
   const draftKey = (chatAgent || "spirits") + "/" + (chatOpenId || "new");
   const nativeRecipient = () => chatRecipients.get(draftKey)?.backend === "terminal";
   const syncAttach = () => {

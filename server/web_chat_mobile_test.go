@@ -25,3 +25,19 @@ func TestChatMobileChromeUI(t *testing.T) {
 		t.Fatalf("mobile chat chrome UI: %v\n%s", err, out)
 	}
 }
+
+// TestChatRailMetaTokensUI: the rail's metadata line drops a token whole
+// rather than cutting it mid-word ("Claude Coc", 2026-09-26), at desktop and
+// phone widths.
+func TestChatRailMetaTokensUI(t *testing.T) {
+	node, err := exec.LookPath("node")
+	if err != nil {
+		t.Skip("node unavailable")
+	}
+	if err := exec.Command(node, "-e", "require.resolve('playwright')").Run(); err != nil {
+		t.Skip("playwright unavailable (set NODE_PATH to a node_modules that has it)")
+	}
+	if out, err := exec.Command(node, "testdata/chat-rail-meta-truncation.cjs").CombinedOutput(); err != nil {
+		t.Fatalf("rail meta tokens: %v\n%s", err, out)
+	}
+}

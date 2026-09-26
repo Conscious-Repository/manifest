@@ -648,7 +648,8 @@ func (s *Server) Handler() http.Handler {
 	// route is the bridge/SSE seam (resumable via ?after=seq).
 	mux.HandleFunc("GET /api/chat/spirits", s.handleChatSpirits)
 	mux.HandleFunc("GET /api/chat/sessions", s.handleChatSessions)
-	mux.HandleFunc("GET /api/chat/inbox", s.handleChatInbox) // the rail's lists in one request (2026-09-21)
+	mux.HandleFunc("GET /api/chat/inbox", s.handleChatInbox)     // the rail's lists in one request (2026-09-21)
+	mux.HandleFunc("GET /api/chat/resolve", s.handleChatResolve) // which store owns a conversation id (2026-09-26)
 	mux.HandleFunc("GET /api/chat/state/{key}/{slot}", s.handleChatState)
 	mux.HandleFunc("GET /api/chat/records", s.handleChatRecordSearch)
 	mux.HandleFunc("GET /api/chat/records/preview", s.handleChatRecordPreview)

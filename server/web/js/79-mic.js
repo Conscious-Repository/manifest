@@ -123,7 +123,7 @@ function mountMics() {
   ];
   spots.forEach((sp) => {
     const host = document.querySelector(sp.sel);
-    if (!host || host.querySelector(".mic-btn")) return;
+    if (!host || host.querySelector(".mic-btn") || host.classList.contains("closed")) return; // a closed composer takes no dictation
     host.append(micButton((text) => {
       const input = sp.input();
       if (!input) return;

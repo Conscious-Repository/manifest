@@ -442,6 +442,7 @@ func (s *Server) handlePortalChatSession(ag *chatAgent, w http.ResponseWriter, r
 		ownerSession.Task = review.Session.Task
 		out["session"] = ownerSession
 		out["sharedFiles"] = s.sharedConversationFiles(ag, t.ID, review)
+		out["teamFileEdit"] = s.teamFileEditStatus()
 		out["sharedOperations"] = s.chatOperations(review.Session.ID)
 		out["proposals"] = s.chatTaskProposals(review.Session)
 		out["continuations"] = views

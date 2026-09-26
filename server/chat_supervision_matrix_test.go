@@ -3,6 +3,7 @@ package server
 import (
 	"encoding/json"
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -310,6 +311,10 @@ func TestSupervisionTaskThreadTransitionMatrix(t *testing.T) {
 			agentReply(srv, id, "⚠ Alfred couldn't finish that — timed out")
 			srv.hermesTurnMark(id, actTurnClosed, map[string]any{"agent": "agent:alfred"})
 		}, false, supervisionFailed, "failure note"},
+		{"⚠ failure note before its close marker→failed", func(srv *Server, id string) {
+			openTurn(srv, id)
+			agentReply(srv, id, "⚠ Alfred couldn't finish that — timed out")
+		}, false, supervisionFailed, "failure note"},
 		{"closed with no visible reply→unknown", func(srv *Server, id string) {
 			openTurn(srv, id)
 			srv.hermesTurnMark(id, actTurnClosed, map[string]any{"agent": "agent:alfred"})
@@ -470,4 +475,116 @@ func TestTaskThreadTurnUnknownWhenRunnerOff(t *testing.T) {
 	if sv := srv.taskThreadSupervision(id); sv.State != supervisionUnknown || !strings.Contains(sv.Evidence, "runner off") {
 		t.Fatalf("a process that cannot run turns must not claim owed/disconnected: %+v", sv)
 	}
+}
+
+// The remaining branches of the terminal projection (2026-09-26 coverage
+// pass): ties in receipt order, the outbox reader's refusals and ordering, and
+// an answer whose run cannot be observed. With these, every block of
+// chat_supervision.go is exercised by a named fixture.
+func TestSupervisionTerminalOrderingAndRefusalMatrix(t *testing.T) {
+	s, se, _, _ := herdrSupervisionFixture(t, "codex")
+	started := se
+	started.LaunchPhase, started.Started = "", true
+	started.Runtime = terminalIdentity{Workspace: "w1", Pane: "p1"}
+	s.terminal.upsert(started)
+	live := terminalObservation{Connectivity: "connected", Process: "running", AgentState: "idle"}
+	key := s.terminalConversation(started).Key
+	write := func(raw []byte) {
+		t.Helper()
+		snap, _ := s.chatState.Read(key, "deliveries")
+		if _, err := s.chatState.Write(key, "deliveries", snap.Revision, raw); err != nil {
+			t.Fatal(err)
+		}
+	}
+	item := func(id, url, at string) json.RawMessage {
+		raw, _ := json.Marshal(map[string]any{"stateKey": key, "url": url, "agent": "codex", "at": at, "staged": true, "payload": map[string]any{"text": "later " + id, "requestId": id}})
+		return raw
+	}
+	own := "/api/terminal/session/" + started.ID + "/input"
+	t.Run("outbox: malformed, mis-keyed and other-terminal entries are not runs; the rest order by time then id", func(t *testing.T) {
+		raw, _ := json.Marshal(chatQueueValue{Items: map[string]json.RawMessage{
+			"q-late":     item("q-late", own, "2026-09-25T10:00:09Z"),
+			"q-b":        item("q-b", own, "2026-09-25T10:00:01Z"),
+			"q-a":        item("q-a", own, "2026-09-25T10:00:01Z"),
+			"q-mislabel": item("q-other-id", own, "2026-09-25T10:00:02Z"),
+			"q-foreign":  item("q-foreign", "/api/terminal/session/ffffffffffffffff/input", "2026-09-25T10:00:03Z"),
+			"q-garbage":  json.RawMessage(`"not an object"`),
+		}})
+		write(raw)
+		got := []string{}
+		for _, q := range s.terminalQueuedFollowups(key, started.ID) {
+			got = append(got, q.Payload.RequestID)
+		}
+		if strings.Join(got, ",") != "q-a,q-b,q-late" {
+			t.Fatalf("queued follow-ups %v", got)
+		}
+		sv := s.terminalChatSupervision(started, termTranscript{}, live)
+		if len(sv.Runs) != 3 || sv.State != supervisionSubmitted {
+			t.Fatalf("%+v", sv)
+		}
+	})
+	t.Run("outbox: an unreadable queue value projects no runs", func(t *testing.T) {
+		write([]byte(`{"items":"not a map"}`))
+		if q := s.terminalQueuedFollowups(key, started.ID); len(q) != 0 {
+			t.Fatalf("%+v", q)
+		}
+		if q := s.terminalQueuedFollowups("conversation-without-a-slot", started.ID); len(q) != 0 {
+			t.Fatalf("%+v", q)
+		}
+		write([]byte(`{"items":{}}`))
+	})
+	t.Run("receipts with the same timestamp order by id: the later id speaks for the conversation", func(t *testing.T) {
+		at := "2026-09-25T11:00:00Z"
+		// written as the records themselves: writeInputReceipt stamps its own
+		// Updated, and a tie is exactly what two writes in one tick can leave
+		for id, state := range map[string]string{"tie-receipt-a": "unconfirmed", "tie-receipt-b": "sent"} {
+			r := terminalInputReceipt{ID: id, State: state, Updated: at, Submitted: at, Fingerprint: strings.Repeat("d", 64), SubmittedHash: hashTerminalText(id)}
+			if id == "tie-receipt-a" {
+				r.Error = "pane gone"
+			}
+			raw, _ := json.Marshal(r)
+			path := s.terminal.inputReceiptPath(started.ID, id)
+			if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(path, raw, 0o600); err != nil {
+				t.Fatal(err)
+			}
+		}
+		after := "2026-09-25T11:00:05Z"
+		sv := s.terminalChatSupervision(started, termTranscript{Turns: []termTurn{{ID: "a1", Who: "assistant", TS: after}}}, live)
+		ids := []string{}
+		for _, r := range sv.Runs {
+			ids = append(ids, r.RequestID)
+		}
+		if strings.Join(ids, ",") != "tie-receipt-a,tie-receipt-b" || sv.State != supervisionReady {
+			t.Fatalf("runs %v state %s (%s)", ids, sv.State, sv.Evidence)
+		}
+	})
+	t.Run("answer while the run is live→permitted", func(t *testing.T) {
+		running := started
+		running.Runtime = herdrFixtureID(t, s.terminal.herdr)
+		if err := s.questionRunLive(t.Context(), running); err != nil {
+			t.Fatalf("a live, connected run must accept its answer: %v", err)
+		}
+	})
+	t.Run("task thread with no private store→unknown", func(t *testing.T) {
+		if sv := (&Server{}).taskThreadSupervision("inbox/x"); sv.State != supervisionUnknown || !strings.Contains(sv.Evidence, "no private thread store") {
+			t.Fatalf("%+v", sv)
+		}
+	})
+	t.Run("answer with no observable run→refused as unknown, nothing sent", func(t *testing.T) {
+		herdr := s.terminal.herdr
+		s.terminal.herdr = nil
+		defer func() { s.terminal.herdr = herdr }()
+		err := s.questionRunLive(t.Context(), started)
+		if err == nil || !strings.Contains(err.Error(), "run state is unknown") || !strings.Contains(err.Error(), "nothing sent") {
+			t.Fatalf("%v", err)
+		}
+	})
+	t.Run("marker metadata reads ints from memory and from JSON", func(t *testing.T) {
+		if metaInt(3) != 3 || metaInt(float64(4)) != 4 || metaInt("5") != 0 || metaInt(nil) != 0 {
+			t.Fatal("metaInt")
+		}
+	})
 }

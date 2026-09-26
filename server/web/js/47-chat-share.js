@@ -51,11 +51,16 @@ const CHAT_SHARE = (() => {
           if(file.record)li.append(node("span","chat-share-record"," · private record snapshot: "+file.record));
           files.append(li);
         }body.append(files);
+        // what the team may do with these files, as the server states it —
+        // never a consent control (that wording is the owner's decision)
+        if(review.teamFileEdit?.message)body.append(node("p","chat-share-edit-state",review.teamFileEdit.message));
       }
       section("Review full conversation",(review.timeline||[]).map(t=>`${t.who||"Message"}${t.ts?" · "+t.ts:""}\n${t.text||JSON.stringify(t,null,2)}`).join("\n\n")||review.body||"No messages yet.");
       // Exact envelope includes origin context and original tool records omitted
       // from the readable transcript; no source data is hidden from review.
-      section("Full sharing record",JSON.stringify(review,null,2));
+      // the record is the reviewed envelope only; the edit status rides beside it
+      const {teamFileEdit,...record}=review;
+      section("Full sharing record",JSON.stringify(record,null,2));
       for(const blocker of review.blockers||[])body.append(node("p","chat-share-blocker",blocker));
       if(!pending&&receipt?.state!=="shared"){
         const label=node("label","chat-share-consent");ack=node("input","");ack.type="checkbox";

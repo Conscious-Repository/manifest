@@ -55,6 +55,20 @@ func TestChatArtifactLoadNavigationRace(t *testing.T) {
 	}
 }
 
+// TestChatColdDeepLinkUI: a cold #/chat/<id> loads whichever store owns the
+// id (Alfred, spirits, a portal thread, a claude terminal), the not-found copy
+// appears only when every store was asked, and a failed load closes the
+// composer (2026-09-26).
+func TestChatColdDeepLinkUI(t *testing.T) {
+	node, err := exec.LookPath("node")
+	if err != nil {
+		t.Skip("node unavailable")
+	}
+	if out, err := exec.Command(node, "testdata/chat-deep-link.cjs").CombinedOutput(); err != nil {
+		t.Fatalf("cold deep link: %v\n%s", err, out)
+	}
+}
+
 func TestChatReadingPositionUI(t *testing.T) {
 	node, err := exec.LookPath("node")
 	if err != nil {

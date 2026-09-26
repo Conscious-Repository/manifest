@@ -115,3 +115,58 @@ func TestShareReviewFileEditEligibilitySwitch(t *testing.T) {
 		t.Fatal("stored envelope is not byte-identical after a round trip")
 	}
 }
+
+// Switch OFF must still answer truthfully: the share review states that
+// teammates cannot edit shared files (and why), beside — never inside — the
+// reviewed envelope, so the revision the owner confirms is unchanged. ON, the
+// status still says no edit permission exists. The wording of any consent
+// and the switch's default stay the owner's decision (2026-09-26).
+func TestShareReviewStatesTeamFileEditRefusal(t *testing.T) {
+	s, st, _, _ := relationshipsFixture(t)
+	team, _ := chatFixture(t)
+	s.chat = team.chat
+	plain, err := s.artifactReg.Put(artifacts.Put{Ref: "docs/brief.md", Content: []byte("team brief\n")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	id, err := st.Create("kairos-private", "kairos-private", "Share me", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.Accept("kairos-private", id, "share-brief-0001", "read the brief", &agentchat.MessageContext{Artifacts: []agentchat.ArtifactReference{{ID: plain.Artifact.ID, Revision: plain.Revision.Hash}}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := st.Claim("kairos-private", id); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.Finish("kairos-private", id, "share-brief-0001", "kairos-private", "done", agentchat.DeliveryCompleted, "", 0); err != nil {
+		t.Fatal(err)
+	}
+	for _, on := range []bool{false, true} {
+		s.UseShareTeamFileEditEligibility(on)
+		code, r := agentChatJSON(t, s, "GET", "/api/agents/chat/kairos-private/sessions/"+id+"/share-review", nil)
+		if code != 200 {
+			t.Fatal(code, r)
+		}
+		status, _ := r["teamFileEdit"].(map[string]any)
+		msg, _ := status["message"].(string)
+		if status["enabled"] != on || !strings.Contains(msg, "cannot edit") {
+			t.Fatalf("switch %v: status %+v", on, status)
+		}
+		sess, body, _, _ := st.Get("kairos-private", id)
+		review := s.chatShareReview(context.Background(), sess, body, s.codingContinuations(context.Background(), sess))
+		if r["revision"] != review.Revision {
+			t.Fatalf("switch %v: the status must ride outside the fingerprinted envelope", on)
+		}
+		files, _ := r["files"].([]any)
+		if len(files) == 0 {
+			t.Fatal("fixture shares no file")
+		}
+		if _, has := files[0].(map[string]any)["edit"]; has != on {
+			t.Fatalf("switch %v: per-file eligibility present=%v", on, has)
+		}
+	}
+	if (&Server{}).teamFileEditStatus().State != "off" {
+		t.Fatal("the switch must default off")
+	}
+}
