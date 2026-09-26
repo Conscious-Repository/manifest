@@ -41,3 +41,19 @@ func TestChatRailMetaTokensUI(t *testing.T) {
 		t.Fatalf("rail meta tokens: %v\n%s", err, out)
 	}
 }
+
+// TestChatRailDotAlignmentUI: a conversation's state dot follows its title at
+// one gap instead of floating to the row's far end beside ⋯ (2026-09-26,
+// 1440px), and stays centred on the title line at phone widths.
+func TestChatRailDotAlignmentUI(t *testing.T) {
+	node, err := exec.LookPath("node")
+	if err != nil {
+		t.Skip("node unavailable")
+	}
+	if err := exec.Command(node, "-e", "require.resolve('playwright')").Run(); err != nil {
+		t.Skip("playwright unavailable (set NODE_PATH to a node_modules that has it)")
+	}
+	if out, err := exec.Command(node, "testdata/chat-rail-dot-alignment.cjs").CombinedOutput(); err != nil {
+		t.Fatalf("rail dot alignment: %v\n%s", err, out)
+	}
+}

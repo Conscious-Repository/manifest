@@ -14,8 +14,16 @@
 .chat-rail-row + .chat-rail-row { margin-top: var(--sp-3); }
 .chat-rail-row:hover { background: var(--base-10); }
 .chat-rail-row.open { background: var(--base-10); box-shadow: inset 2px 0 0 var(--accent); }
-.chat-rail-top { display: flex; align-items: baseline; gap: var(--sp-3); }
-.chat-rail-title { font-size: var(--fs-lg); font-weight: 600; color: var(--base-100); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1 1 auto; min-width: 0; }
+/* The title sizes to its words so its state marks (dot, ✦, ☐, ⟳) follow it at
+   one gap; the row's actions (✎, ⋯) take the free space and end the line.
+   A growing title parked the dot beside ⋯, far right of short titles
+   (2026-09-26, chat-rail-dot-alignment.cjs). Centred, not baseline: the ⋯
+   summary is 36px on phones and a baseline line put the dot below the title. */
+.chat-rail-top { display: flex; align-items: center; gap: var(--sp-3); }
+.chat-rail-title { font-size: var(--fs-lg); font-weight: 600; color: var(--base-100); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 0 1 auto; min-width: 0; }
+.chat-rail-top > :is(.chat-rail-x, .chat-row-menu) { margin-left: auto; }
+.chat-rail-top > .chat-rail-x ~ .chat-row-menu { margin-left: 0; }
+.chat-rail-top > .inline-rename { flex: 1 1 auto; min-width: 0; }
 .chat-rail-live { color: var(--accent); } /* ✦ — a turn is running, and only that */
 /* one line of whole tokens: a token that does not fit wraps onto the clipped
    second line (dropped whole, never cut mid-word — the rail read "Claude Coc"
