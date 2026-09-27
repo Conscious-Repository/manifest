@@ -287,3 +287,7 @@ func TestFixtureChatTiles(t *testing.T) { runFixture(t, "chat-tiles.cjs", true, 
 func TestFixtureChatComposerModels(t *testing.T) {
 	runFixture(t, "chat-composer-models.cjs", true, false)
 }
+
+// The live status line: working time, step, Stop/Esc, context meter, and
+// "Worked for" on finished replies (chat-status-line.cjs).
+func TestFixtureChatStatusLine(t *testing.T) { runFixture(t, "chat-status-line.cjs", true, false) }

@@ -34,6 +34,7 @@ type termTurn struct {
 	ID     string      `json:"id"`
 	Who    string      `json:"who"`
 	TS     string      `json:"ts,omitempty"`
+	End    string      `json:"end,omitempty"` // assistant: the latest record time in this turn ("Worked for …")
 	Text   string      `json:"text,omitempty"`
 	Blocks []termBlock `json:"blocks,omitempty"`
 	// WorkOrder marks a board run's launch prompt whose Text has been replaced
@@ -83,10 +84,20 @@ type termTranscript struct {
 	// effort and permission the session is actually running with. Absent
 	// means this read saw no record of them, never "default".
 	Settings *termSettings `json:"settings,omitempty"`
-	Cost     float64       `json:"cost,omitempty"` // claude cost-state totalCostUSD
+	// Context is the latest token accounting the CLI recorded: tokens in the
+	// model's context for its last call, and the window when the CLI names it
+	// (Codex does; Claude Code does not, so Window stays 0 — unknown).
+	Context *termContext `json:"context,omitempty"`
+	Cost    float64      `json:"cost,omitempty"` // claude cost-state totalCostUSD
 	// Offset is the byte offset just past the last COMPLETE line parsed —
 	// pass it back as ?after= to receive only newer records.
 	Offset int64 `json:"offset"`
+}
+
+type termContext struct {
+	Used   int    `json:"used"`
+	Window int    `json:"window,omitempty"`
+	At     string `json:"at,omitempty"`
 }
 
 type termSettings struct {
@@ -140,6 +151,11 @@ type claudeRecord struct {
 }
 
 type claudeMessage struct {
+	Usage *struct {
+		Input         int `json:"input_tokens"`
+		CacheCreation int `json:"cache_creation_input_tokens"`
+		CacheRead     int `json:"cache_read_input_tokens"`
+	} `json:"usage"`
 	Model      string          `json:"model"`
 	StopReason string          `json:"stop_reason"`
 	Role       string          `json:"role"`
@@ -177,10 +193,19 @@ func (b *transcriptBuilder) record(line []byte, base []int64) {
 
 func (b *transcriptBuilder) assistant(ts string) *termTurn {
 	if n := len(b.out.Turns); n > 0 && b.out.Turns[n-1].Who == "assistant" {
-		return &b.out.Turns[n-1]
+		t := &b.out.Turns[n-1]
+		t.touch(ts)
+		return t
 	}
-	b.out.Turns = append(b.out.Turns, termTurn{ID: b.recordID, Who: "assistant", TS: ts})
+	b.out.Turns = append(b.out.Turns, termTurn{ID: b.recordID, Who: "assistant", TS: ts, End: ts})
 	return &b.out.Turns[len(b.out.Turns)-1]
+}
+
+// touch extends an assistant turn's end to a later record time.
+func (t *termTurn) touch(ts string) {
+	if ts != "" && ts > t.End {
+		t.End = ts
+	}
 }
 
 func (b *transcriptBuilder) user(ts, text string) {
@@ -205,6 +230,7 @@ func (b *transcriptBuilder) result(ts, id, text string, isErr bool) {
 		}
 		for bi := range t.Blocks {
 			if t.Blocks[bi].T == "step" && t.Blocks[bi].ID == id {
+				t.touch(ts)
 				t.Blocks[bi].Result = clip(text, termStepResultMax)
 				t.Blocks[bi].Error = isErr
 				t.Blocks[bi].Done = true
@@ -265,6 +291,9 @@ func parseClaudeTranscript(r io.Reader, base ...int64) termTranscript {
 			blocks, text := claudeContent(m.Content, rec.Type == "user")
 			if rec.Type == "assistant" && !strings.HasPrefix(m.Model, "<") {
 				b.observe(rec.Timestamp, m.Model, rec.Effort, "")
+				if u := m.Usage; u != nil && u.Input+u.CacheCreation+u.CacheRead > 0 {
+					b.out.Context = &termContext{Used: u.Input + u.CacheCreation + u.CacheRead, At: rec.Timestamp}
+				}
 			}
 			if rec.Type == "assistant" {
 				state := "running"
@@ -456,6 +485,13 @@ type codexRecord struct {
 		Summary []struct {
 			Text string `json:"text"`
 		} `json:"summary"`
+		// token_count events: the last call's context and the model's window
+		Info *struct {
+			Last struct {
+				Input int `json:"input_tokens"`
+			} `json:"last_token_usage"`
+			Window int `json:"model_context_window"`
+		} `json:"info"`
 		// turn_context rows: what the turn actually ran with
 		Model          string `json:"model"`
 		Effort         string `json:"effort"`
@@ -510,6 +546,10 @@ func parseCodexTranscript(r io.Reader, base ...int64) termTranscript {
 			return
 		}
 		if rec.Type == "event_msg" {
+			if p.Type == "token_count" && p.Info != nil && p.Info.Last.Input > 0 {
+				b.out.Context = &termContext{Used: p.Info.Last.Input, Window: p.Info.Window, At: rec.Timestamp}
+				return
+			}
 			switch p.Type {
 			case "task_started":
 				id := p.TurnID

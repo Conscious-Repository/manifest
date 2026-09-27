@@ -220,3 +220,31 @@ func TestHermesChoiceRefusesUnlistedPairs(t *testing.T) {
 		t.Fatal("provider without model accepted")
 	}
 }
+
+// The live status line reads only what the CLI recorded: an assistant turn's
+// last record time ("Worked for") and the last call's context — with the
+// window when the CLI names it (Codex), without it when it does not (Claude).
+func TestTranscriptTurnEndAndContext(t *testing.T) {
+	claude := strings.Join([]string{
+		`{"type":"user","timestamp":"2026-09-26T10:00:00Z","message":{"role":"user","content":"go"}}`,
+		`{"type":"assistant","timestamp":"2026-09-26T10:00:05Z","message":{"role":"assistant","model":"claude-fable-5-1","usage":{"input_tokens":32,"cache_creation_input_tokens":1617,"cache_read_input_tokens":874952},"content":[{"type":"tool_use","id":"t1","name":"Bash","input":{"command":"go test"}}]}}`,
+		`{"type":"user","timestamp":"2026-09-26T10:04:12Z","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"t1","content":"ok"}]}}`,
+		`{"type":"assistant","timestamp":"2026-09-26T10:04:17Z","message":{"role":"assistant","model":"claude-fable-5-1","stop_reason":"end_turn","content":[{"type":"text","text":"done"}]}}`,
+	}, "\n") + "\n"
+	tr := parseClaudeTranscript(strings.NewReader(claude))
+	last := tr.Turns[len(tr.Turns)-1]
+	if last.Who != "assistant" || last.TS != "2026-09-26T10:00:05Z" || last.End != "2026-09-26T10:04:17Z" {
+		t.Fatalf("assistant turn span: %+v", last)
+	}
+	if tr.Context == nil || tr.Context.Used != 32+1617+874952 || tr.Context.Window != 0 {
+		t.Fatalf("claude context (no window recorded): %+v", tr.Context)
+	}
+	codex := strings.Join([]string{
+		`{"timestamp":"2026-09-26T10:00:00Z","type":"event_msg","payload":{"type":"token_count","info":null}}`,
+		`{"timestamp":"2026-09-26T10:00:09Z","type":"event_msg","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":81709},"model_context_window":258400}}}`,
+	}, "\n") + "\n"
+	tr = parseCodexTranscript(strings.NewReader(codex))
+	if tr.Context == nil || tr.Context.Used != 81709 || tr.Context.Window != 258400 {
+		t.Fatalf("codex context: %+v", tr.Context)
+	}
+}

@@ -2525,6 +2525,7 @@ function renderChatTranscript(d) {
   if (keepPosition) host.scrollTop = previousY;
   chatPin();
   if (changedConversation) chatRestoreReadingPosition(host, chatReadingStates.get(readKey)?.value);
+  if (typeof chatStatusPaint === "function") chatStatusPaint();
 }
 
 // chatSendEcho — the sending → accepted line under the transcript. The
@@ -3676,6 +3677,7 @@ function chatTermPaintTurns() {
   }
   if(host&&!chatStick)host.scrollTop=previousScroll;
   chatPin();
+  if(typeof chatStatusPaint==="function")chatStatusPaint();
 }
 
 // ---- the terminal painter ----
@@ -3732,6 +3734,10 @@ function chatTermTurnEl(t) {
     }
     if(proposal)out.append(chatPlanReviewButton(proposal));
     const meta = [];
+    // "Worked for 4m 12s": first to last record of this reply, as the CLI
+    // stamped them (terminal_transcript.go termTurn.End)
+    const worked = typeof chatDuration === "function" && t.ts && t.end ? chatDuration(Date.parse(t.end) - Date.parse(t.ts)) : "";
+    if (worked) meta.push("Worked for " + worked);
     if (t.ts) meta.push(fmtWhen(t.ts));
     if (t.usd) meta.push("$" + t.usd);
     const footer=el('div','chat-response-footer');
@@ -3995,12 +4001,14 @@ async function chatTermTail(o) {
   if(JSON.stringify(o.sharedConversation)!==JSON.stringify(d.sharedConversation)){o.sharedConversation=d.sharedConversation;headDirty=true;}
   if(JSON.stringify(o.planningRecipients)!==JSON.stringify(d.planningRecipients||[])){o.planningRecipients=d.planningRecipients||[];headDirty=true;}
   if(JSON.stringify(o.codingRecipients)!==JSON.stringify(d.codingRecipients||[])){o.codingRecipients=d.codingRecipients||[];headDirty=true;}
+  if (JSON.stringify(o.context||null) !== JSON.stringify(d.context||null)) { o.context = d.context || null; if (typeof chatStatusPaint === "function") chatStatusPaint(); }
   if (JSON.stringify(o.settings||null) !== JSON.stringify(d.settings||null) || JSON.stringify(o.launch||null) !== JSON.stringify(d.launch||null)) { o.settings = d.settings || null; o.launch = d.launch || null; if (typeof chatModelChipsRefresh === "function") chatModelChipsRefresh(); }
   if (d.title && d.title !== o.title) { o.title = d.title; headDirty = true; }
   if (d.cost && d.cost !== o.cost) { o.cost = d.cost; headDirty = true; }
   if (o.se.backend !== "herdr" && !!d.live !== o.live) { o.live = !!d.live; headDirty = true; renderChatComposer(chatTermComposerSession()); chatTermPaintStrip(); }
   if(fullRead&&!missingHistory){o.title=d.title||'';o.cost=d.cost||0;headDirty=true;}
   if (headDirty) chatTermRepaintHead();
+  if (typeof chatStatusPaint === "function") chatStatusPaint();
   if (o.live && (o.se.agentState==='blocked'||document.querySelector('.chat-terminal-workspace:not([hidden])'))) chatTermScreenFetch();
 }
 
@@ -4018,7 +4026,7 @@ function chatTermMerge(turns, tail) {
     }
     const blocks = (t.blocks || []).filter((b) => !(b.t === "step" && b.cast === "result" && b.id && chatTermPairResult(turns, b)));
     const last = turns[turns.length - 1];
-    if (last && last.who === "assistant") { last.blocks = (last.blocks || []).concat(blocks); return; }
+    if (last && last.who === "assistant") { last.blocks = (last.blocks || []).concat(blocks); if (t.end && (!last.end || t.end > last.end)) last.end = t.end; return; }
     if (!blocks.length) return; // nothing left once paired
     t.blocks = blocks;
     turns.push(t);

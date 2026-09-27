@@ -976,3 +976,24 @@ label.chat-artifact-handoff{display:flex;flex-direction:row;align-items:flex-sta
 .chat-command-group { padding: var(--sp-2) var(--sp-3) var(--sp-1); }
 .chat-command-keys { padding: var(--sp-2) var(--sp-3); font: var(--fs-2xs)/1.4 var(--sans); color: var(--base-50); border-top: 1px solid var(--line-soft); }
 @media (max-width: 860px) { .chat-goal-act { min-height: 44px; } }
+/* Live status line (49-chat-status.js): working · time · step · Stop, or the
+   context meter at rest. One quiet row between conversation and composer. */
+.chat-status-line { display: flex; align-items: center; gap: var(--sp-3); min-width: 0; width: min(100%, 800px); margin: var(--sp-3) auto 0; box-sizing: border-box; padding: 0 var(--sp-2); font: var(--fs-xs)/1.4 var(--sans); color: var(--base-60); }
+.chat-status-line[hidden], .chat-status-line [hidden] { display: none !important; }
+.chat-status-dot { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--accent); animation: chat-status-pulse 1.4s ease-in-out infinite; }
+.chat-status-line[data-state="blocked"] .chat-status-dot { background: var(--warn); animation: none; }
+@keyframes chat-status-pulse { 50% { opacity: 0.3; } }
+@media (prefers-reduced-motion: reduce) { .chat-status-dot { animation: none; } }
+.chat-status-verb { flex: none; font-weight: 600; color: var(--base-100); }
+.chat-status-line[data-state="blocked"] .chat-status-verb { color: var(--warn); }
+.chat-status-time { flex: none; font-variant-numeric: tabular-nums; color: var(--base-70); }
+.chat-status-step { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--mono); }
+.chat-status-cast { color: var(--base-100); }
+.chat-status-stop { flex: none; min-height: var(--control-min); padding: 0 var(--sp-4); border: 1px solid var(--line); border-radius: var(--radius); background: transparent; color: var(--base-100); font: inherit; cursor: pointer; }
+.chat-status-stop:hover, .chat-status-stop:focus-visible { border-color: var(--danger); color: var(--danger); }
+.chat-status-context { flex: none; display: inline-flex; align-items: center; gap: var(--sp-2); margin-left: auto; font-variant-numeric: tabular-nums; }
+.chat-status-context[data-level="high"] { color: var(--warn); }
+.chat-status-meter { width: 48px; height: 4px; border-radius: 2px; background: var(--line); overflow: hidden; }
+.chat-status-meter > span { display: block; height: 100%; background: var(--base-60); }
+.chat-status-context[data-level="high"] .chat-status-meter > span { background: var(--warn); }
+@media (max-width: 860px) { .chat-status-stop { min-height: 44px; } .chat-status-line { padding: 0 var(--sp-4); } }
