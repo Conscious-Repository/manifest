@@ -335,3 +335,10 @@ func TestFixtureChatChangesChip(t *testing.T) { runFixture(t, "chat-changes-chip
 func TestFixtureChatSingleViewPass(t *testing.T) {
 	runFixture(t, "chat-single-view-pass.cjs", true, false)
 }
+
+// The second single-chat pass: one phone header, body-size sent text, a
+// chip-sized model target, the queued state stated once, the one-recipient
+// chip, and no visible phone target under 44px (chat-single-view-pass2.cjs).
+func TestFixtureChatSingleViewPass2(t *testing.T) {
+	runFixture(t, "chat-single-view-pass2.cjs", true, false)
+}

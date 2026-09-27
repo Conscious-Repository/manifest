@@ -50,7 +50,9 @@
 .chat-head .sprt-quiet:disabled { opacity: 0.4; cursor: default; }
 
 .chat-turn { margin: var(--sp-5) 0; max-width: 72ch; overflow-wrap: anywhere; }
-.chat-user { margin-left: auto; background: var(--base-20); border: 1px solid var(--line); border-radius: var(--radius-message) var(--radius-message) var(--radius) var(--radius-message); padding: var(--sp-4) var(--sp-6); white-space: pre-wrap; font-size: var(--fs-md); width: fit-content; max-width: min(72ch, 88%); line-height: 1.55; }
+/* the owner's own words read at the body size of the replies and the composer
+   they were typed in (16px; were 13px, 2026-09-27 pass 2) */
+.chat-user { margin-left: auto; background: var(--base-20); border: 1px solid var(--line); border-radius: var(--radius-message) var(--radius-message) var(--radius) var(--radius-message); padding: var(--sp-4) var(--sp-6); white-space: pre-wrap; font-size: var(--fs-xl); width: fit-content; max-width: min(72ch, 88%); line-height: 1.55; }
 .chat-user.chat-queued { opacity: 0.55; }
 /* system notes read as quiet notes, not alarms: a hairline, plain text, at
    most one action */
@@ -991,8 +993,11 @@ label.chat-artifact-handoff{display:flex;flex-direction:row;align-items:flex-sta
      shares the field's row whatever else is mounted there (the mic arrives
      400 ms after a route change, 79-mic.js) */
   .chat-main .chat-composer:has(> .chat-composer-model)::after { content: ""; order: 5; flex: 1 0 100%; height: 0; margin-top: calc(-1 * var(--sp-2)); }
-  .chat-main .chat-composer > .chat-composer-model { order: 6; flex: 1 1 auto; max-width: none; text-align: left; min-height: var(--control-touch); font: var(--fs-sm)/1 var(--sans); }
-  .chat-main .chat-composer > .chat-composer-permission { order: 7; min-height: var(--control-touch); max-width: 45%; font: var(--fs-sm)/1 var(--sans); }
+  /* the chip's target is the chip (2026-09-27 pass 2: flex 1 made it a 350px
+     hit box for ~60px of text, so reaching for the field opened the picker);
+     the permission chip keeps its place at the row's end */
+  .chat-main .chat-composer > .chat-composer-model { order: 6; flex: 0 1 auto; margin-left: 0; max-width: none; text-align: left; min-width: var(--control-touch); min-height: var(--control-touch); font: var(--fs-sm)/1 var(--sans); }
+  .chat-main .chat-composer > .chat-composer-permission { order: 7; margin-left: auto; min-height: var(--control-touch); max-width: 45%; font: var(--fs-sm)/1 var(--sans); }
   .chat-model-picker { position: fixed; left: var(--sp-4); right: var(--sp-4); bottom: calc(var(--sp-4) + env(safe-area-inset-bottom, 0px)); max-height: 72dvh; }
   .chat-model-seg, .chat-model-actions button, .chat-model-native { min-height: 44px; }
   .chat-model-row { min-height: 44px; justify-content: center; }
@@ -1114,5 +1119,5 @@ label.chat-artifact-handoff{display:flex;flex-direction:row;align-items:flex-sta
 @media (max-width: 860px), (hover: none) {
   .chat-thread-header .chat-options-compact > summary { display: inline-flex; align-items: center; justify-content: center; box-sizing: border-box; min-width: var(--control-touch); min-height: var(--control-touch); padding: 0; }
   .chat-details[open] > a, .chat-details[open] > button, .chat-details[open] .chat-head-acts > *, .chat-conversation-info > summary { min-height: var(--control-touch); }
-  .chat-queued-control > .sprt-quiet, .chat-native-stop { min-height: var(--control-touch); }
+  .chat-queued-control > .sprt-quiet, .chat-native-stop { min-height: var(--control-touch); min-width: var(--control-touch); }
 }

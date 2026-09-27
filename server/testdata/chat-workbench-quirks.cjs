@@ -129,6 +129,9 @@ const {makeStub}=require('./chat-stub-api.cjs');
   {const s=await serve();servers.push(s);const ctx=await browser.newContext({viewport:{width:390,height:844},hasTouch:true,isMobile:true});const page=await open(ctx,s.base);
    await page.focus('#chatComposer textarea');const xs=[];for(let i=0;i<14;i++){await page.keyboard.press('Shift+Tab');xs.push(await page.evaluate(()=>Math.round(document.activeElement.getBoundingClientRect().right)));}
    assert.ok(xs.every(x=>x>0),'no Tab stop off screen: '+xs);
+   // one phone header (2026-09-27 pass 2): an open conversation's head stands
+   // in for the top bar, so ☰ is on the Chats list, one tap back
+   await page.getByRole('button',{name:'Back to chats'}).click();
    await page.getByRole('button',{name:'Menu'}).click();await page.waitForTimeout(300);
    assert.equal(await page.evaluate(()=>document.getElementById('rail').inert),false,'the open drawer is reachable');
    await ctx.close();

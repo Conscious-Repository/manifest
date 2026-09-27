@@ -26,7 +26,7 @@
 .mf-sheet-wrap { display: none; }
 /* the conversation head's back-to-chats and the ··· menu's Workspace entry
    (48-chat.js chatBackToChats, 49-chat-workspace.js chatWorkspaceHeader) */
-.mf-chat-back { display: none; }
+.mf-chat-back, .mf-chat-new { display: none; }
 .chat-details[open] > .mf-chat-ws-more { display: none; }
 
 @keyframes sheetUp {
@@ -869,6 +869,21 @@
   .chat-shell:not(.mf-chat-nav-open):not(.has-artifact):has(#chatThreadHeader:not([hidden])) > .mf-chat-toggle { display: none; }
   .mf-chat-toggle { min-height: var(--touch); font: var(--fs-xl)/1 var(--sans); padding: 0 var(--sp-2); }
 
+  /* one header on a phone (2026-09-27 pass 2). While a conversation head is on
+     screen, the top bar (☰ CHAT ⌕ ＋) folds away. The two stacked rows took
+     113px, 13% of an 844px screen. The head carries ‹ Chats (the list, whose
+     screen keeps the bar and so ☰ and ⌕), the title, ＋ New chat
+     (48-chat.js chatHeadNewChat) and ···. Desktop merges its own way
+     (chatHeadActionsHome). chatFitBind refits the shell when the bar folds. */
+  .app-shell:has(#chatView:not([hidden]) .chat-shell:not(.mf-chat-nav-open):not(.has-artifact) #chatThreadHeader:not([hidden])) #crumbBar { display: none; }
+  .app-shell:has(#chatView:not([hidden]) .chat-shell:not(.mf-chat-nav-open):not(.has-artifact) #chatThreadHeader:not([hidden])) #chatThreadHeader { padding-top: env(safe-area-inset-top); }
+  .mf-chat-new {
+    display: inline-flex; align-items: center; justify-content: center; flex: none;
+    width: var(--touch); height: var(--touch); padding: 0; margin: 0;
+    border: 0; border-radius: 22px; background: var(--accent); color: var(--on-accent);
+    font-size: var(--fs-2xl); cursor: pointer;
+  }
+  .mf-chat-new:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   .chat-thread-header .chat-head > .chat-workspace-toggle { display: none; }
   .chat-details[open] > .mf-chat-ws-more { display: block; }
   /* the open workspace's own way back (× Hide workspace) is a full touch target */

@@ -130,7 +130,7 @@ const server=http.createServer((req,res)=>{
   // queued is accepted-not-started: a neutral line, never the live ✦ accent
   await page.getByText('Queued · accepted, not started',{exact:true}).waitFor();
   assert.equal(await page.getByText('✦ Queued…',{exact:true}).count(),0);
-  await page.getByPlaceholder('Queued — can\'t steer; messages queue…',{exact:true}).waitFor();
+  await page.getByPlaceholder('Can\'t steer; messages queue…',{exact:true}).waitFor();
   await page.evaluate(()=>{pendingFixture.session.deliveries.unshift({id:'running-request',state:'running'});renderChatTranscript(pendingFixture);renderChatComposer(pendingFixture.session);});
   await page.getByText('✦ Working…',{exact:true}).waitFor();
   await page.getByPlaceholder('✦ Working — can\'t steer; messages queue…',{exact:true}).waitFor();

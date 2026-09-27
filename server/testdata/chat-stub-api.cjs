@@ -28,7 +28,7 @@ const codingCatalog={
  codex:{backend:'terminal',default:'gpt-5.6-luna',efforts:codingEfforts,defaultPermission:'full',liveModel:'native-picker',liveEffort:'native-picker',livePermission:'native-picker',
   models:[{id:'gpt-5.6-luna',label:'gpt-5.6-luna',provider:'OpenAI',context:400000}],
   permissions:[{id:'full',label:'Full access',description:'No sandbox and never asks',danger:true},{id:'auto',label:'Auto',description:'Workspace-write sandbox; asks before leaving it'},{id:'read-only',label:'Read only',description:'Reads only; asks before any change'}]}};
-function makeStub(){
+function makeStub({terminal=true}={}){
  const sessions={a:{id:'a',title:'Long research thread',status:'idle',agent:'alfred',turns:40,updated:'2026-09-25T11:00:00Z',created:'2026-09-25T10:00:00Z',spentUsd:0,deliveries:[]},
   b:{id:'b',title:'Second thread',status:'idle',agent:'alfred',turns:2,updated:'2026-09-25T09:00:00Z',created:'2026-09-25T09:00:00Z',spentUsd:0,deliveries:[]}};
  const bodies={a:long(40),b:long(2)};
@@ -69,11 +69,11 @@ function makeStub(){
      s.supervision={adapter:'hermes-oneshot',state:'submitted',evidence:'delivery receipt '+id,capabilities:caps,runs:[{id,state:'queued'}]};s.updated=new Date().toISOString();
      json(res,200,{ok:true,id:s.id,requestId:id});},delay));return;}
    if(sm)return json(res,200,detail(sm[1]));
-   if(p==='/api/chat/inbox'){if(legacy)return json(res,404,{});return json(res,200,{roster,agents:{alfred:{sessions:Object.values(sessions)}},spirits:{sessions:[]},terminal:{sessions:[],enabled:true},state:{},review:{by_scope:{},by_task:{}},taskThreads:{threads:[]}});}
+   if(p==='/api/chat/inbox'){if(legacy)return json(res,404,{});return json(res,200,{roster,agents:{alfred:{sessions:Object.values(sessions)}},spirits:{sessions:[]},terminal:{sessions:[],enabled:terminal},state:{},review:{by_scope:{},by_task:{}},taskThreads:{threads:[]}});}
    if(p==='/api/chat/sessions')return json(res,200,{sessions:[]});
    // which store owns an id: the agent threads here; spirit ids are never served
    if(p==='/api/chat/resolve'){const id=url.searchParams.get('id');return json(res,200,{id,owners:sessions[id]?[{backend:'hermes',agent:'alfred',route:'#/chat/a/alfred/'+id}]:[],checked:['spirits','alfred','terminal'],unavailable:[]});}
-   if(p==='/api/terminal/sessions')return json(res,200,{sessions:[],enabled:true});
+   if(p==='/api/terminal/sessions')return json(res,200,{sessions:[],enabled:terminal});
    if(p==='/api/terminal/folders')return json(res,200,{enabled:true,home:'/home/owner',recent:['/home/owner/src/manifest'],repos:['/home/owner/src/manifest','/home/owner/src/lab-apps']});
    if(p==='/api/chat/review-status')return json(res,200,{by_scope:{},by_task:{}});
    // the app shell's own reads on every page (rail counts, feed badge,

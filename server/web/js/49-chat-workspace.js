@@ -255,13 +255,18 @@ function chatWorkspaceSideSetup(source,restore=null){
 function chatPolishComposer(host){
  const main=host.closest('.chat-main'),source=document.querySelector('#chatThreadHeader .chat-recipient-control');
  let picker=host.querySelector('.chat-composer-recipient');
- if(source){
+ // With exactly one possible recipient the chip names a constant and opens a
+ // one-item chooser: the input row does not spend its width on it (2026-09-27
+ // pass 2). The head's own recipient control then shows, and every reply names
+ // its agent. With coding agents on, an Alfred thread offers three, and keeps it.
+ if(source&&typeof chatRecipientChoiceCount==='function'&&chatRecipientChoiceCount()<=1){picker?.remove();picker=null;}
+ else if(source){
   if(!picker){picker=el('button','sprt-quiet chat-composer-recipient');picker.setAttribute('aria-label','Choose agent or model');picker.onclick=()=>document.querySelector('#chatThreadHeader .chat-recipient-control')?.click();host.append(picker);}
   const recipient=chatRecipients.get((chatAgent||'spirits')+'/'+(chatOpenId||'new'));
   const model=recipient?.model||(chatIsTerm()?chatTermOpen?.se.model:chatCurSession?.model)||'';
   const agent=chatAgentLabel(recipient?.agent||chatAgent);
   picker.textContent=(model?shortModel(model):agent)+' ⌄';picker.title=agent+(model?' · '+model:'')+' · Choose agent or model';
- }else picker?.remove();
+ }else{picker?.remove();picker=null;}
  // Model, effort and permissions have their own chips (49-chat-models.js);
  // the recipient chip then names only the agent the message goes to.
  const chips=typeof chatModelChips==='function'&&chatModelChips(host);
@@ -269,7 +274,7 @@ function chatPolishComposer(host){
  // a new chat's agent, project and folder chips, and what sits under it
  if(typeof chatLandingChips==='function'){chatLandingChips(host);chatLandingBelow();chatLandingTakeCarry();}
  if(chips&&picker){const agentName=chatAgentLabel(chatRecipients.get((chatAgent||'spirits')+'/'+(chatOpenId||'new'))?.agent||chatAgent);picker.textContent=agentName+' ⌄';picker.title='Next message goes to '+agentName+' · choose another agent';picker.setAttribute('aria-label','Choose agent');}
- main?.classList.toggle('has-composer-recipient',!!source);
+ main?.classList.toggle('has-composer-recipient',!!picker);
  const input=host.querySelector('textarea'),send=host.querySelector('.chat-send');
  if(send&&send.textContent!=='…'){send.setAttribute('aria-label','Send message');send.title=window.matchMedia('(max-width: 860px)').matches?'Send message · Enter adds a new line':'Send message · Enter (Shift+Enter for a new line)';}
  host.querySelector('.chat-attach')?.setAttribute('aria-label','Attach files');

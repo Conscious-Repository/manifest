@@ -141,6 +141,18 @@ function chatBackToChats() {
   return back;
 }
 
+// chatHeadNewChat — the phone top bar's ＋ (New chat), carried into the
+// conversation head while that head stands in for the bar (95-mobile.css
+// "one header on a phone"); hidden on desktop like the back button.
+function chatHeadNewChat() {
+  const add = el("button", "mf-chat-new", "＋");
+  add.type = "button";
+  add.setAttribute("aria-label", "New chat");
+  add.title = "New chat";
+  add.onclick = () => { location.hash = chatNewHash(); };
+  return add;
+}
+
 // chatComposerShape — the phone composer's two shapes (95-mobile.css Rev 7):
 // one row while the text fits on one line, the textarea on its own row once
 // it wraps, until the text is cleared. Focus alone never changes the shape
@@ -163,7 +175,7 @@ function chatComposerShape(host, ta) {
     if (ta.scrollHeight > line * 1.5 + (parseFloat(cs.paddingTop) || 0) + (parseFloat(cs.paddingBottom) || 0)) host.classList.add("is-wrapped");
   }
   // an empty phone field whose hint is wider than the compact row (a run-state
-  // note: "Queued — can't steer; messages queue…" in 146px at 390) takes the
+  // note: "Can't steer; messages queue…", 205px, in 146px at 390) takes the
   // field's own row, so the hint reads whole instead of clipping mid-word
   host.classList.toggle("has-long-hint", !text && chatHintOverflows(host, ta));
   return host.className !== was;
@@ -199,6 +211,7 @@ function chatMountHeader(head) {
   if (!slot) { slot = el("div", "chat-thread-header"); slot.id = "chatThreadHeader"; transcript.before(slot); }
   if(head && typeof chatWorkspaceHeader === "function")chatWorkspaceHeader(head);
   if(head && typeof mf !== "undefined" && mf?.openChats && !head.querySelector(".mf-chat-back"))head.prepend(chatBackToChats());
+  if(head && typeof mf !== "undefined" && mf?.openChats && !head.querySelector(".mf-chat-new")){const add=chatHeadNewChat(),opts=head.querySelector(":scope > .chat-options-compact");opts?opts.before(add):head.append(add);}
   if (typeof chatHeadActionsHome === "function") chatHeadActionsHome(head);
   const focusKey = chatCaptureFocus(slot);
   slot.replaceChildren(...(head ? [head] : []));
@@ -444,7 +457,7 @@ function showChat(h) {
       renderChatHeadActions();
       renderTaskChat(taskID);
       requestAnimationFrame(chatFitShell);
-      if (!chatFitBound) { window.addEventListener("resize", chatFitShell); chatFitBound = true; }
+      if (!chatFitBound) chatFitBind();
       return;
     }
   }
@@ -510,7 +523,7 @@ function showChat(h) {
     if (fresh) setTimeout(() => { chatLoadInbox(true).then(() => { if (routeVersion === chatRouteVersion) renderChatRail(); }); }, 0);
   });
   requestAnimationFrame(chatFitShell);
-  if (!chatFitBound) { window.addEventListener("resize", chatFitShell); chatFitBound = true; }
+  if (!chatFitBound) chatFitBind();
 }
 
 let chatTaskID = "";
@@ -694,6 +707,16 @@ function chatTaskThreadEntry(c, taskID) {
 // termFitShell) so it fills correctly whatever chrome sits above it — e.g. with
 // the crumb bar hidden on this section, the shell reclaims that height.
 let chatFitBound = false;
+// chatFitBind — refit on resize, and when the phone top bar folds away under
+// an open conversation's head (or comes back with the list): the shell's top
+// moves 53px with no window resize (95-mobile.css "one header on a phone").
+function chatFitBind() {
+  if (chatFitBound) return;
+  chatFitBound = true;
+  window.addEventListener("resize", chatFitShell);
+  const bar = document.getElementById("crumbBar");
+  if (bar && typeof ResizeObserver === "function") new ResizeObserver(() => chatFitShell()).observe(bar);
+}
 function chatFitShell() {
   const shell = document.querySelector(".chat-shell");
   if (!shell || els.chatView.hidden) return;
@@ -2415,8 +2438,11 @@ function chatPaintTurns(host, turns, ctx) {
       row.dataset.chatReadTurn=String(t.n);
       const receipt=t.delivery||(t.submission?{context:{recipient:{agent:t.native.agent,model:t.native.model},task:t.submission.task,artifacts:t.submission.artifacts,explicitArtifacts:t.submission.explicitArtifacts},historyOmitted:t.submission.historyOmitted}:ctx?.deliveries?.find(d=>d.userTurn===t.n));
       // a queued message reads as not yet sent (↑ in the empty composer pulls
-      // it back); one cancelled before dispatch says so
-      if(receipt?.state==="queued"||receipt?.state==="cancelled"){row.classList.add(receipt.state==="queued"?"is-queued":"is-cancelled");row.append(el("div","chat-turn-queue-note",receipt.state==="queued"?"Queued · ↑ to edit":"Cancelled before dispatch"));}
+      // it back); one cancelled before dispatch says so. While the thread's
+      // own run-state line says "Queued · accepted, not started" the greyed
+      // bubble does not say it again; while another turn runs, the bubble is
+      // the only place its queued state shows (2026-09-27 pass 2).
+      if(receipt?.state==="queued"||receipt?.state==="cancelled"){row.classList.add(receipt.state==="queued"?"is-queued":"is-cancelled");row.append(el("div","chat-turn-queue-note",receipt.state==="queued"?(ctx?.threadQueued?"↑ to edit":"Queued · ↑ to edit"):"Cancelled before dispatch"));}
       if(receipt?.context?.recipient){
         const target=receipt.context.recipient,to="To "+chatAgentLabel(target.agent)+(target.model?" · "+shortModel(target.model):"");
         if(to!==lastTo||receipt.historyOmitted)row.append(el("div","chat-context-attribution",to+(receipt.historyOmitted?" · "+receipt.historyOmitted+" earlier turns omitted":"")));
@@ -2563,7 +2589,7 @@ function renderChatTranscript(d) {
   chatMountHeader(chatHead(s));
 
   // → task (§3.4f): every agent turn in an agent section can become work
-  chatPaintTurns(host, d.timeline||parseChatTurns(d.body || ""), chatAgent ? { who, outputs:d.outputs||[],deliveries:s.deliveries||[], planRevisions:d.planRevisions||[],operations: d.operations || [], promote: (t) => chatPromoteTurn(s, t.n) } : null);
+  chatPaintTurns(host, d.timeline||parseChatTurns(d.body || ""), chatAgent ? { who, outputs:d.outputs||[],deliveries:s.deliveries||[], threadQueued:!portal&&chatEntryState({session:s}).execution==="queued", planRevisions:d.planRevisions||[],operations: d.operations || [], promote: (t) => chatPromoteTurn(s, t.n) } : null);
 
   const turnNumbers = new Set(parseChatTurns(d.body || "").filter(t => t.who !== "user" && t.who !== "system").map(t => t.n));
   (d.operations || []).filter(item => !turnNumbers.has(Number(item.record.turn) + 1)).forEach(item => host.append(manifestOperationCard(item)));
@@ -2731,7 +2757,7 @@ function renderChatComposer(session) {
     const run = session ? chatEntryState({session}) : null;
     // this adapter cannot steer a running turn (capabilities.steer), so the
     // field says so, and that a message now waits for the next turn
-    return run && run.execution === "running" ? "✦ " + run.label + " — can't steer; messages queue…" : run && run.execution === "queued" ? "Queued — can't steer; messages queue…" : "Message…";
+    return run && run.execution === "running" ? "✦ " + run.label + " — can't steer; messages queue…" : run && run.execution === "queued" ? "Can't steer; messages queue…" : "Message…";
   };
   // a portal agent takes one order at a time: a send while it runs 409s, so
   // the button says so instead (the placeholder already says why)
@@ -4904,6 +4930,12 @@ function chatChooseTerminalRecipient(source){
     actions.append(cancel,here);
   });
 }
+// chatRecipientChoiceCount — how many recipients chatChooseRecipient offers:
+// the durable agents on the roster, and each coding agent while the terminal
+// is on. One means the thread's own agent is the only possible recipient.
+function chatRecipientChoiceCount(){
+  return chatRoster.filter(a=>a.enabled&&a.durableSend).length+(chatTermEnabled?Object.keys(chatTermKinds).length:0);
+}
 function chatChooseRecipient(source){
   const key=source.agent+"/"+source.id;
   const current=chatRecipients.get(key)||{agent:source.agent,model:source.model||""};
@@ -5015,12 +5047,18 @@ function chatNativeInterruptionControls(session,base,refresh) {
   button.onclick=async()=>{button.disabled=true;status.textContent='Requesting interruption…';try{await postJSONOk(base+'/'+encodeURIComponent(session.id)+'/interrupt',{requestId:running.id});status.textContent='Interruption requested; waiting for the runner to return.';refresh();}catch(e){status.textContent=e.message||'Could not request interruption. Check status and retry.';button.disabled=false;}};
   box.append(button,status);
  }
+ // One statement of the queued state (2026-09-27 pass 2): the run-state line
+ // says "Queued · accepted, not started" and the greyed bubble holds the text,
+ // so a lone queued instruction's cancel row repeats neither; with several
+ // queued, each row names its text so the cancels can be told apart.
+ const queuedCount=(session.deliveries||[]).filter(d=>d.state==='queued').length;
  for(const receipt of session.deliveries||[]){if(receipt.state!=='queued')continue;
   if(caps&&!caps.cancelQueued){box.append(el('p','chat-workspace-hint','Queued: '+(receipt.text||'').replace(/\s+/g,' ').slice(0,120)+' — this adapter ('+caps.adapter+') cannot cancel a queued instruction.'));continue;}
-  const row=el('div','chat-queued-control'),cancel=el('button','sprt-quiet','Cancel queued instruction'),status=el('p','chat-workspace-hint');status.setAttribute('role','status');
+  const row=el('div','chat-queued-control'),cancel=el('button','sprt-quiet','Cancel'),status=el('p','chat-workspace-hint');status.setAttribute('role','status');
   cancel.setAttribute('aria-label','Cancel queued instruction: '+(receipt.text||'').replace(/\s+/g,' ').slice(0,80));
   cancel.onclick=async()=>{cancel.disabled=true;try{await postJSONOk(base+'/'+encodeURIComponent(session.id)+'/cancel-queued',{requestId:receipt.id});status.textContent='Instruction cancelled before dispatch.';refresh();}catch(e){status.textContent=e.message||'Could not cancel queued instruction. Check status and retry.';cancel.disabled=false;}};
-  row.append(el('p','chat-workspace-hint','Queued: '+(receipt.text||'').replace(/\s+/g,' ').slice(0,120)),cancel,status);box.append(row);
+  if(queuedCount>1)row.append(el('p','chat-workspace-hint',(receipt.text||'').replace(/\s+/g,' ').slice(0,120)));
+  cancel.title='Cancel queued instruction';row.append(cancel,status);box.append(row);
  }
  for(const receipt of session.deliveries||[]){if(receipt.state!=='cancelled')continue;const note=el('details','chat-cancelled-instruction');note.append(el('summary','','Cancelled before dispatch'),el('pre','chat-activity-text',receipt.text||''));box.append(note);}
  return box;

@@ -31,7 +31,10 @@ const {makeStub}=require('./chat-stub-api.cjs');
   // ↑ in the empty composer: out of the queue first, then back to edit
   await page.waitForTimeout(1800); // the poll brings the queued receipt into view
   const queued=page.locator('#chatTranscript .chat-user.is-queued');await queued.waitFor();
-  assert.match(await queued.textContent(),/Queued · ↑ to edit/,'a queued message reads as not sent yet');
+  // not sent yet, stated once (2026-09-27 pass 2): the thread's run-state line
+  // says queued, so the greyed bubble carries only the way back to edit it
+  assert.equal(await queued.locator('.chat-turn-queue-note').textContent(),'↑ to edit','a queued message reads as not sent yet');
+  assert.equal(await page.locator('#chatTranscript .chat-run-state').textContent(),'Queued · accepted, not started','the thread says the message is accepted, not started');
   assert.ok(Number(await queued.evaluate(e=>getComputedStyle(e).opacity))<1,'and is greyed');
   await ta.focus();await ta.press('ArrowUp');
   await page.waitForFunction(()=>document.querySelector('#chatComposer textarea')?.value==='queue this');
