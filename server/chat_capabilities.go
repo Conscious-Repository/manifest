@@ -14,10 +14,12 @@ package server
 //	Steer           unsupported | explicit          (explicit = steer:true on a working agent)
 //	Retry           explicit-resubmit | restart-redispatch
 //	                explicit-resubmit: never automatic; an uncertain send is never replayed.
-//	                restart-redispatch: task-thread Ask/Do turns only — hermesTurnSweep
-//	                re-dispatches a turn the process died on, up to hermesTurnRetries
-//	                attempts in all (4fbea1c). The one deliberate replay; each
-//	                re-dispatch is its own visible run. The count is an owner decision.
+//	                restart-redispatch: task-thread Ask/Do turns only — a turn reaches
+//	                Hermes once (owner decision D4, 2026-09-27). hermesTurnSweep
+//	                re-dispatches only a turn the process died on BEFORE handing it to
+//	                the runner (no turn-dispatched marker), up to hermesTurnRetries
+//	                attempts; a handed-off turn is closed with a visible note, never
+//	                re-sent. Each re-dispatch is its own visible run.
 //	Resume          fresh-session-per-turn | exact-resume-id | tmux-relaunch | unsupported
 //	AnswerQuestions unsupported | async-codex | terminal-only
 //	Supervision     delivery-receipt | input-receipt+observation | observation-only | turn-marker

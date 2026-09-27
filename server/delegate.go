@@ -747,12 +747,19 @@ func (s *Server) markerAdd(id, action, runID string) {
 // plan-record frontmatter, because setPlanAssignee rewrites frontmatter from
 // a fixed key set and would silently drop any extra field).
 func (s *Server) markerAddMeta(id, action, runID string, extra map[string]any) {
+	_ = s.markerAddMetaErr(id, action, runID, extra)
+}
+
+// markerAddMetaErr is markerAddMeta for a caller whose correctness depends on
+// the marker being durable (the turn-dispatched record).
+func (s *Server) markerAddMetaErr(id, action, runID string, extra map[string]any) error {
 	meta := map[string]any{"run": runID, "marker": true}
 	for k, v := range extra {
 		meta[k] = v
 	}
-	_, _ = s.threads.private.Add(threads.Identity{ID: "system", Name: "system"}, id, action, "",
+	_, err := s.threads.private.Add(threads.Identity{ID: "system", Name: "system"}, id, action, "",
 		nil, nil, meta, time.Now())
+	return err
 }
 
 // planCtxHash fingerprints the exact inputs a plan-phase work order carries —

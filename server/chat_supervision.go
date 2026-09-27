@@ -463,6 +463,8 @@ func taskTurnState(after, visible []threads.Comment, open threads.Comment, label
 			return supervisionDisconnected, label + ": the process ended before this turn closed; not answered by this attempt"
 		case actTurnClosed:
 			switch {
+			case c.Meta["abandoned"] == true && c.Meta["possiblyDelivered"] == true:
+				return supervisionFailed, label + ": interrupted after it was handed to the runner; not re-sent because it may already have acted (D4); the thread says so"
 			case c.Meta["abandoned"] == true:
 				return supervisionFailed, label + ": abandoned by the sweep after the retry cap; the thread says so"
 			case reply == nil:
@@ -490,7 +492,7 @@ func taskTurnState(after, visible []threads.Comment, open threads.Comment, label
 	if !canRun {
 		return supervisionUnknown, label + ": no close, and this process cannot run turns (runner off); another writer may hold it"
 	}
-	return supervisionDisconnected, label + ": owed — no close and no live invocation; the sweep re-dispatches within the retry cap"
+	return supervisionDisconnected, label + ": owed — no close and no live invocation; the sweep re-dispatches it only if it never reached the runner, else closes it"
 }
 
 func metaString(v any) string {

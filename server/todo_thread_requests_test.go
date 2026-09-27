@@ -143,14 +143,20 @@ func TestTaskThreadPostReconcilesUnclosedReceipt(t *testing.T) {
 	}
 }
 
-// The one deliberate replay (4fbea1c): a task-thread turn the process died on
-// is re-dispatched by hermesTurnSweep. This pins the current count — three
-// attempts in all (the original plus two re-dispatches), then a visible
-// give-up — and makes each re-dispatch its own supervision run and ledger
-// entry. Changing hermesTurnRetries must change this test deliberately.
+// Owner decision D4 (2026-09-27): a task-thread turn reaches Hermes ONCE.
+// This test used to pin the sweep's replay count (4fbea1c: three attempts in
+// all, the original plus two re-dispatches). The owner rejected that default
+// because a repeated send can duplicate work. It now pins the new behaviour:
+//   - a turn that was handed to the runner and then interrupted is closed with
+//     a visible note and never re-sent, across any number of restarts;
+//   - only a turn that provably never reached the runner (a dispatchMarked
+//     open with no turn-dispatched after it) is re-dispatched, which is
+//     effect-free, as its own visible run and ledger entry, bounded by
+//     hermesTurnRetries (3 attempts; TestHermesTurnRetryCap).
+// Changing either rule must change this test deliberately.
 func TestHermesTurnSweepRedispatchIsVisibleAndPinned(t *testing.T) {
 	if hermesTurnRetries != 3 {
-		t.Fatalf("hermesTurnRetries is %d; the retry count is an owner decision — update this pin deliberately", hermesTurnRetries)
+		t.Fatalf("hermesTurnRetries is %d; it bounds attempts that never reached the runner — update this pin deliberately", hermesTurnRetries)
 	}
 	dirs := loopDirs{t.TempDir(), t.TempDir(), t.TempDir(), t.TempDir()}
 	ledgerDir := t.TempDir()
@@ -183,6 +189,17 @@ func TestHermesTurnSweepRedispatchIsVisibleAndPinned(t *testing.T) {
 		}
 		time.Sleep(50 * time.Millisecond)
 	})
+	ledgerCount := func(kind string) int {
+		n := 0
+		_ = filepath.Walk(ledgerDir, func(p string, info os.FileInfo, err error) error {
+			if err == nil && !info.IsDir() {
+				raw, _ := os.ReadFile(p)
+				n += strings.Count(string(raw), kind)
+			}
+			return nil
+		})
+		return n
+	}
 	first := boot()
 	if _, ok := first.pinTaskID(id); !ok {
 		t.Fatal("pin")
@@ -193,61 +210,88 @@ func TestHermesTurnSweepRedispatchIsVisibleAndPinned(t *testing.T) {
 	if _, err := first.postAndDispatch(id, "ask", "", nil, nil, "what is parcel 12 zoned?"); err != nil {
 		t.Fatal(err)
 	}
+	// the turn is handed to the runner (and hangs there: the process dies mid-turn)
+	waitFor(t, "the hand-off record", func() bool { return privateCount(first, id, actTurnDispatched) == 1 })
 	sv := first.taskThreadSupervision(id)
 	if len(sv.Runs) != 1 || sv.Runs[0].State != supervisionRunning || sv.Runs[0].Attempt != 0 {
 		t.Fatalf("original turn: %+v", sv.Runs)
 	}
-	// two restarts, each dying mid-turn: the sweep re-dispatches twice
-	for attempt := 2; attempt <= 3; attempt++ {
-		srv := boot()
-		sweep(srv)
-		if n := privateCount(srv, id, actTurnOpen); n != attempt {
-			t.Fatalf("attempt %d: want %d turn-opens, got %d", attempt, attempt, n)
+	// two restarts: a handed-off turn is never re-sent
+	var last *Server
+	for restart := 1; restart <= 2; restart++ {
+		last = boot()
+		sweep(last)
+		sweep(last)
+		if n := privateCount(last, id, actTurnOpen); n != 1 {
+			t.Fatalf("restart %d: a handed-off turn was re-sent (%d turn-opens)", restart, n)
 		}
-		sv := srv.taskThreadSupervision(id)
-		if len(sv.Runs) != attempt {
-			t.Fatalf("each re-dispatch is its own run: %+v", sv.Runs)
+		if n := privateCount(last, id, actTurnDispatched); n != 1 {
+			t.Fatalf("restart %d: %d hand-offs, want the original one", restart, n)
 		}
-		last := sv.Runs[attempt-1]
-		if last.Attempt != attempt || last.ReplayOf != sv.Runs[0].RequestID || last.State != supervisionRunning || !strings.Contains(last.Evidence, "re-dispatch attempt") {
-			t.Fatalf("re-dispatch run: %+v", last)
+		if n := privateCount(last, id, actTurnRedispatch); n != 0 {
+			t.Fatalf("restart %d: %d re-dispatch records", restart, n)
 		}
-		if prev := sv.Runs[attempt-2]; prev.State != supervisionDisconnected {
-			t.Fatalf("the interrupted attempt must read disconnected, not running or done: %+v", prev)
-		}
-	}
-	// third restart: the cap is reached, nothing is re-sent, the give-up is visible
-	last := boot()
-	sweep(last)
-	sweep(last)
-	if n := privateCount(last, id, actTurnOpen); n != 3 {
-		t.Fatalf("the cap allows three attempts in all, got %d", n)
-	}
-	if n := privateCount(last, id, actTurnRedispatch); n != 2 {
-		t.Fatalf("two re-dispatch records, got %d", n)
 	}
 	sv = last.taskThreadSupervision(id)
-	if len(sv.Runs) != 3 || sv.Runs[2].State != supervisionFailed || sv.State != supervisionFailed {
-		t.Fatalf("abandoned chain: %+v", sv)
+	if len(sv.Runs) != 1 || sv.Runs[0].State != supervisionFailed || sv.State != supervisionFailed || !strings.Contains(sv.Runs[0].Evidence, "not re-sent") {
+		t.Fatalf("interrupted after hand-off: %+v", sv)
 	}
 	posts := agentPosts(last, id)
-	if len(posts) != 1 || !strings.Contains(posts[0].Text, "interrupted 3 time(s)") {
-		t.Fatalf("give-up note: %+v", posts)
+	if len(posts) != 1 || !strings.Contains(posts[0].Text, "was not re-sent because it may already have acted") {
+		t.Fatalf("the owner must be told, once: %+v", posts)
 	}
-	logged := 0
-	_ = filepath.Walk(ledgerDir, func(p string, info os.FileInfo, err error) error {
-		if err == nil && !info.IsDir() {
-			raw, _ := os.ReadFile(p)
-			logged += strings.Count(string(raw), "run.redispatched")
+	if n := ledgerCount("run.redispatched"); n != 0 {
+		t.Fatalf("no re-dispatch may be logged, got %d", n)
+	}
+
+	// A turn the process died on BEFORE the hand-off (open written, no
+	// dispatch) never reached Hermes: re-sending it is effect-free, so the
+	// sweep does, once, as its own visible run and ledger entry.
+	if _, err := last.addThreadEntry(threads.Identity{ID: "owner", Name: "Owner"}, id, threads.ActComment, "and parcel 13?", nil, nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	last.hermesTurnMark(id, actTurnOpen, map[string]any{"agent": "agent:alfred", "phase": "comment", "intent": "info", "text": "and parcel 13?", "dispatchMarked": true})
+	fresh := boot()
+	_ = os.Remove(hangs[len(hangs)-1]) // this runner answers
+	sweep(fresh)
+	waitFor(t, "the re-dispatched turn to close", func() bool { return privateCount(fresh, id, actTurnClosed) == 2 })
+	if n := privateCount(fresh, id, actTurnRedispatch); n != 1 {
+		t.Fatalf("one re-dispatch record, got %d", n)
+	}
+	if n := privateCount(fresh, id, actTurnDispatched); n != 2 {
+		t.Fatalf("the re-dispatch hands off exactly once more, got %d hand-offs", n)
+	}
+	sv = fresh.taskThreadSupervision(id)
+	if len(sv.Runs) != 3 {
+		t.Fatalf("runs: %+v", sv.Runs)
+	}
+	replay := sv.Runs[2]
+	if replay.Attempt != 2 || replay.ReplayOf != sv.Runs[1].RequestID || replay.State != supervisionReady || !strings.Contains(replay.Evidence, "re-dispatch attempt") {
+		t.Fatalf("re-dispatch run: %+v", replay)
+	}
+	if prev := sv.Runs[1]; prev.State != supervisionDisconnected {
+		t.Fatalf("the undelivered attempt must read disconnected: %+v", prev)
+	}
+	if n := ledgerCount("run.redispatched"); n != 1 {
+		t.Fatalf("the re-dispatch is one ledger entry, got %d", n)
+	}
+	sweep(fresh)
+	sweep(fresh)
+	if n := privateCount(fresh, id, actTurnOpen); n != 3 {
+		t.Fatalf("a settled chain is not re-sent, got %d opens", n)
+	}
+	replies := 0
+	for _, p := range agentPosts(fresh, id) {
+		if strings.Contains(p.Text, "parcel 12 is zoned R-1") {
+			replies++
 		}
-		return nil
-	})
-	if logged != 2 {
-		t.Fatalf("each re-dispatch is a ledger entry, got %d", logged)
+	}
+	if replies != 1 {
+		t.Fatalf("the re-dispatched turn answers exactly once, got %d", replies)
 	}
 	// the GET route carries the projection
 	w := httptest.NewRecorder()
-	last.handleTaskThreadGet(w, httptest.NewRequest("GET", "/api/tasks/thread?id="+id, nil))
+	fresh.handleTaskThreadGet(w, httptest.NewRequest("GET", "/api/tasks/thread?id="+id, nil))
 	var got struct{ Supervision chatSupervision }
 	if err := json.Unmarshal(w.Body.Bytes(), &got); err != nil || len(got.Supervision.Runs) != 3 || got.Supervision.Capabilities.Retry != "restart-redispatch" {
 		t.Fatalf("GET supervision: %s", w.Body.String())

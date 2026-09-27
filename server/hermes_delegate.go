@@ -110,8 +110,17 @@ func (s *Server) startHermesTurn(taskID, agent, phase, intent, extra, prompt str
 	s.hermes.mu.Unlock()
 	// the durable "owed" record — written BEFORE the goroutine exists, so a
 	// turn that completes instantly can never close before it opened.
-	s.hermesTurnMark(taskID, actTurnOpen, map[string]any{
-		"agent": agent, "phase": phase, "intent": intent, "text": extra})
+	// dispatchMarked: this open will be followed by a turn-dispatched marker
+	// before the runner starts, so its absence proves the turn never reached
+	// Hermes (D4). An open without the flag predates that record and is
+	// treated as possibly delivered.
+	openID := ""
+	if s.threads != nil && s.threads.private != nil {
+		if c, err := s.threads.private.Add(threads.Identity{ID: "system", Name: "system"}, taskID, actTurnOpen, "", nil, nil,
+			map[string]any{"run": "", "marker": true, "agent": agent, "phase": phase, "intent": intent, "text": extra, "dispatchMarked": true}, time.Now()); err == nil {
+			openID = c.ID
+		}
+	}
 	// let the do-bot SEE what the owner attached on the thread — text files
 	// inlined, images handed their path (vision reads them; already in scope).
 	if att := s.hermesAttachments(taskID); att != "" {
@@ -123,7 +132,7 @@ func (s *Server) startHermesTurn(taskID, agent, phase, intent, extra, prompt str
 	if phase == "go" {
 		prompt += "\n" + hermesGoProtocol
 	}
-	go s.runHermesTurn(taskID, agent, phase, intent, prompt)
+	go s.runHermesTurn(taskID, openID, agent, phase, intent, prompt)
 	return nil
 }
 
@@ -182,14 +191,38 @@ func hermesTurnBudget(phase string) int {
 // hermesTurnSweep treats it as answered and does NOT re-dispatch it: the
 // owner re-asks to retry (deliberate — a budget overrun is not a lost turn,
 // and an automatic re-run would double the spend before anyone looked).
-func (s *Server) runHermesTurn(taskID, agent, phase, intent, prompt string) {
+func (s *Server) runHermesTurn(taskID, openID, agent, phase, intent, prompt string) {
+	superseded := false
 	defer func() {
 		s.hermes.mu.Lock()
 		delete(s.hermes.running, taskID)
 		s.hermes.mu.Unlock()
-		s.hermesTurnMark(taskID, actTurnClosed, map[string]any{"agent": agent, "phase": phase})
+		if !superseded { // a superseded turn's close would settle the newer chain
+			s.hermesTurnMark(taskID, actTurnClosed, map[string]any{"agent": agent, "phase": phase})
+		}
 	}()
 	who := agentTokenIdentity(agent)
+	// Owner decision D4 (2026-09-27): record the hand-off BEFORE it happens.
+	// The sweep re-sends an owed turn only when this marker is absent, so if
+	// it cannot be written the turn is not run: running it unrecorded would
+	// make a delivered turn look undelivered and let the sweep repeat it.
+	if s.threads != nil && s.threads.private != nil {
+		// A process that outlived its restart must not hand off a turn the
+		// new process has already settled or re-sent: stand down if anything
+		// followed this turn's open. (One process per data dir is assumed;
+		// this narrows, not closes, a check-then-write window across two.)
+		if s.hermesTurnSuperseded(taskID, openID) {
+			log.Printf("hermes turn %s (%s): superseded before hand-off; not dispatched", taskID, phase)
+			superseded = true
+			return
+		}
+		if err := s.markerAddMetaErr(taskID, actTurnDispatched, "", map[string]any{"agent": agent, "phase": phase}); err != nil {
+			log.Printf("hermes turn %s (%s): dispatch not recorded: %v", taskID, phase, err)
+			_, _ = s.addThreadEntry(who, taskID, threads.ActComment,
+				"⚠ "+who.Name+" couldn't start that — the hand-off could not be recorded ("+err.Error()+"); ask again to retry", nil, nil, map[string]any{"hermes": true})
+			return
+		}
+	}
 	// Every turn is a fresh Hermes session (hermes -z has no working resume —
 	// see package hermes); the prompt itself carries the thread's context.
 	res, err := s.hermes.runner.Run(context.Background(), hermes.Request{
@@ -576,17 +609,29 @@ func isImageExt(name string) bool {
 // both, and nothing on disk said a reply was owed (relay-pending only covers a
 // relay REFUSED while busy). So every accepted turn leaves a private turn-open
 // marker (agent/phase/intent/the owner's text) and its completion — success
-// or failure — leaves a turn-closed marker. The sweep re-dispatches an open
-// marker with no close, no in-flight turn, and no agent reply after it.
+// or failure — leaves a turn-closed marker. Just before the runner is invoked
+// a turn-dispatched marker records the hand-off.
+//
+// Owner decision D4 (2026-09-27): one dispatch by default. A repeated send
+// can duplicate work, so the sweep never re-sends a turn that reached Hermes
+// (or cannot be proven not to have): it closes it with a visible note and the
+// owner asks again. It re-dispatches only an owed turn that provably never
+// reached the runner — an open marked dispatchMarked with no turn-dispatched
+// after it — which is effect-free to repeat.
 const (
 	actTurnOpen   = "turn-open"   // an accepted do-bot turn (owed)
 	actTurnClosed = "turn-closed" // the turn finished — success or ⚠ failure
+	// actTurnDispatched is written immediately before the runner is invoked:
+	// from here on the turn may have reached Hermes and is never re-sent.
+	actTurnDispatched = "turn-dispatched"
 	// actTurnRedispatch records the sweep's decision to replay an owed turn,
 	// written before the replay (meta attempt/of/previous; error when the
 	// dispatch was refused). Read by taskThreadSupervision.
 	actTurnRedispatch = "turn-redispatch"
-	// hermesTurnRetries caps re-dispatches of one owed turn (opens without a
-	// close) — a turn that outlives every deploy window must not loop forever.
+	// hermesTurnRetries caps the attempts at one owed turn that never reached
+	// the runner (opens without a close or a dispatch) — a turn that dies
+	// before its hand-off on every deploy must not loop forever. A turn that
+	// was handed off is dispatched once and never re-sent (D4).
 	hermesTurnRetries = 3
 )
 
@@ -599,7 +644,7 @@ func (s *Server) hermesTurnMark(taskID, action string, extra map[string]any) {
 	s.markerAddMeta(taskID, action, "", extra)
 }
 
-// hermesTurnSweep re-drives owed do-bot turns the process died on. Runs inside
+// hermesTurnSweep settles owed do-bot turns the process died on. Runs inside
 // agentLoopSweep (the one 60s scheduler — never a third). Idempotent: a turn
 // that already answered (reply comment after the open) is closed in place
 // rather than re-sent, so a crash between "reply posted" and "marker closed"
@@ -612,10 +657,15 @@ func (s *Server) hermesTurnSweep() {
 	for _, id := range priv.TaskIDs() {
 		var opens []threads.Comment
 		var lastClosed time.Time
+		dispatched := map[string]bool{} // turn-open ID → a hand-off followed it
 		for _, c := range priv.Thread(id) {
 			switch c.Action {
 			case actTurnOpen:
 				opens = append(opens, c)
+			case actTurnDispatched:
+				if len(opens) > 0 {
+					dispatched[opens[len(opens)-1].ID] = true
+				}
 			case actTurnClosed:
 				if c.At.After(lastClosed) {
 					lastClosed = c.At
@@ -650,6 +700,16 @@ func (s *Server) hermesTurnSweep() {
 			s.hermesTurnMark(id, actTurnClosed, map[string]any{"agent": agent, "phase": phase, "repaired": true})
 			continue
 		}
+		// D4: re-send only what provably never reached Hermes. A handed-off
+		// turn (or one from before hand-offs were recorded) may already have
+		// acted; repeating it could duplicate work, so it closes visibly.
+		if open.Meta["dispatchMarked"] != true || dispatched[open.ID] {
+			log.Printf("hermes turn %s (%s): interrupted after hand-off; not re-sent", id, phase)
+			_, _ = s.addThreadEntry(who, id, threads.ActComment,
+				"⚠ "+who.Name+"'s turn was interrupted after it was handed over, and was not re-sent because it may already have acted; ask again to retry", nil, nil, map[string]any{"hermes": true})
+			s.hermesTurnMark(id, actTurnClosed, map[string]any{"agent": agent, "phase": phase, "abandoned": true, "possiblyDelivered": true})
+			continue
+		}
 		h := s.findHarness(s.agentHarness(agent))
 		if len(owed) >= hermesTurnRetries || !s.hermesForked(h) {
 			log.Printf("hermes turn %s (%s): giving up after %d attempt(s)", id, phase, len(owed))
@@ -659,16 +719,16 @@ func (s *Server) hermesTurnSweep() {
 			s.hermesTurnMark(id, actTurnClosed, map[string]any{"agent": agent, "phase": phase, "abandoned": true})
 			continue
 		}
-		log.Printf("hermes turn %s (%s): re-dispatching an interrupted turn (attempt %d)", id, phase, len(owed)+1)
-		// The one deliberate replay (4fbea1c; the count awaits an owner
-		// decision). It is recorded BEFORE the dispatch so every re-dispatch is
+		log.Printf("hermes turn %s (%s): re-dispatching a turn that never reached the runner (attempt %d)", id, phase, len(owed)+1)
+		// Effect-free replay only (D4): the previous attempt never reached
+		// Hermes. It is recorded BEFORE the dispatch so every re-dispatch is
 		// its own visible run (taskThreadSupervision) and ledger entry, even if
 		// the process dies again inside the spool.
 		redispatch := map[string]any{"agent": agent, "phase": phase, "attempt": len(owed) + 1, "of": owed[0].ID, "previous": open.ID, "cap": hermesTurnRetries}
 		s.hermesTurnMark(id, actTurnRedispatch, redispatch)
 		s.ledger(ledger.Entry{Source: "run", Kind: "run.redispatched", Actor: who.ID,
 			Object: ledger.Object{Kind: ledger.ObjTask, ID: id}, Task: id, Harness: "hermes",
-			Text: fmt.Sprintf("%s turn on %s re-dispatched after interruption (attempt %d of %d)", phase, id, len(owed)+1, hermesTurnRetries),
+			Text: fmt.Sprintf("%s turn on %s re-dispatched: interrupted before it reached the runner (attempt %d of %d)", phase, id, len(owed)+1, hermesTurnRetries),
 			Meta: map[string]any{"task": id, "phase": phase, "attempt": len(owed) + 1, "of": owed[0].ID, "previous": open.ID}})
 		// re-compose from the durable inputs — the fresh order writes its
 		// own turn-open marker, extending the owed chain
@@ -678,6 +738,27 @@ func (s *Server) hermesTurnSweep() {
 			s.hermesTurnMark(id, actTurnRedispatch, redispatch)
 		}
 	}
+}
+
+// hermesTurnSuperseded reports whether a turn marker (another open, a
+// re-dispatch or a close) follows the given turn-open: the sweep, possibly in
+// a newer process, has already settled or replaced it. An unknown open (no
+// store, or the marker write failed) is never superseded.
+func (s *Server) hermesTurnSuperseded(taskID, openID string) bool {
+	if openID == "" {
+		return false
+	}
+	seen := false
+	for _, c := range s.threads.private.Thread(taskID) {
+		if c.ID == openID {
+			seen = true
+			continue
+		}
+		if seen && (c.Action == actTurnOpen || c.Action == actTurnRedispatch || c.Action == actTurnClosed) {
+			return true
+		}
+	}
+	return false
 }
 
 // hermesTurnAnswered reports whether the agent posted anything visible on the
