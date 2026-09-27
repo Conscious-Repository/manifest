@@ -75,6 +75,20 @@ func TestTaskThreadPostRequestIDIsIdempotent(t *testing.T) {
 	if n := len(ownerComments(srv, id)); n != 1 {
 		t.Fatalf("conflict must not post, got %d comments", n)
 	}
+	// Owner decision D5 (2026-09-27): the same text under a DIFFERENT key is a
+	// new request, deliberately — a second comment and a second turn, never
+	// silently deduped by content
+	resend := map[string]any{"id": id, "text": "what is parcel 12 zoned?", "mode": "ask", "requestId": "req-thread-0002"}
+	if code, out := postTaskThread(t, srv, resend); code != 200 || out["replayed"] == true {
+		t.Fatal(code, out)
+	}
+	waitFor(t, "the second answer", func() bool { return len(agentPosts(srv, id)) == 2 && privateCount(srv, id, actTurnClosed) == 2 })
+	if n := len(ownerComments(srv, id)); n != 2 {
+		t.Fatalf("a different key must be a new comment, got %d", n)
+	}
+	if n := privateCount(srv, id, actTurnOpen); n != 2 {
+		t.Fatalf("a different key must be a new turn, got %d", n)
+	}
 	// receipts are markers: no thread view shows them
 	for _, c := range srv.listThread(id) {
 		if c.Action == actRequestOpen || c.Action == actRequestClosed {
@@ -87,7 +101,7 @@ func TestTaskThreadPostRequestIDIsIdempotent(t *testing.T) {
 			t.Fatal(code, out)
 		}
 	}
-	if n := len(ownerComments(srv, id)); n != 3 {
+	if n := len(ownerComments(srv, id)); n != 4 {
 		t.Fatalf("ID-less comments stay independent, got %d", n)
 	}
 	if code, _ := postTaskThread(t, srv, map[string]any{"id": id, "text": "x", "requestId": "bad id!"}); code != 400 {
