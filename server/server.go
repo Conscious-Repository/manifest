@@ -701,6 +701,7 @@ func (s *Server) Handler() http.Handler {
 
 	// TERMINAL — in-app PTY over tmux (metis-local; claude/codex presets).
 	mux.HandleFunc("GET /api/terminal/models", s.handleChatCodingModels)
+	mux.HandleFunc("GET /api/chat/models", s.handleChatModels)
 	mux.HandleFunc("GET /api/terminal/sessions", s.handleTermSessions)
 	mux.HandleFunc("GET /api/terminal/session/{id}/delivery", s.handleTermDelivery)
 	mux.HandleFunc("GET /api/terminal/session/{id}/skills", s.handleTermSkills)

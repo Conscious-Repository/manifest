@@ -1,0 +1,81 @@
+// chat-composer-models.cjs — the real front end over the stub chat API: the
+// composer's model · effort chip and the /model, /effort surface commands on a
+// native (Hermes) agent.
+//   1. the chip names the conversation's model; the picker groups models by
+//      provider, searches, sets effort, and the next message carries exactly
+//      that model, provider and effort as its recipient;
+//   2. /effort low applies without sending a message; /model with a name the
+//      catalog lacks refuses in words and sends nothing; bare /model opens the
+//      picker and Esc returns focus to the composer;
+//   3. the choice survives a reload (it rides the synced draft);
+//   4. at phone width the chips wrap under the message, keep 44px targets and
+//      nothing overflows, in both themes.
+const {chromium}=require('playwright'),assert=require('node:assert/strict'),path=require('node:path');
+const {makeStub}=require('./chat-stub-api.cjs');
+(async()=>{
+ const browser=await chromium.launch({headless:true,channel:process.env.PLAYWRIGHT_CHANNEL||'chromium'});
+ const stub=makeStub();await new Promise(r=>stub.server.listen(0,'127.0.0.1',r));const base='http://127.0.0.1:'+stub.server.address().port;
+ const hook=p=>fetch(base+p).then(r=>r.json());
+ const posts=async()=>(await hook('/__log')).log.filter(l=>l.startsWith('POST ')&&l.includes('/messages')).length;
+ try{
+  const ctx=await browser.newContext({viewport:{width:1440,height:900}});const page=await ctx.newPage();const errors=[];page.on('pageerror',e=>errors.push(e.message));
+  await page.goto(base+'/#/chat/a/alfred/b');
+  const input=page.locator('#chatComposer textarea');await input.waitFor();
+  const chip=page.locator('#chatComposer .chat-composer-model');
+  await page.waitForFunction(()=>/claude-x/.test(document.querySelector('#chatComposer .chat-composer-model')?.textContent||''));
+  // 1. choose a model under another provider, and an effort
+  await chip.click();
+  const picker=page.getByRole('dialog',{name:'Model, effort and permissions'});await picker.waitFor();
+  assert.deepEqual(await picker.locator('.chat-model-group').allTextContents(),['Anthropic','OpenAI','xAI','Lab (192.168.87.11:8000/v1)'],'models are grouped by provider');
+  await picker.getByRole('searchbox',{name:'Search models'}).fill('grok');
+  assert.equal(await picker.getByRole('option').count(),1,'search narrows the list');
+  await picker.getByRole('option',{name:/grok-4\.6/}).click();
+  await picker.getByRole('radio',{name:'high',exact:true}).click();
+  await picker.getByRole('button',{name:'Apply'}).click();
+  await picker.waitFor({state:'detached'});
+  assert.match(await chip.textContent(),/grok-4\.6 · high/);
+  await input.fill('What changed?');await input.press('Enter');
+  await page.waitForFunction(async()=>true);
+  let last;for(let i=0;i<50&&!(last=(await hook('/__last')).send);i++)await page.waitForTimeout(100);
+  assert.deepEqual({agent:last.recipient.agent,model:last.recipient.model,provider:last.recipient.provider,effort:last.recipient.effort},{agent:'alfred',model:'grok-4.6',provider:'xai-oauth',effort:'high'},'the message names the chosen model, provider and effort');
+  // 2. surface commands never send a message
+  const before=await posts();
+  await input.fill('/effort low');await input.press('Enter');
+  await page.waitForFunction(()=>/· low/.test(document.querySelector('#chatComposer .chat-composer-model')?.textContent||''));
+  assert.equal(await input.inputValue(),'','an applied command clears the composer');
+  await input.fill('/model nonsense-model');await input.press('Enter');
+  await page.getByText('No model named nonsense-model',{exact:false}).waitFor();
+  assert.equal(await input.inputValue(),'/model nonsense-model','a refused command keeps what was typed');
+  await input.fill('/model');await input.press('Enter');
+  await picker.waitFor();
+  await page.keyboard.press('Escape');await picker.waitFor({state:'detached'});
+  assert.equal(await page.evaluate(()=>document.activeElement===document.querySelector('#chatComposer textarea')),true,'Esc returns focus to the composer');
+  // keyboard: ↓ picks the next model, → raises effort, Enter applies
+  await input.fill('/model');await input.press('Enter');await picker.waitFor();
+  await page.keyboard.press('ArrowRight');
+  assert.equal(await picker.locator('[role="radio"][aria-checked="true"]').textContent(),'medium','→ raises effort one step');
+  await page.keyboard.press('Enter');await picker.waitFor({state:'detached'});
+  assert.match(await chip.textContent(),/grok-4\.6 · medium/);
+  assert.equal(await posts(),before,'a surface command sent a message');
+  // 3. survives a reload
+  await page.evaluate(()=>{for(const s of chatSyncedDrafts.values())s.flush?.();});await page.waitForTimeout(800);
+  await page.reload();await input.waitFor();
+  await page.waitForFunction(()=>/grok-4\.6 · medium/.test(document.querySelector('#chatComposer .chat-composer-model')?.textContent||''),null,{timeout:5000});
+  // 4. phone and themes
+  for(const theme of ['default','jarvis'])for(const width of [1440,390]){
+   await page.setViewportSize({width,height:844});await page.evaluate(t=>document.documentElement.dataset.theme=t,theme);await page.waitForTimeout(80);
+   assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false,theme+' overflow at '+width);
+   const r=await chip.evaluate(e=>{const a=e.getBoundingClientRect(),t=document.querySelector('#chatComposer textarea').getBoundingClientRect(),c=document.getElementById('chatComposer').getBoundingClientRect();return {h:a.height,below:a.top>=t.bottom-1,inside:a.right<=c.right+1&&a.left>=c.left-1};});
+   assert.ok(r.inside,'chip escapes the composer at '+width);
+   if(width===390){assert.ok(r.h>=44,'chip target too small on phone');assert.ok(r.below,'chip should wrap under the message on phone');}
+   await chip.click();await picker.waitFor();
+   const box=await picker.evaluate(e=>{const b=e.getBoundingClientRect();return {l:b.left,r:b.right,t:b.top,iw:innerWidth};});
+   assert.ok(box.l>=0&&box.r<=box.iw&&box.t>=0,'picker leaves the viewport at '+width);
+   if(process.env.MANIFEST_FIXTURE_SHOTS)await page.screenshot({path:path.join(process.env.MANIFEST_FIXTURE_SHOTS,'model-picker-'+theme+'-'+width+'.png')});
+   await page.keyboard.press('Escape');await picker.waitFor({state:'detached'});
+  }
+  assert.deepEqual(errors,[]);
+  console.log('PASS: provider-grouped picker, exact recipient on send, /model and /effort without sending, reload, phone and themes.');
+  await ctx.close();
+ }finally{await browser.close();stub.server.close();}
+})().catch(e=>{console.error(e);process.exitCode=1;});

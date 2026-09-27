@@ -79,6 +79,10 @@ type Recipient struct {
 	Agent          string `json:"agent"`
 	Profile        string `json:"profile,omitempty"`
 	Model          string `json:"model,omitempty"`
+	// Provider and Effort are the owner's explicit per-message choices
+	// (hermes --provider / --reasoning). Empty keeps the profile's own.
+	Provider string `json:"provider,omitempty"`
+	Effort   string `json:"effort,omitempty"`
 }
 
 type MessageContext struct {

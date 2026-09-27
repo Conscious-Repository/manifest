@@ -388,10 +388,25 @@ func (s *Server) handleAgentChatSessionCreate(w http.ResponseWriter, r *http.Req
 		Model     string            `json:"model"`
 		Text      string            `json:"text"`
 		Files     []threads.FileRef `json:"files"`
+		// The composer's model choice for a new chat: the same agent only,
+		// validated like any per-message recipient (chat_models.go).
+		Recipient *agentchat.Recipient `json:"recipient"`
 	}
 	if err := decode(r, &b); err != nil {
 		httpError(w, err)
 		return
+	}
+	if b.Recipient != nil && (b.Recipient.Agent != agent || (b.Recipient.Model == "" && b.Recipient.Provider == "" && b.Recipient.Effort == "")) {
+		b.Recipient = nil
+	}
+	if b.Recipient != nil {
+		if err := s.hermesChoiceError(b.Recipient.Model, b.Recipient.Provider, b.Recipient.Effort); err != nil {
+			httpError(w, err)
+			return
+		}
+		if b.Model == "" {
+			b.Model = b.Recipient.Model
+		}
 	}
 	if len(strings.TrimSpace(b.Text)) > agentChatMaxChars {
 		http.Error(w, "message exceeds 24000 characters; shorten it or attach a file", http.StatusBadRequest)
@@ -423,7 +438,7 @@ func (s *Server) handleAgentChatSessionCreate(w http.ResponseWriter, r *http.Req
 	}
 	status := agentchat.StatusIdle
 	if strings.TrimSpace(b.Text) != "" || len(b.Files) > 0 {
-		if _, err := s.agentChatSendRequest(agent, id, b.RequestID, b.Text, b.Files); err != nil {
+		if _, err := s.agentChatSendTo(agent, id, b.RequestID, b.Text, b.Files, "", nil, b.Recipient); err != nil {
 			if errors.Is(err, agentchat.ErrRequestConflict) {
 				http.Error(w, err.Error(), http.StatusConflict)
 				return
@@ -607,7 +622,7 @@ func (s *Server) agentChatSendTo(agent, id, requestID, text string, files []thre
 	if prior, found := s.agentChat.store.Receipt(agent, id, requestID); found {
 		if prior.Context != nil && prior.Context.Recipient != nil {
 			retained := *prior.Context.Recipient
-			if target != nil && (target.Agent != retained.Agent || target.Model != retained.RequestedModel) {
+			if target != nil && (target.Agent != retained.Agent || target.Model != retained.RequestedModel || target.Provider != retained.Provider || target.Effort != retained.Effort) {
 				return agentchat.Delivery{}, agentchat.ErrRequestConflict
 			}
 			ctx.Recipient = &retained
@@ -629,7 +644,10 @@ func (s *Server) agentChatSendTo(agent, id, requestID, text string, files []thre
 			if err != nil {
 				return agentchat.Delivery{}, err
 			}
-			recipient = agentchat.Recipient{Agent: target.Agent, Profile: profile, Model: target.Model}
+			if err := s.hermesChoiceError(target.Model, target.Provider, target.Effort); err != nil {
+				return agentchat.Delivery{}, err
+			}
+			recipient = agentchat.Recipient{Agent: target.Agent, Profile: profile, Model: target.Model, Provider: target.Provider, Effort: target.Effort}
 		}
 		recipient.RequestedModel = recipient.Model
 		if recipient.Model == "" {
@@ -782,6 +800,8 @@ func (s *Server) runAgentChatTurnContext(ctx context.Context, agent, id, request
 		ManifestTurn:         fmt.Sprint(sess.Turns),
 		Prompt:               prompt,
 		Model:                recipient.Model,
+		Provider:             recipient.Provider,
+		Reasoning:            recipient.Effort,
 		Toolsets:             s.hermes.readTools, // chat turns are read-only (vault gate, §3.6)
 		Profile:              recipient.Profile,
 	}

@@ -2841,6 +2841,9 @@ function renderChatComposer(session) {
     const files = chatPendingFiles.slice();
     if (!text && !files.length) return;
     if (send.disabled || chatSending || chatUploads.get(draftKey)) return;
+    // Surface commands (/model, /effort, /permissions) behave the same on every
+    // agent: Manifest's picker, applied in the agent's own terms (49-chat-models.js).
+    if (!files.length && typeof chatSurfaceCommand === "function" && await chatSurfaceCommand(text, () => { if (ta.value.trim() === text) { ta.value = ""; grow(); chatCaptureSyncedDraft(draftKey); } })) return;
     if (/^\/[a-zA-Z]/.test(text) && chatIsTerm() && !chatRecipients.get(draftKey)) {
       if(files.length){showToast('Send attachments separately from a native command.');return;}
       chatCaptureSyncedDraft(draftKey);
@@ -3992,6 +3995,7 @@ async function chatTermTail(o) {
   if(JSON.stringify(o.sharedConversation)!==JSON.stringify(d.sharedConversation)){o.sharedConversation=d.sharedConversation;headDirty=true;}
   if(JSON.stringify(o.planningRecipients)!==JSON.stringify(d.planningRecipients||[])){o.planningRecipients=d.planningRecipients||[];headDirty=true;}
   if(JSON.stringify(o.codingRecipients)!==JSON.stringify(d.codingRecipients||[])){o.codingRecipients=d.codingRecipients||[];headDirty=true;}
+  if (JSON.stringify(o.settings||null) !== JSON.stringify(d.settings||null) || JSON.stringify(o.launch||null) !== JSON.stringify(d.launch||null)) { o.settings = d.settings || null; o.launch = d.launch || null; if (typeof chatModelChipsRefresh === "function") chatModelChipsRefresh(); }
   if (d.title && d.title !== o.title) { o.title = d.title; headDirty = true; }
   if (d.cost && d.cost !== o.cost) { o.cost = d.cost; headDirty = true; }
   if (o.se.backend !== "herdr" && !!d.live !== o.live) { o.live = !!d.live; headDirty = true; renderChatComposer(chatTermComposerSession()); chatTermPaintStrip(); }
@@ -4054,7 +4058,7 @@ async function chatTermSend(text,context={}) {
     const wasDraft = chatTermFind(id)?.launchPhase === "draft";
     if (!id) {
       const cwd = chatRecall("manifest.chatTermCwd." + agent);
-      const se = await postJSONOk("/api/terminal/session", { kind: agent, cwd, model:chatRecall("manifest.chatTermModel."+agent), draft: true });
+      const se = await postJSONOk("/api/terminal/session", { kind: agent, cwd, model:chatRecall("manifest.chatTermModel."+agent), effort:chatRecall("manifest.chatTermEffort."+agent), permission:chatRecall("manifest.chatTermPermission."+agent), draft: true });
       chatTermSessions.unshift(Object.assign({ live: false }, se));
       id = se.id;
       await chatAssignNewProject(agent,id,true,project);

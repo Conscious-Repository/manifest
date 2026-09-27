@@ -127,6 +127,8 @@ type Request struct {
 	ManifestTurn         string
 	Prompt               string // the composed work-order / message text
 	Model                string // -m override for this turn; "" → the runner default
+	Provider             string // --provider for this turn; "" → Hermes resolves it
+	Reasoning            string // --reasoning level for this turn; "" → the profile's
 	Toolsets             string // -t override for this turn; "" → the runner default
 	// Skills the turn must load before it starts (comma-separated skill names,
 	// e.g. a cron job's `skills`). `-z` has no preload flag, so the runner
@@ -223,6 +225,12 @@ func (r *Runner) buildArgs(req Request, usageFile string) []string {
 	args = append(args, "-z", composePrompt(req))
 	if m := firstNonEmpty(req.Model, r.cfg.Model); m != "" {
 		args = append(args, "-m", m)
+	}
+	if p := strings.TrimSpace(req.Provider); p != "" {
+		args = append(args, "--provider", p)
+	}
+	if e := strings.TrimSpace(req.Reasoning); e != "" {
+		args = append(args, "--reasoning", e)
 	}
 	if t, _ := r.ToolsetScope(req); t != "" {
 		args = append(args, "-t", t)

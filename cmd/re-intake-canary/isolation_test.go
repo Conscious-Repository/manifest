@@ -163,9 +163,18 @@ func TestCanarySourceCallGraphIsolation(t *testing.T) {
 // turn may run), never spend or reach. The extraction path itself is not on the
 // canary's call graph. Pins refreshed to the reviewed bytes; a future change
 // to either file must repeat this review, not refresh blindly.
+// Re-audited 2026-09-27 (chat model · effort picker; docs/audits/
+// 2026-09-27-hermes-provider-reasoning.md): runner.go gains two Request string
+// fields, Provider and Reasoning, read in exactly one place — legacy buildArgs,
+// which appends --provider/--reasoning only when an owner's chat message names
+// them. Run still returns from the fixed MigratedDuty branch before buildArgs;
+// runSuccessor, the successor's DutyAuthority (provider, model, ceiling, tools,
+// MCP) and every other pinned file are byte-identical. No import, call, cost or
+// tool authority changed; an empty field leaves the legacy argv unchanged
+// (TestBuildArgsProviderAndReasoning).
 var reviewedSuccessorSources = map[string]string{
 	"../../hermes/claude_successor.go": "2268cefe71d72de28b6425c0c248c0d79bf210a506892de24ea346f024f13cd8",
-	"../../hermes/runner.go":           "7b23d917498fdb0ff058076080575a8f12d70e3fb19b07e5615eb401d18ebaac",
+	"../../hermes/runner.go":           "765cbbd2f77ccecebeb31935ee8e98b782d247cd443f641a5df75b1eedaeca85",
 	"../../hermes/successor.go":        "b154048dfe670b02c46d4d2302d17ac9bc8d58ca499c0445e8d7bbd818d0e8af",
 	"../../hermes/successor.py":        "a7737229609b18c627c720f466858045b7aa06b4e03ed29ce1c0774d8385ae5c",
 	"../../hermes/authority.go":        "eb81015bc173e44cf7caab821c2458480125b18381414de626d0980bda61baba",

@@ -281,3 +281,9 @@ func TestFixtureChatCodexTranscript(t *testing.T) {
 // Tile whole conversations like a tiling window manager: dwindle splits,
 // keys from page and tile, no frame reloads, saved arrangement (chat-tiles.cjs).
 func TestFixtureChatTiles(t *testing.T) { runFixture(t, "chat-tiles.cjs", true, false) }
+
+// One model · effort picker on every agent, /model and /effort as surface
+// commands, the exact recipient on send (chat-composer-models.cjs).
+func TestFixtureChatComposerModels(t *testing.T) {
+	runFixture(t, "chat-composer-models.cjs", true, false)
+}

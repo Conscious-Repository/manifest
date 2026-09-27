@@ -59,6 +59,9 @@ func (s *Server) handleTermTranscript(w http.ResponseWriter, r *http.Request) {
 		"supervision":      s.terminalChatSupervision(se, full, ob),
 		"historyAvailable": tr.Available,
 		"turns":            tr.Turns, "title": tr.Title, "cost": tr.Cost, "run": full.Run,
+		// what the CLI recorded it is running with, and what it was launched with
+		"settings":           full.Settings,
+		"launch":             map[string]string{"model": se.Model, "effort": se.Effort, "permission": se.Permission},
 		"conversation":       s.terminalConversation(se),
 		"sharedConversation": s.terminalSharedConversation(se),
 		"origin":             se.Origin, "draft": se.isDraft(),

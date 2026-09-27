@@ -51,6 +51,8 @@ type termSession struct {
 	CreatedAt       string            `json:"createdAt"`
 	LastUsed        string            `json:"lastUsed"`
 	Model           string            `json:"model,omitempty"`      // pinned coding work-order model
+	Effort          string            `json:"effort,omitempty"`     // launch reasoning effort (chat_models.go)
+	Permission      string            `json:"permission,omitempty"` // launch permission / access mode
 	BoardBrief      string            `json:"boardBrief,omitempty"` // durable board handoff; first launch only
 	Pinned          bool              `json:"pinned,omitempty"`
 	Origin          *agentchat.Origin `json:"origin,omitempty"`
@@ -335,7 +337,44 @@ func (s termSession) launchCmd() string {
 		}
 		command += flag + shQuote(s.boardModel())
 	}
-	return command
+	return command + s.settingsFlags()
+}
+
+// settingsFlags carries the chosen effort and permission into every launch,
+// including a relaunch that resumes the conversation. Unset keeps the CLI's
+// own configured default (for Codex: the full access Manifest always used).
+func (s termSession) settingsFlags() string {
+	if s.BoardBrief != "" {
+		return ""
+	}
+	out := ""
+	switch s.Kind {
+	case "claude":
+		if s.Effort != "" {
+			out += " --effort " + shQuote(s.Effort)
+		}
+		if s.Permission != "" {
+			out += " --permission-mode " + shQuote(s.Permission)
+		}
+	case "codex":
+		if s.Effort != "" {
+			out += " -c " + shQuote("model_reasoning_effort="+strconvQuote(s.Effort))
+		}
+	}
+	return out
+}
+
+func strconvQuote(v string) string { return `"` + strings.ReplaceAll(v, `"`, ``) + `"` }
+
+// codexAccess is Codex's sandbox + approval flags for a permission choice.
+func (s termSession) codexAccess() string {
+	switch s.Permission {
+	case "auto":
+		return "--sandbox workspace-write --ask-for-approval on-request"
+	case "read-only":
+		return "--sandbox read-only --ask-for-approval on-request"
+	}
+	return "--yolo"
 }
 
 func (s termSession) baseLaunchCmd() string {
@@ -357,12 +396,12 @@ func (s termSession) baseLaunchCmd() string {
 		return "claude"
 	case "codex":
 		if s.ResumeID != "" && resumeIDRe.MatchString(s.ResumeID) {
-			return "codex resume --yolo " + s.ResumeID
+			return "codex resume " + s.codexAccess() + " " + s.ResumeID
 		}
 		if s.Resume {
-			return "codex resume --yolo"
+			return "codex resume " + s.codexAccess()
 		}
-		return "codex --yolo"
+		return "codex " + s.codexAccess()
 	default:
 		return "bash -l"
 	}
@@ -448,6 +487,8 @@ func (s *Server) handleTermCreate(w http.ResponseWriter, r *http.Request) {
 		ResumePicker bool   `json:"resumePicker"`
 		Keep         bool   `json:"keep"`
 		Model        string `json:"model"`
+		Effort       string `json:"effort"`
+		Permission   string `json:"permission"`
 		Draft        bool   `json:"draft"`
 	}
 	if err := decode(r, &b); err != nil {
@@ -457,6 +498,10 @@ func (s *Server) handleTermCreate(w http.ResponseWriter, r *http.Request) {
 	kind := b.Kind
 	if kind != "shell" && kind != "claude" && kind != "codex" {
 		httpError(w, errBadRequest("kind must be one of shell|claude|codex"))
+		return
+	}
+	if err := codingSettingsError(kind, strings.TrimSpace(b.Effort), strings.TrimSpace(b.Permission)); err != nil {
+		httpError(w, err)
 		return
 	}
 	if b.Draft && (!isCodingAgent(kind) || b.ResumePicker || b.Device != "" || b.Keep) {
@@ -485,6 +530,7 @@ func (s *Server) handleTermCreate(w http.ResponseWriter, r *http.Request) {
 		Resume:    b.ResumePicker,
 		Keep:      b.Keep && device != "", // local sessions are inherently kept
 		CreatedAt: now, LastUsed: now, Model: strings.TrimSpace(b.Model),
+		Effort: strings.TrimSpace(b.Effort), Permission: strings.TrimSpace(b.Permission),
 	}
 	if se.Name == "" {
 		se.Name = kind
@@ -715,13 +761,45 @@ func (s *Server) handleTermUpdate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var b struct {
-		Name     *string `json:"name"`
-		AutoName *string `json:"autoName"`
-		Pinned   *bool   `json:"pinned"`
+		Name       *string `json:"name"`
+		AutoName   *string `json:"autoName"`
+		Pinned     *bool   `json:"pinned"`
+		Model      *string `json:"model"`
+		Effort     *string `json:"effort"`
+		Permission *string `json:"permission"`
 	}
 	if err := decode(r, &b); err != nil {
 		httpError(w, err)
 		return
+	}
+	// Launch settings change only before the first launch: afterwards the
+	// running process owns them, and a change goes through the agent's own
+	// command, confirmed from its transcript (chat_models.go LiveModel).
+	settings := b.Model != nil || b.Effort != nil || b.Permission != nil
+	if settings {
+		if !se.isDraft() {
+			http.Error(w, "launch settings are fixed once the session has started; change them with the agent's own command", http.StatusConflict)
+			return
+		}
+		effort, permission := se.Effort, se.Permission
+		if b.Effort != nil {
+			effort = strings.TrimSpace(*b.Effort)
+		}
+		if b.Permission != nil {
+			permission = strings.TrimSpace(*b.Permission)
+		}
+		if err := codingSettingsError(se.Kind, effort, permission); err != nil {
+			httpError(w, err)
+			return
+		}
+		if b.Model != nil {
+			if m := strings.TrimSpace(*b.Model); m != "" {
+				if _, note := codingModel(se.Kind, m); note != "" {
+					httpError(w, errBadRequest("unknown model "+m+" for "+se.Kind))
+					return
+				}
+			}
+		}
 	}
 	var err error
 	se, err = s.terminal.updateTermMetadata(se.ID, func(row *termSession) {
@@ -738,6 +816,17 @@ func (s *Server) handleTermUpdate(w http.ResponseWriter, r *http.Request) {
 		}
 		if b.Pinned != nil {
 			row.Pinned = *b.Pinned
+		}
+		if settings && row.isDraft() {
+			if b.Model != nil {
+				row.Model, _ = codingModel(row.Kind, strings.TrimSpace(*b.Model))
+			}
+			if b.Effort != nil {
+				row.Effort = strings.TrimSpace(*b.Effort)
+			}
+			if b.Permission != nil {
+				row.Permission = strings.TrimSpace(*b.Permission)
+			}
 		}
 	})
 	if err != nil {

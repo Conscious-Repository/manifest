@@ -4,7 +4,8 @@
    agent and its run state. Frames are absolutely positioned by the script. */
 #chatView.tiles-mode > .chat-shell { display: none !important; }
 #chatView.tiles-mode .chat-layout-select, #chatView.tiles-mode .chat-sidebar-toggle, #chatView.tiles-mode .chat-tiles-enter { display: none; }
-.chat-tiles { display: flex; flex-direction: column; gap: var(--sp-4); min-height: 0; height: calc(100dvh - 120px); }
+#chatView.tiles-mode > .cockpit-head { display: none; }
+.chat-tiles { display: flex; flex-direction: column; gap: var(--sp-4); min-height: 0; height: calc(100dvh - 60px); padding: var(--sp-5) var(--page-gutter) 0; box-sizing: border-box; }
 .chat-tiles[hidden] { display: none; }
 .chat-tiles-bar { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-3); min-height: var(--control-min); }
 .chat-tiles-spaces { display: flex; gap: 2px; padding: 2px; border: 1px solid var(--line); border-radius: var(--radius-lg); }
@@ -62,7 +63,7 @@
 /* a tile's frame: the conversation fills it; its own page chrome stays hidden */
 .chat-embedded.chat-tile-doc .chat-main { padding-top: 0; }
 @media (max-width: 860px) {
-  .chat-tiles { height: calc(100dvh - 96px); gap: var(--sp-3); }
+  .chat-tiles { height: calc(100dvh - 96px); gap: var(--sp-3); padding: var(--sp-3) var(--sp-6) 0; }
   .chat-tiles-keys, .chat-tiles-full { display: none; }
   .chat-tiles-space, .chat-tile-act, .chat-tiles-add, .chat-tiles-exit, .chat-tile-new-choice { min-height: 44px; min-width: 44px; }
   .chat-tile-head { min-height: 44px; }

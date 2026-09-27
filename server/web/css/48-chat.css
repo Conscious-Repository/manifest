@@ -926,3 +926,42 @@ label.chat-artifact-handoff{display:flex;flex-direction:row;align-items:flex-sta
 :is(.chat-say, .chat-term-say) .md-code-block > .md-pre { margin: 0; padding: var(--sp-4) var(--sp-5); border: 0; border-radius: 0; background: transparent; overflow-x: auto; font-family: var(--mono); font-size: var(--fs-sm); line-height: 1.55; color: var(--base-100); white-space: pre; }
 :is(.chat-say, .chat-term-say) .md-code { background: var(--surface-field); border: 1px solid var(--line-soft); padding: 0.05em 0.3em; border-radius: 4px; }
 @media (max-width: 860px) { :is(.chat-say, .chat-term-say) .md-code-copy { min-height: 44px; min-width: 44px; } }
+/* Model · effort · permissions (49-chat-models.js, 2026-09-27). Two quiet
+   chips in the composer footer beside the agent chip; the picker opens above
+   the composer. Bypass/full access reads in the warning ink everywhere. */
+.chat-composer > :is(.chat-composer-model, .chat-composer-permission) { order: 2; flex: 0 1 auto; min-width: 0; max-width: 40%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-height: var(--control-height); padding: var(--sp-2) var(--sp-4); border: 0; border-radius: var(--radius); background: transparent; font: var(--fs-md)/1.4 var(--mono); color: var(--base-70); cursor: pointer; }
+.chat-composer > .chat-composer-recipient + .chat-composer-model, .chat-composer > .chat-composer-model:first-of-type { margin-left: 0; }
+.chat-composer:not(:has(.chat-composer-recipient)) > .chat-composer-model { margin-left: auto; }
+.chat-composer > :is(.chat-composer-model, .chat-composer-permission):hover, .chat-composer > :is(.chat-composer-model, .chat-composer-permission):focus-visible { background: var(--hover); color: var(--base-100); }
+.chat-composer > .chat-composer-model[data-source="requested"] { color: var(--accent); }
+.chat-composer > .chat-composer-permission.is-danger { color: var(--warn); }
+.chat-model-picker { position: absolute; left: 0; right: 0; bottom: calc(100% + var(--sp-3)); z-index: 30; display: flex; flex-direction: column; gap: var(--sp-3); max-height: min(64vh, 560px); padding: var(--sp-4); box-sizing: border-box; border: 1px solid var(--line); border-radius: var(--radius-lg); background: var(--bg); box-shadow: var(--shadow-2); }
+.chat-model-search { flex: none; min-height: var(--control-height); padding: 0 var(--sp-4); border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface-field); color: var(--text); font: var(--fs-md) var(--sans); }
+.chat-model-list { flex: 1 1 auto; min-height: 80px; overflow-y: auto; display: flex; flex-direction: column; gap: 1px; }
+.chat-model-group { position: sticky; top: 0; padding: var(--sp-2) var(--sp-3) var(--sp-1); background: var(--bg); }
+.chat-model-row { display: flex; flex-direction: column; gap: 2px; padding: var(--sp-2) var(--sp-3); border-radius: var(--radius); cursor: pointer; }
+.chat-model-row:hover, .chat-model-row.is-active { background: var(--hover); }
+.chat-model-row[aria-selected="true"] .chat-model-name::after { content: " ✓"; color: var(--accent); }
+.chat-model-name { font: 500 var(--fs-md)/1.3 var(--sans); color: var(--base-100); overflow-wrap: anywhere; }
+.chat-model-meta, .chat-model-empty, .chat-model-status, .chat-model-hint, .chat-model-loading { font: var(--fs-xs)/1.4 var(--sans); color: var(--base-60); margin: 0; overflow-wrap: anywhere; }
+.chat-model-hint { color: var(--base-50); }
+.chat-model-efforts, .chat-model-perms { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); }
+.chat-model-efforts:empty, .chat-model-perms:empty { display: none; }
+.chat-model-section { flex: 0 0 auto; min-width: 84px; font: var(--fs-xs) var(--sans); color: var(--base-60); }
+.chat-model-seg { min-height: var(--control-min); padding: 0 var(--sp-4); border: 1px solid var(--line); border-radius: 999px; background: transparent; color: var(--base-80); font: var(--fs-xs) var(--sans); cursor: pointer; }
+.chat-model-seg[aria-checked="true"] { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--base-100); }
+.chat-model-seg.is-danger { color: var(--warn); }
+.chat-model-seg:disabled { opacity: 0.45; cursor: default; }
+.chat-model-actions { display: flex; justify-content: flex-end; gap: var(--sp-3); }
+.chat-model-actions button, .chat-model-native { min-height: var(--control-min); }
+@media (max-width: 860px) {
+  .chat-main .chat-composer > .chat-composer-model { order: 6; flex: 1 1 55%; max-width: none; text-align: left; min-height: var(--control-touch); font: var(--fs-sm)/1 var(--sans); }
+  .chat-main .chat-composer > .chat-composer-permission { order: 7; min-height: var(--control-touch); max-width: 45%; font: var(--fs-sm)/1 var(--sans); }
+  .chat-model-picker { position: fixed; left: var(--sp-4); right: var(--sp-4); bottom: calc(var(--sp-4) + env(safe-area-inset-bottom, 0px)); max-height: 72dvh; }
+  .chat-model-seg, .chat-model-actions button, .chat-model-native { min-height: 44px; }
+  .chat-model-row { min-height: 44px; justify-content: center; }
+}
+.chat-model-actions > button { padding: 0 var(--sp-5); border: 1px solid var(--line); border-radius: var(--radius); background: transparent; color: var(--base-80); font: var(--fs-sm) var(--sans); letter-spacing: 0; text-transform: none; }
+.chat-model-actions > .chat-model-apply { border-color: var(--accent); background: var(--accent); color: var(--on-accent); }
+.chat-model-actions > button:hover { filter: brightness(1.05); background-color: var(--hover); }
+.chat-model-actions > .chat-model-apply:hover { background: var(--accent); }

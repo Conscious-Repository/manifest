@@ -64,6 +64,10 @@ func codingModel(owner, requested string) (model, note string) {
 			return requested, ""
 		}
 	}
+	// the installed CLI's own listed models are accepted too (chat_models.go)
+	if containsString(codingCatalogIDs(owner), requested) {
+		return requested, ""
+	}
 	return policy.best, "Unknown or malformed model override " + requested + "; using best (" + policy.best + ")."
 }
 

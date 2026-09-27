@@ -262,6 +262,10 @@ function chatPolishComposer(host){
   const agent=chatAgentLabel(recipient?.agent||chatAgent);
   picker.textContent=(model?shortModel(model):agent)+' ⌄';picker.title=agent+(model?' · '+model:'')+' · Choose agent or model';
  }else picker?.remove();
+ // Model, effort and permissions have their own chips (49-chat-models.js);
+ // the recipient chip then names only the agent the message goes to.
+ const chips=typeof chatModelChips==='function'&&chatModelChips(host);
+ if(chips&&picker){const agentName=chatAgentLabel(chatRecipients.get((chatAgent||'spirits')+'/'+(chatOpenId||'new'))?.agent||chatAgent);picker.textContent=agentName+' ⌄';picker.title='Next message goes to '+agentName+' · choose another agent';picker.setAttribute('aria-label','Choose agent');}
  main?.classList.toggle('has-composer-recipient',!!source);
  const input=host.querySelector('textarea'),send=host.querySelector('.chat-send');
  if(send&&send.textContent!=='…'){send.setAttribute('aria-label','Send message');send.title=window.matchMedia('(max-width: 860px)').matches?'Send message · Enter adds a new line':'Send message · Enter (Shift+Enter for a new line)';}

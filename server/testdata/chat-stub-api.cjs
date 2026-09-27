@@ -20,7 +20,7 @@ function makeStub(){
  const sessions={a:{id:'a',title:'Long research thread',status:'idle',agent:'alfred',turns:40,updated:'2026-09-25T11:00:00Z',created:'2026-09-25T10:00:00Z',spentUsd:0,deliveries:[]},
   b:{id:'b',title:'Second thread',status:'idle',agent:'alfred',turns:2,updated:'2026-09-25T09:00:00Z',created:'2026-09-25T09:00:00Z',spentUsd:0,deliveries:[]}};
  const bodies={a:long(40),b:long(2)};
- const state=new Map();const streams=[];const log=[];let down=false,delay=0,legacy=false;
+ const state=new Map();const streams=[];const log=[];const lastSend={value:null};let down=false,delay=0,legacy=false;
  const json=(res,code,body)=>{res.writeHead(code,{'Content-Type':'application/json'});res.end(JSON.stringify(body));};
  const roster={agents:[{name:'alfred',label:'Alfred',enabled:true,durableSend:true,model:'claude-x'}]};
  const detail=id=>{const s=sessions[id];return {session:s,body:bodies[id],conversation:{key:'conv-'+id},capabilities:caps,supervision:s.supervision||{adapter:'hermes-oneshot',state:'unknown',evidence:'x',capabilities:caps,runs:[]},outputs:[],queued:[],operations:[],proposals:[],related:[],continuations:[],sharedFiles:[]};};
@@ -28,6 +28,7 @@ function makeStub(){
   const url=new URL(req.url,'http://x');const p=url.pathname;
   if(p==='/__push'){const ev=url.searchParams.get('ev'),data=url.searchParams.get('data')||'{}';streams.forEach(s=>s.write('event: '+ev+'\ndata: '+JSON.stringify({data:JSON.parse(data)})+'\n\n'));return json(res,200,{n:streams.length});}
   if(p==='/__log')return json(res,200,{log});
+  if(p==='/__last')return json(res,200,{send:lastSend.value});
   if(p==='/__down'){down=url.searchParams.get('on')==='1';return json(res,200,{down});}
   if(p==='/__delay'){delay=Number(url.searchParams.get('ms'))||0;return json(res,200,{delay});}
   if(p==='/__legacy'){legacy=url.searchParams.get('on')==='1';return json(res,200,{legacy});}
@@ -36,11 +37,14 @@ function makeStub(){
   if(p.startsWith('/api/')){
    log.push(req.method+' '+p+url.search);
    if(p==='/api/agents/chat/roster')return json(res,200,roster);
+   if(p==='/api/chat/models')return json(res,200,{agents:{alfred:{backend:'hermes',default:'claude-x',defaultProvider:'anthropic',liveModel:'recipient',liveEffort:'recipient',
+     efforts:['none','minimal','low','medium','high','xhigh','max','ultra'].map(id=>({id})),
+     models:[{id:'claude-x',label:'claude-x',provider:'anthropic',description:'Anthropic'},{id:'gpt-5.6-luna',label:'gpt-5.6-luna',provider:'openai-codex',description:'OpenAI'},{id:'grok-4.6',label:'grok-4.6',provider:'xai-oauth',description:'xAI'},{id:'deepseek-v4.1-flash',label:'deepseek-v4.1-flash',provider:'lab-sparks',description:'Lab (192.168.87.11:8000/v1)'}]}}});
    if(p==='/api/agents/chat/alfred/sessions')return json(res,200,{sessions:Object.values(sessions)});
    const sm=p.match(/^\/api\/agents\/chat\/alfred\/sessions\/([ab])(\/stream|\/messages)?$/);
    if(sm&&sm[2]==='/stream'){res.writeHead(200,{'Content-Type':'text/event-stream','Cache-Control':'no-store'});res.write(':ok\n\n');streams.push(res);req.on('close',()=>streams.splice(streams.indexOf(res),1));return;}
    if(sm&&sm[2]==='/messages'&&req.method==='POST'){let b='';req.on('data',c=>b+=c);req.on('end',()=>setTimeout(()=>{
-     const v=JSON.parse(b||'{}'),s=sessions[sm[1]];s.turns++;bodies[s.id]+='\n\n'+turn(s.turns,'user',v.text||'');
+     const v=JSON.parse(b||'{}'),s=sessions[sm[1]];lastSend.value=v;s.turns++;bodies[s.id]+='\n\n'+turn(s.turns,'user',v.text||'');
      const id=v.requestId||'req-'+s.turns;s.deliveries=[...s.deliveries,{id,state:'queued',userTurn:s.turns,text:v.text}];
      s.supervision={adapter:'hermes-oneshot',state:'submitted',evidence:'delivery receipt '+id,capabilities:caps,runs:[{id,state:'queued'}]};s.updated=new Date().toISOString();
      json(res,200,{ok:true,id:s.id,requestId:id});},delay));return;}

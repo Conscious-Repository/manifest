@@ -362,3 +362,17 @@ func TestToolsetScopeMatchesInvocation(t *testing.T) {
 		}
 	}
 }
+
+// The owner's per-message provider and effort reach Hermes as its own flags;
+// empty keeps the profile's choices and the argv unchanged.
+func TestBuildArgsProviderAndReasoning(t *testing.T) {
+	r := NewRunner(Config{Enabled: true})
+	got := r.buildArgs(Request{Prompt: "p", Model: "claude-fable-5", Provider: "anthropic", Reasoning: "high"}, "")
+	want := []string{"-z", "p", "-m", "claude-fable-5", "--provider", "anthropic", "--reasoning", "high"}
+	if strings.Join(got, "\x00") != strings.Join(want, "\x00") {
+		t.Fatalf("buildArgs = %v, want %v", got, want)
+	}
+	if got := r.buildArgs(Request{Prompt: "p"}, ""); strings.Join(got, " ") != "-z p" {
+		t.Fatalf("defaults changed: %v", got)
+	}
+}

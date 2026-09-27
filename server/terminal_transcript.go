@@ -79,10 +79,44 @@ type termTranscript struct {
 	Available bool                 `json:"-"`
 	Turns     []termTurn           `json:"turns"`
 	Title     string               `json:"title,omitempty"` // claude ai-title
-	Cost      float64              `json:"cost,omitempty"`  // claude cost-state totalCostUSD
+	// Settings the CLI itself recorded most recently in this read: the model,
+	// effort and permission the session is actually running with. Absent
+	// means this read saw no record of them, never "default".
+	Settings *termSettings `json:"settings,omitempty"`
+	Cost     float64       `json:"cost,omitempty"` // claude cost-state totalCostUSD
 	// Offset is the byte offset just past the last COMPLETE line parsed —
 	// pass it back as ?after= to receive only newer records.
 	Offset int64 `json:"offset"`
+}
+
+type termSettings struct {
+	Model      string `json:"model,omitempty"`
+	Effort     string `json:"effort,omitempty"`
+	Permission string `json:"permission,omitempty"`
+	At         string `json:"at,omitempty"`
+}
+
+// observe folds one record's settings into the latest known set.
+func (b *transcriptBuilder) observe(ts, model, effort, permission string) {
+	if model == "" && effort == "" && permission == "" {
+		return
+	}
+	if b.out.Settings == nil {
+		b.out.Settings = &termSettings{}
+	}
+	st := b.out.Settings
+	if model != "" {
+		st.Model = model
+	}
+	if effort != "" {
+		st.Effort = effort
+	}
+	if permission != "" {
+		st.Permission = permission
+	}
+	if ts != "" {
+		st.At = ts
+	}
 }
 
 const (
@@ -100,10 +134,13 @@ type claudeRecord struct {
 	Message      json.RawMessage `json:"message"`
 	AITitle      string          `json:"aiTitle"`
 	TotalCost    float64         `json:"totalCostUSD"`
-	PromptSource string          `json:"promptSource"` // "system" when the harness wrote the user turn; "typed" for the owner
+	PromptSource string          `json:"promptSource"`   // "system" when the harness wrote the user turn; "typed" for the owner
+	Effort       string          `json:"effort"`         // assistant rows: the effort this reply ran at
+	Permission   string          `json:"permissionMode"` // permission-mode rows
 }
 
 type claudeMessage struct {
+	Model      string          `json:"model"`
 	StopReason string          `json:"stop_reason"`
 	Role       string          `json:"role"`
 	Content    json.RawMessage `json:"content"` // string | []block
@@ -215,6 +252,8 @@ func parseClaudeTranscript(r io.Reader, base ...int64) termTranscript {
 			if rec.TotalCost > 0 {
 				b.out.Cost = rec.TotalCost
 			}
+		case "permission-mode":
+			b.observe(rec.Timestamp, "", "", rec.Permission)
 		case "user", "assistant":
 			if rec.IsMeta || rec.IsSidechain || len(rec.Message) == 0 {
 				return
@@ -224,6 +263,9 @@ func parseClaudeTranscript(r io.Reader, base ...int64) termTranscript {
 				return
 			}
 			blocks, text := claudeContent(m.Content, rec.Type == "user")
+			if rec.Type == "assistant" && !strings.HasPrefix(m.Model, "<") {
+				b.observe(rec.Timestamp, m.Model, rec.Effort, "")
+			}
 			if rec.Type == "assistant" {
 				state := "running"
 				if m.StopReason == "end_turn" {
@@ -414,7 +456,35 @@ type codexRecord struct {
 		Summary []struct {
 			Text string `json:"text"`
 		} `json:"summary"`
+		// turn_context rows: what the turn actually ran with
+		Model          string `json:"model"`
+		Effort         string `json:"effort"`
+		ApprovalPolicy string `json:"approval_policy"`
+		SandboxPolicy  struct {
+			Type string `json:"type"`
+		} `json:"sandbox_policy"`
+		Collaboration struct {
+			Settings struct {
+				Effort *string `json:"reasoning_effort"`
+			} `json:"settings"`
+		} `json:"collaboration_mode"`
 	} `json:"payload"`
+}
+
+// codexPermission names a turn's sandbox/approval pair with the chat's
+// access presets (chat_models.go), or the raw pair when it is neither.
+func codexPermission(approval, sandbox string) string {
+	switch {
+	case sandbox == "danger-full-access" && approval == "never":
+		return "full"
+	case sandbox == "workspace-write" && approval == "on-request":
+		return "auto"
+	case sandbox == "read-only" && approval == "on-request":
+		return "read-only"
+	case approval == "" && sandbox == "":
+		return ""
+	}
+	return strings.Trim(sandbox+" · "+approval, " ·")
 }
 
 // parseCodexTranscript projects a codex rollout: response_item.message by
@@ -431,6 +501,14 @@ func parseCodexTranscript(r io.Reader, base ...int64) termTranscript {
 			return
 		}
 		p := rec.Payload
+		if rec.Type == "turn_context" {
+			effort := p.Effort
+			if effort == "" && p.Collaboration.Settings.Effort != nil {
+				effort = *p.Collaboration.Settings.Effort
+			}
+			b.observe(rec.Timestamp, p.Model, effort, codexPermission(p.ApprovalPolicy, p.SandboxPolicy.Type))
+			return
+		}
 		if rec.Type == "event_msg" {
 			switch p.Type {
 			case "task_started":
