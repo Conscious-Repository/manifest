@@ -116,7 +116,11 @@ func TestCancelQueuedAndPositions(t *testing.T) {
 		t.Fatal(err)
 	}
 	waitStatus(t, store, queued.ID, StatusCancelled, 2*time.Second)
-	_ = e.Cancel(running.ID) // cleanup
+	// cleanup: the executor keeps writing the cancelled errand's transcript
+	// and record after Cancel returns; wait for them, or TempDir's RemoveAll
+	// races those writes ("directory not empty")
+	_ = e.Cancel(running.ID)
+	waitStatus(t, store, running.ID, StatusCancelled, 5*time.Second)
 }
 
 func TestExecutorTimeout(t *testing.T) {
