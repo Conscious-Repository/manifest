@@ -147,6 +147,14 @@ const {makeStub}=require('./chat-stub-api.cjs');
   };
   await page.evaluate(()=>document.querySelector('#chatComposer .mic-btn')?.remove());await measure('no mic');
   await page.evaluate(()=>window.dispatchEvent(new HashChangeEvent('hashchange')));await page.waitForSelector('#chatComposer .mic-btn');await measure('with mic');
+  // 6. "To Alfred · model" shows where a message went only when the
+  // recipient or model changed since the previous message
+  const to=(n,model)=>({id:'d'+n,state:'delivered',userTurn:n,context:{recipient:{agent:'alfred',model}}});
+  await hook('/__set?id=a&patch='+encodeURIComponent(JSON.stringify({deliveries:[to(1,'gpt-5.6-luna'),to(3,'gpt-5.6-luna'),to(5,'grok-4.6')]})));
+  await page.setViewportSize({width:1440,height:900});await page.goto(base+'/#/chat/a/alfred/a');
+  await page.locator('#chatTranscript [data-chat-read-turn="5"]').waitFor();
+  const shown=await page.evaluate(()=>[1,3,5].map(n=>document.querySelector('#chatTranscript [data-chat-read-turn="'+n+'"] .chat-context-attribution')?.textContent||''));
+  assert.deepEqual(shown,['To Alfred · gpt-5.6-luna','','To Alfred · grok-4.6'],'the recipient line repeats only on a change');
   assert.deepEqual(errors,[]);
   console.log('PASS: provider-grouped picker, exact recipient on send, /model and /effort without sending, reload, phone and themes.');
   await ctx.close();

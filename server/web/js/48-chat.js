@@ -2380,14 +2380,18 @@ function chatSaveOutputButton(output){
  return button;
 }
 function chatPaintTurns(host, turns, ctx) {
+  // "To Alfred · model" says where a message went; it repeats only when the
+  // recipient or model changed since the previous message
+  let lastTo = "";
   turns.forEach((t) => {
     if (t.who === "user") {
       const row=chatUserTurn(chatQuestionReplyDisplay(t.text));
       row.dataset.chatReadTurn=String(t.n);
       const receipt=t.delivery||(t.submission?{context:{recipient:{agent:t.native.agent,model:t.native.model},task:t.submission.task,artifacts:t.submission.artifacts,explicitArtifacts:t.submission.explicitArtifacts},historyOmitted:t.submission.historyOmitted}:ctx?.deliveries?.find(d=>d.userTurn===t.n));
       if(receipt?.context?.recipient){
-        const target=receipt.context.recipient;
-        row.append(el("div","chat-context-attribution","To "+chatAgentLabel(target.agent)+(target.model?" · "+shortModel(target.model):"")+(receipt.historyOmitted?" · "+receipt.historyOmitted+" earlier turns omitted":"")));
+        const target=receipt.context.recipient,to="To "+chatAgentLabel(target.agent)+(target.model?" · "+shortModel(target.model):"");
+        if(to!==lastTo||receipt.historyOmitted)row.append(el("div","chat-context-attribution",to+(receipt.historyOmitted?" · "+receipt.historyOmitted+" earlier turns omitted":"")));
+        lastTo=to;
       }
       for(const ref of receipt?.context?.artifacts||[]){
         const open=el("button","sprt-quiet","Referenced plan / file");
@@ -2417,29 +2421,52 @@ function chatPaintTurns(host, turns, ctx) {
     responseBlocks.forEach(b=>wrap.append(chatBlockEl(b)));
     if(planRevision)wrap.append(chatPlanReviewButton(planRevision));
     if (ctx && ctx.operations) ctx.operations.filter(item => Number(item.record.turn) + 1 === t.n).forEach(item => wrap.append(manifestOperationCard(item)));
-    const foot = el("div", "chat-turn-foot");
-    foot.append(el("span","chat-turn-author",chatAgentLabel(t.who.replace(/^agent:/,""))));
+    // one line: who · when on the left; the actions beside them, shown on
+    // hover or focus where there is a pointer, behind ··· on touch (CSS)
+    const foot = el("div", "chat-turn-foot"), meta = el("span", "chat-turn-meta"), acts = el("span", "chat-turn-actions");
+    meta.append(el("span","chat-turn-author",chatAgentLabel(t.who.replace(/^agent:/,""))));
     // when the turn landed — a conversation with no times reads as stalled
     // while Alfred's turn takes minutes
     // Only a native coding reply carries a recorded end time; a Hermes turn's
     // `end` is a body offset (parseChatTurns), never a time.
     const worked = typeof chatDuration === "function" && t.native && typeof t.end === "string" && typeof t.ts === "string" ? chatDuration(Date.parse(t.end) - Date.parse(t.ts)) : "";
-    if (worked) foot.append(el("span", "chat-turn-worked", "Worked for " + worked));
-    if (t.ts) foot.append(el("span", "chat-turn-when", fmtWhen(t.ts)));
-    if (t.usd) foot.append(el("span", "chat-turn-usd", "$" + t.usd));
-    if(t.native){const native=el("a","chat-turn-act","Native chat ↗");native.href=t.native.route;foot.append(native);}
+    if (worked) meta.append(el("span", "chat-turn-worked", "Worked for " + worked));
+    if (t.ts) meta.append(el("span", "chat-turn-when", fmtWhen(t.ts)));
+    if (t.usd) meta.append(el("span", "chat-turn-usd", "$" + t.usd));
+    foot.append(meta);
+    if(t.native){const native=el("a","chat-turn-act","Native chat ↗");native.href=t.native.route;acts.append(native);}
     if (ctx && ctx.promote && !t.native) {
       const promote = el("button", "chat-turn-act", "→ task");
       promote.title = "make a task from this conversation (up to this turn) — " + ctx.who + " takes it";
       promote.onclick = () => ctx.promote(t);
-      foot.append(promote);
+      acts.append(promote);
     }
-    if(typeof chatCopyResponseControl==="function"){const copy=chatCopyResponseControl(responseBlocks,t.n);if(copy)foot.append(copy);}
-    const output=ctx?.outputs?.find(output=>output.replyTurn===t.n);if(output&&!t.native)foot.append(chatSaveOutputButton(output));
+    if(typeof chatCopyResponseControl==="function"){const copy=chatCopyResponseControl(responseBlocks,t.n);if(copy)acts.append(copy);}
+    const output=ctx?.outputs?.find(output=>output.replyTurn===t.n);if(output&&!t.native)acts.append(chatSaveOutputButton(output));
+    if (acts.childElementCount) foot.append(chatTurnActionsMenu(foot, acts), acts);
     if (foot.childElementCount) wrap.append(foot);
     host.append(wrap);
   });
 }
+
+// chatTurnActionsMenu — the ··· toggle for a reply's actions on touch and
+// narrow screens (with a pointer they show on hover or focus instead; CSS
+// decides which). The actions are the same elements either way; one
+// document listener closes an open menu on an outside press or Escape.
+function chatTurnActionsMenu(foot, acts) {
+  const more = el("button", "chat-turn-more", "···");
+  more.type = "button"; more.setAttribute("aria-label", "Reply actions"); more.setAttribute("aria-haspopup", "true"); more.setAttribute("aria-expanded", "false");
+  acts.id = acts.id || "chatTurnActs-" + (++chatTurnActsSeq); more.setAttribute("aria-controls", acts.id);
+  const set = open => { foot.classList.toggle("is-open", open); more.setAttribute("aria-expanded", String(open)); };
+  more.onclick = () => { const open = !foot.classList.contains("is-open"); document.querySelectorAll(".chat-turn-foot.is-open").forEach(f => f !== foot && f.chatTurnMenuClose?.()); set(open); if (open) acts.querySelector("button,a")?.focus(); };
+  foot.chatTurnMenuClose = () => set(false);
+  // an action closes the menu once its own feedback ("Copied") has shown
+  acts.addEventListener("click", () => { if (foot.classList.contains("is-open")) setTimeout(() => set(false), 700); });
+  return more;
+}
+let chatTurnActsSeq = 0;
+document.addEventListener("pointerdown", e => { document.querySelectorAll(".chat-turn-foot.is-open").forEach(f => { if (!f.contains(e.target)) f.chatTurnMenuClose?.(); }); }, true);
+document.addEventListener("keydown", e => { if (e.key !== "Escape") return; const f = document.querySelector(".chat-turn-foot.is-open"); if (f) { f.chatTurnMenuClose?.(); f.querySelector(".chat-turn-more")?.focus(); } });
 
 function chatPaintCodingResults(host,results) {
   const sourceAgent=chatAgent,sourceID=chatOpenId,route=chatRouteVersion;

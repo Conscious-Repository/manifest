@@ -10,7 +10,7 @@
 //      conversation and Ctrl+Alt+F explains where search went; Ctrl+Alt+I
 //      and Ctrl+Alt+J do not also open the sticky / quick chat;
 //   4. the dense head toggles and the turn acts meet the 24px pointer floor;
-//      on touch the hover-revealed "→ task" is visible at the touch floor;
+//      on touch a reply's actions sit behind ··· at the touch floor;
 //   5. a plain (step-less) agent turn keeps its line breaks;
 //   6. Enter paints the message at once as "Sending…", acceptance says
 //      "Accepted", and the stage names queued / disconnected / failed —
@@ -84,8 +84,16 @@ const {makeStub}=require('./chat-stub-api.cjs');
    assert.ok(m.plain.length>0);for(const p of m.plain){assert.equal(p.ws,'pre-wrap');assert.ok(p.h>=p.lh*3,'line breaks kept: '+JSON.stringify(p));}
    await ctx.close();
    const touch=await browser.newContext({viewport:{width:390,height:844},hasTouch:true,isMobile:true});const phone=await open(touch,s.base);
-   const t=await phone.evaluate(()=>[...document.querySelectorAll('#chatTranscript .chat-turn-act')].map(e=>({o:getComputedStyle(e).opacity,h:e.getBoundingClientRect().height})));
-   assert.ok(t.length&&t.every(x=>x.o==='1'&&x.h>=44),'touch shows "→ task" at the touch floor: '+JSON.stringify(t));
+   // a reply's foot is one line on a phone (owner 2026-09-27: it wrapped
+   // mid-word); its actions sit behind ··· at the touch floor, each at the
+   // touch floor once opened (was: "→ task" always shown at the floor)
+   const feet=await phone.evaluate(()=>[...document.querySelectorAll('#chatTranscript .chat-turn-foot')].map(f=>({h:f.getBoundingClientRect().height,more:f.querySelector('.chat-turn-more')?.getBoundingClientRect().height||0})));
+   assert.ok(feet.length&&feet.every(f=>f.h<=48&&f.more>=44),'one-line reply feet with ··· at the touch floor: '+JSON.stringify(feet));
+   await phone.locator('#chatTranscript .chat-turn-more').last().click();
+   const t=await phone.evaluate(()=>[...document.querySelectorAll('#chatTranscript .chat-turn-foot.is-open .chat-turn-actions > *')].map(e=>({o:getComputedStyle(e).opacity,h:e.getBoundingClientRect().height,text:e.textContent})));
+   assert.ok(t.length&&t.some(x=>x.text==='→ task')&&t.every(x=>x.o==='1'&&x.h>=44),'touch shows the reply actions at the touch floor: '+JSON.stringify(t));
+   await phone.keyboard.press('Escape');
+   assert.equal(await phone.locator('#chatTranscript .chat-turn-foot.is-open').count(),0,'Escape closes the actions');
    await touch.close();}
   console.log('head toggles and turn acts meet their floors; plain agent turns keep their line breaks');
   // 6. send feedback and stage run state, phone + desktop, both themes

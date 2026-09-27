@@ -186,7 +186,25 @@ button.chat-attach-chip { min-height: 44px; max-width: 100%; background: transpa
    agent turn (hover-revealed, the turn's quiet foot), the "☐ task ↗" head
    link, the ☐ mark on a promoted thread row, and the TASKS list under an
    agent's threads — all modifiers on the rail/turn idioms, no new tokens. */
-.chat-turn-foot { display: flex; align-items: baseline; gap: var(--sp-5); margin-top: var(--sp-2); }
+/* A reply's foot is one line (owner, 2026-09-27: "Alfr/ed", "tas/k" wrapped
+   on a phone): who · when never break inside a word, the actions sit beside
+   them — revealed on hover or focus with a pointer, behind ··· on touch. */
+.chat-turn-foot { position: relative; display: flex; align-items: center; flex-wrap: nowrap; gap: var(--sp-5); min-width: 0; margin-top: var(--sp-2); }
+.chat-turn-meta { display: flex; align-items: baseline; gap: var(--sp-5); min-width: 0; overflow: hidden; white-space: nowrap; }
+.chat-turn-meta > * { flex: none; white-space: nowrap; }
+.chat-turn-meta > .chat-turn-author { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.chat-turn-actions { display: flex; align-items: center; gap: var(--sp-5); white-space: nowrap; }
+.chat-turn-actions > .chat-copy-response { opacity: 0; transition: opacity 0.12s; }
+.chat-turn:hover .chat-turn-actions > *, .chat-turn:focus-within .chat-turn-actions > * { opacity: 1; }
+.chat-turn-more { display: none; }
+@media (hover: none), (max-width: 860px) {
+  .chat-turn-more { display: inline-flex; align-items: center; justify-content: center; flex: none; min-width: var(--control-touch); min-height: var(--control-touch); margin-left: auto; padding: 0; border: 0; border-radius: var(--radius); background: transparent; color: var(--base-50); font: 600 var(--fs-md)/1 var(--sans); letter-spacing: 0.1em; cursor: pointer; }
+  .chat-turn-foot.is-open .chat-turn-more { background: var(--hover); color: var(--base-100); }
+  .chat-turn-actions { display: none; position: absolute; right: 0; bottom: calc(100% + var(--sp-2)); z-index: 5; flex-direction: column; align-items: stretch; gap: 0; min-width: 180px; padding: var(--sp-2); border: 1px solid var(--line); border-radius: var(--radius-lg); background: var(--bg); box-shadow: var(--shadow-2); }
+  .chat-turn-foot.is-open .chat-turn-actions { display: flex; }
+  .chat-turn-foot .chat-turn-actions > * { display: flex; align-items: center; opacity: 1; min-height: var(--control-touch); padding: 0 var(--sp-4); justify-content: flex-start; text-align: left; border-radius: var(--radius); font: var(--fs-md) var(--sans); color: var(--base-100); }
+  .chat-turn-foot .chat-turn-actions > *:hover, .chat-turn-foot .chat-turn-actions > *:focus-visible { background: var(--hover); color: var(--base-100); }
+}
 .chat-turn-act { border: 0; background: none; padding: 0; cursor: pointer; font-family: var(--mono); font-size: var(--fs-2xs); color: var(--base-30); opacity: 0; transition: opacity 0.12s; min-height: var(--control-min); display: inline-flex; align-items: center; }
 .chat-turn:hover .chat-turn-act, .chat-turn-act:focus { opacity: 1; }
 .chat-turn-act:hover { color: var(--accent); }
@@ -464,7 +482,14 @@ button.chat-attach-chip { min-height: 44px; max-width: 100%; background: transpa
 .chat-inbox-search { font-family: var(--sans); font-size: 14px; min-height: 40px; }
 .chat-inbox-rows .chat-rail-row { padding: 12px 10px; margin: 2px 0; border-bottom: 0; }
 .chat-inbox-rows .chat-rail-title { font-family: var(--sans); font-size: 14px; font-weight: 500; }
-.chat-inbox-rows .chat-rail-meta { font-size: 11px; margin-top: 5px; }
+.chat-inbox-rows .chat-rail-meta { font-size: var(--fs-xs); margin-top: 4px; gap: 0; color: var(--base-60); }
+/* one quiet line: state · agent · when, separated, never wrapped; the state
+   takes a colour only when it needs the owner or is working */
+.chat-inbox-rows .chat-rail-meta > * + *::before { content: "·"; padding: 0 var(--sp-3); color: var(--base-30); }
+.chat-inbox-rows .chat-rail-meta > .chat-inbox-agent { color: var(--base-80); }
+.chat-inbox-rows .chat-rail-row[data-execution="running"] .chat-row-state { color: var(--accent); }
+.chat-inbox-rows .chat-rail-row[data-execution="waiting_user"] .chat-row-state { color: var(--warn); }
+.chat-inbox-rows .chat-rail-row:is([data-execution="failed"], [data-execution="disconnected"]) .chat-row-state { color: var(--danger); }
 .chat-inbox-rows .chat-rail-x { display: none !important; }
 .chat-row-menu { position: relative; flex: none; }
 .chat-row-menu > summary { list-style: none; cursor: pointer; padding: 2px 7px; min-width: 24px; text-align: center; color: var(--base-60); }
