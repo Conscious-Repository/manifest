@@ -173,12 +173,14 @@ function chatMountHeader(head) {
   if (!slot) { slot = el("div", "chat-thread-header"); slot.id = "chatThreadHeader"; transcript.before(slot); }
   if(head && typeof chatWorkspaceHeader === "function")chatWorkspaceHeader(head);
   if(head && typeof mf !== "undefined" && mf?.openChats && !head.querySelector(".mf-chat-back"))head.prepend(chatBackToChats());
+  if (typeof chatHeadActionsHome === "function") chatHeadActionsHome(head);
   const focusKey = chatCaptureFocus(slot);
   slot.replaceChildren(...(head ? [head] : []));
   slot.hidden = !head;
   if (head) chatRestoreFocus(slot, focusKey);
   if(head)queueMicrotask(()=>chatMarkViewed());
 }
+
 const chatDrafts = new Map();
 let chatDraftKey = "";
 function chatSaveDraft() {
@@ -842,6 +844,25 @@ function renderChatHeadActions() {
   if(typeof chatWorkspaceControls==='function')chatWorkspaceControls(host);
 
 }
+
+// chatHeadActionsHome — one quiet header (owner, 2026-09-27: three stacked
+// headers competed). At wide desktop width (above 1100px, where the thread
+// header is always shown beside the workspace), with a conversation open, the page's
+// own controls (Chats, New chat, Tiles, tool panes) move into the
+// conversation's header and the page title row folds away; otherwise they
+// stay in the page head. The same element moves, listeners and id intact.
+function chatHeadActionsHome(head) {
+  const actions = document.getElementById("chatHeadActions"), view = document.getElementById("chatView");
+  const pageHead = view?.querySelector(":scope > .agent-head");
+  if (!actions || !pageHead) return;
+  if (head === undefined) head = document.querySelector("#chatThreadHeader > .chat-head");
+  const merge = !!head && !chatEmbedded && !head.classList.contains("chat-head-bare") && !view.classList.contains("tiles-mode") && window.matchMedia("(min-width: 1101px)").matches;
+  if (merge && actions.parentElement !== head) head.append(actions);
+  if (!merge && actions.parentElement !== pageHead) pageHead.append(actions);
+  actions.classList.toggle("in-thread", merge);
+  view.classList.toggle("chat-head-merged", merge);
+}
+window.addEventListener("resize", () => chatHeadActionsHome());
 
 // ---- rail: agent sections ----
 

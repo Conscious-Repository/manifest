@@ -1044,3 +1044,14 @@ label.chat-artifact-handoff{display:flex;flex-direction:row;align-items:flex-sta
 .chat-status-context[data-level="high"] .chat-status-meter > span { background: var(--warn); }
 @media (max-width: 860px) { .chat-status-stop { min-height: 44px; } .chat-status-line { padding: 0 var(--sp-4); } }
 .chat-turn-worked { font-size: var(--fs-2xs); color: var(--base-50); font-variant-numeric: tabular-nums; }
+
+/* One quiet header (owner, 2026-09-27: the page CHAT row, the thread
+   header and the rail competed). Above 1100px with a conversation open,
+   chatHeadActionsHome moves the page controls into the thread header and the
+   page title row folds away. */
+#chatView.chat-head-merged > .agent-head { display: none; }
+#chatHeadActions.in-thread { display: flex; align-items: center; flex: none; gap: var(--sp-2); margin: 0; padding-left: var(--sp-4); border-left: 1px solid var(--line); }
+#chatHeadActions.in-thread > :is(.sprt-ghost, .chat-sidebar-toggle) { min-height: 32px; padding: 0 var(--sp-3); border: 0; background: transparent; color: var(--base-60); font: var(--fs-sm) var(--sans); letter-spacing: 0; text-transform: none; }
+#chatHeadActions.in-thread > :is(.sprt-ghost, .chat-sidebar-toggle):is(:hover, :focus-visible) { background: var(--hover); color: var(--base-100); }
+#chatHeadActions.in-thread > .chat-layout-select { border-color: transparent; color: var(--base-60); font: var(--fs-sm) var(--sans); }
+#chatHeadActions.in-thread > .chat-layout-select:hover { border-color: var(--line); }

@@ -55,6 +55,10 @@ const {makeStub}=require('./chat-stub-api.cjs');
     const m=await page.evaluate(()=>{const s=document.querySelector('.chat-layout-select');const o=s.options[s.selectedIndex].textContent;const probe=document.createElement('span');probe.style.cssText='position:absolute;visibility:hidden;white-space:nowrap;font:'+getComputedStyle(s).font;probe.textContent=o;document.body.append(probe);const need=probe.getBoundingClientRect().width;probe.remove();return {text:o,need,have:s.clientWidth-24};});
     assert.equal(/1 pane here/.test(m.text),suffix,w+': '+m.text);
     assert.ok(m.need<=m.have,w+': layout label clipped '+JSON.stringify(m));
+    // one quiet header above 1100px: the page controls live in the thread
+    // header and the page title row is gone; narrower, nothing moves
+    const head=await page.evaluate(()=>({inThread:!!document.querySelector('#chatThreadHeader #chatHeadActions'),pageHead:!!document.querySelector('#chatView > .agent-head')?.getClientRects().length}));
+    assert.deepEqual(head,w>1100?{inThread:true,pageHead:false}:{inThread:false,pageHead:true},w+': header '+JSON.stringify(head));
     await ctx.close();
    }}
   console.log('layout select names the single pane at 861/1024, unclipped, and not at 1440');

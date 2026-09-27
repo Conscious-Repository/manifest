@@ -50,8 +50,10 @@ function chatWorkspaceControls(host){
  const toggle=el('button','sprt-quiet chat-sidebar-toggle','Chats');toggle.title='Toggle conversation sidebar · Ctrl+Alt+B';toggle.setAttribute('aria-controls','chatRail');
  const apply=()=>{const hidden=chatRecall('manifest.chatSidebarHidden')==='1';shell.classList.toggle('chat-list-hidden',hidden);toggle.setAttribute('aria-expanded',String(!hidden));shell._refreshPaneWidths?.();};
  toggle.onclick=()=>{try{localStorage.setItem('manifest.chatSidebarHidden',shell.classList.contains('chat-list-hidden')?'0':'1');}catch(e){}apply();};host.prepend(toggle);apply();
- const layout=el('select','chat-layout-select');layout.setAttribute('aria-label','Workspace layout');
- for(const [v,label]of [['focus','Focus'],['split','Split · 2 panes'],['workbench','Workbench · 3 panes'],['four','Four panes']]){const o=el('option','',label);o.value=v;layout.append(o);}
+ const layout=el('select','chat-layout-select');layout.setAttribute('aria-label','Tool panes');layout.title='Tool panes beside the conversation (files, review, side chats) · Ctrl+Alt+I';
+ // named for what they are (owner 2026-09-27): panes of tools beside the one
+ // conversation; several whole conversations side by side are Tiles
+ for(const [v,label]of [['focus','No tool panes'],['split','Tool panes · 1'],['workbench','Tool panes · 2'],['four','Tool panes · 3']]){const o=el('option','',label);o.value=v;layout.append(o);}
  layout.value=chatRecall('manifest.chatLayout')||'focus';chatLayoutTruth();
  layout.onchange=()=>{try{localStorage.setItem('manifest.chatLayout',layout.value);}catch(e){}if(layout.value==='focus'){chatWorkspaceTabs?.show(false);}else{chatEnsureWorkspace().show(true);}chatApplyWorkspaceLayout();};host.append(layout);
 
@@ -65,7 +67,7 @@ function chatLayoutTruth(){
  // the chosen option's pane count becomes "1 pane here" (the longer suffix
  // clipped in the 180px select at 861, Phase C 2026-09-26)
  for(const o of select.options){o.dataset.label??=o.textContent;o.textContent=narrow&&o.value!=='focus'&&o.selected?o.dataset.label.split(' · ')[0]+' · 1 pane here':o.dataset.label;}
- select.title=narrow&&select.value!=='focus'?'This width shows one workspace pane; widen the window for more.':'';
+ select.title=narrow&&select.value!=='focus'?'This width shows one tool pane; widen the window for more.':'Tool panes beside the conversation (files, review, side chats) · Ctrl+Alt+I';
 }
 function chatApplyWorkspaceLayout(){
  chatLayoutTruth();

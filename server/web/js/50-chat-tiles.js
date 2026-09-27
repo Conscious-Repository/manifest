@@ -576,6 +576,7 @@ function chatTilesEmpty() {
 async function chatTilesShow(from) {
   const root = chatTilesMount(); if (!root) return;
   document.getElementById("chatView")?.classList.add("tiles-mode");
+  if (typeof chatHeadActionsHome === "function") chatHeadActionsHome();
   root.hidden = false; chatTilesShown = true;
   await chatTilesLoad();
   if (!chatTilesShown) return;
@@ -601,6 +602,7 @@ function chatTilesHide() {
   chatTilesShown = false; clearInterval(chatTilesTimer);
   chatTilesNotifyPanes();
   document.getElementById("chatView")?.classList.remove("tiles-mode");
+  if (typeof chatHeadActionsHome === "function") chatHeadActionsHome();
   if (chatTilesRoot) chatTilesRoot.hidden = true;
   chatTilesStore?.flush();
 }
