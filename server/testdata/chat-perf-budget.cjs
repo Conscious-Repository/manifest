@@ -23,6 +23,10 @@ const {measure,report}=require(path.join(__dirname,'../../tools/perf/chat-perf.c
  within('idleRequestsPerMin',60);
  within('heapMB',60);
  within('nodes',30000);
- within('tilesIdleRequestsPerMin',300);
+ // tiles (brief §3 targets): a hidden tile makes no requests, and 4 visible
+ // tiles make no more idle requests than 2 single tabs. Was 208/min with the
+ // hidden frame at 40; measured 66 with it at 0.
+ assert.equal(out.tilesIdleHiddenPerMin,0,'a hidden tile made requests');
+ within('tilesIdleRequestsPerMin',2*out.idleRequestsPerMin);
  console.log('PASS: chat perf within budget.');
 })().catch(e=>{console.error(e);process.exitCode=1;});

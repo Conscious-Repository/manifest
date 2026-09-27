@@ -356,6 +356,8 @@ function chatTilesWireFrame(id, frame) {
   let win;
   try { win = frame.contentWindow; win.document; } catch (e) { return; }
   // Tiling keys reach the manager from inside the conversation too.
+  // a (re)loaded frame starts out assuming it is shown and focused
+  const t = chatTilesFrames.get(id); if (t) { t.paneShown = undefined; t.paneFocused = undefined; chatTilesNotifyPanes(); }
   win.addEventListener("keydown", e => { chatTilesKey(e); }, true);
   win.addEventListener("focus", () => { if (chatTilesFocused() !== id) chatTilesFocus(id, {frame:false}); });
   win.document.addEventListener("pointerdown", () => { if (chatTilesFocused() !== id) chatTilesFocus(id, {frame:false}); }, true);
@@ -459,6 +461,7 @@ function chatTilesLayout() {
     g.onpointerdown = e => chatTilesDrag(e, g);
   }
   chatTilesRoot.classList.toggle("is-mono", mono);
+  chatTilesNotifyPanes();
   chatTilesRoot.querySelector(".chat-tiles-full")?.setAttribute("aria-pressed", String(!!chatTilesState.full[ws]));
 }
 function chatTilesDrag(e, gutter) {
@@ -495,6 +498,21 @@ function chatTilesMarkFocus() {
   if (chatTilesNarrow()) { chatTilesLayout(); }
   chatTilesRoot?.querySelectorAll(".chat-tiles-tab").forEach((b, i) => b.setAttribute("aria-selected", String(chatTilesLeaves(chatTilesTree())[i] === focused)));
   for (const [id, t] of chatTilesFrames) { t.box.classList.toggle("is-focused", id === focused); t.box.setAttribute("aria-current", id === focused ? "true" : "false"); }
+  chatTilesNotifyPanes();
+}
+// chatTilesNotifyPanes — each frame learns whether it is shown and focused
+// (48-chat.js chatPaneShown/chatPaneFocused): a hidden tile makes no poll
+// requests, an unfocused one polls at this manager's cadence, and a tile that
+// comes into view or takes focus reads its conversation at once ("woke").
+function chatTilesNotifyPanes(force) {
+  const focused = chatTilesFocused();
+  for (const [id, t] of chatTilesFrames) {
+    const shown = chatTilesShown && !!t.rect, isFocused = id === focused;
+    if (!force && t.paneShown === shown && t.paneFocused === isFocused) continue;
+    const woke = shown && t.paneShown === false;
+    t.paneShown = shown; t.paneFocused = isFocused;
+    try { t.frame?.contentWindow?.postMessage({type:"manifest:pane", shown, focused:isFocused, woke}, location.origin); } catch (e) {}
+  }
 }
 function chatTilesHeads() {
   for (const [id, t] of chatTilesFrames) {
@@ -581,6 +599,7 @@ async function chatTilesShow(from) {
 function chatTilesHide() {
   if (!chatTilesShown) return;
   chatTilesShown = false; clearInterval(chatTilesTimer);
+  chatTilesNotifyPanes();
   document.getElementById("chatView")?.classList.remove("tiles-mode");
   if (chatTilesRoot) chatTilesRoot.hidden = true;
   chatTilesStore?.flush();

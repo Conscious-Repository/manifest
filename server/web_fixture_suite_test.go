@@ -302,3 +302,10 @@ func TestFixtureUICompare(t *testing.T) { runFixture(t, "ui-compare.cjs", true, 
 func TestFixtureChatPerfBudget(t *testing.T) {
 	runFixture(t, "chat-perf-budget.cjs", true, false)
 }
+
+// Tiles and polling: a hidden tile is silent, an unfocused one polls at the
+// manager's cadence, and showing or focusing a tile reads it at once
+// (chat-tiles-panes.cjs).
+func TestFixtureChatTilesPanes(t *testing.T) {
+	runFixture(t, "chat-tiles-panes.cjs", true, false)
+}

@@ -608,7 +608,7 @@ async function renderTaskChat(taskID, refetch) {
   }
   if (!chatTaskPollTimer) {
     chatTaskPollTimer = setInterval(async () => {
-      if (document.hidden || chatTaskID !== taskID || !location.hash.startsWith("#/chat/task/")) return;
+      if (!chatPaneShown() || chatTaskID !== taskID || !location.hash.startsWith("#/chat/task/")) return;
       try {
         const fresh = await (await fetch("/api/tasks/panel?id=" + encodeURIComponent(taskID))).json();
         if (chatTaskID === taskID && JSON.stringify(fresh) !== JSON.stringify(chatTaskData)) {
@@ -3014,11 +3014,41 @@ function ensureChatPoll(session, queued) {
   const active = session && (session.status === "thinking" || session.shared || queued > 0 || (chatAgent && !chatIsPortal()));
   if (!active) { if (chatPollTimer) { clearInterval(chatPollTimer); chatPollTimer = null; } return; }
   if (chatPollTimer) return;
-  const every = chatIsPortal() ? 4000 : 1500;
-  let inFlight = false;
-  chatPollTimer = setInterval(async () => {
-    if (inFlight) return;
-    inFlight = true;
+  chatPollTimer = setInterval(() => chatPollTick(false), chatIsPortal() ? 4000 : 1500);
+}
+// ---- which pane is looking (tiles, 2026-09-27) ----
+// A tile is a whole copy of the app in a frame, and document.hidden inside a
+// frame follows the top page, not the tile. The tile manager (50-chat-tiles.js)
+// tells each frame whether it is shown and focused; a frame's own layout box is
+// the ground truth for "shown" either way. A pane nobody can see makes no
+// poll requests; an unfocused tile polls at the manager's own cadence (its
+// event stream still pushes live turns at once); showing or focusing a pane
+// polls immediately, so what comes into view is read, not remembered.
+let chatPaneFocused = true;
+const chatPaneUnfocusedEvery = 8000;
+function chatPaneShown() {
+  if (document.hidden) return false;
+  try { return !window.frameElement || window.frameElement.getClientRects().length > 0; } catch (e) { return true; }
+}
+if (typeof window !== "undefined" && window.parent !== window) window.addEventListener("message", (e) => {
+  if (e.source !== window.parent || e.origin !== location.origin || e.data?.type !== "manifest:pane") return;
+  const focused = e.data.focused !== false, wake = e.data.shown && (focused && !chatPaneFocused || e.data.woke);
+  chatPaneFocused = focused;
+  if (wake) chatPaneWake();
+});
+function chatPaneWake() {
+  if (!chatPaneShown()) return;
+  chatRefreshCurrentDraft();
+  chatTermWake();
+  if (chatPollTimer) chatPollTick(true);
+}
+
+let chatPollInFlight = false, chatPollLastAt = 0;
+async function chatPollTick(now) {
+    if (chatPollInFlight) return;
+    if (!now && (!chatPaneShown() || (!chatPaneFocused && Date.now() - chatPollLastAt < chatPaneUnfocusedEvery))) return;
+    chatPollInFlight = true;
+    chatPollLastAt = Date.now();
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 15000);
     try {
@@ -3045,9 +3075,8 @@ function ensureChatPoll(session, queued) {
       }
     } finally {
       clearTimeout(timeout);
-      inFlight = false;
+      chatPollInFlight = false;
     }
-  }, every);
 }
 
 function loadChat() { showChat(location.hash); }
