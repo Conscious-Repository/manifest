@@ -2421,7 +2421,9 @@ function chatPaintTurns(host, turns, ctx) {
     foot.append(el("span","chat-turn-author",chatAgentLabel(t.who.replace(/^agent:/,""))));
     // when the turn landed — a conversation with no times reads as stalled
     // while Alfred's turn takes minutes
-    const worked = typeof chatDuration === "function" && t.ts && t.end ? chatDuration(Date.parse(t.end) - Date.parse(t.ts)) : "";
+    // Only a native coding reply carries a recorded end time; a Hermes turn's
+    // `end` is a body offset (parseChatTurns), never a time.
+    const worked = typeof chatDuration === "function" && t.native && typeof t.end === "string" && typeof t.ts === "string" ? chatDuration(Date.parse(t.end) - Date.parse(t.ts)) : "";
     if (worked) foot.append(el("span", "chat-turn-worked", "Worked for " + worked));
     if (t.ts) foot.append(el("span", "chat-turn-when", fmtWhen(t.ts)));
     if (t.usd) foot.append(el("span", "chat-turn-usd", "$" + t.usd));
@@ -3738,7 +3740,7 @@ function chatTermTurnEl(t) {
     const meta = [];
     // "Worked for 4m 12s": first to last record of this reply, as the CLI
     // stamped them (terminal_transcript.go termTurn.End)
-    const worked = typeof chatDuration === "function" && t.ts && t.end ? chatDuration(Date.parse(t.end) - Date.parse(t.ts)) : "";
+    const worked = typeof chatDuration === "function" && typeof t.ts === "string" && typeof t.end === "string" ? chatDuration(Date.parse(t.end) - Date.parse(t.ts)) : "";
     if (worked) meta.push("Worked for " + worked);
     if (t.ts) meta.push(fmtWhen(t.ts));
     if (t.usd) meta.push("$" + t.usd);

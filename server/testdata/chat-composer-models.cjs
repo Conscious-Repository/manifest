@@ -26,6 +26,8 @@ const {makeStub}=require('./chat-stub-api.cjs');
   const input=page.locator('#chatComposer textarea');await input.waitFor();
   const chip=page.locator('#chatComposer .chat-composer-model');
   await page.waitForFunction(()=>/claude-x/.test(document.querySelector('#chatComposer .chat-composer-model')?.textContent||''));
+  // a native (Hermes) reply has no recorded span: its footer never claims one
+  assert.equal(await page.locator('#chatTranscript').getByText(/Worked for/).count(),0,'a native reply claimed a worked-for time');
   // 1. choose a model under another provider, and an effort
   await chip.click();
   const picker=page.getByRole('dialog',{name:'Model, effort and permissions'});await picker.waitFor();
@@ -96,6 +98,19 @@ const {makeStub}=require('./chat-stub-api.cjs');
    if(process.env.MANIFEST_FIXTURE_SHOTS)await page.screenshot({path:path.join(process.env.MANIFEST_FIXTURE_SHOTS,'model-picker-'+theme+'-'+width+'.png')});
    await page.keyboard.press('Escape');await picker.waitFor({state:'detached'});
   }
+  // the phone new-chat composer keeps a usable message field; chips wrap below it
+  await page.evaluate(()=>document.documentElement.dataset.theme='default');
+  await page.setViewportSize({width:390,height:844});await page.goto(base+'/#/chat/a/alfred/new');
+  await page.waitForFunction(()=>!!document.querySelector('#chatComposer .chat-composer-model'));
+  // measured before and after the mic mounts (79-mic.js adds it 400 ms after
+  // a route change): the chip row must not depend on which controls share row one
+  const measure=async stage=>{
+   const land=await page.evaluate(()=>{const c=document.getElementById('chatComposer').getBoundingClientRect(),t=document.querySelector('#chatComposer textarea').getBoundingClientRect(),m=document.querySelector('#chatComposer .chat-composer-model').getBoundingClientRect();return {ratio:t.width/c.width,below:m.top>=t.bottom-1};});
+   assert.ok(land.ratio>=0.45,'the new-chat message field is squeezed on a phone ('+stage+'): '+land.ratio.toFixed(2));
+   assert.ok(land.below,'the model chip should wrap under the message on a phone ('+stage+')');
+  };
+  await page.evaluate(()=>document.querySelector('#chatComposer .mic-btn')?.remove());await measure('no mic');
+  await page.evaluate(()=>window.dispatchEvent(new HashChangeEvent('hashchange')));await page.waitForSelector('#chatComposer .mic-btn');await measure('with mic');
   assert.deepEqual(errors,[]);
   console.log('PASS: provider-grouped picker, exact recipient on send, /model and /effort without sending, reload, phone and themes.');
   await ctx.close();

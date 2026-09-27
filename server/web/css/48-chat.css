@@ -955,7 +955,12 @@ label.chat-artifact-handoff{display:flex;flex-direction:row;align-items:flex-sta
 .chat-model-actions { display: flex; justify-content: flex-end; gap: var(--sp-3); }
 .chat-model-actions button, .chat-model-native { min-height: var(--control-min); }
 @media (max-width: 860px) {
-  .chat-main .chat-composer > .chat-composer-model { order: 6; flex: 1 1 55%; max-width: none; text-align: left; min-height: var(--control-touch); font: var(--fs-sm)/1 var(--sans); }
+  /* its own row under the message: a zero-height full-width break sits
+     between the first row (orders ≤ 5) and the chips, so the chip never
+     shares the field's row whatever else is mounted there (the mic arrives
+     400 ms after a route change, 79-mic.js) */
+  .chat-main .chat-composer:has(> .chat-composer-model)::after { content: ""; order: 5; flex: 1 0 100%; height: 0; margin-top: calc(-1 * var(--sp-2)); }
+  .chat-main .chat-composer > .chat-composer-model { order: 6; flex: 1 1 auto; max-width: none; text-align: left; min-height: var(--control-touch); font: var(--fs-sm)/1 var(--sans); }
   .chat-main .chat-composer > .chat-composer-permission { order: 7; min-height: var(--control-touch); max-width: 45%; font: var(--fs-sm)/1 var(--sans); }
   .chat-model-picker { position: fixed; left: var(--sp-4); right: var(--sp-4); bottom: calc(var(--sp-4) + env(safe-area-inset-bottom, 0px)); max-height: 72dvh; }
   .chat-model-seg, .chat-model-actions button, .chat-model-native { min-height: 44px; }
