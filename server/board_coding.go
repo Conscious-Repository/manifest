@@ -169,13 +169,24 @@ func (se termSession) boardLaunch() string {
 // the CLI abandoned before its rollout could say so (an auth failure, a
 // crash) carries that failure as run evidence instead of looking finished.
 func (s *Server) boardTranscriptOverlay(se termSession, tr, full *termTranscript) {
+	// full is often the same projection (after=0): it keeps seeing the overlay
+	shared := len(tr.Turns) > 0 && len(full.Turns) == len(tr.Turns) && &full.Turns[0] == &tr.Turns[0]
+	copied := false
 	for i := range tr.Turns {
 		t := &tr.Turns[i]
 		if t.Who == "user" && strings.HasPrefix(t.Text, "Read the complete work order at ") {
 			if b, err := os.ReadFile(se.BoardBrief); err == nil && strings.TrimSpace(string(b)) != "" {
+				// the turns may be readTranscript's cached projection: write a copy
+				if !copied {
+					tr.Turns, copied = append([]termTurn(nil), tr.Turns...), true
+					t = &tr.Turns[i]
+				}
 				t.Text, t.WorkOrder = string(b), true
 			}
 		}
+	}
+	if shared && copied {
+		full.Turns = tr.Turns
 	}
 	if ev := boardRunFailure(filepath.Dir(se.BoardBrief)); ev != nil && !boardFailureSuperseded(ev, *full) {
 		tr.Run, full.Run = ev, ev

@@ -147,6 +147,28 @@ func (s *Server) UseTerminal(regPath, tmuxTmp, defaultWd string) {
 	}
 }
 
+// PrewarmTranscripts projects every local coding session's transcript once,
+// in the background, so the chat inbox after a restart reads from the cache.
+// The cache is keyed on the file's size, time and bytes, so a warm entry can
+// never answer for a file that has changed since.
+func (s *Server) PrewarmTranscripts() {
+	if s.terminal == nil {
+		return
+	}
+	start, n := time.Now(), 0
+	for _, se := range s.terminal.load() {
+		if se.Kind != "claude" && se.Kind != "codex" {
+			continue
+		}
+		if path := s.terminal.transcriptPath(se); path != "" {
+			if _, ok := readTranscript(se.Kind, path, 0); ok {
+				n++
+			}
+		}
+	}
+	log.Printf("terminal: prewarmed %d transcripts in %v", n, time.Since(start).Round(time.Millisecond))
+}
+
 // remoteKeepLive answers "does this kept session's tmux still run on its
 // box?" from the cache, kicking an async ssh refresh when stale (60 s TTL).
 func (s *Server) remoteKeepLive(se termSession) bool {

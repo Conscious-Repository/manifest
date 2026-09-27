@@ -13,6 +13,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 )
 
 // Transcript projection (agent-chat Stage S): the CLI's own session file IS
@@ -263,6 +264,13 @@ func (b *transcriptBuilder) text(ts, kind, text string) {
 // tool_result carrier for the previous step.
 func parseClaudeTranscript(r io.Reader, base ...int64) termTranscript {
 	b := &transcriptBuilder{}
+	b.parseClaude(r, base)
+	return b.out
+}
+
+// parseClaude feeds the records in r to the builder, which may already hold
+// the projection of the bytes before them (readTranscript's resume).
+func (b *transcriptBuilder) parseClaude(r io.Reader, base []int64) {
 	scanLines(r, &b.out.Offset, func(line []byte) {
 		b.record(line, base)
 		var rec claudeRecord
@@ -351,7 +359,6 @@ func parseClaudeTranscript(r io.Reader, base ...int64) termTranscript {
 			}
 		}
 	})
-	return b.out
 }
 
 // claudeSystemNotice reduces a harness-written user turn to one readable
@@ -530,6 +537,13 @@ func codexPermission(approval, sandbox string) string {
 // task lifecycle events provide separate run evidence.
 func parseCodexTranscript(r io.Reader, base ...int64) termTranscript {
 	b := &transcriptBuilder{}
+	b.parseCodex(r, base)
+	return b.out
+}
+
+// parseCodex feeds the records in r to the builder, which may already hold
+// the projection of the bytes before them (readTranscript's resume).
+func (b *transcriptBuilder) parseCodex(r io.Reader, base []int64) {
 	scanLines(r, &b.out.Offset, func(line []byte) {
 		b.record(line, base)
 		var rec codexRecord
@@ -632,7 +646,6 @@ func parseCodexTranscript(r io.Reader, base ...int64) termTranscript {
 			b.result(rec.Timestamp, p.CallID, codexOutputText(p.Output), false)
 		}
 	})
-	return b.out
 }
 
 func codexOutputText(raw json.RawMessage) string {
@@ -752,16 +765,30 @@ func (c *termCfg) transcriptPath(se termSession) string {
 }
 
 // transcriptCache: (path,size,mtime) → the full projection, so a poll on an
-// idle live session costs a stat, not a parse.
+// idle live session costs a stat, not a parse. A session that is writing
+// grows its file by appending records, so a changed file whose bytes up to
+// the cached offset are provably the same resumes the projection from that
+// offset instead of re-reading tens of MB (2026-09-27: the inbox re-parsed
+// 117 MB of transcripts whenever one of them grew — 1.5 s a poll).
 type transcriptCacheEnt struct {
 	size  int64
 	mtime int64
+	file  os.FileInfo // same file, not a replacement at the same path
+	kind  string
+	tail  []byte // the bytes just before tr.Offset, as the resume proof
 	tr    termTranscript
 }
+
+// transcriptTailProof bytes before the offset must match for a resume: a
+// rewrite that keeps the same inode and grows the file changes them.
+const transcriptTailProof = 4096
 
 var (
 	transcriptCacheMu sync.Mutex
 	transcriptCache   = map[string]transcriptCacheEnt{}
+	// transcriptParsedBytes counts bytes fed to a full-file projection
+	// (readTranscript after=0), for the budget test.
+	transcriptParsedBytes atomic.Int64
 )
 
 // readTranscript projects the file from byte offset `after` (0 = whole
@@ -772,12 +799,19 @@ func readTranscript(kind, path string, after int64) (termTranscript, bool) {
 	if err != nil {
 		return termTranscript{}, false
 	}
-	if after <= 0 {
+	if after < 0 { // a negative offset means the whole file, as a cache hit always answered
+		after = 0
+	}
+	var resume *transcriptCacheEnt
+	if after == 0 {
 		transcriptCacheMu.Lock()
 		e, hit := transcriptCache[path]
 		transcriptCacheMu.Unlock()
 		if hit && e.size == st.Size() && e.mtime == st.ModTime().UnixNano() {
 			return e.tr, true
+		}
+		if hit && e.kind == kind && os.SameFile(e.file, st) && st.Size() >= e.tr.Offset {
+			resume = &e
 		}
 	}
 	f, err := os.Open(path)
@@ -785,6 +819,9 @@ func readTranscript(kind, path string, after int64) (termTranscript, bool) {
 		return termTranscript{}, false
 	}
 	defer f.Close()
+	if resume != nil && !transcriptPrefixSame(f, resume.tr.Offset, resume.tail) {
+		resume = nil
+	}
 	if after > 0 {
 		if after > st.Size() { // truncated/rotated: start over
 			after = 0
@@ -793,18 +830,81 @@ func readTranscript(kind, path string, after int64) (termTranscript, bool) {
 			_, _ = f.Seek(0, io.SeekStart)
 		}
 	}
-	tr := parseTranscript(kind, f, after)
-	tr.Offset += after
+	var tr termTranscript
+	if after <= 0 {
+		b := &transcriptBuilder{}
+		if resume != nil {
+			b.out = cloneTranscript(resume.tr) // the cached value is shared with earlier callers
+		}
+		if _, err := f.Seek(b.out.Offset, io.SeekStart); err != nil {
+			b = &transcriptBuilder{}
+			_, _ = f.Seek(0, io.SeekStart)
+		}
+		from := b.out.Offset
+		if kind == "codex" {
+			b.parseCodex(f, nil)
+		} else {
+			b.parseClaude(f, nil)
+		}
+		transcriptParsedBytes.Add(b.out.Offset - from)
+		tr = b.out
+	} else {
+		tr = parseTranscript(kind, f, after)
+		tr.Offset += after
+	}
 	if tr.Turns == nil {
 		tr.Turns = []termTurn{}
 	}
 	if after == 0 {
+		tail := make([]byte, min(tr.Offset, transcriptTailProof))
+		if _, err := f.ReadAt(tail, tr.Offset-int64(len(tail))); err != nil {
+			tail = nil
+		}
 		transcriptCacheMu.Lock()
 		if len(transcriptCache) > 64 {
 			transcriptCache = map[string]transcriptCacheEnt{}
 		}
-		transcriptCache[path] = transcriptCacheEnt{size: st.Size(), mtime: st.ModTime().UnixNano(), tr: tr}
+		if tail != nil {
+			transcriptCache[path] = transcriptCacheEnt{size: st.Size(), mtime: st.ModTime().UnixNano(), file: st, kind: kind, tail: tail, tr: tr}
+		}
 		transcriptCacheMu.Unlock()
 	}
 	return tr, true
+}
+
+// transcriptPrefixSame reports whether the bytes just before offset are
+// still the ones the cached projection read.
+func transcriptPrefixSame(f *os.File, offset int64, tail []byte) bool {
+	if int64(len(tail)) > offset {
+		return false
+	}
+	got := make([]byte, len(tail))
+	if _, err := f.ReadAt(got, offset-int64(len(tail))); err != nil {
+		return false
+	}
+	return bytes.Equal(got, tail)
+}
+
+// cloneTranscript deep-copies what a builder mutates in place: the turns and
+// their blocks (touch, result pairing, text merging) and the settings.
+func cloneTranscript(tr termTranscript) termTranscript {
+	out := tr
+	out.Turns = make([]termTurn, len(tr.Turns))
+	for i, t := range tr.Turns {
+		t.Blocks = append([]termBlock(nil), t.Blocks...)
+		out.Turns[i] = t
+	}
+	if tr.Settings != nil {
+		st := *tr.Settings
+		out.Settings = &st
+	}
+	if tr.Context != nil {
+		c := *tr.Context
+		out.Context = &c
+	}
+	if tr.Run != nil {
+		r := *tr.Run
+		out.Run = &r
+	}
+	return out
 }
