@@ -193,3 +193,15 @@
 /* the diff keeps its own chrome but sits tight under the row */
 .goals-place .appr-diff { font-size: var(--fs-xs); }
 /* Confirm/Reject already wrap — .feed-actions's own base rule does this */
+
+/* Settled approval receipts (operationReceiptEl): read-only, on task and in
+   Feed's settled lane; chat shows the same record as .chat-operation. */
+.operation-receipt-head { display:flex; flex-wrap:wrap; align-items:baseline; gap:var(--sp-3); }
+.operation-receipt-meta, .operation-receipt-id { margin:0; color:var(--base-50); font-size:var(--fs-xs); }
+.operation-receipt-id { font-family:var(--mono); }
+.operation-receipt-error { margin:0; color:var(--danger); }
+.operation-receipt-exact pre { white-space:pre-wrap; overflow-wrap:anywhere; font-size:var(--fs-xs); }
+.tdo-task-receipts { display:flex; flex-direction:column; gap:var(--sp-3); margin-top:var(--sp-4); }
+.feed-settled { margin-top:var(--sp-6); }
+.feed-settled > summary { cursor:pointer; min-height:var(--touch, 32px); display:flex; align-items:center; }
+.feed-settled > .feed-card, .feed-settled > .ro-row { margin-top:var(--sp-4); }

@@ -1744,12 +1744,40 @@ function buildGoalsEditor(a) {
 }
 
 // Both chat and FEED render this projection and dispatch to the same inbox.
+// operationReceiptEl renders one settled approval read-only (owner decision
+// D1): the task panel and Feed's settled lane project the server's
+// operationReceipt through it, chat shows the same record in
+// manifestOperationCard, and data-operation-id is the identity all three
+// share. It offers no decision: the canonical proposal was the write path.
+const OPERATION_RECEIPT_STATUS = { succeeded: "done", partial: "partly done", failed: "failed", rejected: "rejected", cancelled: "cancelled", stale: "invalidated before a decision" };
+function operationReceiptEl(rc) {
+  const card = el("article", "feed-card operation-receipt status-" + rc.status);
+  card.dataset.operationId = rc.operationId;
+  const head = el("div", "operation-receipt-head");
+  head.append(el("span", "type-chip micro-label", "receipt"), el("strong", "", (rc.tool === "email.prepare" ? "Email" : rc.action) + " · " + (OPERATION_RECEIPT_STATUS[rc.status] || rc.status)));
+  card.append(head);
+  const declined = rc.status === "rejected" || rc.status === "cancelled";
+  const bits = [rc.decidedBy ? (declined ? "declined by " : "approved by ") + rc.decidedBy + (rc.decidedAt ? " · " + fmtWhen(rc.decidedAt) : "") : "no owner decision recorded"];
+  if (rc.settledAt) bits.push("settled " + fmtWhen(rc.settledAt));
+  card.append(el("p", "operation-receipt-meta", bits.join("  ·  ")));
+  if (rc.error) card.append(el("p", "operation-receipt-error", rc.error));
+  const exact = el("details", "operation-receipt-exact");
+  exact.append(el("summary", "", "Exact receipt"), el("pre", "", JSON.stringify(rc, null, 2)));
+  card.append(exact);
+  const id = el("p", "operation-receipt-id", "receipt " + rc.operationId.replace(/^sha256:/, "").slice(0, 12));
+  id.title = rc.operationId;
+  card.append(id);
+  if (rc.conversation) card.append(pillLight("open conversation", () => { location.hash = "#/chat/" + encodeURIComponent(rc.conversation); }));
+  return card;
+}
+
 function manifestOperationCard(item) {
   const o = item.record, a = item.proposal;
   const p = o.arguments || {}, result = o.result || {};
   const target = (p.candidate || p.person || p.suppression || {}).name || (p.draft && p.draft.draft && p.draft.draft.name) || "";
   const card = el("article", "feed-card chat-operation");
   card.dataset.approvalId = a.id;
+  card.dataset.operationId = o.operationId; // the receipt identity task and Feed show
   const heading=p.email ? (o.status==="succeeded"?"Email sent":o.status==="pending_approval"?"Review email": "Email · "+o.status) : a.action + (target ? " · " + target : "") + " · " + o.status;
   card.append(el("strong", "", heading));
   if(!p.email||o.status==="pending_approval")card.append(el("p", "", p.email?"Requires your approval":o.policy === "standing_authorization" ? "Standing authorization · no approval needed" : "Human approval · shared with FEED"));

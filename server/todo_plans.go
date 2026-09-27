@@ -211,6 +211,9 @@ func (s *Server) handleTaskPanel(w http.ResponseWriter, r *http.Request) {
 		"conversation": s.taskConversation(id, thread),
 		"threadKind":   s.threadKind(id),
 		"proposals":    s.taskProposals(id),
+		// settled approvals from this task's conversations (read-only; the
+		// same receipt chat and Feed show — operation_receipts.go)
+		"receipts": s.taskOperationReceipts(id),
 	}
 	// "open in chat" (§3.4f): the conversation this task came from, else the
 	// assignee's rail section

@@ -943,8 +943,12 @@ function todoSuggestAgent(text, agents) {
 }
 
 // One approval record, one renderer, one decision endpoint across task and Feed.
+// Settled approvals follow read-only: the same receipt chat and Feed show.
 function appendTaskApprovals(host, data) {
-  if (!(data.proposals || []).length) return;
+  if ((data.proposals || []).length) appendTaskPending(host, data);
+  appendTaskReceipts(host, data);
+}
+function appendTaskPending(host, data) {
   const section = el("div", "tdo-task-approvals");
   section.append(el("div", "micro-label", "Approval needed · also in Feed"));
   (data.proposals || []).forEach((proposal) => {
@@ -955,5 +959,12 @@ function appendTaskApprovals(host, data) {
       }));
     } else section.append(approvalCardEl(proposal));
   });
+  host.append(section);
+}
+function appendTaskReceipts(host, data) {
+  if (!(data.receipts || []).length) return;
+  const section = el("div", "tdo-task-receipts");
+  section.append(el("div", "micro-label", "Settled approvals · also in chat and Feed"));
+  data.receipts.forEach((rc) => section.append(operationReceiptEl(rc)));
   host.append(section);
 }

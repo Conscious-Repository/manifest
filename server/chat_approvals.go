@@ -3,7 +3,6 @@ package server
 import (
 	"manifest/agentchat"
 	"manifest/approvals"
-	"manifest/manifestmcp"
 )
 
 // Project existing decision records; continuation does not copy or re-key them.
@@ -18,7 +17,7 @@ func (s *Server) terminalPlanningOperations(root termSession) []map[string]any {
 	}
 	for _, operation := range s.syncManifestOperations() {
 		if conversations[operation.Conversation] {
-			out = append(out, map[string]any{"record": operation, "proposal": manifestmcp.Proposal(operation)})
+			out = append(out, chatOperationItem(operation))
 		}
 	}
 	return out

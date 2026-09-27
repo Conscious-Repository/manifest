@@ -16,7 +16,11 @@ const FEED_FILTERS = [["proposal", "APPROVALS"], ["consume", "CONSUME"]];
 const FEED_STATUS = "inbox"; // never user-selectable — see above
 const SIGNAL_CAP = 8; // most-overdue signals shown; the rest fold behind "N more"
 let signalsExpanded = false;
-let feedCache = { items: [], signals: [], proposals: [], portalItems: [], consumeItems: [], receipts: [], bankPending: [] };
+let feedCache = { items: [], signals: [], proposals: [], portalItems: [], consumeItems: [], receipts: [], bankPending: [], settled: null };
+// settled: the settled-approvals lane (operation receipts, owner decision D1),
+// read from its own endpoint so /api/feed stays as it is. null = not loaded;
+// {error} = could not be read, which renders as such, never as "none".
+let feedSettledOpen = false;
 let feedLoadError = false; // a network failure must render as an error, not a fake "inbox zero" (§C2)
 let feedLoaded = false; // one successful load — showFeed paints the last inbox before refreshing it
 
@@ -99,26 +103,31 @@ async function loadFeed() {
   // rock list into the payload editor's typeahead).
   apprAionReg = null; apprReReg = null;
   let next = null, badge = 0;
+  const settledRead = fetch("/api/manifest/operations/receipts")
+    .then(async (r) => { if (!r.ok) throw new Error((await r.text()).trim() || "HTTP " + r.status); return r.json(); })
+    .then((d) => ({ receipts: d.receipts || [], total: d.total || 0 }), (e) => ({ error: e.message || String(e) }));
   try {
     const r = await fetch("/api/feed?status=" + FEED_STATUS);
     if (!r.ok) throw new Error("HTTP " + r.status);
     const d = await r.json();
-    next = { items: d.items || [], signals: d.signals || [], proposals: d.proposals || [], portalItems: d.portalItems || [], consumeItems: d.consumeItems || [], receipts: d.receipts || [], bankPending: d.bankPending || [] };
+    next = { items: d.items || [], signals: d.signals || [], proposals: d.proposals || [], portalItems: d.portalItems || [], consumeItems: d.consumeItems || [], receipts: d.receipts || [], bankPending: d.bankPending || [], settled: null };
     badge = d.badge || 0;
   } catch (e) {
     next = null;
   }
+  const settled = await settledRead;
   // Someone else owns the surface now (the CONSUME chip, another loadFeed).
   // Nothing below this line may run — not the cache write, not the paint.
   if (feedRenderStale(token)) return;
   if (next) {
+    next.settled = settled;
     feedCache = next;
     feedLoadError = false;
     feedLoaded = true;
     setBadge(els.feedNavBadge, badge);
     diffDigests(feedCache.items); // catch digests landed while unpolled
   } else {
-    feedCache = { items: [], signals: [], proposals: [], portalItems: [], consumeItems: [], receipts: [], bankPending: [] };
+    feedCache = { items: [], signals: [], proposals: [], portalItems: [], consumeItems: [], receipts: [], bankPending: [], settled };
     feedLoadError = true;
   }
   renderFeedFilters();
@@ -209,12 +218,14 @@ function renderFeed() {
     } else {
       host.appendChild(emptyRow("Inbox zero — nothing awaiting you."));
     }
+    if (laneVisible("proposal")) appendFeedSettled(host);
     return;
   }
   FEED_TAIL_LANES.forEach((lane) => {
     if (!laneVisible(lane.kind)) return;
     lane.slice(feedCache).forEach((c) => host.appendChild(FEED_CARD[lane.kind](c)));
   });
+  if (laneVisible("proposal")) appendFeedSettled(host);
   // the rail: drafts and the selection outlive this repaint (the 3s poll can
   // rebuild the list under an open edit), so re-mark and re-fill from them
   apprDraftsKeep((feedCache.proposals || []).map((x) => x.id));
@@ -229,6 +240,33 @@ function renderFeed() {
       setTimeout(() => target.classList.remove("goal-flash"), 2400);
     }
   }
+}
+
+// appendFeedSettled paints the settled-approvals lane: decided operations,
+// newest first, read-only (operationReceiptEl, the receipt chat and task
+// show). It sits below the inbox, folded, and never counts toward the badge
+// or "Inbox zero": nothing in it awaits the owner.
+function appendFeedSettled(host) {
+  const s = feedCache.settled;
+  if (!s) return;
+  const lane = el("details", "feed-settled");
+  lane.open = feedSettledOpen;
+  // record the choice on the click itself: the toggle event comes later, and
+  // the 3 s poll can repaint the lane in between
+  const summary = el("summary", "micro-label", "Settled approvals · " + (s.error ? "unavailable" : s.total));
+  summary.onclick = () => { feedSettledOpen = !lane.open; };
+  lane.append(summary);
+  if (s.error) {
+    const row = el("div", "ro-row empty");
+    row.append(el("span", null, "Settled approvals couldn't be read: " + s.error), pillLight("retry", loadFeed));
+    lane.append(row);
+  } else if (!s.receipts.length) {
+    lane.append(emptyRow("No settled approvals yet."));
+  } else {
+    s.receipts.forEach((rc) => lane.append(operationReceiptEl(rc)));
+    if (s.total > s.receipts.length) lane.append(el("p", "micro-label", "Newest " + s.receipts.length + " of " + s.total + "."));
+  }
+  host.appendChild(lane);
 }
 
 // signalRow renders one app-signal: a quiet one-line chip (kind · entity · age)

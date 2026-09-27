@@ -100,7 +100,7 @@ func (s *Server) chatOperations(conversation string) []map[string]any {
 	out := []map[string]any{}
 	for _, o := range s.syncManifestOperations() {
 		if o.Conversation == conversation {
-			out = append(out, map[string]any{"record": o, "proposal": manifestmcp.Proposal(o)})
+			out = append(out, chatOperationItem(o))
 		}
 	}
 	return out
