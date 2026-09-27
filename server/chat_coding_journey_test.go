@@ -19,6 +19,7 @@ func TestPlanningCodingResultJourney(t *testing.T) {
 			s := codingFixture(t)
 			workspace, _ := workspaceFixture(t)
 			s.UseArtifactRegistry(workspace.artifactReg)
+			s.UseChatState(t.TempDir())
 			chatDir := filepath.Join(t.TempDir(), "chats")
 			chats := agentchat.New(chatDir)
 			s.UseAgentChat(chats)
@@ -143,6 +144,44 @@ func TestPlanningCodingResultJourney(t *testing.T) {
 			}
 			if count != 1 {
 				t.Fatal("result receipt duplicated", count)
+			}
+			// Finished is not accepted: the result left the task open and its
+			// board session in the active chats. Only the owner's explicit Done
+			// (the task panel's POST /api/tasks/check) completes the task, and
+			// that transition is visible — the task line is stamped done and
+			// the session that worked it moves to Archived chats.
+			sessionKey := "terminal:" + owner + "/" + sessions[0].ID
+			lifecycle := func() map[string]string {
+				t.Helper()
+				snap, err := s.chatState.Read("inbox", "lifecycle")
+				if err != nil {
+					t.Fatal(err)
+				}
+				var value struct {
+					Items map[string]string `json:"items"`
+				}
+				if len(snap.Value) > 0 {
+					if err := json.Unmarshal(snap.Value, &value); err != nil {
+						t.Fatal(err)
+					}
+				}
+				return value.Items
+			}
+			if got := lifecycle()[sessionKey]; got != "" {
+				t.Fatal("finished result archived the working session before Done", got)
+			}
+			if code, out := agentChatJSON(t, s, "POST", "/api/tasks/check", map[string]any{"id": task, "checked": true}); code != 200 {
+				t.Fatal("owner Done refused", code, out)
+			}
+			doneTasks, err := os.ReadFile(s.tasksStore.Path())
+			if err != nil || strings.Count(string(doneTasks), "- [x]") != 1 || strings.Contains(string(doneTasks), "- [ ]") || !strings.Contains(string(doneTasks), "[done::") {
+				t.Fatal("owner Done did not visibly complete the task", err, string(doneTasks))
+			}
+			if got := lifecycle()[sessionKey]; got != "archived" {
+				t.Fatal("Done did not move the working session to Archived chats", got, lifecycle())
+			}
+			if _, transcript, _, _ := s.agentChat.store.Get("alfred", id); transcript != originalTranscript {
+				t.Fatal("Done rewrote the planning conversation")
 			}
 		})
 	}

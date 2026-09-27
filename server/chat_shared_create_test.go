@@ -105,7 +105,14 @@ func TestSharedTerminalCreationContinuityAndRecovery(t *testing.T) {
 	if _, err = s.sharedTerminal(s.kairosAgent(), thread, se.ID); err == nil {
 		t.Fatal("archived runtime still authorized")
 	}
-
+	// The member's next input after archive is refused before any delivery.
+	after := postSharedInput(s, se, thread, "member@aion.bio", `{"text":"one more step","requestId":"receipt-input-002"}`)
+	if after.Code != 403 || sends.Load() != 1 {
+		t.Fatal("archived conversation accepted team input", after.Code, sends.Load(), after.Body.String())
+	}
+	if _, err := s.terminal.readInputReceipt(se.ID, "receipt-input-002"); err == nil {
+		t.Fatal("refused input left a delivery receipt")
+	}
 }
 func TestSharedTerminalCreationRejectsImplicitContext(t *testing.T) {
 	s, _, thread, _ := sharedInputFixture(t, false)
