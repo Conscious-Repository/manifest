@@ -46,8 +46,8 @@ fifty entries, entered by hand. A seed is not a candidate.
 
 	"network/people.md": `# AION recruiting — network
 
-- [id:: aion-net/ben-anderson] [name:: Benjamin Anderson] [type:: founder] [email:: ben@aion.bio] [org:: AION Biosciences] [source:: owner] [consent:: owner]
-- [id:: aion-net/rj-tevonian] [name:: RJ Tevonian] [type:: founder] [org:: AION Biosciences] [source:: owner] [consent:: owner]
+- [id:: aion-net/ben-anderson] [name:: Benjamin Anderson] [type:: team] [email:: ben@aion.bio] [org:: AION Biosciences] [source:: owner] [consent:: owner]
+- [id:: aion-net/rj-tevonian] [name:: RJ Tevonian] [type:: team] [org:: AION Biosciences] [source:: owner] [consent:: owner]
 `,
 
 	"network/edges.md": `# AION recruiting — edges

@@ -127,6 +127,39 @@ async function loadRecruitingSources() {
 
 // recSourcesPost: every sources route answers with the run list, and only a
 // route that wrote a record (accept) adds the board view.
+// recKeepControl — "keep in network" for one queued person (Network tab,
+// 2026-09-27). A candidate is the wrong promise for an advisor or an expert to
+// consult; keep writes a network row instead, chosen as one of four kinds, and
+// the person stops expiring with their run's cache. One click unfolds the
+// kinds; a second picks one. `after` runs on success (refresh the caller).
+function recKeepControl(runId, draftId, name, after) {
+  const wrap = el("span", "rec-keep");
+  const open = el("button", "pill light", "keep in network");
+  open.title = "keep " + name + " as a future hire, advisor, expert or connector — a network record, not a candidate";
+  open.onclick = (e) => {
+    e.stopPropagation();
+    wrap.innerHTML = "";
+    wrap.append(el("span", "rec-keep-as", "keep as"));
+    [["hire", "future hire"], ["advisor", "advisor"], ["expert", "expert"], ["connector", "connector"]].forEach(([k, label]) => {
+      const b = el("button", "pill light", label);
+      b.onclick = async (ev) => {
+        ev.stopPropagation();
+        wrap.querySelectorAll("button").forEach((x) => { x.disabled = true; });
+        const out = await recSourcesPost("/api/network/keep", { run: runId, draft: draftId, kind: k },
+          name + " kept in your network as " + label);
+        if (out) { if (typeof netCache !== "undefined") netCache = null; if (after) after(out); }
+        else wrap.querySelectorAll("button").forEach((x) => { x.disabled = false; });
+      };
+      wrap.append(b);
+    });
+    const x = el("button", "rec-linkish", "cancel");
+    x.onclick = (ev) => { ev.stopPropagation(); wrap.replaceWith(recKeepControl(runId, draftId, name, after)); };
+    wrap.append(x);
+  };
+  wrap.append(open);
+  return wrap;
+}
+
 async function recSourcesPost(url, body, okMsg, method) {
   try {
     const r = await fetchJSONRetry(method || "POST", url, body || {}); // survives a deploy-window 502
@@ -1343,6 +1376,52 @@ function recAdhocSources() {
   return Array.from(seen.values());
 }
 
+// recPassedFold — the tombstones, undoable. A pass is remembered forever and
+// suppresses the person in every later sweep; the server could always lift
+// one (DELETE /passed/{key}) but nothing on screen could reach it, so a pass
+// made by mistake was permanent in practice.
+let recPassedOpen = false;
+let recPassedList = null;
+function recPassedFold() {
+  const box = el("section", "rec-passed");
+  const head = el("button", "rec-fold-head");
+  head.append(el("span", "sec-caret", recPassedOpen ? "▾" : "▸"));
+  head.append(el("span", "micro-label", "PASSED"));
+  head.append(el("span", "rec-fold-meta", recPassedList ? String(recPassedList.length) : ""));
+  head.onclick = async () => {
+    recPassedOpen = !recPassedOpen;
+    if (recPassedOpen && !recPassedList) {
+      try { recPassedList = (await (await fetch("/api/aion/recruiting/passed")).json()).passed || []; }
+      catch (e) { recPassedList = []; }
+    }
+    if (recPaint) recPaint();
+  };
+  box.append(head);
+  if (!recPassedOpen) return box;
+  const list = recPassedList || [];
+  if (!list.length) { box.append(emptyRow("nobody passed on yet")); return box; }
+  list.slice().reverse().forEach((pp) => {
+    const row = el("div", "rec-passed-row");
+    row.append(el("span", "rec-passed-name", pp.name || pp.key));
+    row.append(el("span", "rec-draft-sub", [pp.reason, pp.source, pp.at].filter(Boolean).join(" · ")));
+    const undo = el("button", "rec-linkish", "undo pass");
+    undo.title = "lift the tombstone — the next sweep may surface them again";
+    undo.onclick = async () => {
+      undo.disabled = true;
+      try {
+        const r = await fetch("/api/aion/recruiting/passed/" + encodeURIComponent(pp.key), { method: "DELETE" });
+        if (!r.ok) throw new Error((await r.text()).slice(0, 140));
+        recPassedList = (await r.json()).passed || [];
+        showToast("no longer passed: " + (pp.name || pp.key));
+        if (recPaint) recPaint();
+      } catch (e) { undo.disabled = false; showToast("couldn't undo — " + String(e.message || e), null, "error"); }
+    };
+    row.append(undo);
+    box.append(row);
+  });
+  return box;
+}
+
 function paintPlacesView(main) {
   // two layouts on one view: the places (rows, runs folded under each) and
   // the review queue that used to be the SOURCES tab
@@ -1363,6 +1442,7 @@ function paintPlacesView(main) {
   if (recPlacesLayout === "review") {
     if (recFocusedReview) { paintFocusedSourceReview(main); return; }
     paintSourceReview(main);
+    main.append(recPassedFold());
     main.append(recAdvancedRun());
     return;
   }
@@ -2929,6 +3009,7 @@ function recDraftCard(run, d) {
       accept.disabled = true; // one record per press: a double-click is not two accepts
       recSourcesPost("/api/aion/recruiting/sources/accept/" + run.id + "/" + d.id, {}, "candidate added from " + run.source);
     };
+    const keep = recKeepControl(run.id, d.id, (d.draft || {}).name || "this person");
     const look = el("button", "pill light", d.lookedUpAt ? "Enhance again" : "Enhance");
     look.title = "Collect public profile evidence and generate a cited brief with DeepSeek. This can take several minutes; you can keep reviewing other candidates.";
     look.disabled = recEnhancing.has(key);
@@ -2949,7 +3030,7 @@ function recDraftCard(run, d) {
         recNav("sources");
       });
     };
-    acts.append(accept, look, recDraftPass(run, d), laterBtn);
+    acts.append(accept, keep, look, recDraftPass(run, d), laterBtn);
     card.append(acts);
   } else if (d.decidedAt) {
     // the reassurance ("this search only — nothing was deleted") is the

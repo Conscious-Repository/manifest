@@ -14,7 +14,10 @@ var (
 		"org", "title", "source", "consent", "added", "source_ref", "orcid",
 		// archived: a connector is ARCHIVED, never deleted (the owner's rule,
 		// 2026-09-05) · ref: the vault contact this person came from
-		"archived", "ref"}
+		"archived", "ref",
+		// the Network tab's minimal tracking (2026-09-27): repeated tags, one
+		// note, the last-contact date, an explicit team link
+		"tag", "note", "last_contact", "team"}
 	edgeKeys = []string{"from", "to", "kind", "basis", "confidence", "inferred",
 		"source", "evidence", "observed", "work"}
 )
@@ -49,11 +52,12 @@ func (d *PeopleDoc) People() []NetworkPerson {
 // in mutate.go, so a field added here reaches both without a second copy.
 func personOf(r *Row) NetworkPerson {
 	return NetworkPerson{
-		ID: r.Get("id"), Name: r.Get("name"), Type: r.Get("type"),
+		ID: r.Get("id"), Name: r.Get("name"), Type: NormalizePersonType(r.Get("type")),
 		Email: r.Get("email"), LinkedIn: r.Get("linkedin"), GitHub: r.Get("github"),
 		Org: r.Get("org"), Title: r.Get("title"), Source: r.Get("source"),
 		Consent: r.Get("consent"), Added: r.Get("added"),
 		Archived: r.Get("archived"), Ref: r.Get("ref"), SourceRef: r.Get("source_ref"), ORCID: r.Get("orcid"),
+		Tags: r.GetAll("tag"), Note: r.Get("note"), LastContact: r.Get("last_contact"), Team: r.Get("team"),
 		Unknown: unknownFields(r, networkPersonKeys...),
 	}
 }
@@ -64,6 +68,7 @@ func (d *PeopleDoc) Add(p NetworkPerson) (NetworkPerson, error) {
 	if strings.TrimSpace(p.Name) == "" {
 		return NetworkPerson{}, errf("a network person needs a name")
 	}
+	p.Type = NormalizePersonType(p.Type)
 	if p.Type != "" && !ValidPersonType(p.Type) {
 		return NetworkPerson{}, errf("person type must be one of %s", strings.Join(PersonTypes, ", "))
 	}
@@ -87,10 +92,14 @@ func (d *PeopleDoc) Add(p NetworkPerson) (NetworkPerson, error) {
 	r := newRow("id", p.ID, "name", p.Name)
 	for _, kv := range [][2]string{{"type", p.Type}, {"email", p.Email}, {"linkedin", p.LinkedIn},
 		{"github", p.GitHub}, {"org", p.Org}, {"title", p.Title}, {"source", p.Source},
-		{"consent", p.Consent}, {"added", p.Added}, {"ref", p.Ref}, {"source_ref", p.SourceRef}, {"orcid", p.ORCID}} {
+		{"consent", p.Consent}, {"added", p.Added}, {"ref", p.Ref}, {"source_ref", p.SourceRef}, {"orcid", p.ORCID},
+		{"note", oneLine(p.Note)}, {"last_contact", p.LastContact}, {"team", p.Team}} {
 		if kv[1] != "" {
 			r.Set(kv[0], kv[1])
 		}
+	}
+	if tags := cleanTags(p.Tags); len(tags) > 0 {
+		r.SetAll("tag", tags)
 	}
 	for _, f := range p.Unknown {
 		r.Set(f.Key, f.Value)
@@ -304,3 +313,20 @@ func (d *EdgesDoc) Add(e Edge) (Edge, error) {
 // FormatConfidence renders a confidence-table constant the way the records
 // carry it (two decimals, so 0.95 never reads as 0.9500000000000001).
 func FormatConfidence(v float64) string { return graph.FormatConfidence(v) }
+
+// cleanTags trims, one-lines and dedupes tags by TopicID, keeping the first
+// spelling the owner used.
+func cleanTags(in []string) []string {
+	seen := map[string]bool{}
+	var out []string
+	for _, t := range in {
+		t = oneLine(t)
+		id := TopicID(t)
+		if t == "" || id == "" || seen[id] {
+			continue
+		}
+		seen[id] = true
+		out = append(out, t)
+	}
+	return out
+}

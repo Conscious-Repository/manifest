@@ -89,8 +89,28 @@ func ValidSeedClass(s string) bool { return inSet(SeedClasses, s) }
 // deliberately no `visibility` field: everything here is private by
 // construction, and a field that says "private" invites one that says
 // otherwise.
-var PersonTypes = []string{"founder", "employee", "advisor", "investor",
-	"collaborator", "candidate", "external"}
+var PersonTypes = []string{"hire", "advisor", "expert", "connector", "team"}
+
+// legacyPersonTypes maps the pre-Network (2026-09-27) vocabulary onto the
+// kinds the owner builds his network around: future hires, advisors,
+// experts to consult, connectors — plus his own team. The old words are read
+// forever (hand-edited rows and the install seed carry `founder`) but never
+// written again: personOf projects them, Update/normalizeType rewrites the
+// row, so one fact keeps one spelling. Investors are NOT a kind here — they
+// live in fundraising, and a row once typed `investor` reads as a connector.
+var legacyPersonTypes = map[string]string{
+	"founder": "team", "employee": "team", "candidate": "hire",
+	"collaborator": "expert", "investor": "connector", "external": "",
+}
+
+// NormalizePersonType answers the kind a stored `type` means today.
+func NormalizePersonType(s string) string {
+	s = strings.ToLower(strings.TrimSpace(s))
+	if k, ok := legacyPersonTypes[s]; ok {
+		return k
+	}
+	return s
+}
 
 var ConsentKinds = []string{"owner", "public_record", "owner_import", "manual"}
 
@@ -344,8 +364,18 @@ type NetworkPerson struct {
 	// ORCID is the identity link a run handed over with the person (the URL,
 	// as the profile keeps it), so an edge naming that ORCID later resolves
 	// onto this row instead of leaving them a stranger with two identities.
-	ORCID   string  `json:"orcid,omitempty"`
-	Unknown []Field `json:"unknown,omitempty"`
+	ORCID string `json:"orcid,omitempty"`
+	// Tags are the owner's expertise labels ("fda-510k", "mri-coils") — the
+	// network's answer to "who do I know about X". Repeated `[tag:: …]` keys,
+	// display text kept; identity via TopicID so "MRI coils" == "mri-coils".
+	Tags []string `json:"tags,omitempty"`
+	// Note is one line in the owner's words; LastContact is the date he last
+	// touched this person (YYYY-MM-DD). The whole of the tracking by design:
+	// no reminders, no pipeline (owner decision 2026-09-27).
+	Note        string  `json:"note,omitempty"`
+	LastContact string  `json:"lastContact,omitempty"`
+	Team        string  `json:"team,omitempty"` // explicit link to an AION team member (initials)
+	Unknown     []Field `json:"unknown,omitempty"`
 }
 
 // ---- tie strength (social graph plan D-I) ----

@@ -46,10 +46,11 @@ const (
 	DraftDuplicate = "duplicate"
 	DraftAccepted  = "accepted"
 	DraftRejected  = "rejected"
-	// DraftGraphed is READ-ONLY since 2026-09-18: the "into the graph" outcome
-	// wrote a network row per swept stranger, which the social graph plan
-	// (D-F) retired — swept people are the run cache drawn, not records. Old
-	// run files may still carry the status; nothing writes it any more.
+	// DraftGraphed = this draft became a NETWORK ROW. Retired 2026-09-18
+	// as a bulk "into the graph" outcome (social graph plan D-F: swept people
+	// are the run cache drawn, not records) and revived 2026-09-27 for the
+	// one deliberate path that writes it: KEEP (keep.go), the owner choosing
+	// one person to hold onto as a hire, advisor, expert or connector.
 	DraftGraphed = "graphed"
 )
 

@@ -2,6 +2,7 @@ package recruiting
 
 import (
 	"strings"
+	"time"
 
 	"manifest/record"
 )
@@ -127,7 +128,8 @@ func (d *PeopleDoc) Update(id string, set map[string]string) (NetworkPerson, err
 				return NetworkPerson{}, errf("a person needs a name")
 			}
 			row.Set("name", val)
-		case "type":
+		case "type", "kind":
+			val = NormalizePersonType(val)
 			if val != "" && !ValidPersonType(val) {
 				return NetworkPerson{}, errf("type must be one of %s", strings.Join(PersonTypes, ", "))
 			}
@@ -137,11 +139,30 @@ func (d *PeopleDoc) Update(id string, set map[string]string) (NetworkPerson, err
 				return NetworkPerson{}, errf("consent must be one of %s", strings.Join(ConsentKinds, ", "))
 			}
 			setOrRemove(row, "consent", val)
-		case "email", "linkedin", "github", "org", "title", "archived", "ref":
+		case "email", "linkedin", "github", "org", "title", "archived", "ref", "team":
 			setOrRemove(row, k, val)
+		case "note":
+			setOrRemove(row, "note", oneLine(val))
+		case "last_contact", "lastcontact":
+			if val != "" {
+				if _, err := time.Parse("2006-01-02", val); err != nil {
+					return NetworkPerson{}, errf("last contact must be a date (YYYY-MM-DD)")
+				}
+			}
+			setOrRemove(row, "last_contact", val)
+		case "tags":
+			// the whole set, comma-separated — the editor sends what it shows
+			var parts []string
+			for _, t := range strings.Split(val, ",") {
+				parts = append(parts, t)
+			}
+			row.SetAll("tag", cleanTags(parts))
 		default:
 			return NetworkPerson{}, errf("a person has no %q to edit", key)
 		}
+	}
+	if t := row.Get("type"); t != "" && NormalizePersonType(t) != t {
+		setOrRemove(row, "type", NormalizePersonType(t))
 	}
 	return personOf(row), nil
 }

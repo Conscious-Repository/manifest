@@ -540,6 +540,10 @@ func (s *Server) Handler() http.Handler {
 			// over the vault's contacts, and the mark that makes one of them a
 			// path origin
 			mux.HandleFunc("GET /api/aion/recruiting/people/known", s.handleRecruitingKnownPeople)
+			// NETWORK — the top-level tab over the same people store (network.go)
+			mux.HandleFunc("GET /api/network", s.handleNetwork)
+			mux.HandleFunc("POST /api/network/keep", s.handleNetworkKeep)
+			mux.HandleFunc("POST /api/network/person/{id...}", s.handleNetworkPerson)
 			mux.HandleFunc("GET /api/aion/recruiting/graph", s.handleRecruitingGraph)
 			mux.HandleFunc("GET /api/aion/recruiting/graph/node", s.handleRecruitingGraphNode)
 			// who has the most leverage in a domain: expertise × ties, every

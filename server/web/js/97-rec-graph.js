@@ -765,9 +765,10 @@ function rgMenu(id, ev) {
   item("why connected", () => rgSelect(id));
   if (node.kind === "bridge" && node.run && node.draft) {
     item("pursue", () => rgDecide(node, "pursue"));
+    item("keep in network…", () => { rgSelect(id); }); // the panel carries the four kinds
     item("pass", () => rgDecide(node, "pass"));
   }
-  if (node.kind === "pursuing" || node.kind === "passed") item("open the record", () => { recSel = id; recNav("board"); });
+  if ((node.kind === "pursuing" || node.kind === "passed") && String(id).startsWith("cand/")) item("open the record", () => recNav("candidate/" + encodeURIComponent(id)));
   if (node.kind === "stranger" || node.kind === "bridge" || node.kind === "pursuing") {
     item("someone I'd ask", async () => {
       if (await recWrite("/api/aion/recruiting/network/mark",
@@ -1228,11 +1229,11 @@ function rgPanel(data) {
     const pass = el("button", "pill light", "pass");
     pass.title = "looked at and declined — remembered, hidden from the picture";
     pass.onclick = () => rgDecide(node, "pass");
-    acts.append(pursue, pass);
+    acts.append(pursue, recKeepControl(node.run, node.draft, node.label, () => { const st = rgInit(); st.profiles = {}; rgLoad(); }), pass);
   }
-  if (node.kind === "pursuing" || node.kind === "passed") {
+  if ((node.kind === "pursuing" || node.kind === "passed") && String(node.id).startsWith("cand/")) {
     const open = el("button", "pill light", "open the record");
-    open.onclick = () => { recSel = node.id; recNav("board"); };
+    open.onclick = () => recNav("candidate/" + encodeURIComponent(node.id));
     acts.append(open);
   }
   if (node.kind === "stranger" || node.kind === "bridge" || node.kind === "pursuing") {
@@ -1260,7 +1261,7 @@ function rgEmpty(data) {
   (data.missing || []).forEach((m) => box.append(el("div", "rg-empty-do", m)));
   box.append(el("div", "rg-empty-do", "This view shows recorded connections from the selected person. A disconnected graph does not mean there is no possible introduction."));
   const review = el("button", "pill light", "Review search results →");
-  review.onclick = () => { recSourceLayout = "review"; recNav("sources"); };
+  review.onclick = () => { recPlacesLayout = "review"; recNav("sources"); };
   box.append(review);
   const acts = el("div", "rg-acts");
   const people = el("button", "pill light", "open PEOPLE →");

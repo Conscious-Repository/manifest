@@ -120,6 +120,8 @@ const NAV_SECTIONS = [
     { key: "write", label: "Writing", glyph: "✎", hash: "#/write" },
     { key: "aion", label: "Aion", glyph: "◆", hash: "#/aion", counted: true },
     { key: "properties", label: "Real Estate", glyph: "⌂", hash: "#/properties", counted: true },
+    // the people around the work: hires, advisors, experts, connectors (62-network.js)
+    { key: "network", label: "Network", glyph: "⋈", hash: "#/network" },
   ]},
   { label: "SIGNAL", items: [
     { key: "feed", label: "Feed", glyph: "≋", hash: "#/feed" }, // count = the inbox badge (feedNavBadge)
@@ -151,7 +153,7 @@ function sectionOf(h) {
   if (h.startsWith("#/read/")) return "feed"; // the reader belongs to FEED in the rail
   const seg = h.replace(/^#\//, "").split("/")[0];
   if (seg === "spirits") return "agents"; // legacy hash (redirected in route)
-  return ["write","goals","tasks","calendar","feed","chat","terminal","agents","settings","contacts","reading","properties","aion"].includes(seg) ? seg : "day";
+  return ["write","goals","tasks","calendar","feed","chat","terminal","agents","settings","contacts","network","reading","properties","aion"].includes(seg) ? seg : "day";
 }
 
 function buildRail() {
@@ -390,6 +392,7 @@ function route() {
   const sp = h === "#/agents" || h.startsWith("#/agents/");
   const settings = h === "#/settings" || h.startsWith("#/settings/"); // app-wide settings: #/settings/<group>
   const contacts = h === "#/contacts" || h.startsWith("#/contacts/");
+  const network = h === "#/network" || h.startsWith("#/network/");
   const reading = h === "#/reading" || h.startsWith("#/reading/");
   const properties = h === "#/properties" || h.startsWith("#/properties/");
   const aionTab = h === "#/aion" || h.startsWith("#/aion/");
@@ -399,7 +402,7 @@ function route() {
   const note = h.startsWith("#/note/");
   const artifact = h.startsWith("#/artifact/");
   const read = h.startsWith("#/read/"); // one article, full page (CONSUME)
-  const day = !goals && !todosTab && !cal && !fd && !chat && !terminalTab && !sp && !settings && !contacts && !reading && !properties && !aionTab && !note && !artifact && !read && !writing;
+  const day = !goals && !todosTab && !cal && !fd && !chat && !terminalTab && !sp && !settings && !contacts && !network && !reading && !properties && !aionTab && !note && !artifact && !read && !writing;
   els.dayView.hidden = !day;
   els.goalsView.hidden = !goals;
   els.todosView.hidden = !todosTab;
@@ -412,6 +415,7 @@ function route() {
   els.spiritsView.hidden = !sp;
   if (els.settingsView) els.settingsView.hidden = !settings;
   els.contactsView.hidden = !contacts;
+  document.getElementById("networkView").hidden = !network;
   els.readingView.hidden = !reading;
   els.propertiesView.hidden = !properties;
   els.aionView.hidden = !aionTab;
@@ -446,6 +450,7 @@ function route() {
   else if (sp) showSpirits(h); // agents cockpit: rituals / runs / (legacy settings chip) / spirit pages
   else if (settings) showSettings(h); // app-wide settings: connections / agents / hosts / display
   else if (contacts) showContacts(); // people layer: list / page
+  else if (network) showNetwork(); // hires · advisors · experts · connectors
   else if (reading) loadReading(); // book shelf over the extrinsic zone
   else if (properties) showProperties(h); // real-estate cockpit: board / property page
   else if (aionTab) showAion(h); // aion program cockpit: backlog / heuristics / vto / …

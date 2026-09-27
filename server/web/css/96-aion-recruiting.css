@@ -728,3 +728,11 @@ a.rec-place-name:hover { text-decoration: underline; }
 .rec-focused-candidate .rec-ev-quote { max-width: var(--measure); font-size: var(--fs-lg); line-height: 1.6; }
 .rec-focused-candidate .rec-draft-actions { margin-top: 0; }
 .rec-focused-candidate .rec-ev-top { display: flex; flex-wrap: wrap; gap: var(--sp-4); }
+
+/* keep in network (2026-09-27): one button that unfolds into the four kinds */
+.rec-keep { display: inline-flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); }
+.rec-keep-as { font-family: var(--mono); font-size: var(--fs-2xs); color: var(--base-40); }
+/* the passed fold — tombstones, each undoable */
+.rec-passed { margin-top: var(--sp-7); }
+.rec-passed-row { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--sp-4); padding: var(--sp-2) 0; border-top: 1px solid var(--line-soft); }
+.rec-passed-name { font-size: var(--fs-sm); color: var(--base-80); }
