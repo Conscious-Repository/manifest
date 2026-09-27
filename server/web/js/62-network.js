@@ -327,6 +327,30 @@ function netPaintInspector() {
     }
   }
 
+  // an explicit contact link — how a team member or a kept person who is ALSO
+  // one of your contacts becomes one row. Offered only when there is no link
+  // yet; picking one writes `ref` and nothing ever touches the note itself.
+  if (!p.contactKey) {
+    const contactsOnly = (netCache.people || []).filter((x) => x.id.startsWith("contact/") && x.contactKey);
+    if (contactsOnly.length) {
+      const inp = el("input", "pp-in");
+      inp.type = "text";
+      inp.placeholder = "same person as a contact? type their name";
+      const dlId = "netContactList";
+      let cdl = document.getElementById(dlId);
+      if (!cdl) { cdl = document.createElement("datalist"); cdl.id = dlId; document.body.append(cdl); }
+      cdl.innerHTML = "";
+      contactsOnly.forEach((c) => { const o = document.createElement("option"); o.value = c.name; cdl.append(o); });
+      inp.setAttribute("list", dlId);
+      inp.onchange = async () => {
+        const hit = contactsOnly.find((c) => c.name.toLowerCase() === inp.value.trim().toLowerCase());
+        if (!hit) { showToast("pick a contact from the list"); return; }
+        if (await netSave(p, { ref: hit.contactKey })) { showToast(p.name + " linked to " + hit.name); showNetwork(); }
+      };
+      field("contact", inp);
+    }
+  }
+
   // where they live elsewhere
   const links = el("div", "net-links");
   const link = (label, href, internal) => {
