@@ -384,6 +384,16 @@ function showChat(h) {
   const seg = chatRouteSegments(h);
   const head = seg[0] || "";
   const rest = seg.slice(1).join("/"); // one id, whether it was encoded or raw
+  // Tiles (50-chat-tiles.js): several whole conversations side by side. The
+  // single view's thread is left, not destroyed; tiles keep their own frames.
+  if (head === "tiles" && typeof chatTilesShow === "function" && !chatEmbedded) {
+    leaveTaskChat();chatTermLeave();chatOpenId="";chatLanding=false;chatCurSession=null;
+    if(chatES){chatES.close();chatES=null;chatESFor="";}
+    renderChatHeadActions();
+    chatTilesShow(chatTilesTakePending());
+    return;
+  }
+  if (typeof chatTilesHide === "function") chatTilesHide();
   if (head === "project") {
     leaveTaskChat();chatTermLeave();chatOpenId="";chatLanding=false;chatCurSession=null;
     if(chatES){chatES.close();chatES=null;chatESFor="";}
@@ -824,6 +834,11 @@ function renderChatHeadActions() {
     });
   });
   host.append(add);
+  // Tiles: the open conversation joins a tiled workspace of whole chats.
+  const tiles = el("button", "sprt-ghost chat-tiles-enter", "Tiles");
+  tiles.type = "button"; tiles.title = "Tile conversations side by side · Alt+Enter"; tiles.setAttribute("aria-keyshortcuts", "Alt+Enter");
+  tiles.onclick = () => { if (typeof chatTilesPendingFrom !== "undefined" && chatOpenId && !/\/new$/.test(location.hash)) chatTilesPendingFrom = location.hash; location.hash = "#/chat/tiles"; };
+  host.append(tiles);
   if(typeof chatWorkspaceControls==='function')chatWorkspaceControls(host);
 
 }

@@ -295,3 +295,29 @@ func TestQuestionDraftSurvivesRestartAndConflictsIndependently(t *testing.T) {
 		}
 	}
 }
+
+// The tiled-chat arrangement is owner view state on the inbox key: it
+// survives a store reopen, refuses a stale device, and stays independent of
+// the pins beside it. No other key may carry a tiles slot.
+func TestTilesArrangementPersistsAndRejectsStaleDevice(t *testing.T) {
+	root := t.TempDir()
+	s := New(root)
+	layout := `{"v":1,"active":"1","ws":{"1":{"t":"split","dir":"row","ratio":0.5,"a":{"t":"leaf","id":"ta"},"b":{"t":"leaf","id":"tb"}}},"tiles":{"ta":{"route":"#/chat/a/codex/x"},"tb":{"route":""}}}`
+	first, err := s.Write("inbox", "tiles", 0, json.RawMessage(layout))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = s.Write("inbox", "tiles", 0, json.RawMessage(`{"v":1}`)); !errors.Is(err, ErrConflict) {
+		t.Fatalf("stale device write: %v", err)
+	}
+	if _, err = s.Write("inbox", "pins", 0, json.RawMessage(`{"items":{}}`)); err != nil {
+		t.Fatalf("pins beside tiles: %v", err)
+	}
+	read, err := New(root).Read("inbox", "tiles")
+	if err != nil || read.Revision != first.Revision || string(read.Value) != string(first.Value) {
+		t.Fatalf("reopen: %+v %v", read, err)
+	}
+	if _, err = s.Write("conversation-0123456789abcdef0123456789abcdef", "tiles", 0, json.RawMessage(`{}`)); !errors.Is(err, ErrInvalid) {
+		t.Fatalf("tiles slot on a conversation key: %v", err)
+	}
+}

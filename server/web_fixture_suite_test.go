@@ -277,3 +277,7 @@ func TestFixtureChatSteering(t *testing.T) { runFixture(t, "chat-steering.cjs", 
 func TestFixtureChatCodexTranscript(t *testing.T) {
 	runFixture(t, "chat-codex-transcript.cjs", true, false)
 }
+
+// Tile whole conversations like a tiling window manager: dwindle splits,
+// keys from page and tile, no frame reloads, saved arrangement (chat-tiles.cjs).
+func TestFixtureChatTiles(t *testing.T) { runFixture(t, "chat-tiles.cjs", true, false) }
