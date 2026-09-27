@@ -328,3 +328,10 @@ func TestFixtureChatTilesAttention(t *testing.T) {
 
 // The live +N −M chip on a coding session's header (chat-changes-chip.cjs).
 func TestFixtureChatChangesChip(t *testing.T) { runFixture(t, "chat-changes-chip.cjs", true, false) }
+
+// The single-chat UI pass: clean load, legible meta and menu, 44px phone
+// targets, a whole run-state hint, a shell that fills its column
+// (chat-single-view-pass.cjs).
+func TestFixtureChatSingleViewPass(t *testing.T) {
+	runFixture(t, "chat-single-view-pass.cjs", true, false)
+}

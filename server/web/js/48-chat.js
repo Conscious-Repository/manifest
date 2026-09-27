@@ -153,13 +153,39 @@ function chatComposerShape(host, ta) {
   const was = host.className;
   if(hasFiles)host.classList.add("is-wrapped");
   host.classList.toggle("has-text", text);
+  // typing into a field that already has its own row keeps the row (no jump
+  // back into the compact one on the first key); cleared, the hint decides
+  if (text && host.classList.contains("has-long-hint")) host.classList.add("is-wrapped");
   if (!text) host.classList.remove("is-wrapped");
   else if (!host.classList.contains("is-wrapped")) {
     const cs = getComputedStyle(ta);
     const line = parseFloat(cs.lineHeight) || parseFloat(cs.fontSize) * 1.5;
     if (ta.scrollHeight > line * 1.5 + (parseFloat(cs.paddingTop) || 0) + (parseFloat(cs.paddingBottom) || 0)) host.classList.add("is-wrapped");
   }
+  // an empty phone field whose hint is wider than the compact row (a run-state
+  // note: "Queued — can't steer; messages queue…" in 146px at 390) takes the
+  // field's own row, so the hint reads whole instead of clipping mid-word
+  host.classList.toggle("has-long-hint", !text && chatHintOverflows(host, ta));
   return host.className !== was;
+}
+
+// chatHintOverflows — the placeholder is wider than the compact phone row's
+// field. Measured against the compact width (the class comes off for the
+// read, back on after; no paint in between), so the full row cannot talk
+// itself back into the compact shape.
+let chatHintCanvas = null;
+function chatHintOverflows(host, ta) {
+  if (!ta.placeholder || chatEmbedded || !window.matchMedia("(max-width: 860px)").matches) return false;
+  const had = host.classList.contains("has-long-hint");
+  if (had) host.classList.remove("has-long-hint");
+  const cs = getComputedStyle(ta);
+  const room = ta.clientWidth - (parseFloat(cs.paddingLeft) || 0) - (parseFloat(cs.paddingRight) || 0);
+  const font = cs.fontStyle + " " + cs.fontWeight + " " + cs.fontSize + " " + cs.fontFamily;
+  if (had) host.classList.add("has-long-hint");
+  if (room <= 0) return false;
+  chatHintCanvas = chatHintCanvas || document.createElement("canvas").getContext("2d");
+  chatHintCanvas.font = font;
+  return chatHintCanvas.measureText(ta.placeholder).width > room;
 }
 
 // Headers occupy their own flex row; output never scrolls behind them.
@@ -850,7 +876,10 @@ function chatHeadActionsHome(head) {
   if (merge && actions.parentElement !== head) head.append(actions);
   if (!merge && actions.parentElement !== pageHead) pageHead.append(actions);
   actions.classList.toggle("in-thread", merge);
-  view.classList.toggle("chat-head-merged", merge);
+  // the page title row folds away (or comes back) under the shell: refit, or
+  // the height chatFitShell measured beneath the row leaves a dead band below
+  // the composer (87px at 1440×900, 2026-09-27)
+  if (view.classList.contains("chat-head-merged") !== merge) { view.classList.toggle("chat-head-merged", merge); requestAnimationFrame(chatFitShell); }
 }
 window.addEventListener("resize", () => chatHeadActionsHome());
 
@@ -2713,7 +2742,9 @@ function renderChatComposer(session) {
   if (host.dataset.built) {
     const ta = host.querySelector("textarea");
     const send = host.querySelector(".chat-send");
-    if (ta) ta.placeholder = placeholder();
+    // a new hint may reshape the phone field (has-long-hint): the transcript
+    // above loses that height, so a reader at the latest line stays there
+    if (ta) { const hint = placeholder(); if (ta.placeholder !== hint) { const t = document.getElementById("chatTranscript"), pinned = t && t.scrollHeight - t.scrollTop - t.clientHeight < 8; ta.placeholder = hint; ta._grow?.(); if (pinned) t.scrollTop = t.scrollHeight; } }
     if (send) { send.disabled = busy; send.textContent = uploading || chatSending || chatTermSending ? "…" : "↑"; send.setAttribute("aria-label",uploading?"Uploading attachments":chatSending||chatTermSending?"Sending message":"Send message"); send.title=uploading?"Uploading attachments…":chatSending||chatTermSending?"Sending message…":"send · Enter (Shift+Enter for a new line)"; } // a prompt line ends in enter
     syncAttach();
     chatRenderDeliveryNotice(host,draftKey);

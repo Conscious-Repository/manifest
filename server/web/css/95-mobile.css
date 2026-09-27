@@ -886,6 +886,8 @@
      4px padding → 54px outer;
    - wrapped (or ritual showing): the field takes its own full-width row above
      the controls and grows with the text (grow(), capped at 30% of the view);
+   - has-long-hint (2026-09-27): an empty field whose placeholder is wider than
+     the compact field takes the same row, so a run-state hint reads whole;
    - model: 12px sans, secondary ink, no pill, ellipsis past a third of the row,
      44px-tall hit box;
    - send: 36px neutral circle drawn inside a 44px hit box (transparent border,
@@ -899,7 +901,7 @@
     min-height: 32px; padding: var(--sp-3) var(--sp-2); font: var(--fs-xl)/1.6 var(--sans);
   }
   .chat-main .chat-composer > .chat-attach { order: 0; }
-  .chat-main .chat-composer:not(.is-wrapped):not(.has-ritual) > textarea.chat-input {
+  .chat-main .chat-composer:not(.is-wrapped, .has-long-hint):not(.has-ritual) > textarea.chat-input {
     flex: 1 1 0; width: auto; min-width: 0; order: 1;
     min-height: var(--control-touch); max-height: var(--control-touch); padding: 9px var(--sp-2); overflow: hidden;
   }
