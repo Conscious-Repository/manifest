@@ -266,6 +266,8 @@ function chatPolishComposer(host){
  // the recipient chip then names only the agent the message goes to.
  const chips=typeof chatModelChips==='function'&&chatModelChips(host);
  if(typeof chatGoalBar==='function')chatGoalBar(host);
+ // a new chat's agent, project and folder chips, and what sits under it
+ if(typeof chatLandingChips==='function'){chatLandingChips(host);chatLandingBelow();chatLandingTakeCarry();}
  if(chips&&picker){const agentName=chatAgentLabel(chatRecipients.get((chatAgent||'spirits')+'/'+(chatOpenId||'new'))?.agent||chatAgent);picker.textContent=agentName+' ⌄';picker.title='Next message goes to '+agentName+' · choose another agent';picker.setAttribute('aria-label','Choose agent');}
  main?.classList.toggle('has-composer-recipient',!!source);
  const input=host.querySelector('textarea'),send=host.querySelector('.chat-send');
@@ -377,7 +379,7 @@ function chatWorkbenchShortcut(event){
  if(!location.hash.startsWith('#/chat')||document.querySelector('dialog[open]'))return;
  let target=null;
  switch(event.code){
-  case 'KeyN':target=document.querySelector('#chatHeadActions button');break;
+  case 'KeyN':target=document.querySelector('#chatHeadActions .chat-new-button');break;
   case 'KeyF':{
    target=document.querySelector('.chat-inbox-search');
    // The rail can be hidden by the sidebar toggle (reveal it) or by an open

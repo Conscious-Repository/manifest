@@ -18,6 +18,7 @@ vm.runInContext(chat.slice(chat.indexOf('async function chatTermKey('),chat.inde
  assert.equal(requests.length,buttons.length);assert.equal(notices.length,buttons.length,'uncertain keys offer no automatic replay');
  await ctx.chatTermKey('tab');await ctx.chatTermKey('shift-tab');assert.equal(requests.length,buttons.length);
  assert.ok(requests.every(r=>r.url==='/api/terminal/session/fixture/input'&&r.body.requestId));
- assert.ok(!chat.includes('metis · tmux'));assert.ok(!chat.includes('not wired to this row yet'));assert.ok(chat.includes('Send your first message to start in this folder.'));
+ assert.ok(!chat.includes('metis · tmux'));assert.ok(!chat.includes('not wired to this row yet'));// a new coding chat says where it starts: the folder chip (was a landing hint line)
+ assert.ok(fs.readFileSync(path.join(__dirname,'../web/js/49-chat-newchat.js'),'utf8').includes('"Starts in " + (cwd || "the home folder")'));
  process.stdout.write(JSON.stringify(requests.map(r=>r.body.key)));
 })().catch(e=>{console.error(e);process.exitCode=1;});

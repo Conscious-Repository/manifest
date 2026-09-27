@@ -70,6 +70,7 @@ function makeStub(){
    // which store owns an id: the agent threads here; spirit ids are never served
    if(p==='/api/chat/resolve'){const id=url.searchParams.get('id');return json(res,200,{id,owners:sessions[id]?[{backend:'hermes',agent:'alfred',route:'#/chat/a/alfred/'+id}]:[],checked:['spirits','alfred','terminal'],unavailable:[]});}
    if(p==='/api/terminal/sessions')return json(res,200,{sessions:[],enabled:true});
+   if(p==='/api/terminal/folders')return json(res,200,{enabled:true,home:'/home/owner',recent:['/home/owner/src/manifest'],repos:['/home/owner/src/manifest','/home/owner/src/lab-apps']});
    if(p==='/api/chat/review-status')return json(res,200,{by_scope:{},by_task:{}});
    const st=p.match(/^\/api\/chat\/state\/([^/]+)\/([^/]+)$/);
    if(st){const k=st[1]+'/'+st[2];if(req.method==='PUT'){let b='';req.on('data',c=>b+=c);req.on('end',()=>{const v=JSON.parse(b||'{}');const cur=state.get(k)||{revision:0};const next={key:decodeURIComponent(st[1]),slot:decodeURIComponent(st[2]),revision:cur.revision+1,value:v.value};state.set(k,next);json(res,200,next);});return;}

@@ -309,3 +309,8 @@ func TestFixtureChatPerfBudget(t *testing.T) {
 func TestFixtureChatTilesPanes(t *testing.T) {
 	runFixture(t, "chat-tiles-panes.cjs", true, false)
 }
+
+// One composer-first new chat: chips for agent, model, project and folder,
+// the draft carried across an agent switch, starters, Ctrl+Alt+N, phone
+// (chat-new-flow.cjs).
+func TestFixtureChatNewFlow(t *testing.T) { runFixture(t, "chat-new-flow.cjs", true, false) }

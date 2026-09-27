@@ -819,22 +819,12 @@ function renderChatHeadActions() {
   const host = document.getElementById("chatHeadActions");
   if (!host || host.dataset.built) return;
   host.dataset.built = "1";
-  const add = el("button", "sprt-ghost", "New chat");
-  add.title = "Start a conversation with an agent · Ctrl+Alt+N";add.setAttribute("aria-keyshortcuts", "Control+Alt+n");
-  add.onclick = () => reviewDialog("New chat",({body,actions,close})=>{
-    body.closest('dialog').classList.add('chat-new-dialog');
-    const cancel=el('button','sprt-quiet','Cancel');cancel.onclick=close;actions.append(cancel);
-    const project=document.createElement('select');project.className='pp-in';project.setAttribute('aria-label','New chat project');
-    for(const [id,label] of [['','Standalone chat'],...chatProjectOptions()]){const o=el('option','',label);o.value=id;project.append(o);}project.value=chatWorkstreams.groups[chatWorkstreamFilter]?chatWorkstreamFilter:'';const projectLabel=el('label','chat-new-project','Project');projectLabel.append(project);body.append(projectLabel);
-    const choices=[...chatRoster.filter(a=>a.enabled&&!chatIsTerm(a.name)&&chatPrivateCreationAgent(a.name)===a.name).map(a=>[a.name,a.label,a.model]),...(chatTermEnabled?Object.entries(chatTermKinds):[]),['','Spirits']];
-    choices.forEach(([agent,label,model])=>{
-      const button=el('button','chat-new-choice');
-      button.append(el('span','',label));
-      if(model)button.append(el('span','chat-new-model',shortModel(model)));
-      button.onclick=async()=>{button.disabled=true;try{chatPendingProject=await chatResolveProject(project.value);chatUseProjectFolder(chatPendingProject,agent);close();location.hash=agent?'#/chat/a/'+encodeURIComponent(agent)+'/new':'#/chat/new';}catch(e){showToast(e.message);}finally{button.disabled=false;}};
-      body.append(button);
-    });
-  });
+  // one flow for a new chat: the agent's composer-first landing
+  // (49-chat-newchat.js); agent, model, project and folder are its chips
+  const add = el("button", "sprt-ghost chat-new-button", "New chat");
+  add.type = "button";
+  add.title = "Start a conversation · Ctrl+Alt+N";add.setAttribute("aria-keyshortcuts", "Control+Alt+n");
+  add.onclick = () => chatNewChat();
   host.append(add);
   // Tiles: the open conversation joins a tiled workspace of whole chats.
   const tiles = el("button", "sprt-ghost chat-tiles-enter", "Tiles");
@@ -1554,25 +1544,12 @@ async function renderChatLanding() {
   if (main) main.classList.add("landing");
   host.innerHTML = "";
   host.append(el("div", "chat-greeting", chatGreeting()));
-  if(chatProjectOptions().length){
-    const project=document.createElement('select');project.className='chat-landing-cwd';project.setAttribute('aria-label','Chat project');
-    for(const [id,label] of [['','Standalone chat'],...chatProjectOptions()]){const o=el('option','',label);o.value=id;project.append(o);}
-    project.value=chatWorkstreams.groups[chatPendingProject]?chatPendingProject:'';chatPendingProject=project.value;project.onchange=()=>{chatPendingProject=project.value;};
-    const field=el('label','chat-new-folder','Project');field.append(project);host.append(field);
-    const context=el('button','sprt-quiet','Review project context');context.hidden=!project.value||chatIsPortal();context.onclick=()=>chatEditProject(project.value);host.append(context);project.onchange=async()=>{project.disabled=true;try{chatPendingProject=await chatResolveProject(project.value);chatUseProjectFolder(chatPendingProject);project.replaceChildren();for(const [id,label] of [['','Standalone chat'],...chatProjectOptions()]){const option=el('option','',label);option.value=id;project.append(option);}project.value=chatPendingProject;context.hidden=!project.value||chatIsPortal();}catch(e){project.value=chatPendingProject;showToast(e.message);}finally{project.disabled=false;}};
-  }
 
   if (chatIsTerm()) { renderChatTermLanding(host); return; }
   if (chatAgent) {
+    // who, which model, which project: chips in the composer (49-chat-newchat.js)
     const a = chatRosterEntry(chatAgent);
-    const who = el("div", "chat-spirit-pick");
-    who.append(el("span", "pill light on", a ? a.label : chatAgent));
-    if (a && a.model) who.append(el("span", "sprt-quiet", shortModel(a.model)));
-
-    if (a && a.backend === "portal") who.append(el("span", "chat-landing-hint", a.domain === "ooda" ? "OODA portal chat" : "AION team portal chat"));
-    host.append(who);
-    // what this agent is for — its `hermes profile describe` text (§3.5)
-    if (a && a.description) host.append(el("div", "chat-landing-desc", a.description));
+    if (a && a.backend === "portal") host.append(el("div", "chat-landing-hint", a.label + " · " + (a.domain === "ooda" ? "OODA portal chat" : "AION team portal chat")));
     if (a && !a.enabled) {
       host.append(emptyRow(a.backend === "portal"
         ? (a.label + "'s harness is not configured on this box — orders can't spool here.")
@@ -1585,7 +1562,6 @@ async function renderChatLanding() {
       host.append(el("div", "chat-landing-hint", "shared with the portal · one order at a time · @" + a.name + "::brief tags an intent"));
       if (a.busy) host.append(el("div", "chat-thinking", "✦ " + a.label + " is running — a send now is refused until it finishes"));
     }
-    host.append(el("div", "chat-landing-hint", "Send your first message to start."));
     focusChatInput();
     return;
   }
@@ -4210,32 +4186,14 @@ async function chatTermSend(text,context={}) {
 
 // ---- landing: a new local herdr session, in the folder typed here ----
 function renderChatTermLanding(host) {
-  const kind = chatAgent;
   chatTermSurface(true); // the composer is the prompt of the session to come
-  const who = el("div", "chat-spirit-pick");
-  who.append(el("span", "pill light on", chatTermKinds[kind]));
-
-  host.append(who);
   if (!chatTermEnabled) {
     host.append(emptyRow("The terminal is not enabled on this server — sessions can't start here."));
     return;
   }
-  const cwd = document.createElement("input");
-  cwd.className = "chat-landing-cwd";
-  cwd.placeholder = "Home folder";
-  cwd.setAttribute("aria-label", "Working folder");
-  cwd.setAttribute("list", "chatRecentFolders");
-  cwd.spellcheck = false;
-  cwd.value = chatRecall("manifest.chatTermCwd." + kind);
-  cwd.oninput = () => { try { localStorage.setItem("manifest.chatTermCwd." + kind, cwd.value.trim()); } catch (e) {} };
-  cwd.onkeydown = (e) => { if (e.key === "Enter") { e.preventDefault(); focusChatInput(); } };
-  const model=document.createElement('select');model.className='chat-landing-cwd';model.setAttribute('aria-label','Model');model.onchange=()=>{try{localStorage.setItem('manifest.chatTermModel.'+kind,model.value);}catch(e){}};
-  const modelField=el('label','chat-new-folder','Model');modelField.append(model);host.append(modelField);
-  if(typeof chatPopulateModelSelect==='function')chatPopulateModelSelect(model,kind,chatRecall('manifest.chatTermModel.'+kind));
-  const field=el('label','chat-new-folder','Working folder');field.append(cwd);host.append(field);
-  const recent=document.createElement('datalist');recent.id='chatRecentFolders';
-  [...new Set(chatTermSessions.filter(s=>!s.device&&s.cwd).map(s=>s.cwd))].slice(0,30).forEach(path=>{const option=document.createElement('option');option.value=path;recent.append(option);});host.append(recent);
-  host.append(el("div", "chat-landing-hint", "Send your first message to start in this folder."));
+  // model · effort · permissions and the folder are chips in the composer
+  // (49-chat-models.js, 49-chat-newchat.js); the first message launches
+  // the session there
   focusChatInput();
 }
 

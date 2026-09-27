@@ -704,6 +704,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/terminal/models", s.handleChatCodingModels)
 	mux.HandleFunc("GET /api/chat/models", s.handleChatModels)
 	mux.HandleFunc("GET /api/terminal/sessions", s.handleTermSessions)
+	mux.HandleFunc("GET /api/terminal/folders", s.handleTermFolders) // new-chat folder chip (2026-09-27)
 	mux.HandleFunc("GET /api/terminal/session/{id}/delivery", s.handleTermDelivery)
 	mux.HandleFunc("GET /api/terminal/session/{id}/skills", s.handleTermSkills)
 	mux.HandleFunc("GET /api/terminal/events", s.handleTermEvents)

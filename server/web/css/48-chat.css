@@ -223,7 +223,6 @@ button.chat-attach-chip { min-height: 44px; max-width: 100%; background: transpa
 .chat-rail-task-text { font-size: var(--fs-sm); color: var(--base-70); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .chat-rail-task-meta { font-family: var(--mono); font-size: var(--fs-2xs); color: var(--base-40); }
 .chat-rail-tasks .sprt-quiet { margin: var(--sp-2) 0 0 var(--sp-6); }
-.chat-landing-desc { font-size: var(--fs-sm); color: var(--base-40); max-width: 52ch; line-height: 1.45; }
 
 /* CLAUDE CODE · CODEX sections (agent-chat plan §3, Stage S): the rows are the
    shared rail rows (⟳ resumable, ✦ live — accent only for live); "history"
@@ -687,13 +686,6 @@ button.chat-attach-chip { min-height: 44px; max-width: 100%; background: transpa
 .chat-project-more { padding: 8px 10px; color: var(--base-50); font: 13px var(--sans); min-height: 40px; }
 .chat-project-chats .chat-row-group { display: none; }
 
-.chat-new-dialog { width:min(400px,calc(100vw - 24px)); box-sizing:border-box; padding:20px; border-radius:14px; }
-.chat-new-dialog .review-dialog-body { display:flex; flex-direction:column; gap:8px; }
-.chat-new-choice { width:100%; display:flex; align-items:center; justify-content:space-between; gap:12px; padding:14px 16px; min-height:48px; border:0; border-radius:8px; background:color-mix(in srgb,var(--base-100) 5%,transparent); color:var(--base-100); text-align:left; font:15px var(--sans); cursor:pointer; }
-.chat-new-choice:hover { background:color-mix(in srgb,var(--base-100) 10%,transparent); }
-.chat-new-model { flex:1 1 0; min-width:0; text-align:right; color:var(--base-50); font-size:12px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-.chat-new-folder { display:flex; flex-direction:column; gap:8px; width:min(440px,100%); text-align:left; color:var(--base-60); font:13px var(--sans); }
-.chat-new-folder .chat-landing-cwd { box-sizing:border-box; width:100%; text-align:left; }
 
 .chat-delivery-summary { cursor:pointer; color:var(--base-70); font:13px/1.5 var(--sans); padding:6px 0; }
 
@@ -721,7 +713,6 @@ button.chat-attach-chip { min-height: 44px; max-width: 100%; background: transpa
 .chat-agent-dialog label { display:flex; flex-direction:column; gap:6px; margin:0 0 12px; font:13px/1.4 var(--sans); color:var(--base-70); }
 
 .chat-project-dialog { width:min(400px,calc(100vw - 32px)); }
-.chat-new-dialog .chat-new-project { display:grid; gap:6px; margin-bottom:12px; font:13px/1.4 var(--sans); color:var(--base-70); }
 .chat-side-setup > p { margin:0 0 20px; color:var(--base-60); }
 .chat-side-options { margin:16px 0; }
 .chat-side-options > summary { cursor:pointer; color:var(--base-60); }
@@ -732,7 +723,6 @@ button.chat-attach-chip { min-height: 44px; max-width: 100%; background: transpa
 
 .chat-project-context { display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:2; overflow:hidden; color:var(--base-60); }
 
-.chat-new-choice > span:first-child { flex:0 0 auto; white-space:nowrap; }
 .chat-workstream-dialog .sprt-quiet { border-color:transparent; background:transparent; color:var(--base-70); }
 
 /* Authored project context uses the same compact inspector as output review. */
@@ -1055,3 +1045,47 @@ label.chat-artifact-handoff{display:flex;flex-direction:row;align-items:flex-sta
 #chatHeadActions.in-thread > :is(.sprt-ghost, .chat-sidebar-toggle):is(:hover, :focus-visible) { background: var(--hover); color: var(--base-100); }
 #chatHeadActions.in-thread > .chat-layout-select { border-color: transparent; color: var(--base-60); font: var(--fs-sm) var(--sans); }
 #chatHeadActions.in-thread > .chat-layout-select:hover { border-color: var(--line); }
+
+/* ---- new chat, composer-first (49-chat-newchat.js) ----
+   Agent, model · effort, project and folder are chips in the composer; a
+   chip opens a small menu anchored to it (a bottom sheet on phones); recent
+   chats and starters sit under the composer. */
+.chat-composer > .chat-landing-chip { order: 2; flex: 0 1 auto; min-width: 0; max-width: 28%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-height: var(--control-height); padding: var(--sp-2) var(--sp-4); border: 0; border-radius: var(--radius); background: transparent; font: var(--fs-md)/1.4 var(--sans); color: var(--base-70); cursor: pointer; }
+.chat-composer > .chat-landing-chip:is(:hover, :focus-visible, [aria-expanded="true"]) { background: var(--hover); color: var(--base-100); }
+.chat-composer > .chat-landing-chip-agent { color: var(--base-100); font-weight: 500; }
+.chat-chip-menu { position: absolute; left: 0; bottom: calc(100% + var(--sp-3)); z-index: 30; display: flex; flex-direction: column; gap: var(--sp-2); width: min(420px, 100%); max-height: min(60vh, 480px); padding: var(--sp-3); box-sizing: border-box; border: 1px solid var(--line); border-radius: var(--radius-lg); background: var(--bg); box-shadow: var(--shadow-2); }
+.chat-chip-list { flex: 1 1 auto; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 1px; }
+.chat-chip-group { padding: var(--sp-3) var(--sp-3) var(--sp-1); }
+.chat-chip-row { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; min-height: var(--control-height); padding: var(--sp-2) var(--sp-3); border: 0; border-radius: var(--radius); background: transparent; text-align: left; cursor: pointer; }
+.chat-chip-row:hover, .chat-chip-row:focus-visible { background: var(--hover); outline: none; }
+.chat-chip-row[aria-selected="true"] .chat-chip-row-label::after { content: " ✓"; color: var(--accent); }
+.chat-chip-row-label { font: 500 var(--fs-md)/1.3 var(--sans); color: var(--base-100); overflow-wrap: anywhere; }
+.chat-chip-row-sub { font: var(--fs-xs)/1.4 var(--sans); color: var(--base-60); overflow-wrap: anywhere; }
+.chat-chip-status { margin: 0; font: var(--fs-xs)/1.4 var(--sans); color: var(--danger); }
+.chat-chip-status:empty { display: none; }
+.chat-chip-foot { align-self: flex-start; }
+.chat-landing-below { display: flex; flex-direction: column; gap: var(--sp-6); width: 100%; box-sizing: border-box; margin: var(--sp-6) 0 0; padding: 0 var(--sp-4); }
+.chat-landing-starters { display: flex; flex-wrap: wrap; gap: var(--sp-3); }
+.chat-landing-starter { min-height: var(--control-height); padding: 0 var(--sp-5); border: 1px solid var(--line); border-radius: 999px; background: transparent; color: var(--base-70); font: var(--fs-sm) var(--sans); cursor: pointer; }
+.chat-landing-starter:hover, .chat-landing-starter:focus-visible { border-color: var(--base-40); color: var(--base-100); }
+.chat-landing-recent { display: flex; flex-direction: column; }
+.chat-landing-recent-row { display: flex; align-items: baseline; gap: var(--sp-5); min-height: var(--control-height); padding: var(--sp-2) var(--sp-3); border-radius: var(--radius); color: var(--base-80); text-decoration: none; }
+.chat-landing-recent-row:hover, .chat-landing-recent-row:focus-visible { background: var(--hover); color: var(--base-100); }
+.chat-landing-recent-title { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: var(--fs-md) var(--sans); }
+.chat-landing-recent-when { flex: none; font: var(--fs-xs) var(--sans); color: var(--base-50); }
+@media (max-width: 860px) {
+  .chat-main .chat-composer > .chat-landing-chip { order: 6; flex: 0 1 auto; max-width: 48%; min-height: var(--control-touch); font: var(--fs-sm)/1 var(--sans); }
+  /* among the landing chips the model chip takes its own width, not the row */
+  .chat-main .chat-composer:has(> .chat-landing-chip) > .chat-composer-model { flex: 0 1 auto; }
+  .chat-chip-menu { position: fixed; left: var(--sp-4); right: var(--sp-4); width: auto; bottom: calc(var(--sp-4) + env(safe-area-inset-bottom, 0px)); max-height: 70dvh; }
+  .chat-chip-row, .chat-landing-starter, .chat-landing-recent-row { min-height: var(--control-touch); }
+  .chat-landing-below { padding: 0 var(--sp-4); box-sizing: border-box; }
+}
+/* the landing reads as one group: greeting, composer, starters, centred;
+   its chips sit together at the left in one type, send at the right */
+@media (min-width: 861px) {
+  .chat-main.landing:has(.chat-landing-below) .chat-transcript { flex: 0 0 auto; }
+  .chat-main.landing:has(.chat-landing-below) { justify-content: center; }
+}
+.chat-composer:has(> .chat-landing-chip) > :is(.chat-composer-model, .chat-composer-permission) { margin-left: 0; font-family: var(--sans); }
+.chat-composer:has(> .chat-landing-chip) > .mic-btn { margin-left: auto; }

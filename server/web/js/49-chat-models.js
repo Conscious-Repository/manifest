@@ -315,8 +315,6 @@ async function chatApplyModelChoice(ctx, cat, before, chosen) {
       localStorage.setItem("manifest.chatTermEffort." + ctx.agent, chosen.effort);
       localStorage.setItem("manifest.chatTermPermission." + ctx.agent, chosen.permission);
     } catch (e) { throw Error("This browser cannot keep the choice. The session will launch with its defaults."); }
-    const select = document.querySelector('.chat-landing-cwd[aria-label="Model"]');
-    if (select && select.value !== chosen.model) { if (![...select.options].some(o => o.value === chosen.model)) { const o = el("option", "", chosen.model); o.value = chosen.model; select.append(o); } select.value = chosen.model; }
     chatModelChipsRefresh();
     return true;
   }
