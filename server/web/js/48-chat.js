@@ -2115,6 +2115,14 @@ function parseChatSteps(text) {
 // into a preview chip. Spirit turns never carry one.
 const chatFileTokenRe = /^\[file:: ([0-9a-f]{64}) (.+?)\]$/;
 
+// Owner decision D2 (2026-09-27): no adapter or model declares image input
+// (capabilities.imageInput is "unknown" everywhere), so an image attachment
+// says its vision support is unknown instead of implying the agent sees it.
+// A missing field reads as unknown too; the model is told the same.
+function chatImageSupportUnknown() {
+  const caps=typeof chatIsTerm==='function'&&chatIsTerm()?chatTermOpen?.capabilities:chatCurSession?.capabilities;
+  return !caps||!caps.imageInput||caps.imageInput==='unknown';
+}
 function chatAttachmentCard(f) {
   const card=el('span','chat-attachment-card');
   const href=f.owned?'/api/chat/files/'+f.id:chatFileHref(f.hash);
@@ -2125,6 +2133,11 @@ function chatAttachmentCard(f) {
   else open.append(el('span','chat-attachment-kind',f.name.split('.').pop().slice(0,5).toUpperCase()));
   open.append(el('span','chat-attachment-name',f.name));
   if(f.size)open.append(el('span','chat-attachment-size',f.size<1048576?Math.ceil(f.size/1024)+' KB':(f.size/1048576).toFixed(1)+' MB'));
+  if(((f.type||'').startsWith('image/')||/\.(png|jpe?g|webp|gif|bmp|heic)$/i.test(f.name))&&chatImageSupportUnknown()){
+   const vision=el('span','chat-attachment-vision','vision support unknown');
+   vision.title='No model here declares image input, so Manifest cannot confirm this image is seen. The agent is told the same and asked to say if it cannot open it.';
+   open.append(vision);open.setAttribute('aria-label','Open '+f.name+' (vision support unknown)');
+  }
   open.onclick=()=>chatOpenAttachment(f,href);card.append(open);
   return card;
 }

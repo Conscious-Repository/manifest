@@ -17,7 +17,7 @@ let fetches=[];
 const ctx=vm.createContext({
  el:(tag,cls,text)=>{const e=node(tag);e.className=cls||'';if(text!==undefined)e._text=text;return e;},
  document:{createElement:tag=>node(tag)},chatFileHref:h=>'/attach/'+h,chatOpenAttachment(){},chatQuestionReplyDisplay:t=>t,
- chatTermPromptGlyph:'❯',fmtWhen:()=>'12:30 PM',
+ chatTermPromptGlyph:'❯',fmtWhen:()=>'12:30 PM',chatCurSession:null,
  fetch:async url=>{fetches.push(url);return {ok:true,status:200,json:async()=>({id:'e81896adb9df2b7d33f54b26d2364b33',name:'IMG_4505.png',size:239705,type:'image/png'})};},
 });
 vm.runInContext(slice('const chatFileTokenRe','\n// chatHead — the thread head'),ctx);
@@ -47,6 +47,15 @@ const sent='[Image #5]Small bug here where a message looks double sent\n[context
  assert.equal(card.children[0].children[0].tag,'img','an image file shows a thumbnail');
  assert.equal(card.children[0].children[0].loading,'lazy');assert.equal(card.children[0].children[0].decoding,'async');
  assert.equal(card.find('chat-attachment-size')[0].textContent,'235 KB');
+ // owner decision D2: no model declares image input, so an image card says its
+ // vision support is unknown — with no capabilities reported, and with the
+ // adapter's explicit "unknown" — and a non-image card says nothing of vision
+ assert.equal(card.find('chat-attachment-vision')[0].textContent,'vision support unknown','an image with no reported capability is labelled unknown');
+ assert.equal(card.children[0].attrs['aria-label'],'Open IMG_4505.png (vision support unknown)','the label is in the accessible name');
+ ctx.chatCurSession={capabilities:{adapter:'hermes-oneshot',imageInput:'unknown'}};
+ assert.equal(ctx.chatAttachmentCard({hash:'b'.repeat(64),name:'shot.jpg'}).find('chat-attachment-vision').length,1,'imageInput unknown renders as unknown');
+ assert.equal(ctx.chatAttachmentCard({hash:'c'.repeat(64),name:'notes.pdf',type:'application/pdf'}).find('chat-attachment-vision').length,0,'a PDF is not labelled');
+ ctx.chatCurSession=null;
  // the agent-chat turn does the same
  const turn=ctx.chatUserTurn(sent);await new Promise(r=>setTimeout(r,0));
  assert.equal(turn._text,'Small bug here where a message looks double sent');

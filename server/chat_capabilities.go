@@ -22,6 +22,9 @@ package server
 //	AnswerQuestions unsupported | async-codex | terminal-only
 //	Supervision     delivery-receipt | input-receipt+observation | observation-only | turn-marker
 //	SkillInventory  on-disk | not-reported          (on-disk = skill folders readable now via …/skills; never what a turn loaded)
+//	ImageInput      unknown                         (owner decision D2, 2026-09-27: no adapter or model declares
+//	                image input, and Manifest keeps no per-model vision table it cannot verify. An image is
+//	                delivered as a path labelled "vision support unknown", to the owner and to the model.)
 type chatCapabilities struct {
 	Adapter             string `json:"adapter"`
 	Queue               string `json:"queue"`
@@ -36,6 +39,7 @@ type chatCapabilities struct {
 	AnswerQuestions     string `json:"answerQuestions"`
 	Supervision         string `json:"supervision"`
 	SkillInventory      string `json:"skillInventory"`
+	ImageInput          string `json:"imageInput"`
 }
 
 const (
@@ -48,6 +52,9 @@ const (
 	// adapterHermesTaskThread is a task thread's Ask/Do turn: one `hermes -z`
 	// run per accepted turn, tracked by private turn-open/turn-closed markers.
 	adapterHermesTaskThread = "hermes-task-thread"
+
+	// imageInputUnknown: see ImageInput above. Every adapter reports it.
+	imageInputUnknown = "unknown"
 )
 
 // taskThreadCapabilities: nothing queues, nothing can be stopped or steered
@@ -57,7 +64,7 @@ func taskThreadCapabilities() chatCapabilities {
 	return chatCapabilities{
 		Adapter: adapterHermesTaskThread, Queue: "none", Interrupt: "unsupported", Stop: "unsupported", Steer: "unsupported",
 		Retry: "restart-redispatch", Resume: "fresh-session-per-turn", AnswerQuestions: "unsupported",
-		Supervision: "turn-marker", SkillInventory: "not-reported",
+		Supervision: "turn-marker", SkillInventory: "not-reported", ImageInput: imageInputUnknown,
 	}
 }
 
@@ -71,7 +78,7 @@ func nativeChatCapabilities() chatCapabilities {
 		Adapter: adapterHermesOneshot, Queue: "durable", CancelQueued: true,
 		Interrupt: "request-and-cancel-queued", Stop: "request", Steer: "unsupported",
 		Retry: "explicit-resubmit", Resume: "fresh-session-per-turn",
-		AnswerQuestions: "unsupported", Supervision: "delivery-receipt", SkillInventory: "on-disk",
+		AnswerQuestions: "unsupported", Supervision: "delivery-receipt", SkillInventory: "on-disk", ImageInput: imageInputUnknown,
 	}
 }
 
@@ -85,15 +92,15 @@ func terminalChatCapabilities(se termSession) chatCapabilities {
 	if se.Device != "" {
 		// Input is metis-local only; a kept remote session can be watched, not driven.
 		return chatCapabilities{Adapter: adapterRemoteKeep, Queue: "none", Interrupt: "unsupported", Stop: "unsupported", Steer: "unsupported",
-			Retry: "explicit-resubmit", Resume: "unsupported", AnswerQuestions: "unsupported", Supervision: "observation-only", SkillInventory: "not-reported"}
+			Retry: "explicit-resubmit", Resume: "unsupported", AnswerQuestions: "unsupported", Supervision: "observation-only", SkillInventory: "not-reported", ImageInput: imageInputUnknown}
 	}
 	if se.backend() != "herdr" {
 		return chatCapabilities{Adapter: adapterTmuxLegacy, Queue: "none", Interrupt: "unsupported", Stop: "process-kill", Steer: "unsupported",
-			Retry: "explicit-resubmit", Resume: "tmux-relaunch", AnswerQuestions: "terminal-only", Supervision: "observation-only", SkillInventory: "not-reported"}
+			Retry: "explicit-resubmit", Resume: "tmux-relaunch", AnswerQuestions: "terminal-only", Supervision: "observation-only", SkillInventory: "not-reported", ImageInput: imageInputUnknown}
 	}
 	// A shell has no provider session to resume; only the agents below do.
 	caps := chatCapabilities{Adapter: adapterHerdrOther, Queue: "none", Interrupt: "unsupported", Stop: "process-kill", Steer: "unsupported",
-		Retry: "explicit-resubmit", Resume: "unsupported", AnswerQuestions: "unsupported", Supervision: "input-receipt+observation", SkillInventory: "not-reported"}
+		Retry: "explicit-resubmit", Resume: "unsupported", AnswerQuestions: "unsupported", Supervision: "input-receipt+observation", SkillInventory: "not-reported", ImageInput: imageInputUnknown}
 	switch se.Kind {
 	case "codex":
 		caps.Resume = "exact-resume-id"

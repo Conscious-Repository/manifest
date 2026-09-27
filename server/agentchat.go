@@ -905,7 +905,7 @@ func (s *Server) composeAgentChatPromptWindow(agent string, sess agentchat.Sessi
 
 // agentChatAttachments renders the [file::] tokens on a user turn into the
 // prompt block the do-bot can consume — the hermes_delegate.go idiom: text
-// inlined, images handed their on-disk path for the vision toolset.
+// inlined, images handed their on-disk path with vision support unknown.
 func (s *Server) agentChatAttachments(t agentchat.Turn) string {
 	if t.Who != "user" {
 		return ""
@@ -914,7 +914,11 @@ func (s *Server) agentChatAttachments(t agentchat.Turn) string {
 	for _, m := range ownedFileToken.FindAllStringSubmatch(t.Text, -1) {
 		f, e := s.ownedFile(m[1])
 		if e == nil && !s.chatOwnerDeleted(f.Owner) {
-			fmt.Fprintf(&b, "\nAttached reference file (inspect with file/PDF/vision tools): %s\n", s.ownedFilePath(f))
+			note := "inspect with file/PDF tools"
+			if strings.HasPrefix(f.Type, "image/") || isImageExt(f.Name) {
+				note = imageInputNote
+			}
+			fmt.Fprintf(&b, "\nAttached reference file (%s): %s\n", note, s.ownedFilePath(f))
 		}
 	}
 	if s.threads == nil || s.threads.private == nil {
@@ -934,7 +938,7 @@ func (s *Server) agentChatAttachments(t agentchat.Turn) string {
 		if body, ok := readTextAttachment(path, f); ok {
 			fmt.Fprintf(&b, "\n--- %s (attached file) ---\n%s\n--- end %s ---\n", name, body, name)
 		} else if isImageExt(name) {
-			fmt.Fprintf(&b, "\n- %s (image — view it with your vision tool) is at: %s\n", name, path)
+			fmt.Fprintf(&b, "\n- %s (%s) is at: %s\n", name, imageInputNote, path)
 		} else {
 			fmt.Fprintf(&b, "\n- %s is at: %s\n", name, path)
 		}

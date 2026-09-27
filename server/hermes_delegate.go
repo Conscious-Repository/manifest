@@ -486,8 +486,9 @@ const hermesInlineMax = 128 << 10
 // hermesAttachments renders the owner's thread attachments into a prompt block
 // the do-bot can consume — so "i attached a ui file" actually reaches Hermes.
 // Text-decodable files are inlined verbatim; images (and other binaries) are
-// handed their on-disk blob path (which keeps its extension), and Hermes's
-// vision toolset — already in the read-only scope — reads local image paths.
+// handed their on-disk blob path (which keeps its extension). Whether the
+// model can view an image is not declared anywhere, so an image is labelled
+// vision support unknown (imageInputNote) rather than promised to a tool.
 // Only the OWNER's attachments (not agent posts) are surfaced, deduped by hash.
 func (s *Server) hermesAttachments(taskID string) string {
 	if s.threads == nil {
@@ -518,7 +519,7 @@ func (s *Server) hermesAttachments(taskID string) string {
 			if body, ok := readTextAttachment(path, f); ok {
 				fmt.Fprintf(&b, "\n--- %s (attached file) ---\n%s\n--- end %s ---\n", f.Name, body, f.Name)
 			} else if strings.HasPrefix(strings.ToLower(f.Mime), "image/") || isImageExt(f.Name) {
-				fmt.Fprintf(&b, "\n- %s (image — view it with your vision tool) is at: %s\n", f.Name, path)
+				fmt.Fprintf(&b, "\n- %s (%s) is at: %s\n", f.Name, imageInputNote, path)
 			} else {
 				fmt.Fprintf(&b, "\n- %s (%s) is at: %s\n", f.Name, orDash(f.Mime), path)
 			}
@@ -553,6 +554,12 @@ func isTextAttachment(f threads.FileRef) bool {
 	}
 	return false
 }
+
+// imageInputNote is how an image is handed to a model (owner decision D2,
+// 2026-09-27). No adapter or model declares image input, so Manifest cannot
+// prove an image is seen: it says so, and asks the model to say so too,
+// rather than promising a vision tool the model may not have.
+const imageInputNote = "image; vision support unknown: Manifest cannot confirm this model can view images. If you cannot open it, say so rather than describing it"
 
 func isImageExt(name string) bool {
 	switch strings.ToLower(filepath.Ext(name)) {
