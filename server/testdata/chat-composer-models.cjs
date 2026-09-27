@@ -107,6 +107,33 @@ const {makeStub}=require('./chat-stub-api.cjs');
    if(process.env.MANIFEST_FIXTURE_SHOTS)await page.screenshot({path:path.join(process.env.MANIFEST_FIXTURE_SHOTS,'model-picker-'+theme+'-'+width+'.png')});
    await page.keyboard.press('Escape');await picker.waitFor({state:'detached'});
   }
+  // 5. a coding agent's picker (Claude Code, new chat): at desktop width a
+  // panel of at most 560px inside the composer; aliases say what they last
+  // ran as, pinned ids sit beside them; Bypass takes an explicit second step
+  await page.evaluate(()=>document.documentElement.dataset.theme='default');
+  await page.setViewportSize({width:1440,height:900});await page.goto(base+'/#/chat/a/claude/new');
+  await page.locator('#chatComposer .chat-composer-model').waitFor();
+  await page.locator('#chatComposer .chat-composer-model').click();await picker.waitFor();
+  const geo=await page.evaluate(()=>{const b=document.querySelector('.chat-model-picker').getBoundingClientRect(),c=document.getElementById('chatComposer').getBoundingClientRect();return {w:b.width,inside:b.left>=c.left-1&&b.right<=c.right+1};});
+  assert.ok(geo.w<=561&&geo.inside,'the desktop picker is a panel of at most 560px inside the composer: '+JSON.stringify(geo));
+  assert.match(await picker.getByRole('option',{name:/^Fable/}).textContent(),/last ran as claude-fable-5-1/);
+  assert.equal(await picker.getByRole('option',{name:/claude-opus-5-5/}).count(),2,'the pinned id is offered beside the alias that last ran as it');
+  assert.equal(await picker.getByRole('radio',{name:'Allowed tools only'}).count(),1);
+  const applyBtn=picker.getByRole('button',{name:'Apply'});
+  await picker.getByRole('radio',{name:'Bypass'}).click();
+  const warn=picker.locator('.chat-model-confirm');await warn.waitFor();
+  assert.match(await warn.textContent(),/runs every tool and command without asking/);
+  assert.equal(await applyBtn.isDisabled(),true,'Bypass must wait for an explicit confirmation');
+  await picker.getByRole('searchbox').press('Enter');await page.waitForTimeout(200);
+  assert.equal(await picker.count(),1,'Enter must not apply Bypass unconfirmed');
+  await warn.locator('input').check();assert.equal(await applyBtn.isDisabled(),false);
+  await picker.getByRole('radio',{name:'Ask'}).click();assert.equal(await warn.isHidden(),true,'a safe choice needs no step');
+  await page.keyboard.press('Escape');await picker.waitFor({state:'detached'});
+  // the command form goes through the same step
+  await input.fill('/permissions bypassPermissions');await input.press('Enter');await picker.waitFor();
+  assert.equal(await picker.getByRole('radio',{name:'Bypass'}).getAttribute('aria-checked'),'true');
+  assert.equal(await applyBtn.isDisabled(),true,'/permissions bypass must not apply without the confirmation');
+  await page.keyboard.press('Escape');await picker.waitFor({state:'detached'});
   // the phone new-chat composer keeps a usable message field; chips wrap below it
   await page.evaluate(()=>document.documentElement.dataset.theme='default');
   await page.setViewportSize({width:390,height:844});await page.goto(base+'/#/chat/a/alfred/new');

@@ -952,6 +952,15 @@ label.chat-artifact-handoff{display:flex;flex-direction:row;align-items:flex-sta
 .chat-model-seg[aria-checked="true"] { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--base-100); }
 .chat-model-seg.is-danger { color: var(--warn); }
 .chat-model-seg:disabled { opacity: 0.45; cursor: default; }
+/* desktop: a panel anchored to its chip (left set by chatPlaceModelPicker),
+   not a sheet across the whole composer */
+@media (min-width: 861px) { .chat-model-picker { right: auto; width: min(560px, 100%); } }
+/* a permission that runs everything: the panel says so, and Apply waits */
+.chat-model-picker.is-danger { border-color: var(--warn); }
+.chat-model-confirm { display: flex; align-items: flex-start; gap: var(--sp-3); padding: var(--sp-3) var(--sp-4); border: 1px solid var(--warn); border-radius: var(--radius); background: color-mix(in srgb, var(--warn) 10%, transparent); font: var(--fs-sm)/1.45 var(--sans); color: var(--base-100); cursor: pointer; }
+.chat-model-confirm[hidden] { display: none; }
+.chat-model-confirm > input { flex: none; width: 18px; height: 18px; margin: 2px 0 0; accent-color: var(--warn); }
+.chat-model-actions > .chat-model-apply:disabled { opacity: 0.45; cursor: not-allowed; }
 .chat-model-actions { display: flex; justify-content: flex-end; gap: var(--sp-3); }
 .chat-model-actions button, .chat-model-native { min-height: var(--control-min); }
 @media (max-width: 860px) {

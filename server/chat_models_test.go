@@ -2,6 +2,7 @@ package server
 
 import (
 	"encoding/json"
+	"fmt"
 	"net"
 	"net/http/httptest"
 	"os"
@@ -304,5 +305,59 @@ func TestTimelineTurnCarriesNativeReplySpan(t *testing.T) {
 	}
 	if !found {
 		t.Fatal("the timeline dropped the native reply's end time")
+	}
+}
+
+// Each Claude alias says what it resolved to: the first model the most recent
+// session launched with it recorded. A later /model switch inside a session is
+// the owner's choice, not what the alias means. Full model ids are offered
+// beside the aliases, and permissions read in plain words.
+func TestClaudeAliasesSayWhatTheyLastRanAs(t *testing.T) {
+	s, _ := fakeTmuxServer(t)
+	cwd := "/home/benjamin/src/manifest"
+	projDir := filepath.Join(s.terminal.claudeProjects, claudeProjectDir(cwd))
+	if err := os.MkdirAll(projDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	reply := func(ts, model string) string {
+		return `{"type":"assistant","timestamp":"` + ts + `","message":{"role":"assistant","model":"` + model + `","stop_reason":"end_turn","content":[{"type":"text","text":"ok"}]}}` + "\n"
+	}
+	sessions := []struct{ id, model, body string }{
+		// older fable session
+		{"11111111-b5b5-464e-8a00-714a410c4422", "fable", reply("2026-09-20T10:00:00Z", "claude-fable-5-0")},
+		// newer fable session, switched to opus with /model afterwards
+		{"22222222-b5b5-464e-8a00-714a410c4422", "fable", reply("2026-09-26T10:00:00Z", "claude-fable-5-1") + reply("2026-09-26T11:00:00Z", "claude-opus-5")},
+		{"33333333-b5b5-464e-8a00-714a410c4422", "opus", reply("2026-09-25T10:00:00Z", "claude-opus-5-5")},
+		// launched on a pinned id: not an alias
+		{"44444444-b5b5-464e-8a00-714a410c4422", "claude-opus-5-5", reply("2026-09-27T10:00:00Z", "claude-opus-5-5")},
+	}
+	for i, x := range sessions {
+		if err := os.WriteFile(filepath.Join(projDir, x.id+".jsonl"), []byte(x.body), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		s.terminal.upsert(termSession{ID: fmt.Sprintf("abcdef012345678%d", i), Kind: "claude", Cwd: cwd, ResumeID: x.id, Started: true, Model: x.model})
+	}
+	w := httptest.NewRecorder()
+	s.handleChatModels(w, httptest.NewRequest("GET", "/api/chat/models", nil))
+	var out struct {
+		Agents map[string]chatAgentModels `json:"agents"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &out); err != nil {
+		t.Fatal(err)
+	}
+	ran, ids := map[string]string{}, map[string]bool{}
+	for _, m := range out.Agents["claude"].Models {
+		ran[m.ID], ids[m.ID] = m.LastRan, true
+	}
+	if ran["fable"] != "claude-fable-5-1" || ran["opus"] != "claude-opus-5-5" || ran["sonnet"] != "" {
+		t.Fatalf("last ran as: %+v", ran)
+	}
+	if !ids["claude-opus-5-5"] || !ids["claude-fable-5-1"] || !containsString(codingCatalogIDs("claude"), "claude-opus-5-5") {
+		t.Fatalf("full model ids missing: %+v", ids)
+	}
+	for _, p := range out.Agents["claude"].Permissions {
+		if strings.Contains(p.Label, "Pre-approved") {
+			t.Fatalf("permission label %q", p.Label)
+		}
 	}
 }

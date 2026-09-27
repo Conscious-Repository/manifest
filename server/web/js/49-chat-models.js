@@ -122,7 +122,7 @@ function chatCloseModelPicker() {
   chatModelPickerEl.remove(); chatModelPickerEl = null;
   (back && back.isConnected ? back : document.querySelector("#chatComposer textarea"))?.focus({preventScroll: true});
 }
-async function chatOpenModelPicker(focus = "model") {
+async function chatOpenModelPicker(focus = "model", preset = {}) {
   const ctx = chatModelContext();
   if (!ctx) { showToast("This message goes to another agent. Choose it above the conversation."); return; }
   chatCloseModelPicker();
@@ -134,13 +134,14 @@ async function chatOpenModelPicker(focus = "model") {
   const status = el("p", "chat-model-status"); status.setAttribute("role", "status");
   box.append(el("p", "chat-model-loading", "Loading models…"));
   composer.append(box);
+  chatPlaceModelPicker(box, composer, box._return);
   let catalog;
   try { catalog = await chatLoadModelCatalog(); } catch (e) { box.replaceChildren(el("p", "chat-model-status", "Model list unavailable. Try again, or type /model with a model name.")); return; }
   if (chatModelPickerEl !== box) return;
   const cat = catalog[ctx.agent];
   if (!cat) { box.replaceChildren(el("p", "chat-model-status", "No model list is available for this agent.")); return; }
   const st = chatModelState(ctx, cat);
-  let chosen = {model: st.model || "", provider: st.provider || "", effort: st.effort || "", permission: st.permission || ""};
+  let chosen = {model: st.model || "", provider: st.provider || "", effort: st.effort || "", permission: st.permission || "", ...preset};
   box.replaceChildren();
   // model list: search + provider groups
   const search = el("input", "chat-model-search"); search.type = "search"; search.placeholder = "Search models…"; search.setAttribute("aria-label", "Search models");
@@ -166,6 +167,7 @@ async function chatOpenModelPicker(focus = "model") {
       const name = el("span", "chat-model-name", m.label || m.id);
       const meta = [];
       if (m.id !== m.label && m.label) meta.push(m.id);
+      if (m.lastRan) meta.push("last ran as " + m.lastRan);
       if (m.context) meta.push(Math.round(m.context / 1000) + "k context");
       if (cat.backend !== "hermes" && m.description) meta.push(m.description);
       if (m.id === cat.default) meta.push("default");
@@ -207,7 +209,7 @@ async function chatOpenModelPicker(focus = "model") {
       if (codexLive) { const b = el("button", "sprt-quiet chat-model-native", "Open Codex /permissions"); b.type = "button"; b.onclick = () => chatModelNative("/permissions"); perms.append(b); }
       return;
     }
-    const def = el("button", "chat-model-seg", "default"); def.type = "button"; def.setAttribute("role", "radio"); def.setAttribute("aria-checked", String(!chosen.permission)); def.title = "The CLI's configured default";
+    const def = el("button", "chat-model-seg", "default"); def.type = "button"; def.setAttribute("role", "radio"); def.setAttribute("aria-checked", String(!chosen.permission)); const defPerm = (cat.permissions || []).find(p => p.id === cat.defaultPermission); def.title = defPerm ? "Default: " + defPerm.label + " — " + defPerm.description : "The CLI's configured default"; if (defPerm?.danger) def.classList.add("is-danger");
     def.onclick = () => { chosen.permission = ""; paintPerms(); paintStatus(); perms.querySelector('[aria-checked="true"]')?.focus(); };
     perms.append(def);
     for (const p of cat.permissions) {
@@ -216,6 +218,15 @@ async function chatOpenModelPicker(focus = "model") {
       perms.append(b);
     }
   };
+  // A permission that runs everything without asking takes a second, explicit
+  // step: the warning names what it allows, and Apply waits for the owner to
+  // confirm it (Enter included). Keeping the current setting needs no step.
+  const confirm = el("label", "chat-model-confirm"); confirm.hidden = true;
+  const confirmBox = document.createElement("input"); confirmBox.type = "checkbox";
+  const confirmText = el("span", "");
+  confirm.append(confirmBox, confirmText);
+  confirmBox.onchange = () => paintStatus();
+  const needsConfirm = () => { const p = (cat.permissions || []).find(p => p.id === chosen.permission); return !!(p?.danger && permEditable && chosen.permission !== (st.permission || cat.defaultPermission || "")) && p; };
   const paintStatus = () => {
     const words = {
       hermes: "Applies to your next message in this chat.",
@@ -223,21 +234,27 @@ async function chatOpenModelPicker(focus = "model") {
       draft: "Applies when your first message launches this session.",
       live: claudeLive ? "Sends Claude Code's own /model and /effort. The chip confirms once Claude records the change." : "Codex switches model and effort in its own picker, shown below the conversation.",
     };
-    const p = (cat.permissions || []).find(p => p.id === chosen.permission);
-    status.textContent = words[ctx.kind] + (p?.danger && permEditable ? " " + p.label + " runs everything without asking." : "");
+    status.textContent = words[ctx.kind];
+    const danger = needsConfirm();
+    if (!danger) confirmBox.checked = false;
+    confirm.hidden = !danger;
+    box.classList.toggle("is-danger", !!danger);
+    if (danger) confirmText.textContent = "Allow " + danger.label + ": this session runs every tool and command without asking, including editing, deleting and pushing.";
+    apply.disabled = !!danger && !confirmBox.checked;
   };
   const actions = el("div", "chat-model-actions");
   const cancel = el("button", "sprt-quiet", "Cancel"); cancel.type = "button"; cancel.onclick = chatCloseModelPicker;
   const apply = el("button", "sprt-quiet chat-dialog-primary chat-model-apply", codexLive ? "Open Codex /model" : "Apply"); apply.type = "button";
   apply.onclick = async () => {
+    if (needsConfirm() && !confirmBox.checked) { confirmBox.focus(); return; }
     apply.disabled = true;
     try { if (await chatApplyModelChoice(ctx, cat, st, chosen)) chatCloseModelPicker(); }
     catch (e) { status.textContent = e.message || "Not applied."; }
-    finally { if (apply.isConnected) apply.disabled = false; }
+    finally { if (apply.isConnected) paintStatus(); }
   };
   actions.append(cancel, apply);
   const hint = el("p", "chat-model-hint", "↑↓ model · ←→ effort · Enter apply · Esc close");
-  box.append(search, list, efforts, perms, status, actions, hint);
+  box.append(search, list, efforts, perms, status, confirm, actions, hint);
   search.addEventListener("input", paintList);
   box.addEventListener("keydown", e => {
     if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); chatCloseModelPicker(); return; }
@@ -259,7 +276,19 @@ async function chatOpenModelPicker(focus = "model") {
   const outside = e => { if (chatModelPickerEl !== box) { document.removeEventListener("pointerdown", outside, true); return; } if (!box.contains(e.target) && !e.target.closest?.(".chat-composer-model,.chat-composer-permission")) chatCloseModelPicker(); };
   document.addEventListener("pointerdown", outside, true);
   paintList(); paintEfforts(); paintPerms(); paintStatus();
+  chatPlaceModelPicker(box, composer, box._return);
   (focus === "permission" && permEditable ? perms.querySelector('[aria-checked="true"]') : search).focus({preventScroll: true});
+}
+
+// chatPlaceModelPicker — at desktop width the picker is a panel of at most
+// 560px anchored to the chip that opened it, kept inside the composer; on a
+// phone it is a bottom sheet (48-chat.css).
+function chatPlaceModelPicker(box, composer, from) {
+  if (window.matchMedia("(max-width: 860px)").matches) { box.style.left = ""; return; }
+  const chip = from?.closest?.(".chat-composer-model,.chat-composer-permission") || composer.querySelector(".chat-composer-model");
+  const c = composer.getBoundingClientRect(), w = Math.min(560, c.width);
+  const at = chip ? chip.getBoundingClientRect().left - c.left : 0;
+  box.style.left = Math.max(0, Math.min(at, c.width - w)) + "px";
 }
 
 async function chatModelNative(command) {
@@ -349,6 +378,7 @@ async function chatSurfaceCommand(text, clear) {
     const p = (cat.permissions || []).find(x => x.id.toLowerCase() === a || x.label.toLowerCase() === a);
     if (!p && a !== "default") { showToast(cat.permissions?.length ? "Permission must be one of: " + ["default", ...cat.permissions.map(x => x.id)].join(", ") + "." : "This agent has no permission setting."); return true; }
     chosen.permission = p ? p.id : "";
+    if (p?.danger && ctx.kind !== "live" && p.id !== (st.permission || cat.defaultPermission || "")) { clear(); chatOpenModelPicker("permission", {permission: p.id}); return true; }
   }
   try { await chatApplyModelChoice(ctx, cat, st, chosen); clear(); showToast(verb === "model" ? "Model: " + chatModelLabel(cat, chosen.model) : verb === "effort" ? "Effort: " + (chosen.effort || "default") : "Permissions: " + chatPermissionLabel(cat, chosen.permission)); }
   catch (e) { showToast(e.message || "Not applied."); }

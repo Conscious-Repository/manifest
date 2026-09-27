@@ -31,6 +31,9 @@ type chatModelOption struct {
 	Context       int               `json:"context,omitempty"`
 	Efforts       []chatModelEffort `json:"efforts,omitempty"`
 	DefaultEffort string            `json:"defaultEffort,omitempty"`
+	// LastRan is the model this alias resolved to the last time one of the
+	// owner's sessions ran with it, as the CLI recorded it ("" = never seen).
+	LastRan string `json:"lastRan,omitempty"`
 }
 
 type chatPermissionOption struct {
@@ -68,6 +71,9 @@ var claudeModelAliases = []chatModelOption{
 	{ID: "sonnet", Label: "Sonnet", Description: "Fast, capable everyday coding"},
 	{ID: "haiku", Label: "Haiku", Description: "Fastest and cheapest"},
 	{ID: "opusplan", Label: "Opus plan", Description: "Opus while planning, Sonnet while executing"},
+	// full model ids pin a version where an alias follows the family's latest
+	{ID: "claude-fable-5-1", Label: "claude-fable-5-1", Description: "Pinned model id"},
+	{ID: "claude-opus-5-5", Label: "claude-opus-5-5", Description: "Pinned model id"},
 }
 
 // Claude Code --permission-mode choices (claude --help, 2.1.283).
@@ -76,7 +82,7 @@ var claudePermissions = []chatPermissionOption{
 	{"acceptEdits", "Accept edits", "Edits files without asking; asks before other commands", false},
 	{"plan", "Plan", "Read-only exploration; proposes a plan before changing anything", false},
 	{"auto", "Auto", "Runs actions a second model judges safe; asks otherwise", false},
-	{"dontAsk", "Pre-approved only", "Runs only pre-approved tools; denies everything else", false},
+	{"dontAsk", "Allowed tools only", "Runs only the tools your Claude settings allow; refuses everything else", false},
 	{"bypassPermissions", "Bypass", "Runs everything without asking", true},
 }
 
@@ -378,7 +384,12 @@ func (s *Server) handleChatModels(w http.ResponseWriter, r *http.Request) {
 	agents := map[string]chatAgentModels{}
 	if s.terminal != nil {
 		agents["codex"] = codexCatalog(codexCacheFile.read(filepath.Join(codexHome(), "models_cache.json")))
-		agents["claude"] = claudeCatalog()
+		claude := claudeCatalog()
+		ran := s.claudeLastRan()
+		for i := range claude.Models {
+			claude.Models[i].LastRan = ran[claude.Models[i].ID]
+		}
+		agents["claude"] = claude
 	}
 	if s.agentChat != nil {
 		for _, a := range s.agentChatRoster(r.Context()) {
@@ -386,4 +397,27 @@ func (s *Server) handleChatModels(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	writeJSON(w, map[string]any{"agents": agents})
+}
+
+// claudeLastRan maps each alias to the model it resolved to in the most
+// recent session launched with it: that session's first recorded model (a
+// later /model switch is the owner's choice, not what the alias means). From
+// the transcripts' own records, never assumed; reads the cached projections.
+func (s *Server) claudeLastRan() map[string]string {
+	out, at := map[string]string{}, map[string]string{}
+	for _, se := range s.terminal.load() {
+		if se.Kind != "claude" || se.Model == "" || strings.HasPrefix(se.Model, "claude-") {
+			continue
+		}
+		path := s.terminal.transcriptPath(se)
+		if path == "" {
+			continue
+		}
+		tr, ok := readTranscript(se.Kind, path, 0)
+		if !ok || tr.Settings == nil || tr.Settings.First == "" || tr.Settings.FirstAt < at[se.Model] {
+			continue
+		}
+		out[se.Model], at[se.Model] = tr.Settings.First, tr.Settings.FirstAt
+	}
+	return out
 }

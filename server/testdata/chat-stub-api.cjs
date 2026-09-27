@@ -16,6 +16,16 @@ const types={'.html':'text/html','.js':'text/javascript','.css':'text/css','.svg
 const caps={adapter:'hermes-oneshot',queue:'durable',cancelQueued:true,interrupt:'request-and-cancel-queued',stop:'request',steer:'unsupported',liveSteering:false,retry:'explicit-resubmit',resume:'fresh-session-per-turn',structuredQuestions:false,answerQuestions:'unsupported',supervision:'delivery-receipt',skillInventory:'on-disk'};
 const turn=(n,who,text)=>'## Turn '+n+' — '+who+' · 2026-09-25T10:'+String(n%60).padStart(2,'0')+':00Z\n\n'+text;
 const long=n=>Array.from({length:n},(_,i)=>turn(i+1,i%2?'alfred':'user',i%2?'Reply paragraph '+(i+1)+'.\nsecond line\n\nthird para. '+'Lorem ipsum dolor sit amet, consectetur adipiscing elit. '.repeat(6):'Question '+(i+1)+'?')).join('\n\n');
+// the coding agents as chat_models.go lists them (aliases with what they last
+// ran as, pinned ids, efforts, permission modes; Codex defaults to full access)
+const codingEfforts=['low','medium','high','xhigh','max'].map(id=>({id}));
+const codingCatalog={
+ claude:{backend:'terminal',efforts:codingEfforts,liveModel:'command',liveEffort:'command',livePermission:'launch',
+  models:[{id:'fable',label:'Fable',provider:'Anthropic',description:'Most capable Claude for complex, long-running work',lastRan:'claude-fable-5-1'},{id:'opus',label:'Opus',provider:'Anthropic',description:'Strong reasoning and coding',lastRan:'claude-opus-5-5'},{id:'sonnet',label:'Sonnet',provider:'Anthropic',description:'Fast, capable everyday coding'},{id:'claude-fable-5-1',label:'claude-fable-5-1',provider:'Anthropic',description:'Pinned model id'},{id:'claude-opus-5-5',label:'claude-opus-5-5',provider:'Anthropic',description:'Pinned model id'}],
+  permissions:[{id:'manual',label:'Ask',description:'Reads freely; asks before edits and commands'},{id:'acceptEdits',label:'Accept edits',description:'Edits files without asking; asks before other commands'},{id:'plan',label:'Plan',description:'Read-only exploration; proposes a plan before changing anything'},{id:'auto',label:'Auto',description:'Runs actions a second model judges safe; asks otherwise'},{id:'dontAsk',label:'Allowed tools only',description:'Runs only the tools your Claude settings allow; refuses everything else'},{id:'bypassPermissions',label:'Bypass',description:'Runs everything without asking',danger:true}]},
+ codex:{backend:'terminal',default:'gpt-5.6-luna',efforts:codingEfforts,defaultPermission:'full',liveModel:'native-picker',liveEffort:'native-picker',livePermission:'native-picker',
+  models:[{id:'gpt-5.6-luna',label:'gpt-5.6-luna',provider:'OpenAI',context:400000}],
+  permissions:[{id:'full',label:'Full access',description:'No sandbox and never asks',danger:true},{id:'auto',label:'Auto',description:'Workspace-write sandbox; asks before leaving it'},{id:'read-only',label:'Read only',description:'Reads only; asks before any change'}]}};
 function makeStub(){
  const sessions={a:{id:'a',title:'Long research thread',status:'idle',agent:'alfred',turns:40,updated:'2026-09-25T11:00:00Z',created:'2026-09-25T10:00:00Z',spentUsd:0,deliveries:[]},
   b:{id:'b',title:'Second thread',status:'idle',agent:'alfred',turns:2,updated:'2026-09-25T09:00:00Z',created:'2026-09-25T09:00:00Z',spentUsd:0,deliveries:[]}};
@@ -39,7 +49,8 @@ function makeStub(){
    if(p==='/api/agents/chat/roster')return json(res,200,roster);
    if(p==='/api/chat/models')return json(res,200,{agents:{alfred:{backend:'hermes',default:'claude-x',defaultProvider:'anthropic',liveModel:'recipient',liveEffort:'recipient',
      efforts:['none','minimal','low','medium','high','xhigh','max','ultra'].map(id=>({id})),
-     models:[{id:'claude-x',label:'claude-x',provider:'anthropic',description:'Anthropic'},{id:'gpt-5.6-luna',label:'gpt-5.6-luna',provider:'openai-codex',description:'OpenAI'},{id:'grok-4.6',label:'grok-4.6',provider:'xai-oauth',description:'xAI'},{id:'deepseek-v4.1-flash',label:'deepseek-v4.1-flash',provider:'lab-sparks',description:'Lab (192.168.87.11:8000/v1)'}]}}});
+     models:[{id:'claude-x',label:'claude-x',provider:'anthropic',description:'Anthropic'},{id:'gpt-5.6-luna',label:'gpt-5.6-luna',provider:'openai-codex',description:'OpenAI'},{id:'grok-4.6',label:'grok-4.6',provider:'xai-oauth',description:'xAI'},{id:'deepseek-v4.1-flash',label:'deepseek-v4.1-flash',provider:'lab-sparks',description:'Lab (192.168.87.11:8000/v1)'}]},
+    claude:codingCatalog.claude,codex:codingCatalog.codex}});
    if(p==='/api/agents/chat/alfred/sessions')return json(res,200,{sessions:Object.values(sessions)});
    const gm=p.match(/^\/api\/agents\/chat\/alfred\/sessions\/([^/]+)\/goal$/);
    if(gm&&!sessions[gm[1]])return json(res,404,{});

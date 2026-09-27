@@ -102,6 +102,10 @@ type termContext struct {
 }
 
 type termSettings struct {
+	// First is the first model this session recorded: what its launch alias
+	// resolved to, before any /model switch (chat_models.go claudeLastRan).
+	First      string `json:"first,omitempty"`
+	FirstAt    string `json:"firstAt,omitempty"`
 	Model      string `json:"model,omitempty"`
 	Effort     string `json:"effort,omitempty"`
 	Permission string `json:"permission,omitempty"`
@@ -117,6 +121,9 @@ func (b *transcriptBuilder) observe(ts, model, effort, permission string) {
 		b.out.Settings = &termSettings{}
 	}
 	st := b.out.Settings
+	if model != "" && st.First == "" {
+		st.First, st.FirstAt = model, ts
+	}
 	if model != "" {
 		st.Model = model
 	}
