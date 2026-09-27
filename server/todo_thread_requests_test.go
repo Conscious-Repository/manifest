@@ -153,6 +153,7 @@ func TestTaskThreadPostReconcilesUnclosedReceipt(t *testing.T) {
 //     open with no turn-dispatched after it) is re-dispatched, which is
 //     effect-free, as its own visible run and ledger entry, bounded by
 //     hermesTurnRetries (3 attempts; TestHermesTurnRetryCap).
+//
 // Changing either rule must change this test deliberately.
 func TestHermesTurnSweepRedispatchIsVisibleAndPinned(t *testing.T) {
 	if hermesTurnRetries != 3 {
