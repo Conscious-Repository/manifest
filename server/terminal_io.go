@@ -53,12 +53,37 @@ func (s *Server) handleTermTranscript(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	planningTimeline, _ := s.terminalPlanningTimeline(r.Context(), se)
+	// Shape the read (transcript_lite.go). A first read may carry only the
+	// latest turns; the timeline window is the size the client holds (tail),
+	// on every poll, and is omitted when unchanged since the client's hash.
+	shape := readTranscriptShape(r)
+	turns, older := tr.Turns, 0
+	if after == 0 && se.BoardBrief == "" {
+		turns, older = tailOf(turns, shape.tail)
+	}
+	timeline, olderTimeline := tailOf(planningTimeline, shape.tail)
+	if shape.lite {
+		turns = liteTurns(turns, se.ID)
+		timeline = liteTimeline(timeline, se.ID)
+	}
+	var timelineOut any = timeline
+	tlHash := ""
+	if timeline != nil {
+		tlHash = timelineHash(timeline)
+		if shape.tl != "" && shape.tl == tlHash {
+			timelineOut = nil
+		}
+	}
 	writeJSON(w, map[string]any{
+		"older":            older,
+		"olderTimeline":    olderTimeline,
+		"timelineHash":     tlHash,
+		"timelineSame":     timelineOut == nil && tlHash != "",
 		"questions":        s.terminalQuestionsObserved(se, full, ob),
 		"capabilities":     terminalChatCapabilities(se),
 		"supervision":      s.terminalChatSupervision(se, full, ob),
 		"historyAvailable": tr.Available,
-		"turns":            tr.Turns, "title": tr.Title, "cost": tr.Cost, "run": full.Run,
+		"turns":            turns, "title": tr.Title, "cost": tr.Cost, "run": full.Run,
 		// what the CLI recorded it is running with, and what it was launched with
 		"settings":           full.Settings,
 		"context":            full.Context,
@@ -67,7 +92,7 @@ func (s *Server) handleTermTranscript(w http.ResponseWriter, r *http.Request) {
 		"sharedConversation": s.terminalSharedConversation(se),
 		"origin":             se.Origin, "draft": se.isDraft(),
 		"related":            s.terminalRelatedChats(se),
-		"planningTimeline":   planningTimeline,
+		"planningTimeline":   timelineOut,
 		"planningRecipients": s.terminalPlanningChildren(se),
 		"codingRecipients":   s.terminalCodingContinuations(r.Context(), se),
 		"planningOperations": s.terminalPlanningOperations(se),

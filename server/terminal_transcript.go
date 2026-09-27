@@ -62,6 +62,10 @@ type termBlock struct {
 	Result string `json:"result,omitempty"`
 	Error  bool   `json:"error,omitempty"`
 	ID     string `json:"id,omitempty"`
+	// ResultBytes and SID mark a result left on the server by a lite read
+	// (transcript_lite.go): its size, and the session to fetch it from.
+	ResultBytes int    `json:"resultBytes,omitempty"`
+	SID         string `json:"sid,omitempty"`
 }
 
 // terminalRunEvidence is derived only from explicit provider lifecycle records.

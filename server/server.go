@@ -724,6 +724,8 @@ func (s *Server) Handler() http.Handler {
 	// agent-chat Stage S: read a claude/codex session (its own jsonl + the
 	// tmux screen tail) and write to it (send-keys; relaunch when history).
 	mux.HandleFunc("GET /api/terminal/session/{id}/transcript", s.handleTermTranscript)
+	mux.HandleFunc("GET /api/terminal/session/{id}/step", s.handleTermStepResult)
+	mux.HandleFunc("GET /api/terminal/session/{id}/turns", s.handleTermOlderTurns)
 	mux.HandleFunc("GET /api/terminal/session/{id}/screen", s.handleTermScreen)
 	mux.HandleFunc("GET /api/terminal/session/{id}/changes", s.handleTermChanges)
 	mux.HandleFunc("GET /api/terminal/session/{id}/changes/stat", s.handleTermChangesStat) // live +N −M chip (2026-09-27)

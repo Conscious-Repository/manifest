@@ -2419,13 +2419,15 @@ function chatBlockEl(b) {
   const ln = el("div", "run-trace-step chat-step");
   ln.append(el("span", "run-trace-cast", b.cast || "step"));
   ln.append(el("span", "run-trace-detail", b.input || ""));
-  if (!b.result) return ln;
+  if (!b.result && !b.resultBytes) return ln;
   const det = document.createElement("details");
   det.className = "chat-step-details";
   const sum = document.createElement("summary");
   sum.append(ln);
   if (b.error) ln.append(el("span", "chat-step-err", "· error"));
-  det.append(sum, el("pre", "chat-step-result" + (b.error ? " err" : ""), b.result));
+  const pre = el("pre", "chat-step-result" + (b.error ? " err" : ""), b.result || "");
+  if (!b.result && b.resultBytes && typeof chatLazyStepResult === "function") chatLazyStepResult(det, pre, b);
+  det.append(sum, pre);
   return det;
 }
 
@@ -3543,7 +3545,7 @@ async function loadChatTermSession(id) {
   const controller=new AbortController(),timeout=setTimeout(()=>controller.abort(),15000);
   let d;
   try {
-    const res = await fetch(base + "/transcript",{signal:controller.signal});
+    const res = await fetch(base + "/transcript?lite=1&tail=" + 40,{signal:controller.signal});
     if (!unchanged()) return;
     if (!res.ok) { failed();return; }
     d = await res.json();
@@ -3612,6 +3614,7 @@ function chatTermOpenFrom(id, se, d) {
     conversation:d.conversation,
     sharedConversation:d.sharedConversation,
     planningTimeline:d.planningTimeline,
+    timelineHash:d.timelineHash||"", older:d.older||0, olderTimeline:d.olderTimeline||0,
     planningRecipients:d.planningRecipients||[],
     planRevisions:d.planRevisions||{},
     questions:d.questions||[],
@@ -3622,6 +3625,73 @@ function chatTermOpenFrom(id, se, d) {
     id, se, turns: d.turns || [], offset: d.offset || 0, title: d.title || "", cost: d.cost || 0,
     live: se.backend === "herdr" ? !!chatTermApplyState(se).live : !!d.live, screen: [], screenSig: "",
   };
+}
+
+// Snappy transcripts (server transcript_lite.go): a first read carries the
+// latest turns; tool results load when a step is opened; earlier turns load
+// when the reader reaches the top.
+const chatTermTailSize = 40;
+const chatStepResults = new Map(); // sid/id -> result text
+function chatLazyStepResult(det, pre, b) {
+  const key = (b.sid || "") + "/" + b.id;
+  pre.textContent = chatStepResults.get(key) || "";
+  if (pre.textContent) { b.result = pre.textContent; return; }
+  pre.textContent = "Loading output…";
+  pre.classList.add("is-loading");
+  det.addEventListener("toggle", async () => {
+    if (!det.open || b.result || det.dataset.loading) return;
+    det.dataset.loading = "1";
+    try {
+      const r = await fetch(chatTermBase(b.sid || chatTermOpen?.id || "") + "/step?id=" + encodeURIComponent(b.id), {cache: "no-store"});
+      if (!r.ok) throw Error(r.status === 404 ? "No output was recorded for this step." : "Output could not load.");
+      const d = await r.json();
+      b.result = d.result || ""; chatStepResults.set(key, b.result);
+      if (chatStepResults.size > 400) chatStepResults.delete(chatStepResults.keys().next().value);
+      pre.textContent = b.result; pre.classList.remove("is-loading");
+    } catch (e) { pre.textContent = e.message || "Output could not load."; delete det.dataset.loading; }
+  });
+}
+// chatTermLoadOlder — prepend the turns (or timeline entries) before the first
+// one shown, keeping the reader's place on screen.
+let chatTermOlderBusy = false;
+async function chatTermLoadOlder() {
+  const o = chatTermOpen, host = document.getElementById("chatTranscript");
+  if (!o || !host || chatTermOlderBusy) return;
+  const timeline = !!o.planningTimeline;
+  const first = timeline ? o.planningTimeline[0] : o.turns.find(t => t.id && !t.pending);
+  if (!first || !(timeline ? o.olderTimeline : o.older)) return;
+  chatTermOlderBusy = true;
+  const button = document.querySelector(".chat-older");
+  if (button) { button.disabled = true; button.textContent = "Loading earlier…"; }
+  try {
+    const before = timeline ? String(first.n) : first.id;
+    const r = await fetch(chatTermBase(o.id) + "/turns?limit=" + chatTermTailSize + "&before=" + encodeURIComponent(before) + (timeline ? "&timeline=1" : ""), {cache: "no-store"});
+    if (!r.ok) throw Error();
+    const d = await r.json();
+    if (chatTermOpen !== o) return;
+    const height = host.scrollHeight, top = host.scrollTop;
+    if (timeline) { o.planningTimeline = [...(d.planningTimeline || []), ...o.planningTimeline]; o.olderTimeline = d.older || 0; }
+    else { o.turns = [...(d.turns || []), ...o.turns]; o.older = d.older || 0; }
+    chatStick = false;
+    chatTermPaintTurns();
+    host.scrollTop = top + (host.scrollHeight - height);
+  } catch (e) {
+    if (button) { button.disabled = false; button.textContent = "Earlier turns could not load · retry"; }
+  } finally { chatTermOlderBusy = false; }
+}
+function chatTermOlderControl(body) {
+  const o = chatTermOpen;
+  const count = o ? (o.planningTimeline ? o.olderTimeline : o.older) || 0 : 0;
+  let b = body.querySelector(":scope > .chat-older");
+  if (!count) { b?.remove(); return; }
+  if (!b) {
+    b = el("button", "chat-older"); b.type = "button";
+    b.onclick = () => chatTermLoadOlder();
+    body.prepend(b);
+    // reaching the top loads more, as a reader expects
+    if ("IntersectionObserver" in window) { const io = new IntersectionObserver(es => { if (es.some(e => e.isIntersecting)) chatTermLoadOlder(); }, {root: document.getElementById("chatTranscript"), rootMargin: "300px 0px 0px 0px"}); io.observe(b); b._io = io; }
+  }
+  if (!chatTermOlderBusy) { b.disabled = false; b.textContent = "Show " + count + " earlier " + (count === 1 ? "turn" : "turns"); }
 }
 
 // ---- prefetch on intent (2026-09-21): pointer-down on a rail row fetches
@@ -3637,7 +3707,7 @@ function chatPrefetchEntry(entry) {
   chatPrefetching.add(key);
   const done = () => chatPrefetching.delete(key);
   if (entry.terminal) {
-    fetch(chatTermBase(id) + "/transcript").then((r) => r.ok ? r.json() : null).then((d) => {
+    fetch(chatTermBase(id) + "/transcript?lite=1&tail=" + 40).then((r) => r.ok ? r.json() : null).then((d) => {
       const se = d && chatTermFind(id);
       if (!se || !current()) return;
       const row = chatTermApplyState({...se});
@@ -3856,6 +3926,7 @@ function chatTermPaintTurns() {
       ? "No Codex transcript turns are available yet; check the live screen or open Terminal"
       : (o.live ? "no turns in the session file yet" : "nothing in the session file — a send starts it")));
   }
+  if(typeof chatTermOlderControl==="function")chatTermOlderControl(body);
   if(host&&!chatStick)host.scrollTop=previousScroll;
   chatPin();
   if(typeof chatStatusPaint==="function")chatStatusPaint();
@@ -3974,13 +4045,13 @@ function chatTermBlockEl(b) {
     return det;
   }
   const ln = el("div", "chat-term-step" + (b.error ? " err" : ""));
-  const done=b.done||!!b.result;
+  const done=b.done||!!b.result||!!b.resultBytes;
   const glyph=b.error?'!':done?'✓':chatTermStepGlyph;
   ln.append(el("span", "chat-term-glyph", glyph));
   ln.setAttribute('aria-label',(b.error?'Failed':done?'Completed':'Started')+' · '+(b.cast||'step'));
   ln.append(el("span", "chat-term-cast", b.cast || "step"));
   ln.append(el("span", "chat-term-step-input", b.input || ""));
-  if (!b.result) return ln;
+  if (!b.result && !b.resultBytes) return ln;
   const det = document.createElement("details");
   det.className = "chat-term-step-details";
   const sum = document.createElement("summary");
@@ -3988,7 +4059,9 @@ function chatTermBlockEl(b) {
   ln.append(el("span", "chat-term-step-fold", b.error ? "· error" : "▸"));
   const res = el("div", "chat-term-result" + (b.error ? " err" : ""));
   res.append(el("span", "chat-term-glyph", chatTermResultGlyph));
-  res.append(el("pre", "chat-term-result-text", b.result));
+  const pre = el("pre", "chat-term-result-text", b.result || "");
+  res.append(pre);
+  if (!b.result && b.resultBytes && typeof chatLazyStepResult === "function") chatLazyStepResult(det, pre, b);
   det.append(sum, res);
   return det;
 }
@@ -4139,12 +4212,18 @@ async function chatTermTail(o) {
   const fullRead=o.historyAvailable===false;
   const controller=new AbortController(),timeout=setTimeout(()=>controller.abort(),15000);
   try {
-    const response=await fetch(chatTermBase(o.id) + "/transcript?after=" + (fullRead?0:o.offset),{signal:controller.signal});
+    // lite: step results stay on the server; the timeline window is what this
+    // client holds (+ room to grow) and is skipped when unchanged (tl)
+    const held=Math.max(40,(o.planningTimeline||[]).length+5);
+    const response=await fetch(chatTermBase(o.id) + "/transcript?lite=1&tail=" + (fullRead?40:held) + "&after=" + (fullRead?0:o.offset) + (o.timelineHash&&!fullRead?"&tl="+encodeURIComponent(o.timelineHash):""),{signal:controller.signal});
     if(!response.ok){chatTermReadHealth(o,true);return;}
     d=await response.json();
     if(!d||!Number.isSafeInteger(d.offset)||d.offset<0||(d.turns!=null&&!Array.isArray(d.turns))){chatTermReadHealth(o,true);return;}
   } catch (e) { chatTermReadHealth(o,true);return; } finally { clearTimeout(timeout); }
   if (chatTermOpen !== o) return;
+  if (d.timelineSame) d.planningTimeline = o.planningTimeline; // unchanged since o.timelineHash
+  o.timelineHash = d.timelineHash || ""; o.olderTimeline = d.olderTimeline || 0;
+  if (fullRead) o.older = d.older || 0;
   const missingHistory=d.historyAvailable===false&&!d.draft;
   if(missingHistory){d.offset=o.offset;d.run=d.run||o.se.run;d.questions=o.questions;d.title=d.title||o.title;d.cost=d.cost||o.cost;}
   const historyChanged=o.historyAvailable!==d.historyAvailable;
@@ -4219,7 +4298,7 @@ function chatTermPairResult(turns, b) {
   for (let ti = turns.length - 1; ti >= 0; ti--) {
     if (turns[ti].who !== "assistant") continue;
     const st = (turns[ti].blocks || []).find((x) => x.t === "step" && x.id === b.id && x.cast !== "result");
-    if (st) { st.result = b.result; st.error = !!b.error; st.done = true; return true; }
+    if (st) { st.result = b.result; st.resultBytes = b.resultBytes; st.sid = b.sid; st.error = !!b.error; st.done = true; return true; }
   }
   return false;
 }

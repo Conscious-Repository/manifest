@@ -443,7 +443,7 @@ function chatActivityRows(data){
   }
   for(const [j,b] of chatTurnBlocks(turn).entries()){
    const kind=b.error?'errors':b.t==='say'||b.t==='think'?'narration':'tools';
-   rows.push({id:id+':'+j,kind,title:b.error?'Failed · '+(b.cast||'tool'):b.t==='say'?'Agent':b.t==='think'?'Thinking':b.cast||'Tool',text:b.text||b.input||'',output:b.result||'',at});
+   rows.push({id:id+':'+j,kind,title:b.error?'Failed · '+(b.cast||'tool'):b.t==='say'?'Agent':b.t==='think'?'Thinking':b.cast||'Tool',text:b.text||b.input||'',output:b.result||'',ref:!b.result&&b.resultBytes?b:null,at});
   }
  }
  return rows;
@@ -471,7 +471,7 @@ function chatOpenActivity(){
     const item=el('details','chat-activity-event');item.dataset.eventId=row.id;item.open=expanded.has(row.id);if(row.kind==='errors')item.classList.add('has-error');
     const summary=el('summary',''),title=el('span','chat-activity-event-title',row.title),excerpt=el('span','chat-activity-excerpt',row.text.replace(/\s+/g,' ').slice(0,180));
     summary.append(title,excerpt);if(row.at)summary.append(el('time','chat-activity-time',typeof fmtWhen==='function'?fmtWhen(row.at):row.at));item.append(summary);
-    if(row.text)item.append(el('pre','chat-activity-text',row.text));if(row.output)item.append(el('pre','chat-activity-text',row.output));
+    if(row.text)item.append(el('pre','chat-activity-text',row.text));if(row.output)item.append(el('pre','chat-activity-text',row.output));else if(row.ref&&typeof chatLazyStepResult==='function'){const det=document.createElement('details'),sum=document.createElement('summary'),pre=el('pre','chat-activity-text');sum.textContent='Output';det.append(sum,pre);chatLazyStepResult(det,pre,row.ref);item.append(det);}
     item.addEventListener('toggle',()=>{if(!item.isConnected)return;if(item.open)expanded.add(row.id);else expanded.delete(row.id);});list.append(item);
    }
    if(!list.childElementCount)list.append(emptyRow(data?'No matching activity.':'Recorded activity is not available yet.'));
