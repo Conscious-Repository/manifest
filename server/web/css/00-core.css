@@ -19,8 +19,13 @@
   --base-20: #ececea;   /* selected row / active nav item */
   --base-25: #e5e5e5;   /* hairlines, borders */
   --base-30: #d4d4d4;   /* icons, empty checkboxes, disabled chevrons */
-  --base-40: #a3a3a3;   /* muted labels, meta */
-  --base-50: #737373;   /* secondary text */
+  /* base-40/50 are TEXT: each clears WCAG AA 4.5:1 on every surface above,
+     down to base-20 (40 → 5.41 on white, 4.57 on #ececea; 50 → 5.74, 4.85).
+     They were #a3a3a3 (2.13–2.52:1) and #737373 (4.01–4.74). 50 stays at or
+     below 40's lightness so the ramp keeps its order. Guarded by
+     TestWebTextTokensClearAA (web_contrast_test.go). */
+  --base-40: #6a6a6a;   /* muted labels, meta */
+  --base-50: #666666;   /* secondary text */
   --base-60: #525252;   /* body sub-text */
   --base-70: #404040;   /* nav item text */
   --base-80: #2b2b2b;   /* between base-70/base-100 — dense row text */
@@ -161,7 +166,9 @@
    data-theme="jarvis" (99-boot setTheme ← localStorage manifest.theme; the
    inline head script in index.html sets it before first paint). With no
    attribute the :root block above renders byte-for-byte as before.
-   Contrast on #03080D: text 18.5 · highlight 16.2 · base-70 12.8 · base-60 10.7
+   Contrast on #03080D (the terminal ground — muted text sits on the lighter
+   app surfaces: base-40 is 5.2 on #091B2A, 4.8 on the rail #0B2233, only
+   3.75 on the selected row #12364C): text 18.5 · highlight 16.2 · base-70 12.8 · base-60 10.7
    · base-50 7.8 · base-40 5.9 · cyan 11.7 · blue 5.9 · orange 8.5 · amber 12.5
    · red 5.9 · green 12.7 (all ≥ AA 4.5). Direction: cyan ≈80% of illuminated
    UI; orange/amber/red only for armed commands, warnings, critical. */
@@ -183,7 +190,7 @@
   --base-20: #12364C;   /* selected row / active nav item */
   --base-25: #17465E;   /* hairlines, borders — muted cyan-blue grid */
   --base-30: #2F6B88;   /* icons, empty checkboxes, disabled chevrons */
-  --base-40: #5E93A8;   /* muted labels, meta (5.9:1) */
+  --base-40: #5E93A8;   /* muted labels, meta (5.2:1 on base-00, 4.8 on base-10) */
   --base-50: #78A9BA;   /* secondary text — desaturated blue */
   --base-60: #9DC3D2;   /* body sub-text */
   --base-70: #A9D5E4;   /* nav item text */
