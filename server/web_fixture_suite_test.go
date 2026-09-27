@@ -325,3 +325,6 @@ func TestFixtureChatSteerQueue(t *testing.T) { runFixture(t, "chat-steer-queue.c
 func TestFixtureChatTilesAttention(t *testing.T) {
 	runFixture(t, "chat-tiles-attention.cjs", true, false)
 }
+
+// The live +N −M chip on a coding session's header (chat-changes-chip.cjs).
+func TestFixtureChatChangesChip(t *testing.T) { runFixture(t, "chat-changes-chip.cjs", true, false) }

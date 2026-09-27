@@ -4319,9 +4319,50 @@ function chatOpenAttachment(file,href){
   w.tab("attachment:"+href,file.name||"Attachment",(host,drop)=>attachmentWorkspace(host,file,href,drop),{kind:"attachment",file,href});
 }
 function chatChangesButton(runtime){
-  const button=el("button","sprt-quiet","Changes");button.title="Capture current Git changes in this runtime's working folder";
+  const button=el("button","sprt-quiet chat-changes-chip","Changes");button.title="Capture current Git changes in this runtime's working folder";
+  button.dataset.runtime=runtime.id;chatChangesPaint(button);chatChangesRefresh(runtime.id);chatChangesWatch();
   button.onclick=async()=>{const route=chatRouteVersion;button.disabled=true;try{const snapshot=await postJSONOk(chatTermBase(runtime.id)+"/changes/snapshot",{});if(route===chatRouteVersion)chatOpenWorkingArtifact({...snapshot,selectionKey:"chat:"+chatAgent+"/"+chatOpenId});}catch(e){showToast(e.message||"Could not capture working-folder changes.");}finally{button.disabled=false;}};
   return button;
+}
+// ---- the live +N −M chip (2026-09-27) ----
+// The working tree against HEAD in numbers (…/changes/stat), on the button
+// that opens the review. It says when it read them; it refreshes at most
+// every 15 s and only while its pane is shown; a failure reads as unknown,
+// never as "no changes". The review itself always reads the tree fresh.
+const chatChangesStats=new Map(); // runtime id -> {st, error, at}
+const chatChangesInflight=new Set();
+async function chatChangesRefresh(id,force){
+ const rec=chatChangesStats.get(id);
+ if(chatChangesInflight.has(id)||(!force&&rec&&Date.now()-rec.at<15000))return;
+ chatChangesInflight.add(id);
+ try{
+  const r=await fetch(chatTermBase(id)+"/changes/stat",{cache:"no-store"});
+  chatChangesStats.set(id,r.ok?{st:await r.json(),at:Date.now()}:{error:(await r.text()).trim()||"unavailable",at:Date.now()});
+ }catch(e){chatChangesStats.set(id,{error:"unavailable",at:Date.now()});}
+ finally{chatChangesInflight.delete(id);}
+ document.querySelectorAll('.chat-changes-chip[data-runtime="'+CSS.escape(id)+'"]').forEach(chatChangesPaint);
+}
+function chatChangesPaint(button){
+ const rec=chatChangesStats.get(button.dataset.runtime);
+ button.classList.remove("is-clean","is-changed","is-unknown");
+ if(!rec){button.textContent="Changes";return;}
+ if(rec.error){button.textContent="Changes ?";button.classList.add("is-unknown");button.title="Changes unknown: "+rec.error+" · open the review to try again";button.setAttribute("aria-label","Working-tree changes unknown. Open the review");return;}
+ const st=rec.st,when=new Date(st.at).toLocaleTimeString([], {hour:"numeric",minute:"2-digit",second:"2-digit"});
+ if(!st.files&&!st.untracked){button.textContent="No changes";button.classList.add("is-clean");}
+ else{button.textContent="";button.append(el("span","chat-changes-add","+"+st.added),el("span","chat-changes-del","−"+st.removed));if(st.untracked)button.append(el("span","chat-changes-new",st.untracked+" new"));button.classList.add("is-changed");}
+ const words=st.files+" file"+(st.files===1?"":"s")+" changed, "+st.added+" added, "+st.removed+" removed"+(st.binary?", "+st.binary+" binary":"")+(st.untracked?", "+st.untracked+" untracked":"")+" against "+st.head.slice(0,7);
+ button.title=words+" · read at "+when+" · open the review";
+ button.setAttribute("aria-label","Working-tree changes: "+words+". Open the review");
+}
+// one refresher, started by the first chip
+let chatChangesTimer=0;
+function chatChangesWatch(){
+ if(chatChangesTimer)return;
+ chatChangesTimer=setInterval(()=>{
+  if(typeof chatPaneShown==="function"&&!chatPaneShown())return;
+  const ids=new Set([...document.querySelectorAll(".chat-changes-chip[data-runtime]")].filter(b=>b.getClientRects().length).map(b=>b.dataset.runtime));
+  ids.forEach(id=>chatChangesRefresh(id));
+ },5000);
 }
 // Single-reference drafts remain readable; new drafts keep a bounded ordered set.
 function chatSelectedArtifacts(selection){return selection?(Array.isArray(selection.items)?selection.items:[selection]):[];}

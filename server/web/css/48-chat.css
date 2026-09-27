@@ -1094,3 +1094,10 @@ label.chat-artifact-handoff{display:flex;flex-direction:row;align-items:flex-sta
 .chat-turn.chat-user.is-queued, .chat-pending-message.is-queued .chat-pending-preview { opacity: 0.6; }
 .chat-turn.chat-user.is-cancelled { opacity: 0.45; }
 .chat-turn-queue-note { margin-top: var(--sp-2); font: var(--fs-xs)/1.4 var(--sans); color: var(--base-50); text-align: right; }
+/* the live +N −M chip on a coding session's header (opens the review) */
+.chat-changes-chip { display: inline-flex; align-items: center; gap: var(--sp-2); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.chat-changes-chip .chat-changes-add { color: var(--good); }
+.chat-changes-chip .chat-changes-del { color: var(--danger); }
+.chat-changes-chip .chat-changes-new { color: var(--base-60); }
+.chat-changes-chip.is-clean { color: var(--base-50); }
+.chat-changes-chip.is-unknown { color: var(--base-50); font-style: italic; }

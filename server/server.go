@@ -720,6 +720,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/terminal/session/{id}/transcript", s.handleTermTranscript)
 	mux.HandleFunc("GET /api/terminal/session/{id}/screen", s.handleTermScreen)
 	mux.HandleFunc("GET /api/terminal/session/{id}/changes", s.handleTermChanges)
+	mux.HandleFunc("GET /api/terminal/session/{id}/changes/stat", s.handleTermChangesStat) // live +N −M chip (2026-09-27)
 	mux.HandleFunc("POST /api/terminal/session/{id}/changes/snapshot", s.handleTermChangesSnapshot)
 	mux.HandleFunc("POST /api/terminal/session/{id}/input", s.handleTermInput)
 	mux.HandleFunc("GET /api/terminal/ws", s.handleTermWS)
