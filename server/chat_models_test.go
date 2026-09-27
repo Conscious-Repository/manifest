@@ -248,3 +248,44 @@ func TestTranscriptTurnEndAndContext(t *testing.T) {
 		t.Fatalf("codex context: %+v", tr.Context)
 	}
 }
+
+// The transcript endpoint itself carries what the status line and chips read:
+// observed settings, the context accounting, and the launch settings.
+func TestTranscriptEndpointCarriesSettingsContextAndLaunch(t *testing.T) {
+	s, rec := fakeTmuxServer(t)
+	rec.live = false
+	cwd := "/home/benjamin/src/manifest"
+	projDir := filepath.Join(s.terminal.claudeProjects, claudeProjectDir(cwd))
+	if err := os.MkdirAll(projDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	rid := "63e55a17-b5b5-464e-8a00-714a410c4422"
+	body := `{"type":"permission-mode","permissionMode":"plan"}` + "\n" +
+		`{"type":"assistant","timestamp":"2026-09-26T10:00:05Z","effort":"high","message":{"role":"assistant","model":"claude-opus-5","usage":{"input_tokens":2,"cache_creation_input_tokens":1054,"cache_read_input_tokens":399987},"stop_reason":"end_turn","content":[{"type":"text","text":"ok"}]}}` + "\n"
+	if err := os.WriteFile(filepath.Join(projDir, rid+".jsonl"), []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	se := termSession{ID: "abcdef0123456789", Kind: "claude", Cwd: cwd, ResumeID: rid, Started: true, Name: "cc1", Model: "fable", Effort: "max"}
+	s.terminal.upsert(se)
+	req := httptest.NewRequest("GET", "/api/terminal/session/"+se.ID+"/transcript", nil)
+	req.SetPathValue("id", se.ID)
+	w := httptest.NewRecorder()
+	s.handleTermTranscript(w, req)
+	var out struct {
+		Settings *termSettings     `json:"settings"`
+		Context  *termContext      `json:"context"`
+		Launch   map[string]string `json:"launch"`
+	}
+	if w.Code != 200 || json.Unmarshal(w.Body.Bytes(), &out) != nil {
+		t.Fatalf("%d %s", w.Code, w.Body.String())
+	}
+	if out.Settings == nil || out.Settings.Model != "claude-opus-5" || out.Settings.Permission != "plan" || out.Settings.Effort != "high" {
+		t.Fatalf("settings: %+v", out.Settings)
+	}
+	if out.Context == nil || out.Context.Used != 401043 {
+		t.Fatalf("context: %+v", out.Context)
+	}
+	if out.Launch["model"] != "fable" || out.Launch["effort"] != "max" {
+		t.Fatalf("launch: %+v", out.Launch)
+	}
+}
