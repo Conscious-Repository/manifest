@@ -2197,6 +2197,7 @@ function chatSharedFilePicker(session,agent){
   const key=agent+"/"+session.id,base=chatAttachBase(),dialog=el("dialog","chat-workstream-dialog"),list=el("div","");
   dialog.append(el("h3","","Conversation files"));
   if(session.teamFileEdit?.message)dialog.append(el("p","chat-head-meta",session.teamFileEdit.message));
+  if(session.teamFileEdit?.consent)dialog.append(el("blockquote","chat-share-edit-consent",session.teamFileEdit.consent));
   dialog.append(list);
   for(const file of session.sharedFiles||[]){
     const row=el("p",""),open=el("button","sprt-quiet",file.name),discuss=el("button","sprt-quiet","Discuss");

@@ -52,8 +52,10 @@ const CHAT_SHARE = (() => {
           files.append(li);
         }body.append(files);
         // what the team may do with these files, as the server states it —
-        // never a consent control (that wording is the owner's decision)
+        // off: a teammate cannot write; on: the owner's consent wording (D3),
+        // quoted, beside the server's "not in force" (no edit route exists)
         if(review.teamFileEdit?.message)body.append(node("p","chat-share-edit-state",review.teamFileEdit.message));
+        if(review.teamFileEdit?.consent)body.append(node("blockquote","chat-share-edit-consent",review.teamFileEdit.consent));
       }
       section("Review full conversation",(review.timeline||[]).map(t=>`${t.who||"Message"}${t.ts?" · "+t.ts:""}\n${t.text||JSON.stringify(t,null,2)}`).join("\n\n")||review.body||"No messages yet.");
       // Exact envelope includes origin context and original tool records omitted

@@ -7,7 +7,14 @@ const {chromium}=require('playwright');
   page.on('pageerror',e=>errors.push(e.message));
   const revision='a'.repeat(64),second='b'.repeat(64),requests=[];
   let state={state:'private'},version=revision,failOnce=true;
-  const review=()=>({session:{agent:'kairos-private',id:'fixture'},audience:'AION team',futureMessages:true,revision:version,timeline:[{who:'user',text:'Review this entire text <script>NO_EXECUTION</script>'}],files:[{hash:'f'.repeat(64),name:'Exact plan.md',artifactId:'plan-one'}],continuations:[{id:'terminal-fixture',agent:'codex',model:'astra'}],blockers:[]});
+  // the server's exact team-edit statements (owner decision D3), read from
+  // the Go source so the fixture cannot drift from what the server sends
+  const goEdit=fs.readFileSync(path.join(__dirname,'../chat_share_file_edit.go'),'utf8');
+  const consentText=JSON.parse(goEdit.match(/const teamFileEditConsent = ("[^"]+")/)[1]);
+  const [offMsg,onMsg]=[...goEdit.matchAll(/Message: ("[^"]+")/g)].map(m=>JSON.parse(m[1]));
+  const editStates={off:{enabled:false,state:'off',message:offMsg},on:{enabled:true,state:'eligibility-only',message:onMsg,consent:consentText}};
+  let edit=editStates.off;
+  const review=()=>({session:{agent:'kairos-private',id:'fixture'},audience:'AION team',futureMessages:true,revision:version,timeline:[{who:'user',text:'Review this entire text <script>NO_EXECUTION</script>'}],teamFileEdit:edit,files:[{hash:'f'.repeat(64),name:'Exact plan.md',artifactId:'plan-one'}],continuations:[{id:'terminal-fixture',agent:'codex',model:'astra'}],blockers:[]});
   await page.route('http://localhost:7341/**',async route=>{
    const request=route.request(),u=new URL(request.url());
    if(u.pathname==='/'){return route.fulfill({contentType:'text/html',body:'<style>:root{--text:#c8e9f4;--surface-panel:#0c2535;--line:#205169;--accent:#00ccef}body{background:#092130;color:var(--text)}</style><main>Fixture only</main>'});}
@@ -55,7 +62,18 @@ const {chromium}=require('playwright');
   assert.equal(await page.getByRole('button',{name:'Share conversation',exact:true}).isDisabled(),true);
   assert.equal(await page.getByRole('checkbox').isChecked(),false);
   assert.equal(requests.length,2,'changed review automatically published');
+  // D3, both states. Off: legible and truthful, no consent shown.
+  assert.match(offMsg,/off for this share/);assert.match(offMsg,/cannot write/);
+  await page.getByText(offMsg,{exact:true}).waitFor();
+  assert.equal(await page.locator('.chat-share-edit-consent').count(),0,'off shows no consent');
+  // On: the owner's wording verbatim, beside "not in force" and "cannot write".
+  edit=editStates.on;await mount();
+  await page.getByText(onMsg,{exact:true}).waitFor();assert.match(onMsg,/not in force/);assert.match(onMsg,/cannot write/);
+  assert.equal(await page.locator('blockquote.chat-share-edit-consent').textContent(),'Team members may edit files in this share. Every save is attributed and keeps its prior versions; nothing is overwritten silently.');
+  const quote=await page.locator('.chat-share-edit-consent').boundingBox();assert.ok(quote.x>=0&&quote.x+quote.width<=390,'consent fits the phone');
+  assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);
+  edit=editStates.off;
   assert.deepEqual(errors,[]);
-  console.log('Sharing review: explicit consent, exact file links, phone layout, lost-ACK/reload retry identity, and stale confirmation reset passed.');
+  console.log('Sharing review: explicit consent, exact file links, phone layout, lost-ACK/reload retry identity, and stale confirmation reset, and both team-edit states passed.');
  }finally{await browser.close();}
 })().catch(e=>{console.error(e);process.exitCode=1;});

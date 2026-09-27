@@ -148,10 +148,21 @@ func TestShareReviewStatesTeamFileEditRefusal(t *testing.T) {
 		if code != 200 {
 			t.Fatal(code, r)
 		}
+		// Owner decision D3 (2026-09-27): off says editing is off for this
+		// share and a teammate cannot write; on quotes the owner's consent
+		// wording verbatim and says it is not in force (no edit route exists),
+		// so a teammate still cannot write in either state.
 		status, _ := r["teamFileEdit"].(map[string]any)
 		msg, _ := status["message"].(string)
-		if status["enabled"] != on || !strings.Contains(msg, "cannot edit") {
+		consent, _ := status["consent"].(string)
+		if status["enabled"] != on || !strings.Contains(strings.ToLower(msg), "a teammate") || !strings.Contains(msg, "cannot write") {
 			t.Fatalf("switch %v: status %+v", on, status)
+		}
+		if !on && (!strings.Contains(msg, "off for this share") || consent != "") {
+			t.Fatalf("off: %+v", status)
+		}
+		if on && (consent != "Team members may edit files in this share. Every save is attributed and keeps its prior versions; nothing is overwritten silently." || !strings.Contains(msg, "not in force")) {
+			t.Fatalf("on: %+v", status)
 		}
 		sess, body, _, _ := st.Get("kairos-private", id)
 		review := s.chatShareReview(context.Background(), sess, body, s.codingContinuations(context.Background(), sess))

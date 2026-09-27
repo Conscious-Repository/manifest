@@ -9,10 +9,9 @@ import (
 // Authorized generic team-file editing — the mechanical half only.
 //
 // The plan's artifact-review row leaves "generic team-file editing where
-// explicitly authorized" open because it needs a per-file edit consent in
-// share review, and the consent wording (and whether it defaults on or off)
-// is the owner's decision. This file does NOT invent that consent. It supplies
-// what is independent of the wording:
+// explicitly authorized" open. The owner decided the consent wording and the
+// default-OFF switch on 2026-09-27 (D3, teamFileEditConsent below); the edit
+// route itself is not built. This file supplies:
 //
 //   - teamFileEditEligibility, a pure per-file predicate over the exact bytes
 //     the review already read: could this version be offered for editing?
@@ -66,24 +65,31 @@ func teamFileEditEligibility(file chatShareFile, data []byte) chatShareFileEdit 
 	return chatShareFileEdit{Eligible: true, Base: file.Hash, Reason: "registered text artifact; an edit would save a new version checked against this exact revision"}
 }
 
+// teamFileEditConsent is the owner's consent wording for team file editing,
+// recorded verbatim (owner decision D3, 2026-09-27). Do not paraphrase it.
+const teamFileEditConsent = "Team members may edit files in this share. Every save is attributed and keeps its prior versions; nothing is overwritten silently."
+
 // teamFileEditStatus is what the owner is told about team editing of shared
 // files, beside the share review and the shared conversation's Files list.
-// It is a statement of the current state, not consent wording: no edit
-// permission exists in either position of the switch, so both say teammates
-// cannot edit. It rides OUTSIDE the reviewed envelope (the response wrapper,
-// never chatShareReview), so fingerprints stay exactly as the switch leaves
-// them. The consent wording and the switch's default remain the owner's.
+// The switch stays default-OFF (D3). Off, it says editing is off for this
+// share and a teammate cannot write. On, it shows the owner's consent wording
+// as the terms edits will run under, and says plainly that it is not in force:
+// no team edit route exists yet, so a teammate still cannot write. It rides
+// OUTSIDE the reviewed envelope (the response wrapper, never chatShareReview),
+// so fingerprints stay exactly as the switch leaves them.
 type teamFileEditStatus struct {
 	Enabled bool   `json:"enabled"` // eligibility is computed per file; still grants nothing
 	State   string `json:"state"`   // "off" | "eligibility-only"
 	Message string `json:"message"`
+	Consent string `json:"consent,omitempty"` // the owner's wording; on only
 }
 
 func (s *Server) teamFileEditStatus() teamFileEditStatus {
 	if !s.shareTeamFileEdit {
-		return teamFileEditStatus{State: "off", Message: "Teammates can open and discuss shared files but cannot edit them: team file editing is off."}
+		return teamFileEditStatus{State: "off", Message: "Team file editing is off for this share. A teammate can open and discuss shared files but cannot write to them."}
 	}
-	return teamFileEditStatus{Enabled: true, State: "eligibility-only", Message: "Teammates can open and discuss shared files but cannot edit them yet: each file shows whether its version could be offered for editing, and no edit permission exists."}
+	return teamFileEditStatus{Enabled: true, State: "eligibility-only", Consent: teamFileEditConsent,
+		Message: "Team file editing is switched on but not in force: no team edit route exists yet, so a teammate still cannot write. Each file shows whether its version could be offered for editing under this consent:"}
 }
 
 // chatShareReviewResponse is the share-review wire shape: the reviewed
