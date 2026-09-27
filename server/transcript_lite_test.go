@@ -61,6 +61,9 @@ func TestTranscriptLiteTailOlderAndStepResult(t *testing.T) {
 	if code != 200 || len(turns) != 10 || lite["older"].(float64) != 50 {
 		t.Fatalf("tail: %d turns, older %v", len(turns), lite["older"])
 	}
+	if tl, present := lite["planningTimeline"]; !present || tl != nil || lite["timelineHash"] != "" {
+		t.Fatalf("a chat without a planning timeline must say null, or the client paints an empty timeline: %v %v", tl, lite["timelineHash"])
+	}
 	if liteBytes*5 > fullBytes {
 		t.Fatalf("a lite tail should be a fraction of the full read: %d vs %d bytes", liteBytes, fullBytes)
 	}
@@ -102,6 +105,9 @@ func TestLiteTimelineOwnersAndStableHash(t *testing.T) {
 	items := []conversationTimelineTurn{
 		{N: 1, Who: "user", TS: "a", Text: "go"},
 		{N: "terminal:x:1", Who: "claude", TS: "b", Blocks: []termBlock{{T: "step", ID: "s1", Result: "long output"}}, Native: &continuationNativeSource{ID: "childsession"}},
+	}
+	if liteTimeline(nil, "root") != nil {
+		t.Fatal("no timeline must stay nil (JSON null), not an empty list")
 	}
 	lite := liteTimeline(items, "root")
 	if b := lite[1].Blocks[0]; b.Result != "" || b.ResultBytes != 11 || b.SID != "childsession" {

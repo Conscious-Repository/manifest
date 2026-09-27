@@ -53,6 +53,10 @@ func liteBlocks(blocks []termBlock, sid string) []termBlock {
 }
 
 func liteTimeline(items []conversationTimelineTurn, sid string) []conversationTimelineTurn {
+	if items == nil {
+		// no timeline stays null: the client paints a timeline when one exists
+		return nil
+	}
 	out := make([]conversationTimelineTurn, len(items))
 	for i, it := range items {
 		out[i] = it
