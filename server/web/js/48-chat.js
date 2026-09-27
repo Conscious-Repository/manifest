@@ -77,7 +77,9 @@ function chatCurrentSessions() {
   return chatAgent ? (chatAgentSessions[chatAgent] || []) : chatSessions;
 }
 function chatRosterEntry(name) { return chatRoster.find((a) => a.name === name) || null; }
-function chatAgentLabel(name) { const a = chatRosterEntry(name); return a ? a.label : name; }
+// a coding agent is not on the roster: it reads by its own name ("Codex"),
+// as the rail and the head call it, never the raw kind
+function chatAgentLabel(name) { const a = chatRosterEntry(name); return a ? a.label : (typeof chatTermKinds !== "undefined" && chatTermKinds[name]) || name; }
 // portal sections (kairos/zeck): attachments go to the agent's own artifact
 // domain, sends carry a ritual, and @-mentions tag a persona intent
 function chatIsPortal(name) { const a = chatRosterEntry(name === undefined ? chatAgent : name); return !!(a && a.backend === "portal"); }
@@ -2771,7 +2773,7 @@ function renderChatComposer(session) {
     // a new hint may reshape the phone field (has-long-hint): the transcript
     // above loses that height, so a reader at the latest line stays there
     if (ta) { const hint = placeholder(); if (ta.placeholder !== hint) { const t = document.getElementById("chatTranscript"), pinned = t && t.scrollHeight - t.scrollTop - t.clientHeight < 8; ta.placeholder = hint; ta._grow?.(); if (pinned) t.scrollTop = t.scrollHeight; } }
-    if (send) { send.disabled = busy; send.textContent = uploading || chatSending || chatTermSending ? "…" : "↑"; send.setAttribute("aria-label",uploading?"Uploading attachments":chatSending||chatTermSending?"Sending message":"Send message"); send.title=uploading?"Uploading attachments…":chatSending||chatTermSending?"Sending message…":"send · Enter (Shift+Enter for a new line)"; } // a prompt line ends in enter
+    if (send) { send.disabled = busy; send.textContent = uploading || chatSending || chatTermSending ? "…" : "↑"; send.toggleAttribute("aria-busy", !!(uploading || chatSending || chatTermSending)); send.setAttribute("aria-label",uploading?"Uploading attachments":chatSending||chatTermSending?"Sending message":"Send message"); send.title=uploading?"Uploading attachments…":chatSending||chatTermSending?"Sending message…":"send · Enter (Shift+Enter for a new line)"; } // a prompt line ends in enter
     syncAttach();
     chatRenderDeliveryNotice(host,draftKey);
     chatRenderArtifactContext(session?.task,"chat:"+draftKey);
@@ -2942,6 +2944,8 @@ function renderChatComposer(session) {
   send.setAttribute("aria-label", uploading?"Uploading attachments":chatSending||chatTermSending?"Sending message":"Send message");
   send.title = uploading ? "Uploading attachments…" : chatSending||chatTermSending ? "Sending message…" : "send · Enter (Shift+Enter for a new line)";
   send.disabled = busy;
+  // a send in flight is busy, not unavailable: it keeps its ink (CSS)
+  send.toggleAttribute("aria-busy", !!(uploading || chatSending || chatTermSending));
   // opts.queue (Tab while the agent works): hold the message for the next
   // turn instead of steering this one (chatStageOrSteer)
   const submit = async (opts = {}) => {
@@ -2976,6 +2980,7 @@ function renderChatComposer(session) {
     chatSending = true;
     send.disabled = true;
     send.textContent = "…";
+    send.setAttribute("aria-busy", "true");
     send.setAttribute("aria-label", "Sending message");
     send.title="Sending message…";
     // Enter → on screen at once: the message paints as a pending line while
@@ -2991,6 +2996,11 @@ function renderChatComposer(session) {
       if(current?.text.trim()===text && chatStateEqual(current.files,files))chatDrafts.delete(draftKey);
       if(chatDraftKey===draftKey && ta.value.trim()===text && chatStateEqual(chatPendingFiles,files)){
         ta.value="";chatPendingFiles=[];grow();mention.hidden=true;syncAttach();
+      }else if(chatDraftKey===draftKey && text && ta.value.trimStart().startsWith(text) && chatStateEqual(chatPendingFiles,files)){
+        // typed on while the send was acknowledged: the accepted words leave
+        // the field, what came after them stays (it read "firstand one more",
+        // and a second send repeated "first")
+        ta.value=ta.value.trimStart().slice(text.length).trimStart();chatPendingFiles=[];grow();syncAttach();chatSaveDraft();
       }
     };
     const messageText = text + files.filter(f=>f.owned).map(f=>"\n[context-file:: "+f.id+"]").join("");
@@ -3912,7 +3922,7 @@ function chatTermCmdLine(t) {
   const {text,files}=chatSplitUserMessage(chatQuestionReplyDisplay(t.text) || "");
   if(files.length)line.append(chatAttachmentChips(files)); // previews lead, the way the message was composed
   line.append(el("span", "chat-term-cmd-text", text));
-  if (t.pending) { line.classList.add("pending"); line.append(el("span", "chat-term-meta", "delivered · waiting for the agent")); }
+  if (t.pending) { line.classList.add("pending"); line.append(el("span", "chat-term-meta", t.sending ? "sending…" : "delivered · waiting for the agent")); }
   else if (t.ts) line.append(el("span", "chat-term-meta", fmtWhen(t.ts)));
   return line;
 }
@@ -4157,7 +4167,7 @@ async function chatTermTail(o) {
 }
 
 // chatTermMerge — a tail's first assistant turn continues the last painted
-// assistant turn (the projection merges consecutive assistant records; a
+// assistant turn of the same run (the projection merges consecutive assistant records; a
 // byte-offset cut can split one), and a result whose call was painted from
 // an earlier poll (cast "result" + the call's id) lands on that step
 // instead of a chip of its own.
@@ -4170,7 +4180,8 @@ function chatTermMerge(turns, tail) {
     }
     const blocks = (t.blocks || []).filter((b) => !(b.t === "step" && b.cast === "result" && b.id && chatTermPairResult(turns, b)));
     const last = turns[turns.length - 1];
-    if (last && last.who === "assistant") { last.blocks = (last.blocks || []).concat(blocks); if (t.end && (!last.end || t.end > last.end)) last.end = t.end; return; }
+    // two provider runs (terminal_transcript.go termTurn.Run) stay two replies
+    if (last && last.who === "assistant" && (!last.run || !t.run || last.run === t.run)) { if (!last.run && t.run) last.run = t.run; last.blocks = (last.blocks || []).concat(blocks); if (t.end && (!last.end || t.end > last.end)) last.end = t.end; return; }
     if (!blocks.length) return; // nothing left once paired
     t.blocks = blocks;
     turns.push(t);
@@ -4205,6 +4216,13 @@ async function chatTermSend(text,context={}) {
   chatTermSending = true;
   const project=chatPendingProject;
   const agent=chatAgent,route=chatRouteVersion,sourceScope=chatAgent+"/"+(chatOpenId||"new");
+  // on screen at once, as a planning thread's send is (chatSendEcho): a resume
+  // can wait ~10 s for the prompt, and nothing in the conversation said the
+  // message had left. A refusal takes it away; acceptance keeps it pending
+  // until the transcript records the turn (chatTermLanded).
+  const early=!context.command&&chatOpenId&&chatTermOpen?.id===chatOpenId&&Array.isArray(chatTermOpen.turns)&&!chatTermOpen.planningTimeline?{id:"pending:sending:"+Date.now(),since:chatTermOpen.turns.length}:null;
+  if(early&&!chatTermLanded(chatTermOpen,text,early.since)){chatTermOpen.turns.push({who:'user',text,ts:new Date().toISOString(),id:early.id,pending:true,sending:true,since:early.since});chatTermPaintTurns();}
+  const dropEarly=()=>{if(early&&chatTermOpen?.turns){chatTermOpen.turns=chatTermOpen.turns.filter(t=>t.id!==early.id);chatTermPaintTurns();}};
   renderChatComposer(chatTermComposerSession());
   try {
     let id = chatOpenId, created = false;
@@ -4224,7 +4242,7 @@ async function chatTermSend(text,context={}) {
     const url=chatTermBase(id)+"/input",payload={text,...payloadContext};
     // where the transcript stood when this send began: the echo and the tail
     // reconcile against the user turns that land from here on
-    const since=chatTermOpen&&chatTermOpen.id===id&&Array.isArray(chatTermOpen.turns)?chatTermOpen.turns.length:0;
+    const since=early?early.since:chatTermOpen&&chatTermOpen.id===id&&Array.isArray(chatTermOpen.turns)?chatTermOpen.turns.length:0;
     let r;
     if (chatTermFind(id)?.backend==="herdr") {
       const remembered=chatRememberDelivery(agent+"/"+id,agent,url,payload,sourceScope);
@@ -4233,6 +4251,7 @@ async function chatTermSend(text,context={}) {
         if (context.command || !chatAgentBusy(e)) throw e;
         // the agent is mid-turn and the server sent nothing: hold the message
         // as a pending row (Steer sends it now) instead of failing the send
+        dropEarly(); // the held row says it now
         await chatHoldAfterBusy(remembered,agent+"/"+id,agent,url,payload);
         return true;
       }
@@ -4247,6 +4266,7 @@ async function chatTermSend(text,context={}) {
     }
     return true;
   } catch (e) {
+    dropEarly();
     showToast("Send failed — " + (e.message || "error"));
     return false;
   } finally {
@@ -4634,6 +4654,9 @@ function chatTermEcho(id,text,r,since){
  const o=chatTermOpen;
  if(!o||o.id!==id||!text||o.planningTimeline||!Array.isArray(o.turns))return;
  if(chatTermLanded(o,text,since))return;
+ // the echo painted when the send began stands for this one: accepted now
+ const early=o.turns.find(t=>t.pending&&t.sending&&t.text===text&&t.since===(since||0));
+ if(early){delete early.sending;chatTermPaintTurns();return;}
  o.turns.push({who:'user',text,ts:new Date().toISOString(),id:'pending:'+(r?.delivery?.id||Date.now()),pending:true,since:since||0});
  chatTermPaintTurns();
 }

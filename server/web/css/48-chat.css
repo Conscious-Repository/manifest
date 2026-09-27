@@ -93,6 +93,10 @@
 .chat-send { order: 3; flex: none; width: 34px; height: 34px; border: 0; border-radius: var(--radius-lg); background: var(--accent); color: var(--on-accent); font-size: var(--fs-xl); line-height: 1; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; }
 .chat-send:hover { filter: brightness(1.08); }
 .chat-send:disabled { opacity: 0.4; cursor: default; filter: none; }
+/* a send in flight (aria-busy) is working, not unavailable: full ink, "…"
+   (2026-09-27 mobile pass: the faded "…" beside the text still in the field
+   read as a broken button) */
+.chat-send[aria-busy="true"]:disabled { opacity: 1; cursor: progress; }
 
 /* phone: rail collapses above the transcript */
 @media (max-width: 860px) {
@@ -347,6 +351,14 @@ button.chat-attach-chip { min-height: 44px; max-width: 100%; background: transpa
 .chat-term-activity > summary.has-error { color: var(--danger); }
 .chat-term-activity > summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .chat-term-activity .chat-term-step, .chat-term-activity .chat-term-think { margin-left: 0; }
+/* a phone reads the folded work as a control between paragraphs, not a
+   footnote: secondary ink (7.8:1, was muted 5.4:1), the body's small size, and
+   a paragraph's space on either side (2026-09-27 mobile pass: 12px muted mono
+   sat against the reply text) */
+@media (max-width: 860px) {
+  .chat-term-activity { margin: var(--sp-7) 0; color: var(--base-60); font-size: var(--fs-md); }
+  .chat-term-activity > summary { padding: var(--sp-5) 0; }
+}
 @media (max-width: 860px) {
   .chat-main.term:not(.landing) .chat-transcript { padding: var(--sp-4) var(--sp-2); }
   .chat-term-cmd { max-width: 94%; }
@@ -639,6 +651,9 @@ button.chat-attach-chip { min-height: 44px; max-width: 100%; background: transpa
 .chat-workspace-icon { width: 19px; height: 19px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
 .chat-icon-button { display: inline-flex; align-items: center; justify-content: center; width: 36px; height: 36px; border-radius: 6px; }
 .chat-icon-button[aria-expanded="true"] { background: var(--hover); }
+/* the head's icon buttons (Terminal view) are touch targets on a phone: 44px
+   square, as the head's other controls (measured 36×44 at 320–412) */
+@media (max-width: 860px) { .chat-thread-header .chat-icon-button { width: var(--control-touch); height: var(--control-touch); } }
 .chat-options-compact:not([open]) > summary::before, .chat-options-compact > summary::marker { content: ''; }
 .chat-options-compact > summary { list-style: none; min-width: 28px; text-align: center; }
 .chat-workspace-popover { position: absolute; right: 8px; top: 50px; z-index: 20; width: min(280px,calc(100% - 16px)); box-sizing: border-box; padding: 8px; max-height: calc(100% - 64px); border: 1px solid var(--line); border-radius: 10px; background: var(--surface-overlay); box-shadow: 0 8px 24px #0003; }
@@ -877,6 +892,15 @@ button.chat-attach-chip { min-height: 44px; max-width: 100%; background: transpa
 .chat-workspace-tiled[data-panes="1"] {grid-template-rows:minmax(0,1fr);}
 .chat-workspace-tiled[data-panes="3"] {grid-template-rows:repeat(3,minmax(0,1fr));}
 .chat-workspace-tiled > .chat-workspace-tabbody {min-height:0;overflow:auto;background:var(--surface-field);}
+/* a phone head names the conversation first (2026-09-27 mobile pass: "Run
+   finished · disconnected" took the whole free width and the title measured
+   0px at 320 and 390). A finished, unknown or draft run is the resting state
+   and says nothing to act on here (the rail row and the reply's "Worked for"
+   carry it); a running, queued or failed run shares the row. */
+@media(max-width:860px){
+  .chat-thread-header .chat-head > .chat-head-title { flex: 1 1 auto; min-width: 0; }
+  .chat-thread-header .chat-head > .chat-execution-state:is([data-state="completed"],[data-state="unknown"],[data-state="draft"]) { display: none; }
+}
 @media(max-width:860px){.chat-layout-select{display:none;} .chat-execution-state{font-size:11px;flex:0 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;}.chat-sidebar-toggle{display:none;}}
 
 /* Conversation selection is a list, matching the chat rail rather than action cards. */
@@ -998,6 +1022,15 @@ label.chat-artifact-handoff{display:flex;flex-direction:row;align-items:flex-sta
      the permission chip keeps its place at the row's end */
   .chat-main .chat-composer > .chat-composer-model { order: 6; flex: 0 1 auto; margin-left: 0; max-width: none; text-align: left; min-width: var(--control-touch); min-height: var(--control-touch); font: var(--fs-sm)/1 var(--sans); }
   .chat-main .chat-composer > .chat-composer-permission { order: 7; margin-left: auto; min-height: var(--control-touch); max-width: 45%; font: var(--fs-sm)/1 var(--sans); }
+  /* one row of chips (2026-09-27 mobile pass): who the next message goes to
+     joins the model and permission it runs with, under the message, so the
+     first row is only + · message · mic · send. The owner's phone showed the
+     recipient in row one and the model and permission in row two; at 390 the
+     field kept 158px of 366. The model chip gives way first (ellipsis); the
+     recipient and the permission read whole. */
+  .chat-main .chat-composer:has(> .chat-composer-model) > .chat-composer-recipient { order: 6; flex: none; max-width: none; margin-left: 0; padding: 0 var(--sp-3); color: var(--base-70); }
+  .chat-main .chat-composer:has(> .chat-composer-model) > .chat-composer-model { order: 7; min-width: 0; }
+  .chat-main .chat-composer:has(> .chat-composer-model) > .chat-composer-permission { order: 8; flex: none; max-width: none; }
   .chat-model-picker { position: fixed; left: var(--sp-4); right: var(--sp-4); bottom: calc(var(--sp-4) + env(safe-area-inset-bottom, 0px)); max-height: 72dvh; }
   .chat-model-seg, .chat-model-actions button, .chat-model-native { min-height: 44px; }
   .chat-model-row { min-height: 44px; justify-content: center; }
@@ -1037,7 +1070,14 @@ label.chat-artifact-handoff{display:flex;flex-direction:row;align-items:flex-sta
 .chat-status-meter { width: 48px; height: 4px; border-radius: 2px; background: var(--line); overflow: hidden; }
 .chat-status-meter > span { display: block; height: 100%; background: var(--base-60); }
 .chat-status-context[data-level="high"] .chat-status-meter > span { background: var(--warn); }
-@media (max-width: 860px) { .chat-status-stop { min-height: 44px; } .chat-status-line { padding: 0 var(--sp-4); } }
+@media (max-width: 860px) {
+  .chat-status-stop { min-height: 44px; }
+  .chat-status-line { padding: 0 var(--sp-4); font-size: var(--fs-md); }
+  /* the context meter is how full the agent's window is: legible at a glance
+     on a phone (was 11px text beside a 48×4 bar) */
+  .chat-status-context { color: var(--base-70); }
+  .chat-status-meter { width: 64px; height: 6px; border-radius: 3px; }
+}
 .chat-turn-worked { font-size: var(--fs-2xs); color: var(--base-50); font-variant-numeric: tabular-nums; }
 
 /* One quiet header (owner, 2026-09-27: the page CHAT row, the thread

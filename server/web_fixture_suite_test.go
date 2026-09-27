@@ -292,6 +292,10 @@ func TestFixtureChatComposerModels(t *testing.T) {
 // "Worked for" on finished replies (chat-status-line.cjs).
 func TestFixtureChatStatusLine(t *testing.T) { runFixture(t, "chat-status-line.cjs", true, false) }
 
+// Phone chat: one chip row, a titled head, an honest immediate Codex echo,
+// busy send ink, legible Activity and context, runs kept apart (chat-mobile-uiux.cjs).
+func TestFixtureChatMobileUIUX(t *testing.T) { runFixture(t, "chat-mobile-uiux.cjs", true, false) }
+
 // The virtual browser tool captures and compares two pages end to end
 // (tools/ui-compare, ui-compare.cjs).
 func TestFixtureUICompare(t *testing.T) { runFixture(t, "ui-compare.cjs", true, false) }

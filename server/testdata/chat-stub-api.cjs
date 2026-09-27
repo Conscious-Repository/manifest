@@ -8,6 +8,7 @@
 //                         adds a turn (&who=system|user|alfred, default alfred)
 //   /__delay?ms=N         hold a send's acknowledgement N ms
 //   /__legacy?on=1        404 /api/chat/inbox (an older server)
+// makeStub({codex:true}) adds one finished Codex thread, cx1 (#/chat/a/codex/cx1).
 // /api/chat/resolve names alfred as the owner of a/b; spirit reads are 404.
 // The app shell's reads outside chat answer empty (a fresh vault), not 404.
 // A send (POST …/messages) appends the user turn, records a queued delivery
@@ -28,7 +29,23 @@ const codingCatalog={
  codex:{backend:'terminal',default:'gpt-5.6-luna',efforts:codingEfforts,defaultPermission:'full',liveModel:'native-picker',liveEffort:'native-picker',livePermission:'native-picker',
   models:[{id:'gpt-5.6-luna',label:'gpt-5.6-luna',provider:'OpenAI',context:400000}],
   permissions:[{id:'full',label:'Full access',description:'No sandbox and never asks',danger:true},{id:'auto',label:'Auto',description:'Workspace-write sandbox; asks before leaving it'},{id:'read-only',label:'Read only',description:'Reads only; asks before any change'}]}};
-function makeStub({terminal=true}={}){
+// one finished Codex thread (cx1), as terminal_transcript.go projects a
+// rollout: an owner turn, a reply whose exec steps fold under Activity, the
+// last call's context against the model's window, the settings it ran with
+const codexTranscript={offset:4096,title:'Fix the flaky test',conversation:{key:'conv-cx1'},
+ run:{id:'turn-2',state:'completed',at:'2026-09-25T10:07:12Z',evidence:'x'},
+ context:{used:86000,window:258400,at:'2026-09-25T10:07:10Z'},
+ settings:{model:'gpt-5.6-luna',effort:'high',permission:'full'},
+ turns:[{id:'u1',who:'user',ts:'2026-09-25T10:00:00Z',text:'The chat fixture flakes one run in twenty. Find why and fix it.'},
+  {id:'a1',who:'assistant',ts:'2026-09-25T10:00:04Z',end:'2026-09-25T10:07:10Z',blocks:[
+   {t:'say',text:'I will run the fixture in a loop to reproduce it first.'},
+   {t:'step',cast:'exec_command',input:'for i in $(seq 20); do node server/testdata/chat-status-line.cjs || break; done',id:'c1',done:true,result:'PASS ×19\nAssertionError: timer did not advance'},
+   {t:'step',cast:'exec_command',input:'rg -n "setInterval" server/web/js/49-chat-status.js',id:'c2',done:true,result:'81:  set(".chat-status-time", …)'},
+   {t:'step',cast:'apply_patch',input:'server/web/js/49-chat-status.js',id:'c3',done:true,result:'Success'},
+   {t:'say',text:'The timer repainted only on a whole second boundary, so a run that started 999 ms before a paint read one second behind. It now repaints from the run start. Twenty runs pass in a row.'}]}]};
+const codexRows=[{id:'cx1',kind:'codex',name:'Fix the flaky test',title:'Fix the flaky test',cwd:'/home/owner/src/manifest',backend:'herdr',live:true,process:'running',lastUsed:'2026-09-25T10:07:12Z',agentState:'idle'}];
+function makeStub({terminal=true,codex=false}={}){
+ const codexSessions=codex?codexRows:[];
  const sessions={a:{id:'a',title:'Long research thread',status:'idle',agent:'alfred',turns:40,updated:'2026-09-25T11:00:00Z',created:'2026-09-25T10:00:00Z',spentUsd:0,deliveries:[]},
   b:{id:'b',title:'Second thread',status:'idle',agent:'alfred',turns:2,updated:'2026-09-25T09:00:00Z',created:'2026-09-25T09:00:00Z',spentUsd:0,deliveries:[]}};
  const bodies={a:long(40),b:long(2)};
@@ -69,11 +86,13 @@ function makeStub({terminal=true}={}){
      s.supervision={adapter:'hermes-oneshot',state:'submitted',evidence:'delivery receipt '+id,capabilities:caps,runs:[{id,state:'queued'}]};s.updated=new Date().toISOString();
      json(res,200,{ok:true,id:s.id,requestId:id});},delay));return;}
    if(sm)return json(res,200,detail(sm[1]));
-   if(p==='/api/chat/inbox'){if(legacy)return json(res,404,{});return json(res,200,{roster,agents:{alfred:{sessions:Object.values(sessions)}},spirits:{sessions:[]},terminal:{sessions:[],enabled:terminal},state:{},review:{by_scope:{},by_task:{}},taskThreads:{threads:[]}});}
+   if(p==='/api/chat/inbox'){if(legacy)return json(res,404,{});return json(res,200,{roster,agents:{alfred:{sessions:Object.values(sessions)}},spirits:{sessions:[]},terminal:{sessions:codexSessions,enabled:terminal},state:{},review:{by_scope:{},by_task:{}},taskThreads:{threads:[]}});}
    if(p==='/api/chat/sessions')return json(res,200,{sessions:[]});
    // which store owns an id: the agent threads here; spirit ids are never served
    if(p==='/api/chat/resolve'){const id=url.searchParams.get('id');return json(res,200,{id,owners:sessions[id]?[{backend:'hermes',agent:'alfred',route:'#/chat/a/alfred/'+id}]:[],checked:['spirits','alfred','terminal'],unavailable:[]});}
-   if(p==='/api/terminal/sessions')return json(res,200,{sessions:[],enabled:terminal});
+   if(p==='/api/terminal/sessions')return json(res,200,{sessions:codexSessions,enabled:terminal});
+   const tt=p.match(/^\/api\/terminal\/session\/([^/]+)\/transcript$/);
+   if(tt&&codexSessions.some(s=>s.id===tt[1]))return json(res,200,Number(url.searchParams.get('after'))>=codexTranscript.offset?{offset:codexTranscript.offset,turns:[],run:codexTranscript.run,context:codexTranscript.context,settings:codexTranscript.settings}:codexTranscript);
    if(p==='/api/terminal/folders')return json(res,200,{enabled:true,home:'/home/owner',recent:['/home/owner/src/manifest'],repos:['/home/owner/src/manifest','/home/owner/src/lab-apps']});
    if(p==='/api/chat/review-status')return json(res,200,{by_scope:{},by_task:{}});
    // the app shell's own reads on every page (rail counts, feed badge,

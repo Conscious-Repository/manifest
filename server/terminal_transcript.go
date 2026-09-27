@@ -32,10 +32,14 @@ import (
 // assistant; an assistant turn carries ordered blocks (say / step / think),
 // a user turn carries text.
 type termTurn struct {
-	ID     string      `json:"id"`
-	Who    string      `json:"who"`
-	TS     string      `json:"ts,omitempty"`
-	End    string      `json:"end,omitempty"` // assistant: the latest record time in this turn ("Worked for …")
+	ID  string `json:"id"`
+	Who string `json:"who"`
+	TS  string `json:"ts,omitempty"`
+	End string `json:"end,omitempty"` // assistant: the latest record time in this turn ("Worked for …")
+	// Run is the provider run (codex turn_id) an assistant turn belongs to,
+	// when the transcript records one. Two runs never share a turn, so a
+	// goal continuation days later does not stretch the last reply's time.
+	Run    string      `json:"run,omitempty"`
 	Text   string      `json:"text,omitempty"`
 	Blocks []termBlock `json:"blocks,omitempty"`
 	// WorkOrder marks a board run's launch prompt whose Text has been replaced
@@ -188,6 +192,9 @@ type claudeBlock struct {
 type transcriptBuilder struct {
 	out      termTranscript
 	recordID string
+	// runKeyed: the format records run lifecycle events (codex task_started),
+	// so out.Run.ID names the run the next records belong to
+	runKeyed bool
 }
 
 func (b *transcriptBuilder) record(line []byte, base []int64) {
@@ -200,17 +207,31 @@ func (b *transcriptBuilder) record(line []byte, base []int64) {
 }
 
 func (b *transcriptBuilder) assistant(ts string) *termTurn {
-	if n := len(b.out.Turns); n > 0 && b.out.Turns[n-1].Who == "assistant" {
+	run := ""
+	if b.runKeyed && b.out.Run != nil {
+		run = b.out.Run.ID
+	}
+	if n := len(b.out.Turns); n > 0 && b.out.Turns[n-1].Who == "assistant" && sameRun(b.out.Turns[n-1].Run, run) {
 		t := &b.out.Turns[n-1]
 		t.touch(ts)
+		if t.Run == "" {
+			t.Run = run
+		}
 		return t
 	}
-	b.out.Turns = append(b.out.Turns, termTurn{ID: b.recordID, Who: "assistant", TS: ts, End: ts})
+	b.out.Turns = append(b.out.Turns, termTurn{ID: b.recordID, Who: "assistant", TS: ts, End: ts, Run: run})
 	return &b.out.Turns[len(b.out.Turns)-1]
 }
 
+// sameRun: records join the open reply unless both name a run and the runs
+// differ (a goal continuation, a harness-started turn with no owner text).
+func sameRun(a, b string) bool { return a == "" || b == "" || a == b }
+
 // touch extends an assistant turn's end to a later record time.
 func (t *termTurn) touch(ts string) {
+	if ts != "" && t.TS == "" { // opened by a synthetic row: starts at the first real one
+		t.TS = ts
+	}
 	if ts != "" && ts > t.End {
 		t.End = ts
 	}
@@ -238,7 +259,12 @@ func (b *transcriptBuilder) result(ts, id, text string, isErr bool) {
 		}
 		for bi := range t.Blocks {
 			if t.Blocks[bi].T == "step" && t.Blocks[bi].ID == id {
-				t.touch(ts)
+				// a late result (a resumed session closing a dangling call, a
+				// background task reporting after the owner spoke again) marks
+				// the step done; only the open reply's time runs on
+				if ti == len(b.out.Turns)-1 {
+					t.touch(ts)
+				}
 				t.Blocks[bi].Result = clip(text, termStepResultMax)
 				t.Blocks[bi].Error = isErr
 				t.Blocks[bi].Done = true
@@ -351,17 +377,27 @@ func (b *transcriptBuilder) parseClaude(r io.Reader, base []int64) {
 				}
 				return
 			}
+			// "<synthetic>" rows are the CLI speaking, not the model: resuming
+			// a session writes "No response requested." onto the old reply
+			// (dropped), and no synthetic row extends a reply's worked time
+			ts := rec.Timestamp
+			if m.Model == "<synthetic>" {
+				if strings.TrimSpace(text) == "No response requested." {
+					return
+				}
+				ts = ""
+			}
 			if text != "" {
-				b.text(rec.Timestamp, "say", text)
+				b.text(ts, "say", text)
 			}
 			for _, bl := range blocks {
 				switch bl.Type {
 				case "text":
-					b.text(rec.Timestamp, "say", bl.Text)
+					b.text(ts, "say", bl.Text)
 				case "thinking":
-					b.text(rec.Timestamp, "think", bl.Thinking)
+					b.text(ts, "think", bl.Thinking)
 				case "tool_use":
-					b.step(rec.Timestamp, bl.ID, bl.Name, toolInputSummary(bl.Name, bl.Input))
+					b.step(ts, bl.ID, bl.Name, toolInputSummary(bl.Name, bl.Input))
 				}
 			}
 		}
@@ -551,6 +587,7 @@ func parseCodexTranscript(r io.Reader, base ...int64) termTranscript {
 // parseCodex feeds the records in r to the builder, which may already hold
 // the projection of the bytes before them (readTranscript's resume).
 func (b *transcriptBuilder) parseCodex(r io.Reader, base []int64) {
+	b.runKeyed = true
 	scanLines(r, &b.out.Offset, func(line []byte) {
 		b.record(line, base)
 		var rec codexRecord

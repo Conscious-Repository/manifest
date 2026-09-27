@@ -428,3 +428,56 @@ func TestClaudeTranscriptHarnessNotices(t *testing.T) {
 		}
 	}
 }
+
+// "Worked for" is a reply's first-to-last record time, so a reply must never
+// span idle time it did not work (owner's phone, 2026-09-27: "Worked for
+// 7h 13m"; local rollouts measured 290h, 31h and 28h replies):
+//   - codex: a goal continuation (no owner text, a new task_started run) is
+//     its own reply, 12 days after the last one ended;
+//   - claude: a resumed session's synthetic "No response requested." and the
+//     result that closes a dangling call after the owner spoke again do not
+//     stretch the earlier reply.
+func TestTranscriptWorkedSpanStaysInsideOneRun(t *testing.T) {
+	codex := strings.Join([]string{
+		`{"type":"event_msg","timestamp":"2026-09-12T17:50:00Z","payload":{"type":"task_started","turn_id":"run-one"}}`,
+		`{"type":"response_item","timestamp":"2026-09-12T17:50:01Z","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"fix it"}]}}`,
+		`{"type":"response_item","timestamp":"2026-09-12T17:58:00Z","payload":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"fixed"}]}}`,
+		`{"type":"event_msg","timestamp":"2026-09-12T17:58:01Z","payload":{"type":"task_complete","turn_id":"run-one"}}`,
+		`{"type":"event_msg","timestamp":"2026-09-24T20:28:00Z","payload":{"type":"task_started","turn_id":"run-two"}}`,
+		`{"type":"response_item","timestamp":"2026-09-24T20:28:01Z","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"<codex_internal_context source=\"goal\">Continue working toward the active thread goal.</codex_internal_context>"}]}}`,
+		`{"type":"response_item","timestamp":"2026-09-24T20:31:00Z","payload":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"continued"}]}}`,
+	}, "\n") + "\n"
+	tr := parseCodexTranscript(strings.NewReader(codex))
+	var replies []termTurn
+	for _, turn := range tr.Turns {
+		if turn.Who == "assistant" {
+			replies = append(replies, turn)
+		}
+	}
+	if len(replies) != 2 || replies[0].Run != "run-one" || replies[1].Run != "run-two" {
+		t.Fatalf("two runs, two replies: %+v", replies)
+	}
+	if replies[0].End != "2026-09-12T17:58:00Z" || replies[1].TS != "2026-09-24T20:31:00Z" || replies[1].End != "2026-09-24T20:31:00Z" {
+		t.Fatalf("a reply spans another run: %+v", replies)
+	}
+	claude := strings.Join([]string{
+		`{"type":"user","timestamp":"2026-09-03T16:56:00Z","message":{"role":"user","content":"run the tests"}}`,
+		`{"type":"assistant","timestamp":"2026-09-03T16:56:14Z","message":{"role":"assistant","model":"claude-fable-5-1","content":[{"type":"tool_use","id":"toolu_1","name":"Bash","input":{"command":"go test ./..."}}]}}`,
+		`{"type":"user","isMeta":true,"timestamp":"2026-09-05T00:23:53.400Z","message":{"role":"user","content":[{"type":"text","text":"Continue from where you left off."}]}}`,
+		`{"type":"assistant","timestamp":"2026-09-05T00:23:53.400Z","message":{"role":"assistant","model":"<synthetic>","content":[{"type":"text","text":"No response requested."}]}}`,
+		`{"type":"user","timestamp":"2026-09-05T00:23:53.850Z","promptSource":"typed","message":{"role":"user","content":"im back"}}`,
+		`{"type":"user","timestamp":"2026-09-05T00:24:03Z","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"toolu_1","content":"interrupted"}]}}`,
+		`{"type":"assistant","timestamp":"2026-09-05T00:24:10Z","message":{"role":"assistant","model":"claude-fable-5-1","content":[{"type":"text","text":"welcome back"}]}}`,
+	}, "\n") + "\n"
+	ct := parseClaudeTranscript(strings.NewReader(claude))
+	if len(ct.Turns) != 4 {
+		t.Fatalf("want user, reply, user, reply: %+v", ct.Turns)
+	}
+	first := ct.Turns[1]
+	if first.End != "2026-09-03T16:56:14Z" {
+		t.Fatalf("the old reply's time ran on to %s", first.End)
+	}
+	if len(first.Blocks) != 1 || !first.Blocks[0].Done || first.Blocks[0].Result != "interrupted" {
+		t.Fatalf("the late result still closes its step, and the synthetic line is not painted: %+v", first.Blocks)
+	}
+}
