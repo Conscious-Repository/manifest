@@ -319,3 +319,9 @@ func TestFixtureChatNewFlow(t *testing.T) { runFixture(t, "chat-new-flow.cjs", t
 // ↑ pulls a queued message back (cancelled first), Tab moves focus when idle
 // (chat-steer-queue.cjs). The coding-agent side is in chat-steering.cjs.
 func TestFixtureChatSteerQueue(t *testing.T) { runFixture(t, "chat-steer-queue.cjs", true, false) }
+
+// Attention across tiles: needs you / error / done, Alt+N across
+// workspaces, notifications only when allowed (chat-tiles-attention.cjs).
+func TestFixtureChatTilesAttention(t *testing.T) {
+	runFixture(t, "chat-tiles-attention.cjs", true, false)
+}

@@ -76,3 +76,12 @@
   .chat-tiles-tab[data-execution="waiting_user"] { box-shadow: inset 3px 0 0 var(--warn); }
   .chat-tiles-tab[data-execution="running"] { box-shadow: inset 3px 0 0 var(--accent); }
 }
+/* attention across tiles: one quiet button that says what waits and jumps
+   to it (Alt+N); its colour is the most urgent kind waiting */
+.chat-tiles-attn, .chat-tiles-notify { min-height: var(--control-min); padding: 0 var(--sp-4); border: 1px solid var(--line); border-radius: var(--radius); background: transparent; color: var(--base-80); font: var(--fs-sm) var(--sans); cursor: pointer; white-space: nowrap; }
+.chat-tiles-attn[hidden], .chat-tiles-notify[hidden] { display: none; }
+.chat-tiles-attn[data-kind="needs"] { border-color: var(--warn); color: var(--base-100); }
+.chat-tiles-attn[data-kind="error"] { border-color: var(--danger); color: var(--base-100); }
+.chat-tiles-attn:hover, .chat-tiles-notify:hover { background: var(--hover); }
+.chat-tiles-notify { color: var(--base-60); border-style: dashed; }
+@media (max-width: 860px) { .chat-tiles-attn, .chat-tiles-notify { min-height: var(--control-touch); } }

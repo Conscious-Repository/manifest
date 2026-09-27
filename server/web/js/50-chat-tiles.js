@@ -20,6 +20,7 @@
 //   Alt+Shift+direction swap · Alt+T flip split · Alt+F full screen
 //   Alt+= / Alt+- grow / shrink · Alt+1…9 workspace · Alt+Shift+1…9 move tile
 //   Alt+O open focused conversation in the full view · Alt+/ keys
+//   Alt+N next tile that needs you (then errors, then finished)
 const chatTilesMax = 6;          // live frames per workspace; each is a full app
 const chatTilesGap = 8;          // px between tiles (Omarchy gaps_in)
 const chatTilesState = {v:1, active:"1", ws:{}, focus:{}, full:{}, tiles:{}};
@@ -207,7 +208,14 @@ function chatTilesFocus(id, {frame = true} = {}) {
 function chatTilesFocusFrame(id) {
   const t = chatTilesFrames.get(id);
   if (!t) return;
-  if (t.frame) {
+  if (t.frame && !t.frame._wired) {
+    // a frame still loading has no key wiring yet: keys pressed now would be
+    // lost inside it. Hold focus on the tile (the manager's document, where
+    // the tiling keys work) and move in once the frame is wired.
+    t.frame._focusOnWire = true;
+    if (!t.box.hasAttribute("tabindex")) t.box.tabIndex = -1;
+    t.box.focus({preventScroll: true});
+  } else if (t.frame) {
     t.frame.focus();
     try { t.frame.contentDocument?.querySelector("#chatComposer textarea:not([disabled])")?.focus({preventScroll:true}); } catch (e) {}
   } else t.box.querySelector("input,button")?.focus();
@@ -261,6 +269,7 @@ function chatTilesKey(e) {
   else if (digit) { if (shift) chatTilesMove(chatTilesFocused(), digit[1]); else chatTilesWorkspace(digit[1]); }
   else if (code === "KeyO" && !shift) { const t = chatTilesState.tiles[chatTilesFocused()]; if (t?.route) location.hash = t.route; }
   else if (code === "Slash") chatTilesHelp();
+  else if (code === "KeyN" && !shift) chatTilesNextAttention();
   else return false;
   e.preventDefault(); e.stopPropagation();
   return true;
@@ -287,9 +296,14 @@ function chatTilesMount() {
   full.onclick = () => chatTilesToggleFull();
   const keys = el("button", "chat-tiles-keys", "Keys"); keys.type = "button"; keys.title = "Tiling keys · Alt+/"; keys.onclick = () => chatTilesHelp();
   const exit = el("a", "chat-tiles-exit", "Single chat"); exit.href = "#/chat"; exit.title = "Back to one conversation with the list";
+  const attn = el("button", "chat-tiles-attn"); attn.type = "button"; attn.hidden = true; attn.setAttribute("aria-keyshortcuts", "Alt+N");
+  attn.onclick = () => chatTilesNextAttention();
+  const notify = el("button", "chat-tiles-notify", "Notify me"); notify.type = "button"; notify.hidden = true;
+  notify.title = "Show a browser notification when a tile you are not looking at finishes or needs you";
+  notify.onclick = async () => { try { await Notification.requestPermission(); } catch (e) {} chatTilesAttentionPaint(); };
   const note = el("span", "chat-tiles-note"); note.setAttribute("role", "status"); note.setAttribute("aria-live", "polite");
   const tabs = el("div", "chat-tiles-tabs"); tabs.setAttribute("role", "tablist"); tabs.setAttribute("aria-label", "Tiles in this workspace");
-  bar.append(spaces, add, full, keys, note, exit, tabs);
+  bar.append(spaces, attn, notify, add, full, keys, note, exit, tabs);
   const stage = el("div", "chat-tiles-stage");
   root.append(bar, stage);
   view.append(root);
@@ -304,7 +318,7 @@ function chatTilesNotice(text) {
   clearTimeout(note._t); note._t = setTimeout(() => { note.textContent = ""; }, 5000);
 }
 function chatTilesHelp() {
-  const rows = [["Alt+Enter", "New tile (splits the focused one)"], ["Alt+W", "Close tile (the conversation stays)"], ["Alt+← ↑ ↓ → or H J K L", "Focus a neighbour"], ["Alt+Shift+direction", "Swap with a neighbour"], ["Alt+T", "Flip the split"], ["Alt+F", "Full screen"], ["Alt+= / Alt+-", "Grow / shrink"], ["Alt+1…9", "Switch workspace"], ["Alt+Shift+1…9", "Move tile to workspace"], ["Alt+O", "Open in the single-chat view"]];
+  const rows = [["Alt+Enter", "New tile (splits the focused one)"], ["Alt+W", "Close tile (the conversation stays)"], ["Alt+← ↑ ↓ → or H J K L", "Focus a neighbour"], ["Alt+Shift+direction", "Swap with a neighbour"], ["Alt+T", "Flip the split"], ["Alt+F", "Full screen"], ["Alt+= / Alt+-", "Grow / shrink"], ["Alt+1…9", "Switch workspace"], ["Alt+Shift+1…9", "Move tile to workspace"], ["Alt+O", "Open in the single-chat view"], ["Alt+N", "Next tile that needs you, then errors, then finished"]];
   reviewDialog("Tiling keys", ({body, actions, close}) => {
     const list = el("dl", "chat-tiles-help");
     for (const [k, v] of rows) list.append(el("dt", "", k), el("dd", "", v));
@@ -359,6 +373,8 @@ function chatTilesWireFrame(id, frame) {
   // a (re)loaded frame starts out assuming it is shown and focused
   const t = chatTilesFrames.get(id); if (t) { t.paneShown = undefined; t.paneFocused = undefined; chatTilesNotifyPanes(); }
   win.addEventListener("keydown", e => { chatTilesKey(e); }, true);
+  frame._wired = true;
+  if (frame._focusOnWire) { frame._focusOnWire = false; if (chatTilesFocused() === id && document.activeElement === chatTilesFrames.get(id)?.box) chatTilesFocusFrame(id); }
   win.addEventListener("focus", () => { if (chatTilesFocused() !== id) chatTilesFocus(id, {frame:false}); });
   win.document.addEventListener("pointerdown", () => { if (chatTilesFocused() !== id) chatTilesFocus(id, {frame:false}); }, true);
   win.addEventListener("hashchange", () => {
@@ -495,6 +511,7 @@ function chatTilesBounds(node) {
 }
 function chatTilesMarkFocus() {
   const focused = chatTilesFocused();
+  if (chatTilesAttn.get(focused)?.kind === "done" && chatTilesShown) { chatTilesAttn.delete(focused); chatTilesAttentionPaint(); }
   if (chatTilesNarrow()) { chatTilesLayout(); }
   chatTilesRoot?.querySelectorAll(".chat-tiles-tab").forEach((b, i) => b.setAttribute("aria-selected", String(chatTilesLeaves(chatTilesTree())[i] === focused)));
   for (const [id, t] of chatTilesFrames) { t.box.classList.toggle("is-focused", id === focused); t.box.setAttribute("aria-current", id === focused ? "true" : "false"); }
@@ -530,7 +547,81 @@ function chatTilesHeads() {
     if (name && spec.title !== name && spec.route && entry) { spec.title = name; }
   }
   chatTilesTabs();
+  chatTilesAttentionUpdate();
 }
+
+// ---- attention across tiles (2026-09-27) ----
+// Every tile, in every workspace, from the same inbox state the heads show:
+// needs you (waiting on the owner) and error (failed / disconnected) hold
+// while the state does; done is a run that finished since it was last
+// looked at, cleared by focusing the tile. Alt+N (or the bar button) jumps
+// to the next one: needs you first, then errors, then done. A tile that is
+// not in view announces a new state with a browser notification, only when
+// the owner has allowed notifications.
+const chatTilesAttn = new Map(), chatTilesExec = new Map();
+const chatTilesAttnOrder = {needs: 0, error: 1, done: 2};
+function chatTilesWorkspaceOf(id) { return Object.keys(chatTilesState.ws).find(k => chatTilesLeaves(chatTilesState.ws[k]).includes(id)) || ""; }
+function chatTilesInView(id) { return chatTilesShown && !document.hidden && chatTilesState.active === chatTilesWorkspaceOf(id) && chatTilesFocused() === id; }
+function chatTilesAttentionUpdate() {
+  const seen = new Set();
+  for (const [id, spec] of Object.entries(chatTilesState.tiles)) {
+    if (!spec.route) continue;
+    seen.add(id);
+    const entry = chatTilesEntryFor(spec.route), st = entry ? chatEntryState(entry) : null, exec = st?.execution || "";
+    const prev = chatTilesExec.get(id), known = chatTilesExec.has(id);
+    chatTilesExec.set(id, exec);
+    const had = chatTilesAttn.get(id);
+    let kind = exec === "waiting_user" ? "needs" : exec === "failed" || exec === "disconnected" ? "error" : "";
+    if (!kind && had?.kind === "done" && exec !== "running") kind = "done";
+    if (!kind && known && prev === "running" && exec !== "running" && exec !== "queued" && !chatTilesInView(id)) kind = "done";
+    if (!kind) { chatTilesAttn.delete(id); continue; }
+    if (had?.kind === kind) continue;
+    const title = (entry && (entry.session.title || entry.session.name)) || spec.title || "Conversation";
+    chatTilesAttn.set(id, {kind, since: Date.now(), title, label: st?.label || ""});
+    // announce a change, never the state found on load
+    if (known && prev !== exec && !chatTilesInView(id)) chatTilesAnnounce(id, kind, title, st?.label || "");
+  }
+  for (const id of [...chatTilesAttn.keys()]) if (!seen.has(id)) chatTilesAttn.delete(id);
+  chatTilesAttentionPaint();
+}
+function chatTilesAnnounce(id, kind, title, label) {
+  if (typeof Notification === "undefined" || Notification.permission !== "granted") return;
+  const body = kind === "needs" ? "Needs you" : kind === "error" ? (label || "Something went wrong") : "Finished";
+  try {
+    const n = new Notification(title, {body, tag: "manifest-tile-" + id});
+    n.onclick = () => { window.focus(); chatTilesJumpTo(id); n.close(); };
+  } catch (e) {}
+}
+function chatTilesAttentionList() {
+  return [...chatTilesAttn.entries()].sort((a, b) => chatTilesAttnOrder[a[1].kind] - chatTilesAttnOrder[b[1].kind] || a[1].since - b[1].since);
+}
+function chatTilesAttentionPaint() {
+  const root = chatTilesRoot; if (!root) return;
+  const attn = root.querySelector(".chat-tiles-attn"), notify = root.querySelector(".chat-tiles-notify");
+  const count = k => [...chatTilesAttn.values()].filter(a => a.kind === k).length;
+  const parts = [[count("needs"), "need", "needs"], [count("error"), "error", "errors"], [count("done"), "done", "done"]].filter(p => p[0]).map(([n, one, many]) => n + " " + (n === 1 ? (one === "need" ? "needs you" : one) : (many === "needs" ? "need you" : many)));
+  if (attn) {
+    attn.hidden = !parts.length;
+    attn.textContent = parts.join(" · ") + " · Next";
+    const next = chatTilesAttentionList()[0];
+    attn.title = next ? "Go to " + next[1].title + " · Alt+N" : "";
+    attn.dataset.kind = next ? next[1].kind : "";
+    attn.setAttribute("aria-label", parts.join(", ") + ". Go to the next · Alt+N");
+  }
+  if (notify) notify.hidden = typeof Notification === "undefined" || Notification.permission !== "default";
+}
+function chatTilesJumpTo(id) {
+  const ws = chatTilesWorkspaceOf(id); if (!ws) return;
+  if (location.hash !== "#/chat/tiles") location.hash = "#/chat/tiles";
+  if (chatTilesState.active !== ws) chatTilesWorkspace(ws);
+  chatTilesFocus(id);
+}
+function chatTilesNextAttention() {
+  const current = chatTilesFocused(), list = chatTilesAttentionList().filter(([id]) => id !== current);
+  if (!list.length) { chatTilesNotice(chatTilesAttn.size ? "Only this tile needs you" : "Nothing needs you right now"); return; }
+  chatTilesJumpTo(list[0][0]);
+}
+
 function chatTilesPaint() {
   if (!chatTilesRoot) return;
   const ws = chatTilesState.active;
