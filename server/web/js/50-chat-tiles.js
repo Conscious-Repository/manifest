@@ -686,7 +686,10 @@ async function chatTilesShow(from) {
     try { await chatLoadInbox(true); } catch (e) {}
     chatTilesHeads();
   }, 8000);
-  const id = chatTilesFocused(); if (id) setTimeout(() => chatTilesFocusFrame(id), 60);
+  // focus the tile that is focused when the timer fires, not the one that
+  // was when tiles opened: a tiling key pressed in between (Alt+N, Alt+→)
+  // would otherwise be undone
+  setTimeout(() => { const id = chatTilesFocused(); if (id && chatTilesShown) chatTilesFocusFrame(id); }, 60);
 }
 function chatTilesHide() {
   if (!chatTilesShown) return;
