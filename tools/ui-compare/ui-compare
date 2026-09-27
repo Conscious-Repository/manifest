@@ -1,0 +1,8 @@
+#!/bin/sh
+# ui-compare — virtual browser capture and side-by-side comparison.
+# Usage and options: see ui-compare.cjs. Finds node and Playwright on metis.
+dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+[ -d "$HOME/.hermes/node/bin" ] && PATH="$HOME/.hermes/node/bin:$PATH"
+: "${NODE_PATH:=$HOME/.cache/manifest-qa/node_modules}"
+export PATH NODE_PATH
+exec node "$dir/ui-compare.cjs" "$@"

@@ -42,3 +42,4 @@ kairos-runner
 **/__pycache__/
 
 /tools/artifact-syntax/node_modules/
+.ui-compare/

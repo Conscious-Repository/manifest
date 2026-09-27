@@ -291,3 +291,7 @@ func TestFixtureChatComposerModels(t *testing.T) {
 // The live status line: working time, step, Stop/Esc, context meter, and
 // "Worked for" on finished replies (chat-status-line.cjs).
 func TestFixtureChatStatusLine(t *testing.T) { runFixture(t, "chat-status-line.cjs", true, false) }
+
+// The virtual browser tool captures and compares two pages end to end
+// (tools/ui-compare, ui-compare.cjs).
+func TestFixtureUICompare(t *testing.T) { runFixture(t, "ui-compare.cjs", true, false) }
