@@ -194,9 +194,12 @@ function renderMarkdown(raw, notePath, opts) {
     // code fence
     if (t.startsWith("```")) {
       flushPara();
+      const lang = t.slice(3).trim().split(/\s+/)[0].replace(/[^\w+#.-]/g, "").slice(0, 24);
       const code = []; i++;
       for (; i < lines.length && !lines[i].trim().startsWith("```"); i++) code.push(lines[i]);
-      const pre = el("pre", "md-pre"); pre.textContent = code.join("\n"); frag.appendChild(pre);
+      const pre = el("pre", "md-pre"); pre.textContent = code.join("\n");
+      if (lang) pre.dataset.lang = lang;
+      frag.appendChild(opts && opts.chat ? mdChatCodeBlock(pre, lang) : pre);
       continue;
     }
     // heading
@@ -239,8 +242,18 @@ function renderMarkdown(raw, notePath, opts) {
       row.append(box, span); frag.appendChild(row); continue;
     }
     // list item
-    let li = line.match(/^(\s*)[-*]\s+(.*)$/) || line.match(/^(\s*)\d+\.\s+(.*)$/);
-    if (li) { flushPara(); const item = el("div", "md-li"); item.append(el("span", "md-bullet", "•")); const s = el("span"); inlineInto(s, li[2], notePath); item.append(s); frag.appendChild(item); continue; }
+    // An ordered item keeps its own number; leading indentation is the
+    // nesting depth (two spaces or one tab a level), shown by the stylesheet.
+    let li = line.match(/^(\s*)[-*+]\s+(.*)$/), ordered = null;
+    if (!li && (ordered = line.match(/^(\s*)(\d{1,9})[.)]\s+(.*)$/))) li = [ordered[0], ordered[1], ordered[3]];
+    if (li) {
+      flushPara();
+      const item = el("div", "md-li" + (ordered ? " md-ol" : ""));
+      const depth = Math.min(4, Math.floor(li[1].replace(/\t/g, "  ").length / 2));
+      if (depth) { item.dataset.depth = String(depth); item.style.setProperty("--md-depth", String(depth)); }
+      item.append(el("span", "md-bullet", ordered ? ordered[2] + "." : "•"));
+      const s = el("span"); inlineInto(s, li[2], notePath); item.append(s); frag.appendChild(item); continue;
+    }
     // blockquote
     if (t.startsWith(">")) { flushPara(); const bq = el("blockquote", "md-bq"); inlineInto(bq, t.replace(/^>\s?/, ""), notePath); frag.appendChild(bq); continue; }
     // horizontal rule
@@ -251,6 +264,27 @@ function renderMarkdown(raw, notePath, opts) {
   }
   flushPara();
   return frag;
+}
+
+// mdChatCodeBlock — a fenced block in a conversation: the language it was
+// fenced with and a Copy control on a quiet header, the code below it. The
+// copy is the block's exact text; a refused clipboard says so in words.
+function mdChatCodeBlock(pre, lang) {
+  const box = el("div", "md-code-block");
+  const head = el("div", "md-code-head");
+  head.append(el("span", "md-code-lang", lang || "text"));
+  const copy = el("button", "md-code-copy", "Copy");
+  copy.type = "button"; copy.setAttribute("aria-label", "Copy code");
+  let reset = 0;
+  copy.onclick = async () => {
+    clearTimeout(reset);
+    try { await navigator.clipboard.writeText(pre.textContent); copy.textContent = "Copied"; copy.setAttribute("aria-label", "Code copied"); }
+    catch (e) { copy.textContent = "Select to copy"; copy.setAttribute("aria-label", "Clipboard unavailable; select the code to copy it"); }
+    reset = setTimeout(() => { if (copy.isConnected) { copy.textContent = "Copy"; copy.setAttribute("aria-label", "Copy code"); } }, 2000);
+  };
+  head.append(copy);
+  box.append(head, pre);
+  return box;
 }
 
 // inlineInto parses inline markdown (wikilinks, links, bold/italic/code) into DOM.

@@ -909,3 +909,20 @@ label.chat-artifact-handoff{display:flex;flex-direction:row;align-items:flex-sta
 .chat-run-state { font-size: var(--fs-sm); color: var(--muted); padding: var(--sp-3) 0; }
 .chat-run-state[data-execution="disconnected"] { color: var(--warn); }
 .chat-run-state[data-execution="failed"] { color: var(--danger); }
+/* Codex-grade conversation markdown (2026-09-26). Both chat surfaces share
+   one list/code anatomy: a hanging bullet or number, nesting by depth, and a
+   fenced block with its language and a Copy control. Scoped to the two say
+   wrappers so notes keep their own reading styles (70-note.css). */
+:is(.chat-say, .chat-term-say) .md-li { display: flex; gap: 0.6em; align-items: baseline; margin: 0.3em 0; padding-left: calc(var(--md-depth, 0) * 1.4em); }
+:is(.chat-say, .chat-term-say) .md-li > span:last-child { flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; }
+:is(.chat-say, .chat-term-say) .md-bullet { flex: none; min-width: 0.9em; color: var(--base-60); user-select: none; }
+:is(.chat-say, .chat-term-say) .md-ol > .md-bullet { min-width: 1.4em; text-align: right; font-variant-numeric: tabular-nums; }
+:is(.chat-say, .chat-term-say) .md-li + .md-p { margin-top: var(--sp-5); }
+:is(.chat-say, .chat-term-say) .md-code-block { margin: var(--sp-4) 0; border: 1px solid var(--line); border-radius: var(--radius-lg); background: var(--surface-field); overflow: hidden; }
+:is(.chat-say, .chat-term-say) .md-code-head { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-3); padding: 0 var(--sp-2) 0 var(--sp-5); border-bottom: 1px solid var(--line); font: var(--fs-2xs)/1 var(--sans); color: var(--base-60); }
+:is(.chat-say, .chat-term-say) .md-code-lang { text-transform: lowercase; letter-spacing: 0.02em; }
+:is(.chat-say, .chat-term-say) .md-code-copy { min-height: var(--control-min); padding: 0 var(--sp-3); border: 0; border-radius: var(--radius); background: transparent; color: var(--base-60); font: inherit; cursor: pointer; }
+:is(.chat-say, .chat-term-say) .md-code-copy:hover, :is(.chat-say, .chat-term-say) .md-code-copy:focus-visible { background: var(--hover); color: var(--base-100); }
+:is(.chat-say, .chat-term-say) .md-code-block > .md-pre { margin: 0; padding: var(--sp-4) var(--sp-5); border: 0; border-radius: 0; background: transparent; overflow-x: auto; font-family: var(--mono); font-size: var(--fs-sm); line-height: 1.55; color: var(--base-100); white-space: pre; }
+:is(.chat-say, .chat-term-say) .md-code { background: var(--surface-field); border: 1px solid var(--line-soft); padding: 0.05em 0.3em; border-radius: 4px; }
+@media (max-width: 860px) { :is(.chat-say, .chat-term-say) .md-code-copy { min-height: 44px; min-width: 44px; } }

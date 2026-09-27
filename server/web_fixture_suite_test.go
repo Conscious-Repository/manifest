@@ -271,3 +271,9 @@ func TestFixtureChatSimpleShell(t *testing.T) { runFixture(t, "chat-simple-shell
 
 // Add editable pending coding messages with explicit steering (chat-steering.cjs).
 func TestFixtureChatSteering(t *testing.T) { runFixture(t, "chat-steering.cjs", true, false) }
+
+// Render conversation markdown like a flagship harness: numbered and nested
+// lists, hanging bullets, language-labelled code with exact copy (chat-codex-transcript.cjs).
+func TestFixtureChatCodexTranscript(t *testing.T) {
+	runFixture(t, "chat-codex-transcript.cjs", true, false)
+}

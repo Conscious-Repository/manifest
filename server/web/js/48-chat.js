@@ -622,7 +622,7 @@ function chatTaskThreadEntry(c, taskID) {
     if (mine) wrap.textContent = c.text;
     else {
       const say = el("div", "chat-say");
-      try { say.append(renderMarkdown(c.text, "", { readOnly: true })); }
+      try { say.append(renderMarkdown(c.text, "", { readOnly: true, chat: true })); }
       catch (e) { say.textContent = c.text; }
       wrap.append(say);
     }
@@ -1969,7 +1969,7 @@ function renderChatLive() {
   if (chatLive.say) {
     const say = el("div", "chat-say");
     const shown = chatLive.say.slice(0, chatLive.revealed);
-    try { say.append(renderMarkdown(shown, "", { readOnly: true })); }
+    try { say.append(renderMarkdown(shown, "", { readOnly: true, chat: true })); }
     catch (e) { say.textContent = shown; }
     if (chatLive.revealed < chatLive.say.length || chatLive.open) say.append(el("span", "chat-cursor", "▍"));
     wrap.append(say);
@@ -2320,7 +2320,7 @@ function chatBlockEl(b) {
   if (b.t === "say") {
     const say = el("div", "chat-say");
     if (b.plain) { say.classList.add("chat-say-plain"); say.textContent = b.text || ""; return say; }
-    try { say.append(renderMarkdown(b.text || "", "", { readOnly: true })); }
+    try { say.append(renderMarkdown(b.text || "", "", { readOnly: true, chat: true })); }
     catch (e) { say.textContent = b.text || ""; }
     return say;
   }
@@ -3756,7 +3756,7 @@ function chatTermBlockEl(b) {
   if (b.t === "say") {
     const say = el("div", "chat-term-say");
     if (b.plain) { say.classList.add("chat-say-plain"); say.textContent = b.text || ""; return say; }
-    try { say.append(renderMarkdown(b.text || "", "", { readOnly: true })); }
+    try { say.append(renderMarkdown(b.text || "", "", { readOnly: true, chat: true })); }
     catch (e) { say.textContent = b.text || ""; }
     return say;
   }
