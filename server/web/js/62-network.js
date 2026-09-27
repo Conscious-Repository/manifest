@@ -112,6 +112,7 @@ function netPaint() {
   host.append(head);
 
   host.append(netFacets());
+  if (netTag) host.append(netLeverage());
 
   // THE GRAPH is the same people laid out by who ties to whom — the
   // Recruiting renderer through the Network lens (97-rec-graph.js). The list's
@@ -310,12 +311,37 @@ function netPaintInspector() {
   let dl = document.getElementById(listId);
   if (!dl) { dl = document.createElement("datalist"); dl.id = listId; document.body.append(dl); }
   dl.innerHTML = "";
-  (netCache.tags || []).forEach((t) => { const o = document.createElement("option"); o.value = t.tag; dl.append(o); });
+  (netCache.vocabulary || (netCache.tags || []).map((t) => t.tag)).forEach((t) => {
+    const o = document.createElement("option"); o.value = t; dl.append(o);
+  });
   tags.setAttribute("list", listId);
-  const tagsWas = tags.value;
-  tags.onblur = () => { if (tags.value !== tagsWas) netSave(p, { tags: tags.value }); };
+  let tagsWas = tags.value;
+  tags.onblur = () => { if (tags.value !== tagsWas) { tagsWas = tags.value; netSave(p, { tags: tags.value }); } };
   tags.onkeydown = (e) => { if (e.key === "Enter") { e.preventDefault(); tags.blur(); } };
   field("tags", tags);
+
+  // what the SOURCE said they know, offered one click at a time — a topic is
+  // a suggestion until the owner accepts it; nothing tags itself
+  if ((p.suggest || []).length) {
+    const sug = el("div", "net-suggest");
+    sug.append(el("span", "net-facet-label", "suggested"));
+    p.suggest.forEach((t) => {
+      const b = el("button", "net-sug", "+ " + t);
+      b.title = "named by " + (p.source || "the source") + " — add as a tag";
+      b.onclick = async () => {
+        const next = (tags.value.trim() ? tags.value.replace(/[,\s]+$/, "") + ", " : "") + t;
+        tags.value = next;
+        tagsWas = next;
+        if (await netSave(p, { tags: next })) {
+          p.suggest = (p.suggest || []).filter((x) => x !== t);
+          b.remove();
+          if (!sug.querySelector(".net-sug")) sug.remove();
+        }
+      };
+      sug.append(b);
+    });
+    insp.append(sug);
+  }
 
   // note
   const note = el("input", "pp-in");
@@ -438,4 +464,52 @@ function netDimGraph() {
     const total = (netCache.people || []).filter((p) => !p.archived).length;
     count.textContent = keep.size === total ? total + " people" : keep.size + " of " + total;
   }
+}
+
+// ---- a tag answers "who can get me there": the leverage ranking
+// (recruiting/leverage.go) — expertise in the topic × how tied the person is
+// to people you know, every component visible. Read-only; asked once per tag.
+const netLevCache = {};
+
+function netLeverage() {
+  const box = el("div", "net-lev");
+  const tag = (netCache.tags || []).map((t) => t.tag).find((t) => netTagKey(t) === netTag) || netTag;
+  box.append(el("span", "net-facet-label", "reach"));
+  const body = el("div", "net-lev-body");
+  box.append(body);
+  const paint = (res) => {
+    body.innerHTML = "";
+    if (!res) { body.append(el("span", "net-sub", "asking the graph…")); return; }
+    if (res.error) { body.append(el("span", "net-sub", "the graph couldn't answer — " + res.error)); return; }
+    if (!(res.people || []).length) {
+      body.append(el("span", "net-sub", res.known
+        ? "the sources know experts in " + tag + ", but none is tied to anyone you know yet"
+        : "no source has named expertise in " + tag + " yet — the tags you add are the record"));
+      return;
+    }
+    body.append(el("span", "net-sub", "who the sources say knows " + tag + ", ranked by how close they are to you"));
+    const row = el("div", "net-lev-people");
+    res.people.slice(0, 8).forEach((lp) => {
+      const b = el("button", "filter-chip net-lev-p", lp.name + " · " + (lp.role === "expert" ? "expert" : "adjacent") +
+        (lp.tieCount ? " · " + lp.tieCount + (lp.tieCount === 1 ? " tie" : " ties") : ""));
+      b.title = "leverage " + lp.leverage + " = knowledge " + lp.knowledge + " × connectivity " + lp.connectivity;
+      b.onclick = () => {
+        if (netHas(lp.id)) { netSel = lp.id; netPaintList(); netPaintInspector(); }
+        else if (String(lp.id).startsWith("cand/")) location.hash = "#/aion/recruiting/candidate/" + encodeURIComponent(lp.id);
+        else showToast(lp.name + " isn't in your network yet — keep them from a sweep");
+      };
+      row.append(b);
+    });
+    body.append(row);
+  };
+  const key = netTag;
+  if (netLevCache[key]) paint(netLevCache[key]);
+  else {
+    paint(null);
+    fetch("/api/aion/recruiting/leverage?limit=8&topic=" + encodeURIComponent(tag))
+      .then(async (r) => r.ok ? r.json() : { error: (await r.text()).slice(0, 120) })
+      .catch((e) => ({ error: String(e.message || e).slice(0, 120) }))
+      .then((res) => { netLevCache[key] = res; if (netTag === key && box.isConnected) paint(res); });
+  }
+  return box;
 }

@@ -74,6 +74,7 @@ func TestKeepDraftWritesOneRowAndNothingElse(t *testing.T) {
 	d := citedDraft("Ada Coil", "A1")
 	d.Links = append(d.Links, "https://orcid.org/0000-0001-2345-6789", "https://github.com/adacoil")
 	d.Contact = map[string]string{"email": "ada@example.test"}
+	d.Topics = []string{"low-field MRI", "RF coils", "rf-coils"}
 	d.Edges = []sources.EdgeClaim{{From: "ext/orcid/0000-0009-9999-9999", Type: sources.EdgeCoauthor,
 		Basis: "shared paper", Confidence: 0.6, SourceID: "fake", Evidence: "https://example.test/paper/A1"}}
 	rs, store, vault := testRunStore(t, &fakeAdapter{id: "fake", drafts: []sources.CandidateDraft{d}})
@@ -90,6 +91,9 @@ func TestKeepDraftWritesOneRowAndNothingElse(t *testing.T) {
 	}
 	if p.Type != "expert" || p.SourceRef != "fake:A1" || p.ORCID == "" || p.GitHub == "" {
 		t.Fatalf("kept row: %+v", p)
+	}
+	if strings.Join(p.Topics, "|") != "low-field MRI|RF coils" || len(p.Tags) != 0 {
+		t.Fatalf("the source's topics are suggestions, never tags: topics=%v tags=%v", p.Topics, p.Tags)
 	}
 	if p.Email != "" || p.Consent != "" {
 		t.Fatalf("keep wrote an email or a consent: %+v", p)

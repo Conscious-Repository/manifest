@@ -76,3 +76,17 @@
 .rg-canvas .rg-node.rg-team .rg-label, .rg-canvas .rg-node.rg-investor .rg-label { opacity: var(--rg-label-named); fill: var(--base-100); }
 /* the list's filters, applied to the picture: left out goes quiet, not away */
 .rg-canvas .rg-node.rg-dim { opacity: 0.12; }
+
+/* suggested tags: the source's topics, ghosted until accepted */
+.net-suggest { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); padding: var(--sp-2) 0 var(--sp-3); }
+.net-sug {
+  font-family: var(--mono); font-size: var(--fs-2xs); color: var(--base-50);
+  background: transparent; border: 1px dashed var(--base-30); border-radius: var(--radius);
+  padding: 0 var(--sp-2); cursor: pointer;
+}
+.net-sug:hover { color: var(--base-100); border-color: var(--accent); }
+
+/* a tag's reach: the leverage ranking, under the facets */
+.net-lev { display: flex; align-items: baseline; gap: var(--sp-3); padding: var(--sp-4) 0; border-bottom: 1px solid var(--base-25); }
+.net-lev-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: var(--sp-2); }
+.net-lev-people { display: flex; flex-wrap: wrap; gap: var(--sp-2); }

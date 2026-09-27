@@ -44,7 +44,7 @@ func (s *Store) KeepDraft(d sources.CandidateDraft, kind string, now time.Time) 
 	p := NetworkPerson{
 		Name: name, Type: kind, Org: strings.TrimSpace(d.Org), Title: strings.TrimSpace(d.Title),
 		Source: strings.TrimSpace(d.SourceID), SourceRef: ref,
-		Added: now.UTC().Format("2006-01-02"),
+		Added: now.UTC().Format("2006-01-02"), Topics: cleanTags(d.Topics),
 	}
 	for _, l := range d.Links {
 		l = strings.TrimSpace(l)

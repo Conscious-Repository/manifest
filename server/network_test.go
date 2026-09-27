@@ -259,3 +259,34 @@ func TestNetworkGraphHoldsTheCeiling(t *testing.T) {
 		t.Fatalf("ceiling: %d nodes, omitted %+v", len(g.Nodes), g.Omitted)
 	}
 }
+
+// A kept row's source topics are OFFERED (suggest), minus what the owner has
+// already tagged; accepting one is an ordinary tag edit. Nothing tags itself.
+func TestNetworkSuggestsSourceTopicsNotYetTagged(t *testing.T) {
+	s, _ := networkTestServer(t)
+	if err := s.recruiting.AddNetworkPerson(recruiting.NetworkPerson{Name: "Ada Coil", Type: "expert",
+		Topics: []string{"MRI coils", "FDA"}, Tags: []string{"fda"}}); err != nil {
+		t.Fatal(err)
+	}
+	ada := networkGet(t, s)["Ada Coil"]
+	if strings.Join(ada.Suggest, "|") != "MRI coils" || strings.Join(ada.Tags, "|") != "fda" {
+		t.Fatalf("suggest=%v tags=%v", ada.Suggest, ada.Tags)
+	}
+	w := recruitingPost(t, s, s.handleNetworkPerson, "/api/network/person/x", ada.ID, `{"set":{"tags":"fda, MRI coils"}}`)
+	if w.Code != http.StatusOK {
+		t.Fatalf("%d %s", w.Code, w.Body.String())
+	}
+	ada = networkGet(t, s)["Ada Coil"]
+	if len(ada.Suggest) != 0 || len(ada.Tags) != 2 {
+		t.Fatalf("an accepted suggestion should leave suggest: %+v", ada)
+	}
+	var row recruiting.NetworkPerson
+	for _, p := range s.recruiting.Connectors() {
+		if p.ID == ada.ID {
+			row = p
+		}
+	}
+	if len(row.Topics) != 2 {
+		t.Fatalf("accepting a tag must not rewrite what the source said: %+v", row.Topics)
+	}
+}

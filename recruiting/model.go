@@ -369,6 +369,10 @@ type NetworkPerson struct {
 	// network's answer to "who do I know about X". Repeated `[tag:: …]` keys,
 	// display text kept; identity via TopicID so "MRI coils" == "mri-coils".
 	Tags []string `json:"tags,omitempty"`
+	// Topics are what a SOURCE said the person knows, copied at keep time
+	// (the run cache that named them expires). Suggestions only: a topic
+	// becomes a tag when the owner accepts it, never by itself.
+	Topics []string `json:"topics,omitempty"`
 	// Note is one line in the owner's words; LastContact is the date he last
 	// touched this person (YYYY-MM-DD). The whole of the tracking by design:
 	// no reminders, no pipeline (owner decision 2026-09-27).

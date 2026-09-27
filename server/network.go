@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"manifest/graph"
 	"manifest/ledger"
 	"manifest/recruiting"
 )
@@ -38,6 +39,7 @@ type NetPerson struct {
 	Org         string   `json:"org,omitempty"`
 	Title       string   `json:"title,omitempty"`
 	Tags        []string `json:"tags,omitempty"`
+	Suggest     []string `json:"suggest,omitempty"` // source topics not yet tags — offered, never applied
 	Note        string   `json:"note,omitempty"`
 	LastContact string   `json:"lastContact,omitempty"` // the owner's own date
 	LastMet     string   `json:"lastMet,omitempty"`     // the calendar's, when a contact is linked
@@ -76,7 +78,7 @@ func (s *Server) networkPeople(now time.Time) []*NetPerson {
 	for _, p := range s.recruiting.Connectors() {
 		np := &NetPerson{
 			ID: p.ID, Name: p.Name, Kind: p.Type, Org: p.Org, Title: p.Title,
-			Tags: p.Tags, Note: p.Note, LastContact: p.LastContact, Editable: true,
+			Tags: p.Tags, Suggest: untagged(p.Topics, p.Tags), Note: p.Note, LastContact: p.LastContact, Editable: true,
 			ContactKey: p.Ref, TeamLink: p.Team, Consent: p.Consent, Source: p.Source,
 			SourceRef: p.SourceRef, GitHub: p.GitHub, LinkedIn: p.LinkedIn, ORCID: p.ORCID,
 			Archived: p.Archived, Sources: []string{"kept"},
@@ -177,6 +179,58 @@ func (s *Server) networkPeople(now time.Time) []*NetPerson {
 	return out
 }
 
+// untagged is the topics the owner has not already made tags, by TopicID.
+func untagged(topics, tags []string) []string {
+	have := map[string]bool{}
+	for _, t := range tags {
+		have[recruiting.TopicID(t)] = true
+	}
+	var out []string
+	for _, t := range topics {
+		if id := recruiting.TopicID(t); id != "" && !have[id] {
+			have[id] = true
+			out = append(out, t)
+		}
+	}
+	return out
+}
+
+// networkVocabulary is what the tag box offers: the owner's tags first
+// (most used), then the topics the sources have named — the graph's topic
+// nodes and every kept row's suggestions — so a tag and a source topic for
+// the same idea converge on one spelling instead of drifting apart.
+func (s *Server) networkVocabulary(people []*NetPerson, tagText map[string]string) []string {
+	seen := map[string]bool{}
+	var out []string
+	add := func(t string) {
+		if id := recruiting.TopicID(t); id != "" && !seen[id] && len(out) < 600 {
+			seen[id] = true
+			out = append(out, strings.TrimSpace(t))
+		}
+	}
+	for _, t := range tagText {
+		add(t)
+	}
+	for _, p := range people {
+		for _, t := range p.Suggest {
+			add(t)
+		}
+	}
+	if s.graphStore != nil {
+		var topics []string
+		for _, ent := range s.graphStore.LoadEntities().Entities() {
+			if ent.Kind == graph.KindTopic && ent.Title != "" {
+				topics = append(topics, ent.Title)
+			}
+		}
+		sort.Strings(topics)
+		for _, t := range topics {
+			add(t)
+		}
+	}
+	return out
+}
+
 func appendUnique(xs []string, s string) []string {
 	for _, x := range xs {
 		if strings.EqualFold(x, s) {
@@ -222,6 +276,7 @@ func (s *Server) handleNetwork(w http.ResponseWriter, _ *http.Request) {
 	})
 	writeJSON(w, map[string]any{
 		"people": people, "kinds": recruiting.PersonTypes, "tags": tags,
+		"vocabulary": s.networkVocabulary(people, tagText),
 		"contacts": s.contacts != nil, "fundraising": s.fundraising != nil, "team": s.aion != nil,
 	})
 }

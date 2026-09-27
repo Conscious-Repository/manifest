@@ -17,7 +17,7 @@ var (
 		"archived", "ref",
 		// the Network tab's minimal tracking (2026-09-27): repeated tags, one
 		// note, the last-contact date, an explicit team link
-		"tag", "note", "last_contact", "team"}
+		"tag", "topic", "note", "last_contact", "team"}
 	edgeKeys = []string{"from", "to", "kind", "basis", "confidence", "inferred",
 		"source", "evidence", "observed", "work"}
 )
@@ -57,7 +57,7 @@ func personOf(r *Row) NetworkPerson {
 		Org: r.Get("org"), Title: r.Get("title"), Source: r.Get("source"),
 		Consent: r.Get("consent"), Added: r.Get("added"),
 		Archived: r.Get("archived"), Ref: r.Get("ref"), SourceRef: r.Get("source_ref"), ORCID: r.Get("orcid"),
-		Tags: r.GetAll("tag"), Note: r.Get("note"), LastContact: r.Get("last_contact"), Team: r.Get("team"),
+		Tags: r.GetAll("tag"), Topics: r.GetAll("topic"), Note: r.Get("note"), LastContact: r.Get("last_contact"), Team: r.Get("team"),
 		Unknown: unknownFields(r, networkPersonKeys...),
 	}
 }
@@ -97,6 +97,12 @@ func (d *PeopleDoc) Add(p NetworkPerson) (NetworkPerson, error) {
 		if kv[1] != "" {
 			r.Set(kv[0], kv[1])
 		}
+	}
+	if topics := cleanTags(p.Topics); len(topics) > 0 {
+		if len(topics) > MaxKnowledgeTopics {
+			topics = topics[:MaxKnowledgeTopics]
+		}
+		r.SetAll("topic", topics)
 	}
 	if tags := cleanTags(p.Tags); len(tags) > 0 {
 		r.SetAll("tag", tags)
