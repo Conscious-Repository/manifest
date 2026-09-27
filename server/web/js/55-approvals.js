@@ -1814,7 +1814,7 @@ function manifestOperationCard(item) {
   });
   if (p.candidate && (result.objectRefs || []).some(ref => ref.domain === "recruiting" && ref.id === p.candidate.id)) nav("Open candidate", () => { recSel = p.candidate.id; recCache = null; recNav("board"); });
   if (p.person && p.person.id) nav("Open network person", () => {
-    const st = rgInit(); st.center = p.person.id; st.sel = p.person.id; st.data = null;
+    rgUseLens("recruiting"); const st = rgInit(); st.center = p.person.id; st.sel = p.person.id; st.data = null;
     recCache = null; recNav("network");
   });
   // General graph edges have no dedicated router view. Reveal their canonical

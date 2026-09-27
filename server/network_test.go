@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -155,5 +156,106 @@ func TestNetworkEditingAContactAdoptsItWithoutWritingTheNote(t *testing.T) {
 	w = recruitingPost(t, s, s.handleNetworkPerson, "/api/network/person/x", carol.ID, `{"set":{"last_contact":"2026-09-27"}}`)
 	if w.Code != http.StatusOK || len(s.recruiting.Connectors()) != rows {
 		t.Fatalf("a second edit wrote a second row: %d %s", w.Code, w.Body.String())
+	}
+}
+
+func networkGraphGet(t *testing.T, s *Server, query string) graphReply {
+	t.Helper()
+	w := httptest.NewRecorder()
+	s.handleNetworkGraph(w, httptest.NewRequest(http.MethodGet, "/api/network/graph?"+query, nil))
+	if w.Code != http.StatusOK {
+		t.Fatalf("%d %s", w.Code, w.Body.String())
+	}
+	var out graphReply
+	if err := json.Unmarshal(w.Body.Bytes(), &out); err != nil {
+		t.Fatal(err)
+	}
+	return out
+}
+
+// ⚠ THE NETWORK GRAPH IS THE LIST'S PEOPLE: an investor whose contact a kept
+// row refs is ONE node however an edge was filed (by contact key or by row),
+// kinded by what the owner said they are; a same-name row is still two nodes.
+func TestNetworkGraphDrawsOneNodePerLinkedHumanAndNeverMergesByName(t *testing.T) {
+	s, _ := networkTestServer(t)
+	fr := testFundraisingStore(t)
+	s.fundraising = fr
+	op, err := fr.Create("Acme Ventures")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := fr.Update(op.ID, map[string]any{"people": []map[string]string{{"key": "Alice Ray", "display": "Alice Ray"}}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.recruiting.AddNetworkPerson(recruiting.NetworkPerson{Name: "Alice Ray", Ref: "Alice Ray", Type: "advisor"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.recruiting.AddNetworkPerson(recruiting.NetworkPerson{Name: "Bob Stone", Type: "expert"}); err != nil {
+		t.Fatal(err)
+	}
+	var aliceRow string
+	for _, p := range s.recruiting.Connectors() {
+		if p.Name == "Alice Ray" {
+			aliceRow = p.ID
+		}
+	}
+	s.recruiting.UseDerivedEdges(func() []recruiting.Edge {
+		return []recruiting.Edge{
+			{From: "contact/alice ray", To: "contact/carol tu", Kind: "same_meeting", Basis: "a call", Confidence: "0.70", Inferred: true, Source: "calendar"},
+			{From: aliceRow, To: "contact/carol tu", Kind: "same_meeting", Basis: "a call", Confidence: "0.70", Inferred: true, Source: "calendar"},
+			{From: "contact/bob stone", To: "contact/carol tu", Kind: "same_meeting", Basis: "a call", Confidence: "0.70", Inferred: true, Source: "calendar"},
+		}
+	})
+
+	g := networkGraphGet(t, s, "mode=whole")
+	byLabel := map[string][]graphNode{}
+	for _, n := range g.Nodes {
+		byLabel[n.Label] = append(byLabel[n.Label], n)
+	}
+	if a := byLabel["Alice Ray"]; len(a) != 1 || a[0].ID != aliceRow || a[0].Kind != "advisor" {
+		t.Fatalf("Alice should be ONE advisor node on her row: %+v", a)
+	}
+	if b := byLabel["Bob Stone"]; len(b) != 2 {
+		t.Fatalf("a same-name kept row and contact must stay two nodes: %+v", b)
+	}
+	if c := byLabel["Carol Tu"]; len(c) != 1 || c[0].Kind != "known" {
+		t.Fatalf("an unkinded contact is known: %+v", c)
+	}
+	aliceToCarol := 0
+	for _, e := range g.Edges {
+		if (e.From == aliceRow || e.To == aliceRow) && (e.From == "contact/carol tu" || e.To == "contact/carol tu") {
+			aliceToCarol++
+		}
+		if strings.HasPrefix(e.From, "contact/alice") || strings.HasPrefix(e.To, "contact/alice") {
+			t.Fatalf("an edge still names the absorbed contact: %+v", e)
+		}
+	}
+	if aliceToCarol != 1 {
+		t.Fatalf("the two filings of one tie should fold to one edge, got %d", aliceToCarol)
+	}
+	// the team member draws with no edges at all — whole mode is the list
+	if tm := byLabel["Benjamin Anderson"]; len(tm) == 0 {
+		t.Fatal("an unconnected team member was not drawn")
+	}
+	// an unchecked kind is absent, not painted
+	g = networkGraphGet(t, s, "mode=whole&status=expert")
+	for _, n := range g.Nodes {
+		if n.Kind == "advisor" || n.Kind == "known" {
+			t.Fatalf("a hidden kind was drawn: %+v", n)
+		}
+	}
+}
+
+// The 240 ceiling holds through the Network lens too.
+func TestNetworkGraphHoldsTheCeiling(t *testing.T) {
+	s, _ := networkTestServer(t)
+	for i := 0; i < graphMaxNodes+40; i++ {
+		if err := s.recruiting.AddNetworkPerson(recruiting.NetworkPerson{Name: "Person " + strconv.Itoa(i), Type: "hire"}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	g := networkGraphGet(t, s, "mode=whole")
+	if len(g.Nodes) > graphMaxNodes || g.Omitted["whole"] == 0 {
+		t.Fatalf("ceiling: %d nodes, omitted %+v", len(g.Nodes), g.Omitted)
 	}
 }

@@ -63,21 +63,66 @@ const RG_DEFAULTS = {
   sources: true, colourBy: "status",
 };
 const RG_STATUSES = [["pursuing", "pursuing"], ["in_touch", "in touch"], ["bridge", "bridge"], ["stranger", "strangers"], ["passed", "passed"]];
+
+// THE LENS: one renderer, two pictures. Recruiting's graph is coloured by
+// where a person stands in hiring; Network's (62-network.js) by what the owner
+// has decided they are. Each lens keeps its own state and settings, so
+// switching tabs never carries one picture's filters into the other.
+const RG_LENSES = {
+  recruiting: {
+    endpoint: "/api/aion/recruiting/graph", storage: "manifest.recgraph",
+    statuses: RG_STATUSES, defaults: RG_DEFAULTS, fold: true,
+    repaint: () => { if (typeof recPaint === "function") recPaint(); },
+  },
+  network: {
+    endpoint: "/api/network/graph", storage: "manifest.netgraph",
+    statuses: [["hire", "hires"], ["advisor", "advisors"], ["expert", "experts"], ["connector", "connectors"],
+      ["team", "team"], ["investor", "investors"], ["known", "known"],
+      ["pursuing", "applicants"], ["bridge", "swept"], ["stranger", "strangers"]],
+    defaults: Object.assign({}, RG_DEFAULTS, {
+      mode: "whole", sources: false,
+      statuses: { hire: true, advisor: true, expert: true, connector: true, team: true, investor: true, known: true,
+        pursuing: false, bridge: false, stranger: false },
+    }),
+    fold: false,
+    repaint: () => { if (typeof netPaint === "function") netPaint(); },
+  },
+};
+let rgLens = "recruiting";
+const rgBags = {};
+
+function rgL() { return RG_LENSES[rgLens]; }
+function rgRepaint() { rgL().repaint(); }
+
+// rgUseLens swaps which picture the module-level state describes. Called by
+// each tab before it draws; a no-op when the lens is already current.
+function rgUseLens(name) {
+  if (!RG_LENSES[name] || name === rgLens) return;
+  rgBags[rgLens] = { state: rgState, opts: rgOpts };
+  rgCloseMenu();
+  rgLens = name;
+  const bag = rgBags[name] || {};
+  rgState = bag.state || null;
+  rgOpts = bag.opts || null;
+  if (rgState) { rgState.svgEl = null; rgState.key = ""; rgState.sim = null; }
+}
+
 let rgOpts = null;
 
 function rgLoadOpts() {
   if (rgOpts) return rgOpts;
-  rgOpts = Object.assign({}, RG_DEFAULTS);
+  const def = rgL().defaults;
+  rgOpts = Object.assign({}, def);
   try {
-    const raw = localStorage.getItem("manifest.recgraph");
+    const raw = localStorage.getItem(rgL().storage);
     if (raw) Object.assign(rgOpts, JSON.parse(raw) || {});
-    rgOpts.statuses = Object.assign({}, RG_DEFAULTS.statuses, rgOpts.statuses || {});
+    rgOpts.statuses = Object.assign({}, def.statuses, rgOpts.statuses || {});
   } catch (e) { /* a browser that refuses storage still gets the defaults */ }
   return rgOpts;
 }
 
 function rgSaveOpts() {
-  try { localStorage.setItem("manifest.recgraph", JSON.stringify(rgOpts)); } catch (e) {}
+  try { localStorage.setItem(rgL().storage, JSON.stringify(rgOpts)); } catch (e) {}
 }
 
 let rgState = null;
@@ -110,17 +155,17 @@ async function rgLoad() {
   const request = st.loadRequest = (st.loadRequest || 0) + 1;
   st.busy = true;
   st.err = "";
-  if (st.data && recPaint) recPaint();
+  if (st.data) rgRepaint();
   try {
     const q = new URLSearchParams();
     if (st.center) q.set("center", st.center);
     q.set("degree", String(rgOpts.hops));
     q.set("mode", rgOpts.mode === "whole" ? "whole" : "ego");
-    q.set("status", RG_STATUSES.map(([k]) => k).filter((k) => rgOpts.statuses[k]).join(","));
+    q.set("status", rgL().statuses.map(([k]) => k).filter((k) => rgOpts.statuses[k]).join(","));
     if (!rgOpts.sources) q.set("sources", "0");
     if (st.kinds.size) q.set("kind", [...st.kinds].join(","));
     if (st.q.trim()) q.set("q", st.q.trim());
-    const r = await fetch("/api/aion/recruiting/graph?" + q.toString());
+    const r = await fetch(rgL().endpoint + "?" + q.toString());
     if (!r.ok) throw new Error(await r.text());
     const data = await r.json();
     if (request !== st.loadRequest) return;
@@ -132,7 +177,7 @@ async function rgLoad() {
     st.err = String(e.message || e).slice(0, 200);
   }
   st.busy = false;
-  if (recPaint) recPaint();
+  rgRepaint();
 }
 
 // A dot lives in graph units, so it magnifies with the camera. Framing a
@@ -445,7 +490,7 @@ function rgSelect(id, center = false) {
   st.sel = id;
   if (st.sim) st.sim.fitted = true;
   rgHoverSet("");
-  if (recPaint) recPaint();
+  rgRepaint();
   if (id) rgReveal(id, center);
   if (st.svgEl) st.svgEl.focus({ preventScroll: true });
 }
@@ -533,7 +578,7 @@ function rgHoverSet(id) {
 function rgCanvas(data) {
   const st = rgInit();
   const key = [data.center, data.degree, data.mode, [...st.kinds].sort().join("|"),
-    RG_STATUSES.map(([k]) => rgOpts.statuses[k] ? k : "").join(","), rgOpts.sources ? "s" : "",
+    rgL().statuses.map(([k]) => rgOpts.statuses[k] ? k : "").join(","), rgOpts.sources ? "s" : "",
     (data.nodes || []).length, (data.edges || []).length].join("~");
   // ⚠ a repaint must not restart the physics. The recruiting surface rebuilds
   // its whole main column on every state change, so the SVG is built ONCE per
@@ -720,7 +765,7 @@ function rgWirePointer(svg, sim, data) {
       case "/":
         rgOpts.panel = true;
         rgSaveOpts();
-        if (recPaint) recPaint();
+        rgRepaint();
         document.querySelector(".rg-search")?.focus();
         break;
       case "0": rgResetView(); break;
@@ -763,6 +808,7 @@ function rgMenu(id, ev) {
   };
   item("stand here", () => rgStand(id));
   item("why connected", () => rgSelect(id));
+  if (rgLens === "network" && typeof netOpen === "function" && netHas(id)) item("edit in the list", () => netOpen(id));
   if (node.kind === "bridge" && node.run && node.draft) {
     item("pursue", () => rgDecide(node, "pursue"));
     item("keep in network…", () => { rgSelect(id); }); // the panel carries the four kinds
@@ -800,6 +846,7 @@ function rgMarkSelection(data) {
   for (const p of sim.nodes) p.el.classList.toggle("sel", p.id === st.sel);
   for (const l of sim.links) l.el.classList.toggle("lit", lit.has(l.a.id + " " + l.b.id));
   st.svgEl.classList.toggle("rg-routing", route.length > 0);
+  if (rgLens === "network" && typeof netDimGraph === "function") netDimGraph();
 }
 
 // ============================================================================
@@ -838,7 +885,7 @@ function rgSection(name, title, build) {
   head.onclick = () => {
     rgOpts.open = rgOpts.open === name ? "" : name;
     rgSaveOpts();
-    if (recPaint) recPaint();
+    rgRepaint();
   };
   box.append(head);
   if (rgOpts.open === name) {
@@ -858,7 +905,7 @@ function rgControls(data) {
     const open = el("button", "rg-cog", "\u2699");
     open.title = "graph settings";
     open.setAttribute("aria-label", "graph settings");
-    open.onclick = () => { rgOpts.panel = true; rgSaveOpts(); if (recPaint) recPaint(); };
+    open.onclick = () => { rgOpts.panel = true; rgSaveOpts(); rgRepaint(); };
     return open;
   }
 
@@ -867,7 +914,7 @@ function rgControls(data) {
   top.append(el("span", "rg-controls-title", "graph"));
   const shut = el("button", "rg-panel-x", "\u00d7");
   shut.title = "hide the settings";
-  shut.onclick = () => { rgOpts.panel = false; rgSaveOpts(); if (recPaint) recPaint(); };
+  shut.onclick = () => { rgOpts.panel = false; rgSaveOpts(); rgRepaint(); };
   top.append(shut);
   card.append(top);
 
@@ -891,7 +938,7 @@ function rgControls(data) {
       try {
         const q = new URLSearchParams({ q: st.q.trim(), degree: String(rgOpts.hops) });
         if (st.center) q.set("center", st.center);
-        const response = await fetch("/api/aion/recruiting/graph?" + q);
+        const response = await fetch(rgL().endpoint + "?" + q);
         if (!response.ok) throw new Error("search unavailable — try again");
         const answer = await response.json();
         if (request !== st.searchRequest || !search.isConnected) return;
@@ -930,7 +977,7 @@ function rgControls(data) {
     // STATUS: the fill, and the filter. Off means absent from the walk, not
     // painted over, so nothing routes through what you cannot see.
     const statuses = el("div", "rg-checks");
-    RG_STATUSES.forEach(([k, label]) => {
+    rgL().statuses.forEach(([k, label]) => {
       const row = el("label", "rg-check rg-check-" + k);
       const box = el("input", "");
       box.type = "checkbox";
@@ -953,7 +1000,7 @@ function rgControls(data) {
     colour.append(el("span", "micro-label", "colour by"));
     [["status", "status"], ["source", "source"]].forEach(([k, label]) => {
       const b = el("button", "filter-chip" + (rgOpts.colourBy === k ? " on" : ""), label);
-      b.onclick = () => { rgOpts.colourBy = k; rgSaveOpts(); rgColour(); if (recPaint) recPaint(); };
+      b.onclick = () => { rgOpts.colourBy = k; rgSaveOpts(); rgColour(); rgRepaint(); };
       colour.append(b);
     });
     body.append(colour);
@@ -996,11 +1043,11 @@ function rgControls(data) {
     const acts = el("div", "rg-acts");
     const reset = el("button", "linkish", "defaults");
     reset.onclick = () => {
-      Object.assign(rgOpts, RG_DEFAULTS, { open: rgOpts.open, hops: rgOpts.hops, panel: rgOpts.panel });
+      Object.assign(rgOpts, rgL().defaults, { open: rgOpts.open, hops: rgOpts.hops, panel: rgOpts.panel });
       rgSaveOpts();
       rgSizes();
       rgHeat(0.8);
-      if (recPaint) recPaint();
+      rgRepaint();
     };
     acts.append(reset);
     const shake = el("button", "linkish", "re-settle");
@@ -1064,7 +1111,9 @@ function rgView(main) {
 
   const data = st.data;
   const nodes = data.nodes || [];
-  if (!nodes.length || !(data.edges || []).length) {
+  // Network draws its people whether or not anything ties them yet — the
+  // picture is the list, laid out; Recruiting's is only its edges.
+  if (!nodes.length || (!(data.edges || []).length && rgLens !== "network")) {
     st.svgEl = null;
     st.sim = null;
     st.key = "";
@@ -1073,7 +1122,7 @@ function rgView(main) {
     const panel = rgPanel(data);
     if (panel) stage.append(panel);
     main.append(stage);
-    main.append(rgFold(data));
+    if (rgL().fold) main.append(rgFold(data));
     return;
   }
 
@@ -1093,7 +1142,7 @@ function rgView(main) {
   const panel = rgPanel(data);
   if (panel) stage.append(panel);
   main.append(stage);
-  main.append(rgFold(data));
+  if (rgL().fold) main.append(rgFold(data));
 }
 
 // The detail card floats over the canvas and only when you have picked
@@ -1112,7 +1161,7 @@ async function rgProfile(id) {
   } catch (e) {
     st.profiles[id] = { error: String(e.message || e) };
   }
-  if (st.sel === id && recPaint) recPaint();
+  if (st.sel === id) rgRepaint();
   return st.profiles[id];
 }
 
@@ -1146,7 +1195,8 @@ function rgPanel(data) {
   const meta = [node.kind === "pursuing" ? "pursuing" : node.kind === "in_touch" ? "in touch"
     : node.kind === "bridge" ? "named by " + (node.source || "a sweep") : node.kind === "source" ? "a source"
     : node.kind === "passed" ? "passed"
-    : node.kind === "you" ? "you" : "not on the board", node.stage, node.role].filter(Boolean).join(" · ");
+    : node.kind === "you" ? "you" : node.kind === "stranger" ? "not on the board" : node.kind,
+    node.stage, node.role].filter(Boolean).join(" · ");
   box.append(el("div", "rec-draft-sub", meta));
 
   // the deterministic section (§5): org, identity links, the sources they
@@ -1246,6 +1296,12 @@ function rgPanel(data) {
     };
     acts.append(ask);
   }
+  if (rgLens === "network" && typeof netOpen === "function" && netHas(node.id)) {
+    const edit = el("button", "pill light", "edit in the list");
+    edit.title = "kind, tags, note, last contact";
+    edit.onclick = () => netOpen(node.id);
+    acts.append(edit);
+  }
   const here = el("button", "pill light", "stand here");
   here.onclick = () => rgStand(node.id);
   acts.append(here);
@@ -1256,6 +1312,11 @@ function rgPanel(data) {
 function rgEmpty(data) {
   const box = el("div", "rg-empty");
   const totals = data.totals || {};
+  if (rgLens === "network") {
+    box.append(el("div", "rg-empty-head", rgInit().busy ? "updating graph…" : "nobody to draw with these filters"));
+    box.append(el("div", "rg-empty-do", "Turn a kind back on in the graph settings, or switch to everyone."));
+    return box;
+  }
   box.append(el("div", "rg-empty-head",
     rgInit().busy ? "updating graph…" : totals.edges ? "nothing to draw from here" : "the graph has no edges yet"));
   (data.missing || []).forEach((m) => box.append(el("div", "rg-empty-do", m)));
@@ -1304,6 +1365,6 @@ document.addEventListener("keydown", (ev) => {
   ev.stopPropagation();
   rgOpts.panel = true;
   rgSaveOpts();
-  if (recPaint) recPaint();
+  rgRepaint();
   document.querySelector(".rg-search")?.focus();
 }, true);

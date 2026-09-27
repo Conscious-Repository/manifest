@@ -330,3 +330,113 @@ func keptAs(kind string) string {
 	}
 	return " as " + kind
 }
+
+// ---- the graph as a view of Network: the SAME renderer and walk as
+// Recruiting's, re-kinded by what the owner has decided each person is.
+
+// networkKinds are the statuses the Network lens can draw: the owner's kinds,
+// then the registries' own (an investor or a contact nobody has kinded yet),
+// then Recruiting's, which are off by default — applicants and swept people
+// belong to Recruiting until kept.
+var networkKinds = []string{"hire", "advisor", "expert", "connector", "team", "investor", "known",
+	"pursuing", "bridge", "stranger"}
+
+func networkStatusDefault() map[string]bool {
+	return map[string]bool{"hire": true, "advisor": true, "expert": true, "connector": true,
+		"team": true, "investor": true, "known": true}
+}
+
+type networkLens struct {
+	alias map[string]string // any id a person is known by → their resolved row id
+	kind  map[string]string // resolved row id → network kind
+	names map[string]string
+	order []string // every resolved person, so an unconnected one can still be drawn
+}
+
+func (s *Server) networkLens(now time.Time) *networkLens {
+	l := &networkLens{alias: map[string]string{}, kind: map[string]string{}, names: map[string]string{}}
+	for _, p := range s.networkPeople(now) {
+		if p.Archived != "" {
+			continue
+		}
+		l.order = append(l.order, p.ID)
+		l.names[p.ID] = p.Name
+		if k := strings.ToLower(strings.TrimSpace(p.ContactKey)); k != "" {
+			l.alias["contact/"+k] = p.ID
+		}
+		if t := strings.ToUpper(strings.TrimSpace(p.TeamLink)); t != "" {
+			l.alias["team/"+t] = p.ID
+		}
+		k := p.Kind
+		if k == "" {
+			k = "known"
+			for _, src := range p.Sources {
+				if src == "investor" {
+					k = "investor"
+				}
+			}
+		}
+		l.kind[p.ID] = k
+	}
+	return l
+}
+
+func (l *networkLens) canon(id string) string {
+	if to, ok := l.alias[id]; ok {
+		return to
+	}
+	if strings.HasPrefix(id, "contact/") {
+		if to, ok := l.alias["contact/"+strings.ToLower(strings.TrimPrefix(id, "contact/"))]; ok {
+			return to
+		}
+	}
+	return id
+}
+
+// fold re-addresses every edge onto the resolved row, so a person linked by
+// an explicit ref is ONE node however the edge was filed, and drops the
+// self-ties and duplicates the folding creates.
+func (l *networkLens) fold(edges []recruiting.Edge) []recruiting.Edge {
+	out := make([]recruiting.Edge, 0, len(edges))
+	seen := map[string]bool{}
+	for _, e := range edges {
+		e.From, e.To = l.canon(e.From), l.canon(e.To)
+		if e.From == e.To {
+			continue
+		}
+		a, b := e.From, e.To
+		if b < a {
+			a, b = b, a
+		}
+		key := a + "\x00" + b + "\x00" + e.Kind
+		if seen[key] {
+			continue
+		}
+		seen[key] = true
+		out = append(out, e)
+	}
+	return out
+}
+
+func (l *networkLens) kinder(base func(string) string, owner string) func(string) string {
+	return func(id string) string {
+		if id != "" && id == owner {
+			return "you"
+		}
+		if k, ok := l.kind[id]; ok {
+			return k
+		}
+		if k := base(id); k != "in_touch" {
+			return k
+		}
+		return "known"
+	}
+}
+
+// GET /api/network/graph — the Recruiting graph's answer through the Network lens.
+func (s *Server) handleNetworkGraph(w http.ResponseWriter, r *http.Request) {
+	if !s.recruitingReady(w) {
+		return
+	}
+	s.peopleGraph(w, r, s.networkLens(time.Now()))
+}

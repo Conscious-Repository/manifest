@@ -543,6 +543,7 @@ func (s *Server) Handler() http.Handler {
 			// NETWORK — the top-level tab over the same people store (network.go)
 			mux.HandleFunc("GET /api/network", s.handleNetwork)
 			mux.HandleFunc("POST /api/network/keep", s.handleNetworkKeep)
+			mux.HandleFunc("GET /api/network/graph", s.handleNetworkGraph)
 			mux.HandleFunc("POST /api/network/person/{id...}", s.handleNetworkPerson)
 			mux.HandleFunc("GET /api/aion/recruiting/graph", s.handleRecruitingGraph)
 			mux.HandleFunc("GET /api/aion/recruiting/graph/node", s.handleRecruitingGraphNode)

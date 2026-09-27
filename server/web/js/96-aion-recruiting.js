@@ -3051,7 +3051,7 @@ function recDraftCard(run, d) {
 // ids, and the owner's verdict on it was "really unclear to me how to use this
 // rn" — so the picture leads and the lists are folded underneath it, where
 // they answer "show me everything" once you know what you are looking at.
-function paintNetworkView(main) { rgView(main); }
+function paintNetworkView(main) { rgUseLens("recruiting"); rgView(main); }
 
 // recNetLists paints those three lists into a host the fold owns.
 function recNetLists(outer) {

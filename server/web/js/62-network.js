@@ -21,6 +21,15 @@ let netKind = "";               // "" | hire | advisor | expert | connector | te
 let netSource = "";             // "" | kept | contact | investor | team
 let netTag = "";                // a tag's TopicID-ish lowercase text
 let netSel = null;              // selected person id
+let netGraphStale = false;      // an edit landed since the graph last loaded
+
+// list | graph is a per-viewer convenience, so it lives in the browser
+function netViewMode() {
+  try { return localStorage.getItem("manifest.network.view") === "graph" ? "graph" : "list"; } catch (e) { return "list"; }
+}
+function netSetViewMode(v) {
+  try { localStorage.setItem("manifest.network.view", v); } catch (e) {}
+}
 
 const NET_KIND_WORD = { hire: "future hire", advisor: "advisor", expert: "expert", connector: "connector", team: "team" };
 const NET_SOURCE_WORD = { kept: "kept", contact: "contacts", investor: "investors", team: "team" };
@@ -76,7 +85,9 @@ function netShortDate(d) {
 
 function netPaint() {
   const host = document.getElementById("networkView");
+  if (!host || !netCache) return;
   host.innerHTML = "";
+  const mode = netViewMode();
 
   const head = el("div", "agent-head");
   head.append(el("span", "agent-title", "NETWORK"));
@@ -85,14 +96,35 @@ function netPaint() {
   search.type = "search";
   search.placeholder = "search people, orgs, tags, notes…";
   search.value = netQuery;
-  search.oninput = () => { netQuery = search.value; netPaintList(); };
+  search.oninput = () => { netQuery = search.value; if (netViewMode() === "graph") netDimGraph(); else netPaintList(); };
   acts.append(search);
   const shown = netVisible().length, total = (netCache.people || []).filter((p) => !p.archived).length;
   acts.append(el("span", "panel-meta net-count", shown === total ? total + " people" : shown + " of " + total));
+  const toggle = el("div", "net-toggle");
+  [["list", "list"], ["graph", "graph"]].forEach(([k, label]) => {
+    const b = el("button", "filter-chip" + (mode === k ? " on" : ""), label);
+    b.setAttribute("aria-pressed", String(mode === k));
+    b.onclick = () => { if (mode !== k) { netSetViewMode(k); netPaint(); } };
+    toggle.append(b);
+  });
+  acts.append(toggle);
   head.append(acts);
   host.append(head);
 
   host.append(netFacets());
+
+  // THE GRAPH is the same people laid out by who ties to whom — the
+  // Recruiting renderer through the Network lens (97-rec-graph.js). The list's
+  // filters still apply: whoever they leave out goes quiet in the picture.
+  if (mode === "graph") {
+    rgUseLens("network");
+    const st = rgInit();
+    if (netGraphStale && st.data && !st.busy) { netGraphStale = false; rgLoad(); }
+    const box = el("div", "net-graph");
+    host.append(box);
+    rgView(box);
+    return;
+  }
 
   const split = el("div", "aion-backlog net-split");
   const list = el("div", "aion-list net-list");
@@ -219,6 +251,7 @@ async function netSave(p, set) {
     p.note = kept.note || "";
     p.lastContact = kept.lastContact || "";
     if ("team" in set) p.team = kept.team || "";
+    netGraphStale = true;
     netPaintList();
     return true;
   } catch (e) {
@@ -368,4 +401,41 @@ function netPaintInspector() {
 
   if ((p.firms || []).length) insp.append(el("div", "net-insp-hint", "investor · " + p.firms.join(", ")));
   if (p.source && p.source !== "owner") insp.append(el("div", "net-insp-hint", "kept from " + p.source + (p.sourceRef ? " · " + p.sourceRef : "")));
+}
+
+// ---- the graph's hooks into the list (97-rec-graph.js calls these)
+
+function netHas(id) { return !!netCache && (netCache.people || []).some((p) => p.id === id); }
+
+// netOpen is "edit in the list": the graph hands a person back to the row
+// where kind, tags, note and last contact are edited.
+function netOpen(id) {
+  netSel = id;
+  netQuery = "";
+  netKind = netSource = netTag = "";
+  netSetViewMode("list");
+  netPaint();
+  const row = document.querySelector("#netList .net-row.sel");
+  if (row) row.scrollIntoView({ block: "center" });
+}
+
+// netDimmed answers, for the graph, whether the list's filters leave a person
+// out. Nobody is dimmed while no filter is set.
+function netDimmed(id) {
+  if (!netCache || !(netQuery.trim() || netKind || netSource || netTag)) return false;
+  if (!netHas(id)) return true;
+  return !netVisible().some((p) => p.id === id);
+}
+
+function netDimGraph() {
+  const st = typeof rgState !== "undefined" && rgState;
+  if (!st || !st.sim || rgLens !== "network") return;
+  const keep = new Set(netVisible().map((p) => p.id));
+  const on = !!(netQuery.trim() || netKind || netSource || netTag);
+  st.sim.nodes.forEach((n) => n.el.classList.toggle("rg-dim", on && !keep.has(n.id)));
+  const count = document.querySelector(".net-count");
+  if (count) {
+    const total = (netCache.people || []).filter((p) => !p.archived).length;
+    count.textContent = keep.size === total ? total + " people" : keep.size + " of " + total;
+  }
 }

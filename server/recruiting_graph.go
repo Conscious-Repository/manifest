@@ -100,11 +100,24 @@ type graphSearchMatch struct {
 // already treats as the owner. `q` answers the search box without drawing
 // anything, which is van Ham & Perer's step one: you search, then you expand.
 func (s *Server) handleRecruitingGraph(w http.ResponseWriter, r *http.Request) {
+	s.peopleGraph(w, r, nil)
+}
+
+// peopleGraph is the one graph answer behind both lenses: Recruiting's
+// (net == nil) and Network's, which re-kinds the same picture by who the
+// owner has decided people ARE and folds every alias onto its resolved row.
+func (s *Server) peopleGraph(w http.ResponseWriter, r *http.Request, net *networkLens) {
 	if !s.recruitingReady(w) {
 		return
 	}
 	idx := s.personIndex()
 	edges := s.recruiting.NetworkEdges()
+	if net != nil {
+		edges = net.fold(edges)
+		for id, name := range net.names {
+			idx.name[id] = name
+		}
+	}
 	totalEdges := len(edges)
 
 	kinds := map[string]bool{}
@@ -153,6 +166,9 @@ func (s *Server) handleRecruitingGraph(w http.ResponseWriter, r *http.Request) {
 	}
 	owner := idx.ownerNode(s.recruiting)
 	kindOf := graphKinder(board, state, conns, bridge, sourceNodes, passed, owner)
+	if net != nil {
+		kindOf = net.kinder(kindOf, owner)
+	}
 
 	// ---- the lens (social graph plan D-G): which STATUSES are drawn, and
 	// whether sources are. A hidden status is absent from the walk itself,
@@ -163,6 +179,9 @@ func (s *Server) handleRecruitingGraph(w http.ResponseWriter, r *http.Request) {
 	}
 	shown := graphStatusFilter(r.URL.Query().Get("status"))
 	showSources := r.URL.Query().Get("sources") != "0"
+	if net != nil && strings.TrimSpace(r.URL.Query().Get("status")) == "" {
+		shown = networkStatusDefault()
+	}
 	visible := func(id string) bool {
 		k := kindOf(id)
 		if k == "source" {
@@ -192,10 +211,15 @@ func (s *Server) handleRecruitingGraph(w http.ResponseWriter, r *http.Request) {
 			"edges": totalEdges, "people": len(conns), "board": len(board), "bridge": len(bridge), "sources": len(sourceNodes),
 		},
 	}
+	var extra []string
+	if net != nil {
+		reply.Totals["people"] = len(net.order)
+		extra = net.order
+	}
 
 	// the search box: matches by label, never drawn until chosen
 	if q := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("q"))); q != "" {
-		reply.Search = graphSearch(q, idx, edges, board, state, conns, bridge, sourceNodes, passed, owner)
+		reply.Search = graphSearch(q, idx, edges, board, conns, kindOf, extra)
 	}
 
 	center := strings.TrimSpace(r.URL.Query().Get("center"))
@@ -246,6 +270,11 @@ func (s *Server) handleRecruitingGraph(w http.ResponseWriter, r *http.Request) {
 		for _, p := range bridge {
 			if visible(p.ID) {
 				all[p.ID] = true
+			}
+		}
+		for _, id := range extra {
+			if visible(id) {
+				all[id] = true
 			}
 		}
 		var ids []string
@@ -494,9 +523,9 @@ func graphRank(kind string) int {
 	switch kind {
 	case "you":
 		return 0
-	case "pursuing":
+	case "pursuing", "hire", "advisor", "expert", "connector":
 		return 1
-	case "in_touch":
+	case "in_touch", "team", "investor", "known":
 		return 2
 	case "source":
 		return 3
@@ -511,9 +540,7 @@ func graphRank(kind string) int {
 // graphSearch is the entry point, not the canvas: it answers "who" without
 // drawing anybody, and the answer is what you then centre on.
 func graphSearch(q string, idx personIndex, edges []recruiting.Edge,
-	board []recruiting.PersonIdentity, state map[string][2]string, conns []recruiting.NetworkPerson,
-	bridge []recruiting.BridgePerson, sourceNodes map[string]string, passed map[string]bool, owner string) []graphSearchMatch {
-	kindOf := graphKinder(board, state, conns, bridge, sourceNodes, passed, owner)
+	board []recruiting.PersonIdentity, conns []recruiting.NetworkPerson, kindOf func(string) string, extra []string) []graphSearchMatch {
 	seen := map[string]bool{}
 	add := func(out []graphSearchMatch, id string) []graphSearchMatch {
 		if id == "" || seen[id] || len(out) >= 25 {
@@ -534,6 +561,9 @@ func graphSearch(q string, idx personIndex, edges []recruiting.Edge,
 		if p.Archived == "" {
 			out = add(out, p.ID)
 		}
+	}
+	for _, id := range extra {
+		out = add(out, id)
 	}
 	for _, e := range edges {
 		out = add(out, e.From)
