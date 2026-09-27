@@ -43,6 +43,15 @@ const {makeStub}=require('./chat-stub-api.cjs');
   await page.waitForFunction(async()=>true);
   let last;for(let i=0;i<50&&!(last=(await hook('/__last')).send);i++)await page.waitForTimeout(100);
   assert.deepEqual({agent:last.recipient.agent,model:last.recipient.model,provider:last.recipient.provider,effort:last.recipient.effort},{agent:'alfred',model:'grok-4.6',provider:'xai-oauth',effort:'high'},'the message names the chosen model, provider and effort');
+  // a surface command while a send is still in flight applies at once (it
+  // used to be swallowed until the send settled: the flake behind this step)
+  await hook('/__delay?ms=2000');await input.fill('Held send');await input.press('Enter');
+  await page.waitForFunction(()=>!!document.querySelector('#chatComposer .chat-send:disabled'));
+  await input.fill('/effort medium');await input.press('Enter');
+  await page.waitForFunction(()=>/· medium/.test(document.querySelector('#chatComposer .chat-composer-model')?.textContent||''),null,{timeout:1500});
+  await hook('/__delay?ms=0');
+  for(let i=0;i<50&&(await hook('/__last')).send?.text!=='Held send';i++)await page.waitForTimeout(100);
+  await page.waitForFunction(()=>!document.querySelector('#chatComposer .chat-send:disabled'));
   // 2. surface commands never send a message
   const before=await posts();
   await input.fill('/effort low');await input.press('Enter');

@@ -2845,10 +2845,12 @@ function renderChatComposer(session) {
     const text = ta.value.trim();
     const files = chatPendingFiles.slice();
     if (!text && !files.length) return;
-    if (send.disabled || chatSending || chatUploads.get(draftKey)) return;
     // Surface commands (/model, /effort, /permissions) behave the same on every
     // agent: Manifest's picker, applied in the agent's own terms (49-chat-models.js).
+    // They never send, so a send still in flight does not hold them back (it
+    // used to swallow the keypress silently).
     if (!files.length && typeof chatSurfaceCommand === "function" && await chatSurfaceCommand(text, () => { if (ta.value.trim() === text) { ta.value = ""; grow(); chatCaptureSyncedDraft(draftKey); } })) return;
+    if (send.disabled || chatSending || chatUploads.get(draftKey)) return;
     if (/^\/[a-zA-Z]/.test(text) && chatIsTerm() && !chatRecipients.get(draftKey)) {
       if(files.length){showToast('Send attachments separately from a native command.');return;}
       chatCaptureSyncedDraft(draftKey);
