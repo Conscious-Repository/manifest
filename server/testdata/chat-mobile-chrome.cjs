@@ -90,9 +90,14 @@ const slice=(src,start,end)=>{const s=src.indexOf(start);assert.ok(s>=0,'missing
    assert.ok((await paint('#chatComposer textarea')).fontSize>=16,`${width}: 16px input text (no iOS zoom)`);
    // 1b. focus alone changes nothing (iOS honours the programmatic focus on open)
    await ta.focus();assert.equal(await oneRow(width+' focused'),emptyH,`${width}: focus keeps the row height`);
-   // 1c. a one-line message stays on the row; send turns to ink; keyboard focus ring on send is visible
+   // 1c. a one-line message stays on the row; send turns to the accent; keyboard focus ring on send is visible.
+   // Rule deliberately changed in pass 3 (a8e9541, 2026-09-27): Rev 7 (200dd85) painted the armed send in
+   // ink (#171717, ChatGPT's black circle) and asserted it was NOT the accent, to retire the loud 44px
+   // accent-filled square. Pass 3 found the ink circle read as a void and, with ＋ New chat now a quiet
+   // glyph, made send the region's one filled primary in the accent, as on desktop. Rev 7's quietness
+   // still holds where it mattered: the empty send is neutral, not the accent (1a), and a 36px circle.
    await page.keyboard.type('ok');assert.equal(await oneRow(width+' short text'),emptyH);
-   const inkPaint=await paint('.chat-send');assert.notEqual(inkPaint.bg,sendPaint.bg,`${width}: send fill changes once there is text`);assert.notEqual(inkPaint.bg,hexToRgb(inkPaint.accent));
+   const inkPaint=await paint('.chat-send');assert.notEqual(inkPaint.bg,sendPaint.bg,`${width}: send fill changes once there is text`);assert.equal(inkPaint.bg,hexToRgb(inkPaint.accent),`${width}: send with text is the accent fill`);
    await page.keyboard.press('Tab');
    assert.equal(await page.evaluate(()=>document.activeElement.className),'chat-send',`${width}: Tab reaches send`);
    assert.equal(await page.evaluate(()=>getComputedStyle(document.activeElement).outlineStyle!=='none'&&parseFloat(getComputedStyle(document.activeElement).outlineWidth)>=2),true,`${width}: send shows a focus ring`);
