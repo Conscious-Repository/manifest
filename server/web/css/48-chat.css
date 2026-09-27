@@ -71,7 +71,7 @@
 .chat-spirit .md-pre { margin: var(--sp-4) 0; padding: var(--sp-4) var(--sp-5); overflow-x: auto; background: var(--base-10); border-radius: var(--radius); font-family: var(--mono); font-size: var(--fs-sm); line-height: 1.5; }
 .chat-spirit .md-code { padding: 0 var(--sp-1); background: var(--base-10); border-radius: var(--radius); font-family: var(--mono); font-size: var(--fs-sm); }
 .chat-spirit .md-bq { margin: var(--sp-4) 0; padding-left: var(--sp-5); border-left: 2px solid var(--base-30); color: var(--base-60); }
-.chat-turn-when, .chat-turn-usd { font-family: var(--mono); font-size: var(--fs-2xs); color: var(--base-30); font-variant-numeric: tabular-nums; }
+.chat-turn-when, .chat-turn-usd { font-family: var(--mono); font-size: var(--fs-2xs); color: var(--base-50); font-variant-numeric: tabular-nums; }
 .chat-thinking { color: var(--accent); font-size: var(--fs-sm); padding: var(--sp-4) 0; }
 
 /* the composer is ONE rounded container (target aesthetic): a borderless
@@ -85,7 +85,7 @@
 .chat-composer .chat-input:focus { border: 0; }
 .chat-composer .chat-input::placeholder { color: var(--base-30); }
 /* controls, ordered after the textarea: quiet attach, then solid accent send */
-.chat-attach { order: 2; flex: none; border: 0; background: none; color: var(--base-40); width: 34px; height: 34px; padding: 0; font-size: var(--fs-lg); border-radius: var(--radius-lg); cursor: pointer; }
+.chat-attach { order: 2; flex: none; border: 0; background: none; color: var(--base-50); width: 34px; height: 34px; padding: 0; font-size: var(--fs-lg); border-radius: var(--radius-lg); cursor: pointer; }
 .chat-attach:hover { color: var(--accent); background: var(--hover); }
 .chat-attach[hidden] { display: none; }
 .chat-send { order: 3; flex: none; width: 34px; height: 34px; border: 0; border-radius: var(--radius-lg); background: var(--accent); color: var(--on-accent); font-size: var(--fs-xl); line-height: 1; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; }
@@ -212,7 +212,7 @@ button.chat-attach-chip { min-height: 44px; max-width: 100%; background: transpa
   .chat-turn-foot .chat-turn-actions > * { display: flex; align-items: center; opacity: 1; min-height: var(--control-touch); padding: 0 var(--sp-4); justify-content: flex-start; text-align: left; border-radius: var(--radius); font: var(--fs-md) var(--sans); color: var(--base-100); }
   .chat-turn-foot .chat-turn-actions > *:hover, .chat-turn-foot .chat-turn-actions > *:focus-visible { background: var(--hover); color: var(--base-100); }
 }
-.chat-turn-act { border: 0; background: none; padding: 0; cursor: pointer; font-family: var(--mono); font-size: var(--fs-2xs); color: var(--base-30); opacity: 0; transition: opacity 0.12s; min-height: var(--control-min); display: inline-flex; align-items: center; }
+.chat-turn-act { border: 0; background: none; padding: 0; cursor: pointer; font-family: var(--mono); font-size: var(--fs-2xs); color: var(--base-50); opacity: 0; transition: opacity 0.12s; min-height: var(--control-min); display: inline-flex; align-items: center; }
 .chat-turn:hover .chat-turn-act, .chat-turn-act:focus { opacity: 1; }
 .chat-turn-act:hover { color: var(--accent); }
 .chat-head-task { flex: none; }
@@ -668,7 +668,7 @@ button.chat-attach-chip { min-height: 44px; max-width: 100%; background: transpa
 /* Message first, routing and actions in a quiet footer. */
 .chat-composer > .chat-input { flex: 1 0 100%; box-sizing: border-box; width: 100%; order: 0; }
 .chat-composer > .chat-composer-recipient { order: 2; margin-left: auto; max-width: calc(100% - 110px); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-height: 36px; font: 13px var(--sans); color: var(--base-70); }
-.chat-composer > .mic-btn { order: 3; flex: none; background: transparent; border: 0; box-shadow: none; }
+.chat-composer > .mic-btn { order: 3; flex: none; background: transparent; border: 0; box-shadow: none; color: var(--base-50); }
 .chat-composer > .chat-send { order: 4; border-radius: var(--radius-lg); }
 .chat-composer > .chat-composer-status { order: 5; flex: 1 0 100%; font: 12px/1.4 var(--sans); color: var(--base-50); }
 .has-composer-recipient .chat-recipient-control { display: none !important; }
@@ -1101,3 +1101,18 @@ label.chat-artifact-handoff{display:flex;flex-direction:row;align-items:flex-sta
 .chat-changes-chip .chat-changes-new { color: var(--base-60); }
 .chat-changes-chip.is-clean { color: var(--base-50); }
 .chat-changes-chip.is-unknown { color: var(--base-50); font-style: italic; }
+
+/* Single-chat UI pass (2026-09-27, measured on the stub at 390/768/1440, light
+   and JARVIS). Meta and quiet actions above read base-50 (secondary text,
+   4.7:1) instead of base-30/-40 (the disabled/icon ramp: 1.5:1 and 2.5:1).
+   - an open ··· menu lists live actions: primary ink, so a :disabled one
+     (opacity 0.4) reads as disabled — the reply ··· menu's own contract;
+   - the queued/interrupt controls are actions, not meta;
+   - touch: the head ···, its rows and the queued controls reach 44px. */
+.chat-details[open] > button:not(:disabled), .chat-details[open] .chat-head-acts > button:not(:disabled) { color: var(--base-100); }
+.chat-queued-control > .sprt-quiet, .chat-native-stop { color: var(--base-60); }
+@media (max-width: 860px), (hover: none) {
+  .chat-thread-header .chat-options-compact > summary { display: inline-flex; align-items: center; justify-content: center; box-sizing: border-box; min-width: var(--control-touch); min-height: var(--control-touch); padding: 0; }
+  .chat-details[open] > a, .chat-details[open] > button, .chat-details[open] .chat-head-acts > *, .chat-conversation-info > summary { min-height: var(--control-touch); }
+  .chat-queued-control > .sprt-quiet, .chat-native-stop { min-height: var(--control-touch); }
+}
