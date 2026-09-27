@@ -823,6 +823,7 @@ async function chatLoadInbox(quiet) {
         const d = await res.json();
         if (chatApplyInbox(d, quiet)) {
           chatInboxLoadFailed = false;
+          chatPrefetchRecent();
           chatInboxAt = Date.now();
           try { localStorage.setItem(chatInboxSnapshotKey, JSON.stringify(d)); } catch (e) {}
           return true;
@@ -890,14 +891,16 @@ function renderChatHeadActions() {
   host.dataset.built = "1";
   // one flow for a new chat: the agent's composer-first landing
   // (49-chat-newchat.js); agent, model, project and folder are its chips
-  const add = el("button", "sprt-ghost chat-new-button", "New chat");
-  add.type = "button";
+  const add = el("button", "sprt-ghost chat-new-button chat-ibtn");
+  add.type = "button"; add.setAttribute("aria-label", "New chat");
+  if (typeof chatWorkspaceIcon === "function") add.append(chatWorkspaceIcon("compose")); else add.textContent = "New chat";
   add.title = "Start a conversation · Ctrl+Alt+N";add.setAttribute("aria-keyshortcuts", "Control+Alt+n");
   add.onclick = () => chatNewChat();
   host.append(add);
   // Tiles: the open conversation joins a tiled workspace of whole chats.
-  const tiles = el("button", "sprt-ghost chat-tiles-enter", "Tiles");
-  tiles.type = "button"; tiles.title = "Tile conversations side by side · Alt+Enter"; tiles.setAttribute("aria-keyshortcuts", "Alt+Enter");
+  const tiles = el("button", "sprt-ghost chat-tiles-enter chat-ibtn");
+  tiles.type = "button"; tiles.setAttribute("aria-label", "Tiles");
+  if (typeof chatWorkspaceIcon === "function") tiles.append(chatWorkspaceIcon("tiles")); else tiles.textContent = "Tiles"; tiles.title = "Tile conversations side by side · Alt+Enter"; tiles.setAttribute("aria-keyshortcuts", "Alt+Enter");
   tiles.onclick = () => { if (typeof chatTilesPendingFrom !== "undefined" && chatOpenId && !/\/new$/.test(location.hash)) chatTilesPendingFrom = location.hash; location.hash = "#/chat/tiles"; };
   host.append(tiles);
   if(typeof chatWorkspaceControls==='function')chatWorkspaceControls(host);
@@ -1281,7 +1284,7 @@ function renderChatInboxRows() {
   const host = document.getElementById("chatInboxRows");
   if (!host) return;
   host.replaceChildren();
-  const filterLabel=document.querySelector(".chat-filter-menu > summary");if(filterLabel)filterLabel.textContent="Filters"+((chatInboxFilter!=="all"||chatWorkstreamFilter!=="all"||chatAttentionFilter!=="all")?" · on":"");
+  const filterLabel=document.querySelector(".chat-filter-menu > summary");if(filterLabel){const on=chatInboxFilter!=="all"||chatWorkstreamFilter!=="all"||chatAttentionFilter!=="all"||chatLifecycleFilter!=="active";filterLabel.classList.toggle("is-on",on);filterLabel.setAttribute("aria-label","Filters"+(on?" · on":""));}
   const entries = chatInboxEntries();
   if(chatLifecycleFilter==="deleted")host.append(el("p","chat-head-meta","Deleted from your Chats. Restore anytime. Task and provider history are retained."));
   if (chatInboxLoadFailed) {
@@ -1295,6 +1298,10 @@ function renderChatInboxRows() {
   const rows=entries.map(entry => {
     const row = entry.taskThread ? chatTaskRow(entry.session) : entry.terminal ? chatTermRow(entry.session) : chatRailRow(entry.session, entry.agent);
     row.addEventListener("pointerdown", () => chatPrefetchEntry(entry), { passive: true });
+    // hovering a row starts its fetch, so the click that follows paints from memory
+    let hover = 0;
+    row.addEventListener("pointerenter", e => { if (e.pointerType === "mouse") hover = setTimeout(() => chatPrefetchEntry(entry), 70); }, { passive: true });
+    row.addEventListener("pointerleave", () => clearTimeout(hover), { passive: true });
     row.classList.toggle("open", entry.taskThread ? entry.session.id === chatTaskID : entry.agent === chatAgent && entry.session.id === chatOpenId);
     const meta = row.querySelector(".chat-rail-meta");
     if (meta) meta.prepend(el("span", "chat-inbox-agent", entry.taskThread ? (entry.agent ? chatAgentLabel(entry.agent) + " · task" : "Task") : entry.terminal ? chatTermKinds[entry.agent] : entry.agent ? chatAgentLabel(entry.agent) : entry.session.spirit || "Spirits"));
@@ -1363,7 +1370,17 @@ function chatRenderProjectGroups(host,entries,rows){
   section.append(summary,list);section.addEventListener('toggle',()=>{if(section.open)state.collapsed.delete(key);else state.collapsed.add(key);});
   const all=!!chatSearchQuery||state.expanded.has(key);
   group.rows.forEach((row,index)=>{if(all||index<5||row.classList.contains('open')||chatPins[chatInboxKey(group.entries[index])])list.append(row);});
-  if(key.startsWith('workstream:')){const start=el('button','sprt-quiet chat-project-more','New chat');start.onclick=()=>{chatWorkstreamFilter=key.slice(11);chatRenderWorkstreamFilter();document.querySelector('#chatHeadActions button')?.click();};list.append(start);const context=el('button','sprt-quiet chat-project-more','Project context');context.onclick=()=>chatEditProject(key.slice(11));list.append(context);}
+  if(key.startsWith('workstream:')){
+   // the project's own actions sit on its heading, shown on hover or focus
+   const acts=el('span','chat-project-acts');
+   const start=el('button','chat-ibtn chat-project-act');start.type='button';start.setAttribute('aria-label','New chat in '+group.label);start.title='New chat in '+group.label;
+   const context=el('button','chat-ibtn chat-project-act');context.type='button';context.setAttribute('aria-label','Project context');context.title='Project context · instructions for this project';
+   if(typeof chatWorkspaceIcon==='function'){start.append(chatWorkspaceIcon('plus'));context.append(chatWorkspaceIcon('info'));}else{start.textContent='+';context.textContent='i';}
+   start.onclick=e=>{e.preventDefault();e.stopPropagation();chatWorkstreamFilter=key.slice(11);chatRenderWorkstreamFilter();chatNewChat();};
+   context.onclick=e=>{e.preventDefault();e.stopPropagation();chatEditProject(key.slice(11));};
+   acts.append(start,context);summary.append(acts);
+   if(!group.rows.length)list.append(el('p','chat-project-empty','No chats yet.'));
+  }
   const remaining=group.rows.length-group.rows.filter(row=>row.parentNode===list).length;
   if(remaining>0||all&&group.rows.length>5&&!chatSearchQuery){const more=el('button','sprt-quiet chat-project-more',remaining>0?'Show more':'Show less');more.onclick=()=>{if(state.expanded.has(key))state.expanded.delete(key);else state.expanded.add(key);renderChatInboxRows();};list.append(more);}
   host.append(section);
@@ -1398,8 +1415,15 @@ function renderChatRail() {
     const lifecycle=document.createElement("select");lifecycle.className="chat-inbox-filter";lifecycle.setAttribute("aria-label","Conversation list");
     [["active","Chats"],["archived","Archived chats"],["deleted","Trash"]].forEach(([value,label])=>{const option=el("option","",label);option.value=value;lifecycle.append(option);});
     lifecycle.value=chatLifecycleFilter;lifecycle.onchange=()=>{chatLifecycleFilter=lifecycle.value;renderChatInboxRows();};
-    const filterMenu=el("details","chat-filter-menu"),filterLabel=el("summary","","Filters");filterMenu.append(filterLabel,filters);
-    const listControls=el("div","chat-list-controls");listControls.append(lifecycle,filterMenu);controls.append(search,listControls);
+    // Codex-simple (2026-09-27): New chat and search on top; which list
+    // (Chats / Archived / Trash) and every filter live behind one control
+    const filterMenu=el("details","chat-filter-menu"),filterLabel=el("summary","chat-ibtn");filterLabel.setAttribute("aria-label","Filters");filterLabel.title="Filters · list, agent, project, state";
+    if(typeof chatWorkspaceIcon==="function")filterLabel.append(chatWorkspaceIcon("filter"));else filterLabel.textContent="Filters";
+    const listLabel=el("label","chat-filter-field");listLabel.append(el("span","","Show"),lifecycle);filters.prepend(listLabel);filterMenu.append(filterLabel,filters);
+    const newChat=el("button","chat-list-new");newChat.type="button";newChat.title="New chat · Ctrl+Alt+N";newChat.setAttribute("aria-label","Start a new chat");
+    if(typeof chatWorkspaceIcon==="function")newChat.append(chatWorkspaceIcon("compose"));newChat.append(el("span","","New chat"));
+    newChat.onclick=()=>chatNewChat();
+    const searchRow=el("div","chat-list-controls");searchRow.append(search,filterMenu);controls.append(newChat,searchRow);
     host.append(controls, el("div", "chat-inbox-rows"));
     host.lastChild.id = "chatInboxRows";
   }
@@ -2270,6 +2294,7 @@ function chatUserTurn(text) {
   const b = el("div", "chat-turn chat-user");
   const {text:shown,files}=chatSplitUserMessage(text);
   b.textContent = shown;
+  if (typeof chatCollapseLong === "function") chatCollapseLong(b, shown);
   if (files.length) b.append(chatAttachmentChips(files));
   return b;
 }
@@ -3698,27 +3723,46 @@ function chatTermOlderControl(body) {
 // that thread into the stage cache, so the tap that follows paints from
 // memory. One fetch per thread per page-life; a cached thread is left alone.
 const chatPrefetching = new Set();
-function chatPrefetchEntry(entry) {
-  if (!entry || entry.taskThread) return;
+function chatPrefetchEntry(entry, background) {
+  if (!entry || entry.taskThread) return Promise.resolve();
   const agent = entry.agent || "", id = entry.session.id, key = chatStageKey(agent, id);
   const routeVersion=chatRouteVersion;
-  const current=()=>routeVersion===chatRouteVersion&&!chatStageCache.has(key)&&key!==chatStageKey(chatAgent,chatOpenId);
-  if (!current() || chatPrefetching.has(key)) return;
+  // a background prefetch outlives route changes: its data is as fresh either way
+  const current=()=>(background||routeVersion===chatRouteVersion)&&!chatStageCache.has(key)&&key!==chatStageKey(chatAgent,chatOpenId);
+  if (!current() || chatPrefetching.has(key)) return Promise.resolve();
   chatPrefetching.add(key);
   const done = () => chatPrefetching.delete(key);
   if (entry.terminal) {
-    fetch(chatTermBase(id) + "/transcript?lite=1&tail=" + 40).then((r) => r.ok ? r.json() : null).then((d) => {
+    return fetch(chatTermBase(id) + "/transcript?lite=1&tail=" + 40).then((r) => r.ok ? r.json() : null).then((d) => {
       const se = d && chatTermFind(id);
       if (!se || !current()) return;
       const row = chatTermApplyState({...se});
       row.run = d.run || null; row.activityOffset = d.offset || 0;
       chatStageRemember(key, { kind: "term", o: chatTermOpenFrom(id, row, d) });
     }).catch(() => {}).finally(done);
-    return;
   }
-  fetch(chatBaseFor(agent) + "/" + encodeURIComponent(id)).then((r) => r.ok ? r.json() : null).then((d) => {
+  return fetch(chatBaseFor(agent) + "/" + encodeURIComponent(id)).then((r) => r.ok ? r.json() : null).then((d) => {
     if (current() && d && d.session && !d.sharedConversation?.route) chatStageRemember(key, { kind: "agent", d });
   }).catch(() => {}).finally(done);
+}
+// chatPrefetchRecent — after the list loads, quietly fetch the lite view of
+// the most recent chats, one at a time, so a first visit paints from memory.
+// Not in tiles' frames (each would repeat it) or a hidden page.
+let chatPrefetchRecentTimer = 0;
+function chatPrefetchRecent() {
+  if (chatEmbedded || document.hidden) return;
+  clearTimeout(chatPrefetchRecentTimer);
+  chatPrefetchRecentTimer = setTimeout(async () => {
+    const time = e => Date.parse(e.session.updated || e.session.lastUsed || e.session.created || "") || 0;
+    const list = [];
+    chatRoster.filter(a => !chatIsTerm(a.name) && a.backend !== "portal").forEach(a => (chatAgentSessions[a.name] || []).forEach(session => list.push({agent: a.name, session})));
+    if (chatTermEnabled) Object.keys(chatTermKinds).forEach(agent => chatTermList(agent).forEach(session => list.push({agent, session, terminal: true})));
+    const recent = list.filter(e => chatEntryLifecycle(e) === "active").sort((a, b) => time(b) - time(a)).slice(0, 6);
+    for (const entry of recent) {
+      if (document.hidden) return;
+      await chatPrefetchEntry(entry, true);
+    }
+  }, 1500);
 }
 
 // chatTermLeave — the stage moved to another section/thread (or the landing):
@@ -4019,7 +4063,9 @@ function chatTermCmdLine(t) {
   }
   const {text,files}=chatSplitUserMessage(chatQuestionReplyDisplay(t.text) || "");
   if(files.length)line.append(chatAttachmentChips(files)); // previews lead, the way the message was composed
-  line.append(el("span", "chat-term-cmd-text", text));
+  const cmdText = el("span", "chat-term-cmd-text", text);
+  line.append(cmdText);
+  if (typeof chatCollapseLong === "function") chatCollapseLong(line, text, cmdText);
   if (t.pending) { line.classList.add("pending"); line.append(el("span", "chat-term-meta", t.sending ? "sending…" : "delivered · waiting for the agent")); }
   else if (t.ts) line.append(el("span", "chat-term-meta", fmtWhen(t.ts)));
   return line;

@@ -47,7 +47,7 @@ function chatInstallCommands(host,input){
 function chatWorkspaceControls(host){
  if(chatEmbedded)return;
  const shell=document.querySelector('.chat-shell');
- const toggle=el('button','sprt-quiet chat-sidebar-toggle','Chats');toggle.title='Toggle conversation sidebar · Ctrl+Alt+B';toggle.setAttribute('aria-controls','chatRail');
+ const toggle=el('button','sprt-quiet chat-sidebar-toggle chat-ibtn');toggle.setAttribute('aria-label','Chats');if(typeof chatWorkspaceIcon==='function')toggle.append(chatWorkspaceIcon('sidebar'));else toggle.textContent='Chats';toggle.title='Toggle conversation sidebar · Ctrl+Alt+B';toggle.setAttribute('aria-controls','chatRail');
  const apply=()=>{const hidden=chatRecall('manifest.chatSidebarHidden')==='1';shell.classList.toggle('chat-list-hidden',hidden);toggle.setAttribute('aria-expanded',String(!hidden));shell._refreshPaneWidths?.();};
  toggle.onclick=()=>{try{localStorage.setItem('manifest.chatSidebarHidden',shell.classList.contains('chat-list-hidden')?'0':'1');}catch(e){}apply();};host.prepend(toggle);apply();
  const layout=el('select','chat-layout-select');layout.setAttribute('aria-label','Tool panes');layout.title='Tool panes beside the conversation (files, review, side chats) · Ctrl+Alt+I';

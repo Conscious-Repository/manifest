@@ -117,3 +117,24 @@ document.addEventListener("keydown", e => {
   chatStatusInterrupt();
 });
 window.addEventListener("manifest-terminal-state", () => chatStatusPaint());
+
+// chatCollapseLong — a long pasted message shows its first lines with Show
+// more, as Codex and ChatGPT do; the whole text stays in the page (copy and
+// find still see it). host gets .is-long; the toggle follows the text.
+function chatCollapseLong(host, text, textEl) {
+  const lines = String(text || "").split("\n").length;
+  if (String(text || "").length < 900 && lines <= 14) return;
+  host.classList.add("is-long", "is-collapsed");
+  const toggle = el("button", "chat-show-more", "Show more");
+  toggle.type = "button";
+  toggle.setAttribute("aria-expanded", "false");
+  toggle.onclick = e => {
+    e.stopPropagation();
+    const open = host.classList.toggle("is-collapsed") === false;
+    toggle.textContent = open ? "Show less" : "Show more";
+    toggle.setAttribute("aria-expanded", String(open));
+  };
+  // in a flex bubble the toggle takes its own row at the bottom
+  if (textEl) { const brk = el("span", "chat-show-break"); brk.setAttribute("aria-hidden", "true"); textEl.parentNode.append(brk, toggle); }
+  else host.append(toggle);
+}

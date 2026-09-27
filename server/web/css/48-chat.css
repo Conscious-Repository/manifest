@@ -1184,3 +1184,31 @@ label.chat-artifact-handoff{display:flex;flex-direction:row;align-items:flex-sta
 .chat-older:disabled { cursor: default; opacity: 0.7; }
 :is(.chat-term-result-text, .chat-step-result, .chat-activity-text).is-loading { color: var(--base-50); font-style: italic; }
 @media (max-width: 860px) { .chat-older { min-height: 44px; } }
+/* Codex-simple list and head (2026-09-27): icon controls, New chat on top,
+   one filter control, project actions on the heading, long messages fold. */
+.chat-ibtn { display: inline-flex; align-items: center; justify-content: center; min-width: var(--control-min); min-height: var(--control-min); padding: 0 6px; border: 0; border-radius: var(--radius); background: transparent; color: var(--base-60); cursor: pointer; }
+.chat-ibtn:hover, .chat-ibtn:focus-visible { background: var(--hover); color: var(--base-100); }
+.chat-ibtn > .chat-workspace-icon { width: 18px; height: 18px; }
+.chat-list-new { display: flex; align-items: center; gap: 10px; width: 100%; min-height: 40px; padding: 0 12px; border: 1px solid var(--line); border-radius: var(--radius-lg); background: var(--bg); color: var(--base-100); font: 500 14px var(--sans); cursor: pointer; text-align: left; }
+.chat-list-new:hover, .chat-list-new:focus-visible { background: var(--hover); }
+.chat-list-new > .chat-workspace-icon { width: 17px; height: 17px; color: var(--base-60); }
+.chat-list-controls > .chat-inbox-search { flex: 1 1 auto; width: 0; min-width: 0; }
+.chat-filter-menu > summary.chat-ibtn { list-style: none; min-height: 40px; min-width: 40px; padding: 0; position: relative; }
+.chat-filter-menu > summary.chat-ibtn::-webkit-details-marker { display: none; }
+.chat-filter-menu > summary.chat-ibtn.is-on::after { content: ""; position: absolute; top: 9px; right: 9px; width: 6px; height: 6px; border-radius: 50%; background: var(--accent); }
+.chat-filter-field { display: flex; flex-direction: column; gap: 4px; font: 12px var(--sans); color: var(--base-60); }
+.chat-project-heading .chat-project-acts { display: inline-flex; gap: 2px; margin-left: auto; opacity: 0; transition: opacity 120ms ease; }
+.chat-project-heading:hover .chat-project-acts, .chat-project-heading:focus-within .chat-project-acts { opacity: 1; }
+.chat-project-heading:has(.chat-project-acts)::after { margin-left: 4px; }
+.chat-project-act { min-width: 28px; min-height: 28px; }
+.chat-project-empty { margin: 2px 10px 8px; font: 12px var(--sans); color: var(--base-50); }
+:is(.chat-user, .chat-term-cmd).is-long.is-collapsed { max-height: 16.5em; overflow: hidden; position: relative; }
+:is(.chat-user, .chat-term-cmd).is-long.is-collapsed::after { content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 3.5em; background: linear-gradient(transparent, var(--surface-field)); pointer-events: none; }
+.chat-show-more { position: relative; z-index: 1; display: block; margin: 6px 0 0 auto; min-height: 28px; padding: 0 10px; border: 0; border-radius: 999px; background: var(--hover); color: var(--base-80); font: 12px var(--sans); cursor: pointer; }
+:is(.chat-user, .chat-term-cmd).is-long.is-collapsed > .chat-show-more { position: absolute; right: 10px; bottom: 8px; margin: 0; }
+@media (hover: none) { .chat-project-heading .chat-project-acts { opacity: 1; } }
+@media (max-width: 860px) { .chat-ibtn, .chat-project-act, .chat-show-more { min-width: 44px; min-height: 44px; } .chat-list-new { min-height: 44px; } }
+@media (prefers-reduced-motion: reduce) { .chat-project-heading .chat-project-acts { transition: none; } }
+.chat-show-break { flex-basis: 100%; height: 0; }
+.chat-term-cmd:not(.is-collapsed) > .chat-show-more { order: 99; margin: 6px 0 0 auto; }
+.chat-term-cmd:not(.is-collapsed) > .chat-show-break { order: 98; }

@@ -44,8 +44,17 @@ const codexTranscript={offset:4096,title:'Fix the flaky test',conversation:{key:
    {t:'step',cast:'apply_patch',input:'server/web/js/49-chat-status.js',id:'c3',done:true,result:'Success'},
    {t:'say',text:'The timer repainted only on a whole second boundary, so a run that started 999 ms before a paint read one second behind. It now repaints from the run start. Twenty runs pass in a row.'}]}]};
 const codexRows=[{id:'cx1',kind:'codex',name:'Fix the flaky test',title:'Fix the flaky test',cwd:'/home/owner/src/manifest',backend:'herdr',live:true,process:'running',lastUsed:'2026-09-25T10:07:12Z',agentState:'idle'}];
-function makeStub({terminal=true,codex=false}={}){
- const codexSessions=codex?codexRows:[];
+// makeStub({longCodex:true}) adds cx2: 100 turns, each reply with a tool step
+// whose output stays on the server — served by the lite contract
+// (transcript_lite.go): ?lite=1&tail=N, …/turns?before=, …/step?id=. The owner
+// turn at 1 is a long paste (40 lines) for the Show more fold.
+const longPaste=Array.from({length:40},(_,i)=>'line '+(i+1)+' of the pasted log').join('\n');
+const longTurns=[];for(let i=0;i<50;i++){const ts='2026-09-25T0'+String(9+Math.floor(i/60)).slice(-1)+':'+String(i%60).padStart(2,'0')+':00Z';
+ longTurns.push({id:'lu'+i,who:'user',ts,text:i===1?longPaste:'question '+i});
+ longTurns.push({id:'la'+i,who:'assistant',ts,end:ts,blocks:[{t:'step',cast:'exec_command',input:'ls '+i,id:'s'+i,done:true,result:'output of step '+i+' '+'x'.repeat(2000)},{t:'say',text:'answer '+i}]});}
+const liteOf=t=>({...t,blocks:t.blocks&&t.blocks.map(b=>b.t==='step'&&b.result?{...b,result:undefined,resultBytes:b.result.length,sid:'cx2',done:true}:b)});
+function makeStub({terminal=true,codex=false,longCodex=false}={}){
+ const codexSessions=[...(codex?codexRows:[]),...(longCodex?[{id:'cx2',kind:'codex',name:'Long session',title:'Long session',cwd:'/home/owner/src/manifest',backend:'herdr',live:false,process:'stopped',lastUsed:'2026-09-25T12:00:00Z',agentState:'idle'}]:[])];
  const sessions={a:{id:'a',title:'Long research thread',status:'idle',agent:'alfred',turns:40,updated:'2026-09-25T11:00:00Z',created:'2026-09-25T10:00:00Z',spentUsd:0,deliveries:[]},
   b:{id:'b',title:'Second thread',status:'idle',agent:'alfred',turns:2,updated:'2026-09-25T09:00:00Z',created:'2026-09-25T09:00:00Z',spentUsd:0,deliveries:[]}};
  const bodies={a:long(40),b:long(2)};
@@ -92,6 +101,13 @@ function makeStub({terminal=true,codex=false}={}){
    if(p==='/api/chat/resolve'){const id=url.searchParams.get('id');return json(res,200,{id,owners:sessions[id]?[{backend:'hermes',agent:'alfred',route:'#/chat/a/alfred/'+id}]:[],checked:['spirits','alfred','terminal'],unavailable:[]});}
    if(p==='/api/terminal/sessions')return json(res,200,{sessions:codexSessions,enabled:terminal});
    const tt=p.match(/^\/api\/terminal\/session\/([^/]+)\/transcript$/);
+   if(tt&&tt[1]==='cx2'&&longCodex){const lite=url.searchParams.get('lite')==='1',tail=Number(url.searchParams.get('tail'))||0,after=Number(url.searchParams.get('after'))||0;
+    if(after>=9000)return json(res,200,{offset:9000,turns:[],older:0,historyAvailable:true,conversation:{key:'conv-cx2'}});
+    const window=tail?longTurns.slice(-tail):longTurns;return json(res,200,{offset:9000,historyAvailable:true,conversation:{key:'conv-cx2'},title:'Long session',older:longTurns.length-window.length,turns:lite?window.map(liteOf):window,planningTimeline:null,timelineHash:''});}
+   const ot=p.match(/^\/api\/terminal\/session\/cx2\/turns$/);
+   if(ot&&longCodex){const i=longTurns.findIndex(t=>t.id===url.searchParams.get('before')),lim=Number(url.searchParams.get('limit'))||40;if(i<0)return json(res,404,{});const start=Math.max(0,i-lim);return json(res,200,{turns:longTurns.slice(start,i).map(liteOf),older:start});}
+   const st1=p.match(/^\/api\/terminal\/session\/cx2\/step$/);
+   if(st1&&longCodex){log.push('STEP '+url.searchParams.get('id'));const id=url.searchParams.get('id');const hit=longTurns.flatMap(t=>t.blocks||[]).find(b=>b.id===id);return hit?json(res,200,{id,result:hit.result}):json(res,404,{});}
    if(tt&&codexSessions.some(s=>s.id===tt[1]))return json(res,200,Number(url.searchParams.get('after'))>=codexTranscript.offset?{offset:codexTranscript.offset,turns:[],run:codexTranscript.run,context:codexTranscript.context,settings:codexTranscript.settings}:codexTranscript);
    if(p==='/api/terminal/folders')return json(res,200,{enabled:true,home:'/home/owner',recent:['/home/owner/src/manifest'],repos:['/home/owner/src/manifest','/home/owner/src/lab-apps']});
    if(p==='/api/chat/review-status')return json(res,200,{by_scope:{},by_task:{}});

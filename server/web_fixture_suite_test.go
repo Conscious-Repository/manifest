@@ -351,3 +351,8 @@ func TestFixtureChatSingleViewPass(t *testing.T) {
 func TestFixtureChatSingleViewPass2(t *testing.T) {
 	runFixture(t, "chat-single-view-pass2.cjs", true, false)
 }
+
+// Long coding chats open snappily and the list reads Codex-simple: lite tail,
+// earlier turns keep the place, step output on demand, long pastes fold
+// (chat-snappy.cjs).
+func TestFixtureChatSnappy(t *testing.T) { runFixture(t, "chat-snappy.cjs", true, false) }

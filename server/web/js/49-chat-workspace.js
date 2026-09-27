@@ -47,7 +47,7 @@ function chatWorkspaceSource(){
  return null;
 }
 function chatWorkspaceIcon(kind){
- const paths={folder:'M3 7V5h6l2 2h10v13H3z',panel:'M4 4h16v16H4z M15 4v16',terminal:'M4 4h16v16H4z M7 8l3 3-3 3 M12 15h5',review:'M6 3h9l4 4v14H6z M14 3v5h5 M9 12h7 M9 16h7',chat:'M20 11a8 8 0 0 1-8 8H5l-3 3v-11a9 9 0 0 1 18 0z M8 11h8 M12 7v8',file:'M6 3h9l4 4v14H6z M14 3v5h5'};
+ const paths={folder:'M3 7V5h6l2 2h10v13H3z',panel:'M4 4h16v16H4z M15 4v16',terminal:'M4 4h16v16H4z M7 8l3 3-3 3 M12 15h5',review:'M6 3h9l4 4v14H6z M14 3v5h5 M9 12h7 M9 16h7',chat:'M20 11a8 8 0 0 1-8 8H5l-3 3v-11a9 9 0 0 1 18 0z M8 11h8 M12 7v8',file:'M6 3h9l4 4v14H6z M14 3v5h5',sidebar:'M4 4h16v16H4z M9 4v16',compose:'M4 20h4L19 9l-4-4L4 16z M14 6l4 4',tiles:'M4 4h7v7H4z M13 4h7v7h-7z M4 13h7v7H4z M13 13h7v7h-7z',filter:'M4 5h16l-6 7v6l-4 2v-8z',plus:'M12 5v14 M5 12h14',info:'M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18z M12 11v5 M12 8h.01'};
  const svg=document.createElementNS('http://www.w3.org/2000/svg','svg');svg.setAttribute('viewBox','0 0 24 24');svg.setAttribute('aria-hidden','true');svg.classList.add('chat-workspace-icon');const path=document.createElementNS(svg.namespaceURI,'path');path.setAttribute('d',paths[kind]||paths.file);svg.append(path);return svg;
 }
 function chatWorkspaceHeader(head){
