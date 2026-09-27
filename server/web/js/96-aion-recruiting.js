@@ -45,7 +45,9 @@ let recFocusedReview = false;
 let recFocusedKey = "";
 let recFocusedIndex = 0;
 const recEnhancing = new Set();
-let recPlacesLayout = "places"; // places | review — the old SOURCES queue lives one chip over
+let recPlacesLayout = "places"; // places | review | people — the old SOURCES queue lives one chip over
+let recRanked = null;            // {people, total, formula} — the merged, ranked people across sweeps
+let recRankedLimit = 25;         // 10 | 25 | 100
 let recPlaceOpen = {};          // place id → its runs unfolded
 // REC_FORMER_AFTER_YEARS mirrors sources.FormerAfterYears: a person a dated
 // source last placed somewhere this many years ago is drawn FORMER.
@@ -81,6 +83,7 @@ function recApplyRoute(sub) {
   if (sub.startsWith("candidate/")) { recView = "board"; recRole = null; recOrigin = "both"; recOriginSet = true; recCut = "all"; recQuery = ""; recPeopleFacet = "considering"; try { recSel = decodeURIComponent(sub.slice(10)); } catch (_) { recSel = ""; } }
   else if (sub.startsWith("role/")) { recView = "role"; recRoleView = sub.slice(5); }
   else if (sub === "sources") { recView = "places"; recPlacesLayout = "review"; } // the queue is a chip on PLACES now
+  else if (sub === "people") { recView = "places"; recPlacesLayout = "people"; recRanked = null; }
   else if (sub === "network" || sub === "board" || sub === "places") { recView = sub; }
   else recView = "network";
 }
@@ -132,7 +135,7 @@ async function loadRecruitingSources() {
 // consult; keep writes a network row instead, chosen as one of four kinds, and
 // the person stops expiring with their run's cache. One click unfolds the
 // kinds; a second picks one. `after` runs on success (refresh the caller).
-function recKeepControl(runId, draftId, name, after) {
+function recKeepControl(runId, draftId, name, after, also) {
   const wrap = el("span", "rec-keep");
   const open = el("button", "pill light", "keep in network");
   open.title = "keep " + name + " as a future hire, advisor, expert or connector — a network record, not a candidate";
@@ -145,7 +148,7 @@ function recKeepControl(runId, draftId, name, after) {
       b.onclick = async (ev) => {
         ev.stopPropagation();
         wrap.querySelectorAll("button").forEach((x) => { x.disabled = true; });
-        const out = await recSourcesPost("/api/network/keep", { run: runId, draft: draftId, kind: k },
+        const out = await recSourcesPost("/api/network/keep", { run: runId, draft: draftId, kind: k, also: also || [] },
           name + " kept in your network as " + label);
         if (out) { if (typeof netCache !== "undefined") netCache = null; if (after) after(out); }
         else wrap.querySelectorAll("button").forEach((x) => { x.disabled = false; });
@@ -153,7 +156,7 @@ function recKeepControl(runId, draftId, name, after) {
       wrap.append(b);
     });
     const x = el("button", "rec-linkish", "cancel");
-    x.onclick = (ev) => { ev.stopPropagation(); wrap.replaceWith(recKeepControl(runId, draftId, name, after)); };
+    x.onclick = (ev) => { ev.stopPropagation(); wrap.replaceWith(recKeepControl(runId, draftId, name, after, also)); };
     wrap.append(x);
   };
   wrap.append(open);
@@ -1427,7 +1430,7 @@ function paintPlacesView(main) {
   // the review queue that used to be the SOURCES tab
   const waiting = recPendingDrafts();
   const modes = el("div", "rec-toolbar");
-  [["places", "Places"], ["review", waiting ? "Review · " + waiting : "Review"]].forEach(([key, label]) => {
+  [["places", "Places"], ["review", waiting ? "Review · " + waiting : "Review"], ["people", "Ranked people"]].forEach(([key, label]) => {
     const b = el("button", "filter-chip" + (recPlacesLayout === key ? " on" : ""), label);
     b.setAttribute("aria-pressed", String(recPlacesLayout === key));
     b.onclick = () => { recPlacesLayout = key; if (recPaint) recPaint(); };
@@ -1439,6 +1442,7 @@ function paintPlacesView(main) {
   main.append(modes);
   const pending = recPendingSweep();
   if (pending) main.append(recPendingSweepCard(pending));
+  if (recPlacesLayout === "people") { paintRankedPeople(main); return; }
   if (recPlacesLayout === "review") {
     if (recFocusedReview) { paintFocusedSourceReview(main); return; }
     paintSourceReview(main);
@@ -4752,4 +4756,98 @@ function paintFocusedSourceReview(main) {
   const panel = el("article", "rec-focused-candidate");
   panel.append(recDraftCard(run, draft)); main.append(panel);
   if (previousKey && previousKey !== recFocusedKey) requestAnimationFrame(() => { if (context.isConnected) context.focus(); });
+}
+
+// ---- RANKED PEOPLE (sourcing-effectiveness P4+P5): everyone the live sweeps
+// named and nobody has decided about, one row per human — merged ONLY on a
+// durable identifier — ranked by their matching works with the reasons
+// shown. Review is the same people in source order, one draft at a time.
+async function recLoadRanked() {
+  try {
+    const r = await fetch("/api/aion/recruiting/sources/people?limit=" + recRankedLimit, { cache: "no-store" });
+    if (!r.ok) throw new Error((await r.text()) || "HTTP " + r.status);
+    recRanked = await r.json();
+  } catch (e) {
+    recRanked = { error: String(e.message || e).slice(0, 160) };
+  }
+  if (recPaint) recPaint();
+}
+
+function paintRankedPeople(main) {
+  main.append(el("p", "rec-view-purpose", "Everyone your sweeps named that you haven't decided about — one row per person across every search, ranked by their matching work. The reasons are the whole score."));
+  const bar = el("div", "rec-toolbar");
+  bar.append(el("span", "micro-label", "show"));
+  [10, 25, 100].forEach((n) => {
+    const b = el("button", "filter-chip" + (recRankedLimit === n ? " on" : ""), String(n));
+    b.onclick = () => { recRankedLimit = n; recRanked = null; if (recPaint) recPaint(); };
+    bar.append(b);
+  });
+  main.append(bar);
+  if (!recRanked) { recRanked = { loading: true }; recLoadRanked(); }
+  if (recRanked.loading) { main.append(emptyRow("ranking…")); return; }
+  if (recRanked.error) { main.append(el("div", "rec-scaffold-err", recRanked.error)); return; }
+  const people = recRanked.people || [];
+  if (!people.length) { main.append(emptyRow("nobody waiting — run a sweep from a place, and the people it names land here ranked")); return; }
+  const host = el("div", "rec-board rec-ranked");
+  people.forEach((p, i) => host.append(recRankedRow(p, i + 1)));
+  main.append(host);
+  const foot = el("div", "rec-ranked-foot");
+  foot.append(el("span", "", "showing " + people.length + " of " + recRanked.total + " · "));
+  foot.append(el("span", "rec-ranked-formula", recRanked.formula || ""));
+  main.append(foot);
+}
+
+function recRankedRow(p, n) {
+  const row = el("div", "rec-ranked-row");
+  const head = el("div", "rec-draft-head");
+  head.append(el("span", "rec-ranked-n", String(n)));
+  head.append(el("span", "rec-draft-name", p.name));
+  head.append(el("span", "rec-ranked-score", String((p.rank || {}).score || 0)));
+  if (p.namesake) head.append(el("span", "rec-draft-flag", "possible same person as another row — not merged: no shared identifier"));
+  row.append(head);
+  const sub = [p.title, p.org].filter(Boolean).join(" · ");
+  if (sub) row.append(el("div", "rec-draft-sub", sub));
+  row.append(el("div", "rec-ranked-why", ((p.rank || {}).reasons || []).join(" · ")));
+  if ((p.topics || []).length) row.append(el("div", "rec-draft-sub", p.topics.slice(0, 6).join(" · ")));
+  const from = el("div", "rec-ranked-from");
+  from.append(el("span", "micro-label", "from"));
+  (p.members || []).forEach((m) => {
+    const b = el("button", "rec-linkish", m.source + (m.query ? " · " + m.query : ""));
+    b.title = "open this draft in the review queue";
+    b.onclick = () => {
+      recRunOpen[m.run] = true; recShowCleared = true; recDraftOpen[m.run + "#" + m.draft] = true;
+      manifestRevealTarget = m.run + "#" + m.draft; recPlacesLayout = "review"; if (recPaint) recPaint();
+    };
+    from.append(b);
+  });
+  (p.links || []).filter((u) => /orcid\.org|openalex\.org\/A|github\.com/.test(u)).slice(0, 3)
+    .forEach((u) => from.append(linkEl(u.replace(/^https?:\/\/(www\.)?/, "").replace(/\/$/, ""), u)));
+  row.append(from);
+
+  const first = (p.members || [])[0];
+  if (first) {
+    const acts = el("div", "rec-draft-acts rec-ranked-acts");
+    const done = () => { recRanked = null; if (recPaint) recPaint(); };
+    const pursue = el("button", "pill", "pursue");
+    pursue.title = "add them to the board — this is what creates a candidate record";
+    pursue.onclick = async () => {
+      pursue.disabled = true;
+      if (await recSourcesPost("/api/aion/recruiting/sources/accept/" + first.run + "/" + first.draft, {}, p.name + " is on the board")) done();
+      else pursue.disabled = false;
+    };
+    const pass = el("button", "pill light", "pass");
+    pass.title = "looked at and declined — every search that named them";
+    pass.onclick = async () => {
+      pass.disabled = true;
+      for (const m of p.members) {
+        await recSourcesPost("/api/aion/recruiting/sources/reject/" + m.run + "/" + m.draft, {}, null);
+      }
+      showToast("passed on " + p.name);
+      done();
+    };
+    acts.append(pursue, recKeepControl(first.run, first.draft, p.name, done,
+      (p.members || []).slice(1).map((m) => ({ run: m.run, draft: m.draft }))), pass);
+    row.append(acts);
+  }
+  return row;
 }

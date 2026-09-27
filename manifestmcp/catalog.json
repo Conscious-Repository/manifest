@@ -859,6 +859,33 @@
               "orcid": {
                 "type": "string"
               },
+              "tags": {
+                "type": [
+                  "null",
+                  "array"
+                ],
+                "items": {
+                  "type": "string"
+                }
+              },
+              "topics": {
+                "type": [
+                  "null",
+                  "array"
+                ],
+                "items": {
+                  "type": "string"
+                }
+              },
+              "note": {
+                "type": "string"
+              },
+              "lastContact": {
+                "type": "string"
+              },
+              "team": {
+                "type": "string"
+              },
               "unknown": {
                 "type": [
                   "null",

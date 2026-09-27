@@ -108,6 +108,10 @@ function netPaint() {
     toggle.append(b);
   });
   acts.append(toggle);
+  const sweeps = el("a", "rec-linkish net-sweeps", "people from sweeps →");
+  sweeps.href = "#/aion/recruiting/people";
+  sweeps.title = "everyone your recruiting sweeps named, ranked — keep the ones worth knowing";
+  acts.append(sweeps);
   head.append(acts);
   host.append(head);
 

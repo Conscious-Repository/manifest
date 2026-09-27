@@ -291,6 +291,12 @@ func (s *Server) handleNetworkKeep(w http.ResponseWriter, r *http.Request) {
 		Run   string `json:"run"`
 		Draft string `json:"draft"`
 		Kind  string `json:"kind"`
+		// Also are the same person's drafts in other sweeps (a merged row in
+		// the ranked people view): each is marked kept onto the one row.
+		Also []struct {
+			Run   string `json:"run"`
+			Draft string `json:"draft"`
+		} `json:"also"`
 	}
 	if err := decode(r, &b); err != nil || strings.TrimSpace(b.Run) == "" || strings.TrimSpace(b.Draft) == "" {
 		httpError(w, errBadRequest("keep needs a run and a draft"))
@@ -301,6 +307,15 @@ func (s *Server) handleNetworkKeep(w http.ResponseWriter, r *http.Request) {
 		httpError(w, err)
 		return
 	}
+	var alsoErrs []string
+	for _, a := range b.Also {
+		if a.Run == b.Run && a.Draft == b.Draft {
+			continue
+		}
+		if err := s.recruitingRuns.KeepAlso(a.Run, a.Draft, p.ID, time.Now()); err != nil {
+			alsoErrs = append(alsoErrs, a.Run+"/"+a.Draft+": "+err.Error())
+		}
+	}
 	s.ledger(ledger.Entry{Source: "recruiting", Kind: "recruiting.person.kept", Actor: "owner",
 		Object: ledger.Object{Kind: "person", ID: p.ID},
 		Text:   ledger.Snip(p.Name+" kept in the network from "+run.Source+keptAs(p.Type), 280),
@@ -308,6 +323,9 @@ func (s *Server) handleNetworkKeep(w http.ResponseWriter, r *http.Request) {
 	out := s.runsPayload(true)
 	out["run"] = run
 	out["person"] = p
+	if len(alsoErrs) > 0 {
+		out["alsoErrors"] = alsoErrs
+	}
 	writeJSON(w, out)
 }
 
@@ -494,4 +512,29 @@ func (s *Server) handleNetworkGraph(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.peopleGraph(w, r, s.networkLens(time.Now()))
+}
+
+// GET /api/aion/recruiting/sources/people?limit= — every undecided person
+// across the live sweeps, merged on durable identifiers and ranked with
+// their reasons (recruiting/rank.go). A read; the rank is never stored.
+func (s *Server) handleRecruitingSourcePeople(w http.ResponseWriter, r *http.Request) {
+	if !s.recruitingRunsReady(w) {
+		return
+	}
+	people := s.recruitingRuns.MergedPeople(time.Now())
+	total := len(people)
+	limit := graphIntParam(r, "limit")
+	if limit <= 0 {
+		limit = 25
+	}
+	if limit > 500 {
+		limit = 500
+	}
+	if len(people) > limit {
+		people = people[:limit]
+	}
+	if people == nil {
+		people = []recruiting.MergedPerson{}
+	}
+	writeJSON(w, map[string]any{"people": people, "total": total, "formula": recruiting.RankFormula})
 }

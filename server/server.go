@@ -599,6 +599,7 @@ func (s *Server) Handler() http.Handler {
 			if s.recruitingRuns != nil {
 				mux.HandleFunc("GET /api/aion/recruiting/sources", s.handleRecruitingSources)
 				mux.HandleFunc("GET /api/aion/recruiting/sources/runs", s.handleRecruitingSourceRuns)
+				mux.HandleFunc("GET /api/aion/recruiting/sources/people", s.handleRecruitingSourcePeople)
 				mux.HandleFunc("POST /api/aion/recruiting/sources/run", s.handleRecruitingSourceRun)
 				mux.HandleFunc("POST /api/aion/recruiting/sources/accept/{run}/{draft}", s.handleRecruitingSourceAccept)
 				mux.HandleFunc("POST /api/aion/recruiting/sources/reject/{run}/{draft}", s.handleRecruitingSourceReject)

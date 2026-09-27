@@ -1208,7 +1208,7 @@ function rgPanel(data) {
     if (org) box.append(el("div", "rg-line", org));
     if ((prof.links || []).length) {
       const links = el("div", "rg-links");
-      prof.links.forEach((u) => links.append(linkEl(u, u.replace(/^https?:\/\/(www\.)?/, "").replace(/\/$/, ""))));
+      prof.links.forEach((u) => links.append(linkEl(u.replace(/^https?:\/\/(www\.)?/, "").replace(/\/$/, ""), u)));
       box.append(links);
     }
     if ((prof.sources || []).length) {

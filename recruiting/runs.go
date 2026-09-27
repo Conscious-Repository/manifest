@@ -162,6 +162,9 @@ type Draft struct {
 	// the draft's external keys while it is still queued. DERIVED on every
 	// read and never written to drafts.json — the network edges own the fact.
 	Paths []PathClaim `json:"paths,omitempty"`
+	// Rank is the transparent person ranking (rank.go), DERIVED on the
+	// listing read (Runs) and never written to drafts.json.
+	Rank *DraftRank `json:"rank,omitempty"`
 }
 
 // Run is the full projection of one run: state plus queue.
@@ -998,7 +1001,14 @@ func (r *RunStore) Runs(now time.Time) []Run {
 		if err != nil {
 			continue
 		}
-		out = append(out, r.project(run, finder))
+		run = r.project(run, finder)
+		// the rank rides only on the LISTING: a decision's returned run is
+		// compared byte-for-byte against the cache by approved operations
+		for i := range run.Drafts {
+			rank := RankDraft(run.Drafts[i].Draft, run.StartedAt.Year())
+			run.Drafts[i].Rank = &rank
+		}
+		out = append(out, run)
 	}
 	sort.SliceStable(out, func(i, j int) bool {
 		if !out[i].StartedAt.Equal(out[j].StartedAt) {
@@ -1128,6 +1138,7 @@ func (r *RunStore) writeRun(run Run, raw []sources.CandidateDraft) error {
 	drafts := make([]Draft, len(run.Drafts))
 	for i, d := range run.Drafts {
 		d.Paths = nil
+		d.Rank = nil
 		drafts[i] = d
 	}
 	if err := writeJSON0600(filepath.Join(dir, "drafts.json"), drafts); err != nil {

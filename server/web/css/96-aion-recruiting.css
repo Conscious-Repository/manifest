@@ -736,3 +736,12 @@ a.rec-place-name:hover { text-decoration: underline; }
 .rec-passed { margin-top: var(--sp-7); }
 .rec-passed-row { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--sp-4); padding: var(--sp-2) 0; border-top: 1px solid var(--line-soft); }
 .rec-passed-name { font-size: var(--fs-sm); color: var(--base-80); }
+
+/* RANKED PEOPLE — one row per person across sweeps, the reasons in words */
+.rec-ranked-row { padding: var(--sp-5) 0; border-bottom: 1px solid var(--line); min-width: 0; display: flex; flex-direction: column; gap: var(--sp-2); }
+.rec-ranked-n { font-family: var(--mono); font-size: var(--fs-2xs); color: var(--base-40); min-width: 2ch; }
+.rec-ranked-score { font-family: var(--mono); font-size: var(--fs-2xs); color: var(--base-60); border: 1px solid var(--base-25); border-radius: var(--radius); padding: 0 var(--sp-2); }
+.rec-ranked-why { font-family: var(--mono); font-size: var(--fs-2xs); color: var(--base-70); overflow-wrap: anywhere; }
+.rec-ranked-from { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--sp-3); font-size: var(--fs-xs); overflow-wrap: anywhere; }
+.rec-ranked-acts { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-3); }
+.rec-ranked-foot { display: flex; flex-wrap: wrap; gap: var(--sp-2); padding: var(--sp-4) 0; font-family: var(--mono); font-size: var(--fs-2xs); color: var(--base-40); }
