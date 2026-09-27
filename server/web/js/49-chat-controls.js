@@ -1,18 +1,47 @@
 // Workspace controls use the same independent documents as existing side chats.
-// Native commands are submitted verbatim; their interactive UI stays native.
+// Two kinds of slash command share one menu (research brief, 2026-09-27):
+//  · Manifest's own (surface) commands behave the same on every agent —
+//    /model, /effort, /permissions open the one picker (49-chat-models.js),
+//    /goal keeps a native agent's standing objective, /new and /tile move you.
+//  · Native commands belong to a coding CLI and are submitted verbatim; their
+//    interactive UI stays native. Lists track Codex 0.154 and Claude Code 2.1.
 const chatNativeCommands={
- codex:[['goal','Set an objective, or view / pause / resume / clear it'],['plan','Plan before implementing'],['model','Choose model and reasoning effort'],['status','Inspect the native session'],['review','Review changes'],['compact','Compact conversation context'],['permissions','Open native permission controls'],['mcp','Inspect connected tools'],['skills','Choose installed skills'],['diff','Inspect the working diff'],['ps','Inspect background terminals'],['help','Native help']],
- claude:[['help','Browse native commands and installed skills'],['model','Choose a Claude model'],['plan','Enter plan mode'],['compact','Compact conversation context'],['context','Inspect context usage'],['cost','Inspect session usage'],['status','Inspect session configuration'],['permissions','Open native permission controls'],['mcp','Manage connected tools'],['memory','Open instruction files'],['tasks','Inspect background tasks'],['doctor','Inspect installation health']]
+ codex:[['goal','Set an objective, or view / pause / resume / clear it'],['plan','Plan before implementing'],['review','Review changes'],['diff','Show the working-tree diff'],['compact','Compact conversation context'],['status','Inspect the native session'],['mention','Attach a file to the conversation'],['init','Create an AGENTS.md for this repo'],['new','Start a new native conversation'],['resume','Resume an earlier native conversation'],['fork','Fork this conversation'],['side','Ask a side question'],['approve','Retry an action auto-review denied'],['mcp','Inspect connected tools'],['skills','Choose installed skills'],['memories','Inspect memories'],['copy','Copy the last output'],['title','Rename the native session'],['ps','List background processes'],['stop','Stop background processes'],['fast','Toggle fast mode'],['personality','Choose a personality'],['statusline','Configure the status line'],['hooks','Inspect hooks'],['clear','Clear the screen']],
+ claude:[['goal','Set an objective Claude keeps working toward'],['plan','Enter plan mode'],['context','Inspect context usage'],['compact','Compact conversation context'],['usage','Inspect session usage and cost'],['status','Inspect session configuration'],['code-review','Review the current changes'],['security-review','Review changes for security'],['diff','Show uncommitted changes'],['init','Create a CLAUDE.md for this repo'],['memory','Open instruction files'],['agents','Manage subagents'],['tasks','List background tasks'],['btw','Ask a side question'],['rewind','Rewind code and conversation'],['fork','Fork this conversation'],['resume','Resume an earlier conversation'],['loop','Run a prompt on an interval'],['mcp','Manage connected tools'],['hooks','Manage hooks'],['skills','Browse installed skills'],['add-dir','Add a working directory'],['export','Export the conversation'],['config','Open settings'],['doctor','Check the installation'],['fast','Toggle fast mode'],['simplify','Simplify recent changes'],['verify','Verify recent changes'],['clear','Clear the conversation']],
 };
+// chatSurfaceCommands — Manifest's commands for the conversation in view.
+function chatSurfaceCommands(){
+ const ctx=typeof chatModelContext==='function'?chatModelContext():null,out=[];
+ if(ctx){
+  out.push(['model','Choose model · Manifest picker']);
+  out.push(['effort','Set reasoning effort']);
+  if(ctx.kind!=='hermes')out.push(['permissions','Choose permissions / access']);
+  if(ctx.kind==='hermes'&&chatOpenId)out.push(['goal','Standing objective for this chat · pause · resume · clear']);
+ }
+ if(!chatEmbedded&&chatAgent)out.push(['new','New chat with this agent']);
+ if(!chatEmbedded&&chatOpenId)out.push(['tile','Open this chat in tiles']);
+ return out;
+}
 function chatInstallCommands(host,input){
- if(!chatIsTerm())return;
- const box=el('div','chat-command-picker');box.hidden=true;box.id='chatCommandPicker';box.setAttribute('role','listbox');box.setAttribute('aria-label','Native commands');host.append(box);
+ if(!chatAgent||chatIsPortal())return;
+ const box=el('div','chat-command-picker');box.hidden=true;box.id='chatCommandPicker';box.setAttribute('role','listbox');box.setAttribute('aria-label','Commands');host.append(box);
  let rows=[],index=0;
  const close=()=>{box.hidden=true;input.removeAttribute('aria-activedescendant');input.setAttribute('aria-expanded','false');};
  const choose=()=>{const row=rows[index];if(!row)return;input.value='/'+row[0]+' ';close();input.dispatchEvent(new Event('input',{bubbles:true}));input.focus();};
- const paint=()=>{box.replaceChildren();rows.forEach((row,i)=>{const b=el('button','chat-command-option');b.type='button';b.id='chatCommand-'+i;b.setAttribute('role','option');b.setAttribute('aria-selected',String(i===index));b.append(el('span','', '/'+row[0]),el('span','chat-command-description',row[1]));b.onmousedown=e=>e.preventDefault();b.onclick=()=>{index=i;choose();};box.append(b);});box.append(el('p','chat-command-hint','Native CLI commands · interactive results open in Terminal. Installed custom commands can also be typed.'));input.setAttribute('aria-activedescendant','chatCommand-'+index);box.children[index]?.scrollIntoView({block:'nearest'});};
- input.addEventListener('input',()=>{if(chatRecipients.get(chatDraftKey)){close();return;}const match=input.value.match(/^\/([\w:-]*)$/);if(!match){close();return;}rows=(chatNativeCommands[chatAgent]||[]).filter(r=>r[0].startsWith(match[1]));if(!rows.length){close();return;}index=0;box.hidden=false;input.setAttribute('aria-controls',box.id);input.setAttribute('aria-expanded','true');paint();});
- input.addEventListener('keydown',e=>{if(box.hidden||e.isComposing)return;if(e.key==='Escape'){e.preventDefault();e.stopImmediatePropagation();close();}else if(['ArrowDown','ArrowUp','Enter','Tab'].includes(e.key)){e.preventDefault();e.stopImmediatePropagation();if(e.key==='Enter'||e.key==='Tab')choose();else{index=(index+(e.key==='ArrowDown'?1:-1)+rows.length)%rows.length;paint();}}},true);
+ const paint=()=>{box.replaceChildren();let group='';rows.forEach((row,i)=>{if(row[2]!==group){group=row[2];box.append(el('div','chat-command-group micro-label',group));}const b=el('button','chat-command-option');b.type='button';b.id='chatCommand-'+i;b.setAttribute('role','option');b.setAttribute('aria-selected',String(i===index));b.append(el('span','', '/'+row[0]),el('span','chat-command-description',row[1]));b.onmousedown=e=>e.preventDefault();b.onclick=()=>{index=i;choose();};box.append(b);});box.append(el('div','chat-command-keys','↑↓ choose · Enter or Tab insert · Esc close'));if(rows[index])input.setAttribute('aria-activedescendant','chatCommand-'+index);};
+ input.addEventListener('input',()=>{
+  if(chatRecipients.get(chatDraftKey)?.agent&&chatRecipients.get(chatDraftKey).agent!==chatAgent){close();return;}
+  const match=input.value.match(/^\/([\w:-]*)$/);if(!match){close();return;}
+  const surface=chatSurfaceCommands(),taken=new Set(surface.map(r=>r[0]));
+  const native=chatIsTerm()?(chatNativeCommands[chatAgent]||[]).filter(r=>!taken.has(r[0])):[];
+  rows=[...surface.map(r=>[r[0],r[1],'Manifest']),...native.map(r=>[r[0],r[1],chatAgentLabel(chatAgent)])].filter(r=>r[0].startsWith(match[1]));
+  if(!rows.length){close();return;}
+  index=0;box.hidden=false;input.setAttribute('aria-controls',box.id);input.setAttribute('aria-expanded','true');paint();
+ });
+ input.addEventListener('keydown',e=>{if(box.hidden||e.isComposing)return;
+  // a fully typed command runs on Enter, as in Codex; a partial one completes
+  if(e.key==='Enter'&&!e.shiftKey&&rows[index]&&input.value.trim()==='/'+rows[index][0]){close();return;}
+  if(e.key==='Escape'){e.preventDefault();e.stopImmediatePropagation();close();}else if(['ArrowDown','ArrowUp','Enter','Tab'].includes(e.key)){e.preventDefault();e.stopImmediatePropagation();if(e.key==='Enter'||e.key==='Tab')choose();else{index=(index+(e.key==='ArrowDown'?1:-1)+rows.length)%rows.length;paint();}}},true);
  input.addEventListener('blur',close);
 }
 function chatWorkspaceControls(host){

@@ -41,6 +41,8 @@ function makeStub(){
      efforts:['none','minimal','low','medium','high','xhigh','max','ultra'].map(id=>({id})),
      models:[{id:'claude-x',label:'claude-x',provider:'anthropic',description:'Anthropic'},{id:'gpt-5.6-luna',label:'gpt-5.6-luna',provider:'openai-codex',description:'OpenAI'},{id:'grok-4.6',label:'grok-4.6',provider:'xai-oauth',description:'xAI'},{id:'deepseek-v4.1-flash',label:'deepseek-v4.1-flash',provider:'lab-sparks',description:'Lab (192.168.87.11:8000/v1)'}]}}});
    if(p==='/api/agents/chat/alfred/sessions')return json(res,200,{sessions:Object.values(sessions)});
+   const gm=p.match(/^\/api\/agents\/chat\/alfred\/sessions\/([ab])\/goal$/);
+   if(gm&&req.method==='POST'){let b='';req.on('data',c=>b+=c);req.on('end',()=>{const v=JSON.parse(b||'{}'),s=sessions[gm[1]];s.goal=(v.goal||'').trim();s.goalState=s.goal?(v.state||'active'):'';json(res,200,{goal:s.goal,goalState:s.goalState});});return;}
    const sm=p.match(/^\/api\/agents\/chat\/alfred\/sessions\/([ab])(\/stream|\/messages)?$/);
    if(sm&&sm[2]==='/stream'){res.writeHead(200,{'Content-Type':'text/event-stream','Cache-Control':'no-store'});res.write(':ok\n\n');streams.push(res);req.on('close',()=>streams.splice(streams.indexOf(res),1));return;}
    if(sm&&sm[2]==='/messages'&&req.method==='POST'){let b='';req.on('data',c=>b+=c);req.on('end',()=>setTimeout(()=>{

@@ -127,7 +127,15 @@ type Session struct {
 	// §3.4f) — the transcript's link back to the board. One per session: a
 	// second promote overwrites it (the newest task is the live one).
 	Task string `json:"task,omitempty"`
+	// Goal is the owner's standing objective for this conversation (/goal).
+	// Every turn carries it while GoalState is "active"; "paused" keeps it
+	// visible without sending it. It never schedules or starts a turn.
+	Goal      string `json:"goal,omitempty"`
+	GoalState string `json:"goalState,omitempty"`
 }
+
+// MaxGoal bounds a conversation goal (bytes).
+const MaxGoal = 2000
 
 // Turn is one parsed turn block.
 type Turn struct {
@@ -183,6 +191,7 @@ func parse(content string) (Session, string) {
 		ID: fm["session"], Agent: fm["agent"], Profile: fm["profile"], Title: fm["title"],
 		Created: fm["created"], Updated: fm["updated"], Status: fm["status"],
 		Model: fm["model"], HermesSession: fm["hermes_session"], Task: fm["task"],
+		Goal: fm["goal"], GoalState: fm["goal_state"],
 	}
 	_ = json.Unmarshal([]byte(fm["deliveries"]), &sess.Deliveries)
 	_ = json.Unmarshal([]byte(fm["origin"]), &sess.Origin)
@@ -220,6 +229,8 @@ func render(sess Session, body string) string {
 		Set("model", sess.Model).
 		Set("hermes_session", sess.HermesSession).
 		Set("task", sess.Task).
+		Set("goal", sess.Goal).
+		Set("goal_state", sess.GoalState).
 		String(body)
 }
 
@@ -471,6 +482,32 @@ func (s *Store) SetTask(agent, id, task string) error {
 		return nil
 	})
 	return err
+}
+
+// SetGoal sets, pauses, resumes or clears the conversation's standing goal.
+// state is "active" or "paused"; an empty goal clears both.
+func (s *Store) SetGoal(agent, id, goal, state string) (Session, error) {
+	goal = strings.TrimSpace(goal)
+	if len(goal) > MaxGoal {
+		return Session{}, fmt.Errorf("goal exceeds %d bytes; keep it to the objective and attach detail as a file", MaxGoal)
+	}
+	if strings.ContainsAny(goal, "\n\r") {
+		goal = strings.Join(strings.Fields(goal), " ")
+	}
+	if goal != "" && state != "active" && state != "paused" {
+		return Session{}, errors.New("goal state must be active or paused")
+	}
+	var out Session
+	_, err := s.update(agent, id, func(sess *Session, _ *string) error {
+		sess.Goal = goal
+		sess.GoalState = state
+		if goal == "" {
+			sess.GoalState = ""
+		}
+		out = *sess
+		return nil
+	})
+	return out, err
 }
 
 // Rename retitles a session.

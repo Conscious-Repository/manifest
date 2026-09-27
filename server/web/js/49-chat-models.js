@@ -110,6 +110,7 @@ function chatModelChips(host) {
 }
 function chatModelChipsRefresh() {
   const host = document.getElementById("chatComposer");
+  if (host) chatGoalBar(host);
   if (host?.dataset.built && typeof chatPolishComposer === "function") chatPolishComposer(host);
 }
 
@@ -316,6 +317,15 @@ async function chatApplyModelChoice(ctx, cat, before, chosen) {
 // command opens the picker. With an argument: a native agent applies it
 // directly; a coding agent receives its own command unchanged.
 async function chatSurfaceCommand(text, clear) {
+  const nav = /^\/(new|tile)\s*$/i.exec(text);
+  if (nav && !chatEmbedded && chatAgent && !chatIsPortal()) {
+    clear();
+    if (nav[1].toLowerCase() === "new") location.hash = chatNewHash();
+    else { if (typeof chatTilesPendingFrom !== "undefined" && chatOpenId) chatTilesPendingFrom = location.hash; location.hash = "#/chat/tiles"; }
+    return true;
+  }
+  const goal = /^\/goal(?:\s+([\s\S]*))?$/i.exec(text);
+  if (goal) { const ctx = chatModelContext(); if (ctx?.kind === "hermes") { await chatGoalCommand((goal[1] || "").trim(), clear); return true; } return false; }
   const m = /^\/(model|effort|permissions?)(?:\s+(\S+))?\s*$/i.exec(text);
   if (!m) return false;
   const ctx = chatModelContext();
@@ -343,4 +353,53 @@ async function chatSurfaceCommand(text, clear) {
   try { await chatApplyModelChoice(ctx, cat, st, chosen); clear(); showToast(verb === "model" ? "Model: " + chatModelLabel(cat, chosen.model) : verb === "effort" ? "Effort: " + (chosen.effort || "default") : "Permissions: " + chatPermissionLabel(cat, chosen.permission)); }
   catch (e) { showToast(e.message || "Not applied."); }
   return true;
+}
+
+// ---- /goal on a native agent ----
+// The objective lives on the conversation (server SetGoal) and rides every
+// turn's prompt while active. It never starts a turn by itself.
+async function chatSetGoal(goal, state) {
+  const agent = chatAgent, id = chatOpenId;
+  const r = await fetch(chatBaseFor(agent) + "/" + encodeURIComponent(id) + "/goal", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({goal, state})});
+  if (!r.ok) throw Error((await r.text()).trim() || "Goal not saved.");
+  const d = await r.json();
+  if (chatCurSession?.id === id && chatAgent === agent) { chatCurSession.goal = d.goal || ""; chatCurSession.goalState = d.goalState || ""; }
+  chatModelChipsRefresh();
+  return d;
+}
+async function chatGoalCommand(arg, clear) {
+  if (!chatOpenId) { showToast("Send a first message, then set this chat's goal."); return; }
+  const current = chatCurSession?.goal || "", word = arg.toLowerCase();
+  try {
+    if (!arg) { showToast(current ? "Goal (" + (chatCurSession.goalState || "active") + "): " + current : "No goal yet. Type /goal and the objective."); clear(); return; }
+    if (word === "pause" || word === "resume") {
+      if (!current) { showToast("There is no goal to " + word + "."); return; }
+      await chatSetGoal(current, word === "pause" ? "paused" : "active"); clear(); showToast(word === "pause" ? "Goal paused. It stays here but is not sent." : "Goal resumed."); return;
+    }
+    if (word === "clear") { await chatSetGoal("", ""); clear(); showToast("Goal cleared."); return; }
+    await chatSetGoal(arg, "active"); clear(); showToast("Goal set. Every message in this chat now carries it.");
+  } catch (e) { showToast(e.message || "Goal not saved."); }
+}
+// chatGoalBar — the conversation's objective above the message, with its
+// state and the three controls. Hidden when there is none.
+function chatGoalBar(host) {
+  const ctx = chatModelContext();
+  let bar = host.querySelector(".chat-goal-bar");
+  const goal = ctx?.kind === "hermes" && chatCurSession?.id === chatOpenId ? chatCurSession?.goal || "" : "";
+  if (!goal) { bar?.remove(); return; }
+  if (!bar) { bar = el("div", "chat-goal-bar"); bar.setAttribute("role", "status"); host.prepend(bar); }
+  const paused = chatCurSession.goalState === "paused";
+  // Rebuild only when the goal changes: a composer repaint must never replace
+  // the button under a pointer (focus-stealing re-render class).
+  const signature = JSON.stringify([goal, paused]);
+  if (bar.dataset.signature === signature) return;
+  bar.dataset.signature = signature;
+  bar.classList.toggle("is-paused", paused);
+  const text = el("span", "chat-goal-text", goal); text.title = goal;
+  const label = el("span", "chat-goal-label", paused ? "Goal · paused" : "Goal");
+  const toggle = el("button", "chat-goal-act", paused ? "Resume" : "Pause"); toggle.type = "button";
+  toggle.onclick = () => chatSetGoal(goal, paused ? "active" : "paused").catch(e => showToast(e.message));
+  const clearBtn = el("button", "chat-goal-act", "Clear"); clearBtn.type = "button"; clearBtn.setAttribute("aria-label", "Clear goal");
+  clearBtn.onclick = () => chatSetGoal("", "").catch(e => showToast(e.message));
+  bar.replaceChildren(label, text, toggle, clearBtn);
 }

@@ -7,8 +7,11 @@
 //   2. /effort low applies without sending a message; /model with a name the
 //      catalog lacks refuses in words and sends nothing; bare /model opens the
 //      picker and Esc returns focus to the composer;
-//   3. the choice survives a reload (it rides the synced draft);
-//   4. at phone width the chips wrap under the message, keep 44px targets and
+//   3. the command menu offers Manifest's commands on a native agent, an
+//      exact command runs on Enter, and /goal sets, shows, pauses and clears
+//      the chat's standing objective without sending a message;
+//   4. the choice survives a reload (it rides the synced draft);
+//   5. at phone width the chips wrap under the message, keep 44px targets and
 //      nothing overflows, in both themes.
 const {chromium}=require('playwright'),assert=require('node:assert/strict'),path=require('node:path');
 const {makeStub}=require('./chat-stub-api.cjs');
@@ -57,6 +60,25 @@ const {makeStub}=require('./chat-stub-api.cjs');
   await page.keyboard.press('Enter');await picker.waitFor({state:'detached'});
   assert.match(await chip.textContent(),/grok-4\.6 · medium/);
   assert.equal(await posts(),before,'a surface command sent a message');
+  // the command menu: Manifest's own commands on a native agent
+  await input.fill('/');
+  const menu=page.getByRole('listbox',{name:'Commands'});await menu.waitFor();
+  assert.deepEqual((await menu.getByRole('option').allTextContents()).map(t=>t.split(/(?=[A-Z])/)[0].trim().split(' ')[0]),['/model','/effort','/goal','/new','/tile'],'native agents get the surface commands');
+  await input.fill('/go');await page.keyboard.press('Enter');
+  assert.equal(await input.inputValue(),'/goal ','Enter inserts the chosen command');
+  // /goal: set, shown above the message, carried by the session, paused, cleared
+  await input.fill('/goal Ship tiles with every test green');await input.press('Enter');
+  const bar=page.locator('#chatComposer .chat-goal-bar');await bar.waitFor();
+  assert.match(await bar.textContent(),/Goal.*Ship tiles with every test green/);
+  assert.equal(stub.sessions.b.goal,'Ship tiles with every test green');
+  assert.equal(await posts(),before,'/goal sent a message');
+  assert.equal(await page.evaluate(()=>{const b=document.querySelector('.chat-goal-bar .chat-goal-act');chatModelChipsRefresh();chatPolishComposer(document.getElementById('chatComposer'));return b===document.querySelector('.chat-goal-bar .chat-goal-act');}),true,'a composer repaint replaced the goal controls under the pointer');
+  await bar.getByRole('button',{name:'Pause'}).click();
+  await page.waitForFunction(()=>document.querySelector('.chat-goal-bar')?.classList.contains('is-paused'));
+  assert.equal(stub.sessions.b.goalState,'paused');
+  await input.fill('/goal clear');await input.press('Enter');
+  await bar.waitFor({state:'detached'});
+  assert.equal(stub.sessions.b.goal,'');
   // 3. survives a reload
   await page.evaluate(()=>{for(const s of chatSyncedDrafts.values())s.flush?.();});await page.waitForTimeout(800);
   await page.reload();await input.waitFor();

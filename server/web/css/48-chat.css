@@ -965,3 +965,14 @@ label.chat-artifact-handoff{display:flex;flex-direction:row;align-items:flex-sta
 .chat-model-actions > .chat-model-apply { border-color: var(--accent); background: var(--accent); color: var(--on-accent); }
 .chat-model-actions > button:hover { filter: brightness(1.05); background-color: var(--hover); }
 .chat-model-actions > .chat-model-apply:hover { background: var(--accent); }
+/* /goal: the conversation's standing objective, above the message. */
+.chat-composer > .chat-goal-bar { order: -1; flex: 1 0 100%; display: flex; align-items: center; gap: var(--sp-3); min-width: 0; padding: var(--sp-2) var(--sp-3); border: 1px solid var(--line-soft); border-radius: var(--radius); background: var(--bg); font: var(--fs-xs)/1.4 var(--sans); color: var(--base-70); }
+.chat-goal-label { flex: none; font-weight: 600; color: var(--accent); }
+.chat-goal-bar.is-paused .chat-goal-label { color: var(--base-50); }
+.chat-goal-text { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--base-100); }
+.chat-goal-bar.is-paused .chat-goal-text { color: var(--base-60); }
+.chat-goal-act { flex: none; min-height: var(--control-min); padding: 0 var(--sp-3); border: 0; border-radius: var(--radius); background: transparent; color: var(--base-60); font: inherit; cursor: pointer; }
+.chat-goal-act:hover, .chat-goal-act:focus-visible { background: var(--hover); color: var(--base-100); }
+.chat-command-group { padding: var(--sp-2) var(--sp-3) var(--sp-1); }
+.chat-command-keys { padding: var(--sp-2) var(--sp-3); font: var(--fs-2xs)/1.4 var(--sans); color: var(--base-50); border-top: 1px solid var(--line-soft); }
+@media (max-width: 860px) { .chat-goal-act { min-height: 44px; } }
