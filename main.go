@@ -1116,9 +1116,9 @@ func main() {
 	}
 	// Native follow-ups must progress even without configured team threads.
 	go srv.AgentLoopTicker()
-	// The first chat inbox after a restart must not pay for reading every
-	// coding transcript whole (~1 s on metis, 2026-09-27).
-	go srv.PrewarmTranscripts()
+	// The first chat inbox after a restart must not wait for the Hermes
+	// profile list or for reading every coding transcript whole (2026-09-27).
+	go srv.PrewarmChatInbox()
 	// LEDGER — the daily shared thread (persona plan Phase 0): a tier-3 JSONL
 	// projection under dataDir, one file per owner-timezone day. Foreground
 	// hooks append at write time; the AgentLoopTicker mirrors runs + chat.

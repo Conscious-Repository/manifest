@@ -46,6 +46,7 @@ type agentChatCfg struct {
 	profiles []hermesProfile
 	profAt   time.Time
 	profErr  string
+	profBusy bool // a background `profile list` refresh is running
 	// descriptions (`hermes profile describe`) by profile name, "default"
 	// included — the roster tooltip and the suggest-agent hint (§2.5, §3.5).
 	// Refreshed less often than the list: one exec per profile.
@@ -224,14 +225,46 @@ type agentChatRosterEntry struct {
 
 // hermesProfilesCached re-asks `hermes profile list` at most every 30s — the
 // roster and every create/send validate against it.
+// hermesProfilesFresh is how long a `hermes profile list` answer is served as
+// is; up to hermesProfilesStale it is still served, while one background call
+// refreshes it. `profile list` + `show` per profile takes ~1.5 s on metis, and
+// running it inside the request made every chat inbox after each 30 s expiry
+// take ~1.6 s (2026-09-27). Older than hermesProfilesStale (an idle app), the
+// caller waits for a fresh answer, as before.
+const (
+	hermesProfilesFresh = 30 * time.Second
+	hermesProfilesStale = 2 * time.Minute
+)
+
 func (s *Server) hermesProfilesCached(ctx context.Context) ([]hermesProfile, string) {
 	c := s.agentChat
 	c.pmu.Lock()
 	defer c.pmu.Unlock()
-	if time.Since(c.profAt) < 30*time.Second {
+	age := time.Since(c.profAt)
+	if age < hermesProfilesFresh {
+		return c.profiles, c.profErr
+	}
+	if !c.profAt.IsZero() && age < hermesProfilesStale {
+		if !c.profBusy {
+			c.profBusy = true
+			bin, env := s.hermesBin(), s.hermesEnv()
+			go func() {
+				ps, err := hermesProfiles(context.Background(), bin, env)
+				c.pmu.Lock()
+				c.storeProfiles(ps, err)
+				c.profBusy = false
+				c.pmu.Unlock()
+			}()
+		}
 		return c.profiles, c.profErr
 	}
 	ps, err := hermesProfiles(ctx, s.hermesBin(), s.hermesEnv())
+	c.storeProfiles(ps, err)
+	return c.profiles, c.profErr
+}
+
+// storeProfiles records a `profile list` answer; c.pmu is held.
+func (c *agentChatCfg) storeProfiles(ps []hermesProfile, err error) {
 	c.profAt = time.Now()
 	c.profErr = ""
 	if err != nil {
@@ -239,7 +272,6 @@ func (s *Server) hermesProfilesCached(ctx context.Context) ([]hermesProfile, str
 		ps = nil
 	}
 	c.profiles = ps
-	return ps, c.profErr
 }
 
 // agentChatRoster lists Alfred first, then every non-default profile.

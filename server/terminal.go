@@ -147,11 +147,19 @@ func (s *Server) UseTerminal(regPath, tmuxTmp, defaultWd string) {
 	}
 }
 
-// PrewarmTranscripts projects every local coding session's transcript once,
-// in the background, so the chat inbox after a restart reads from the cache.
-// The cache is keyed on the file's size, time and bytes, so a warm entry can
-// never answer for a file that has changed since.
-func (s *Server) PrewarmTranscripts() {
+// PrewarmChatInbox fills, in the background, what the first chat inbox after
+// a restart would otherwise wait for: the Hermes profile list (~1.5 s of CLI)
+// and every local coding session's transcript projection (~1 s). Both caches
+// are keyed on what they read (the transcript's size, time and bytes; the
+// profile list's age), so a warm entry never answers for a changed source.
+func (s *Server) PrewarmChatInbox() {
+	if s.agentChat != nil && s.hermesEnabled() {
+		s.hermesProfilesCached(context.Background())
+	}
+	s.prewarmTranscripts()
+}
+
+func (s *Server) prewarmTranscripts() {
 	if s.terminal == nil {
 		return
 	}
