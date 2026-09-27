@@ -1,5 +1,5 @@
 const {chromium}=require('playwright'),fs=require('fs'),path=require('path'),assert=require('node:assert/strict');
-(async()=>{const browser=await chromium.launch({headless:true,channel:'chrome'});try{
+(async()=>{const browser=await chromium.launch({headless:true,channel:process.env.PLAYWRIGHT_CHANNEL||'chromium'});try{
 const page=await browser.newPage({viewport:{width:1440,height:900}});
 await page.route('https://fixture.test/**',r=>r.fulfill({body:'<main class="chat-shell"><aside class="chat-rail">Chats</aside><section class="chat-main">Conversation</section></main>',contentType:'text/html'}));await page.goto('https://fixture.test/');
 for(const f of ['00-core','05-primitives','48-chat'])await page.addStyleTag({content:fs.readFileSync(path.join(__dirname,'../web/css',f+'.css'),'utf8')});

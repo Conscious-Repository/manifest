@@ -1,5 +1,5 @@
 const {chromium}=require('playwright'),fs=require('fs'),path=require('path'),assert=require('node:assert/strict');
-(async()=>{const browser=await chromium.launch({headless:true,channel:'chrome'});try{
+(async()=>{const browser=await chromium.launch({headless:true,channel:process.env.PLAYWRIGHT_CHANNEL||'chromium'});try{
  const page=await browser.newPage({viewport:{width:1000,height:800}}),root=path.join(__dirname,'../web');
  await page.setContent('<main class="chat-main" style="height:700px"><div id="chatTranscript" style="overflow:auto;flex:1"><div style="height:2000px">Long conversation</div></div><div id="chatComposer"><textarea aria-label="Message"></textarea></div></main>');
  for(const file of ['00-core','05-primitives','48-chat'])await page.addStyleTag({content:fs.readFileSync(path.join(root,'css',file+'.css'),'utf8')});

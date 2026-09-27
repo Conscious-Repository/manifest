@@ -1,6 +1,6 @@
 const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path');
 const {chromium}=require('playwright');
-(async()=>{const browser=await chromium.launch({channel:'chrome',headless:true});try{
+(async()=>{const browser=await chromium.launch({channel:process.env.PLAYWRIGHT_CHANNEL||'chromium',headless:true});try{
  const page=await browser.newPage({viewport:{width:390,height:844}}),attempts=[],errors=[];
  page.on('pageerror',e=>errors.push(e.message));
  await page.route('http://localhost:7342/**',async route=>{

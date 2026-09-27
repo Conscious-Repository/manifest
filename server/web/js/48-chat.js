@@ -3508,7 +3508,7 @@ function chatTermHead(o) {
   status.title = sub.join(" · ");
   const execution=chatEntryState({terminal:true,session:se});
   const badge=el('span','chat-execution-state',execution.label);badge.dataset.state=execution.execution;
-  badge.title='Run status · task acceptance is separate';
+  badge.title=execution.label+' · run status; task acceptance is separate';
   head.append(badge);
   if(o.sharedConversation){const shared=el("a","sprt-quiet",o.sharedConversation.scope==="team:ooda"?"OODA team conversation":"AION team conversation");shared.href=o.sharedConversation.route;shared.title="This session's history and future messages are shared with the team.";head.append(shared);}
   if(se.backend==="herdr"&&se.origin?.mode!=="continue"&&(chatTermEnabled||chatRoster.some(a=>a.enabled&&a.durableSend))){

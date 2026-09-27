@@ -1,5 +1,5 @@
 const {chromium}=require('playwright'),fs=require('fs'),path=require('path'),assert=require('node:assert/strict');
-(async()=>{const browser=await chromium.launch({channel:'chrome',headless:true});try{
+(async()=>{const browser=await chromium.launch({channel:process.env.PLAYWRIGHT_CHANNEL||'chromium',headless:true});try{
  const page=await browser.newPage();await page.route('https://picker.test/**',r=>r.fulfill({contentType:'text/html',body:'<div id="chatHeadActions"></div>'}));await page.goto('https://picker.test');
  const root=path.join(__dirname,'../web');await page.addScriptTag({content:fs.readFileSync(path.join(root,'js/05-components.js'),'utf8')});
  await page.evaluate(()=>{

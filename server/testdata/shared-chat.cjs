@@ -3,7 +3,7 @@ const {chromium}=require('playwright');
 const modulePath=path.join(__dirname,'../web/portal/src/shared-chat.js');
 assert.equal(fs.readFileSync(modulePath,'utf8'),fs.readFileSync(path.join(__dirname,'../web/ooda/src/shared-chat.js'),'utf8'),'portals must use identical shared-session behavior');
 (async()=>{
- const browser=await chromium.launch({channel:process.env.PLAYWRIGHT_CHANNEL||'chrome',headless:true});
+ const browser=await chromium.launch({channel:process.env.PLAYWRIGHT_CHANNEL||'chromium',headless:true});
  try{
   const page=await browser.newPage({viewport:{width:390,height:844}});
   const errors=[];page.on('pageerror',e=>errors.push(e.message));

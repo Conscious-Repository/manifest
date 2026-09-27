@@ -167,6 +167,12 @@ const {chromium}=require('playwright'),fs=require('fs'),path=require('path'),ass
  await p.evaluate(async()=>{chatWorkspaceTabs.close();await Promise.all([...chatWorkspaceStates.values()].map(s=>s.flush()));chatWorkspaceStates.clear();await chatRestoreWorkspace();});
  await p.waitForFunction(()=>document.querySelector('.chat-context-instruction')?.open);
  assert.equal(await p.locator('.chat-context-capabilities').evaluate(e=>e.open),true,'capability disclosure restores with Context');
+ // A re-render that lands before the (asynchronous) toggle event must not
+ // undo the owner's click, in either direction.
+ for(const want of [false,true]){
+  await p.evaluate(()=>{document.querySelector('.chat-context-capabilities > summary').click();window.dispatchEvent(new Event('chat-workbench-activity'));});
+  assert.equal(await p.locator('.chat-context-capabilities').evaluate(e=>e.open),want,'disclosure survives a re-render before its toggle event');
+ }
  assert.equal(await p.getByLabel('Recorded instruction').inputValue(),'1');
  await p.getByText('20260925_143000_123456abcdef',{exact:true}).waitFor();
  await p.getByText('reported-opus',{exact:true}).waitFor();

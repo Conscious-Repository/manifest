@@ -544,7 +544,7 @@ function chatOpenContext(){
    if(!inputs.length){section.append(emptyRow('No recorded inputs available yet.'));body.scrollTop=scroll;return;}
    const selector=document.createElement('select');selector.className='pp-in';selector.setAttribute('aria-label','Recorded instruction');
    inputs.forEach((input,i)=>{const option=el('option','','Instruction '+(i+1)+' · '+input.text.replace(/\s+/g,' ').slice(0,70));option.value=input.id;selector.append(option);});
-   const input=inputs.find(x=>x.id===selected)||inputs.at(-1);selected=input.id;selector.value=selected;selector.onchange=()=>{selected=selector.value;instructionOpen=false;render();};section.append(selector);
+   const input=inputs.find(x=>x.id===selected)||inputs.at(-1);selected=input.id;selector.value=selected;selector.onchange=()=>{keepOpen();selected=selector.value;instructionOpen=false;render();};section.append(selector);
    const scope=input.toolScope;section.append(el('p','chat-workspace-hint',scope?(scope.source==='profile'?'Tool scope: profile defaults; tool list not reported.':'Toolset scope at dispatch ('+(scope.source==='request'?'request':'runner default')+'): '+scope.toolsets):'Tool scope was not recorded for this instruction.'));
    const target=input.recipient;if(target)section.append(el('p','chat-context-target','Sent to '+(target.agent||source.agent)+(target.model?' · '+target.model:'')));
    if(input.deliveryId){
@@ -564,8 +564,14 @@ function chatOpenContext(){
    if(origin?.context){const parent=el('details','chat-context-instruction');parent.append(el('summary','','Parent context snapshot'),el('pre','chat-activity-text',origin.context));body.append(parent);}
    body.scrollTop=scroll;
   };
-  window.addEventListener('chat-workbench-activity',render);render();
-  return {element:pane,close:()=>{closed=true;skillsRead?.abort();window.removeEventListener('chat-workbench-activity',render);pane.remove();drop();},getView:()=>({selected,scrollTop:body.scrollTop,capabilitiesOpen:body.querySelector('.chat-context-capabilities')?.open||false,skillsOpen:body.querySelector('.chat-context-skills')?.open||false,instructionOpen:body.querySelector('.chat-context-instruction')?.open||false}),restoreView:async view=>{if(!host.isConnected||!host.clientHeight)return false;selected=view.selected||null;instructionOpen=!!view.instructionOpen;capabilitiesOpen=!!view.capabilitiesOpen;skillsOpen=!!view.skillsOpen;render();body.scrollTop=Math.max(0,Number(view.scrollTop)||0);return true;}};
+  // The toggle event is dispatched after the click, so a re-render landing in
+  // between (a streamed activity update, a changed instruction) would rebuild
+  // a just-opened disclosure closed. Read the live state first; restoreView
+  // sets it deliberately and does not.
+  const keepOpen=()=>{const caps=body.querySelector('.chat-context-capabilities'),skills=body.querySelector('.chat-context-skills'),instruction=body.querySelector('.chat-context-section > .chat-context-instruction');if(caps)capabilitiesOpen=caps.open;if(skills)skillsOpen=skills.open;if(instruction)instructionOpen=instruction.open;};
+  const rerender=()=>{keepOpen();render();};
+  window.addEventListener('chat-workbench-activity',rerender);render();
+  return {element:pane,close:()=>{closed=true;skillsRead?.abort();window.removeEventListener('chat-workbench-activity',rerender);pane.remove();drop();},getView:()=>({selected,scrollTop:body.scrollTop,capabilitiesOpen:body.querySelector('.chat-context-capabilities')?.open||false,skillsOpen:body.querySelector('.chat-context-skills')?.open||false,instructionOpen:body.querySelector('.chat-context-instruction')?.open||false}),restoreView:async view=>{if(!host.isConnected||!host.clientHeight)return false;selected=view.selected||null;instructionOpen=!!view.instructionOpen;capabilitiesOpen=!!view.capabilitiesOpen;skillsOpen=!!view.skillsOpen;render();body.scrollTop=Math.max(0,Number(view.scrollTop)||0);return true;}};
  },{kind:'context'});
 }
 

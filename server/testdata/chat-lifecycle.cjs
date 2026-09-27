@@ -1,6 +1,6 @@
 // Owner-only organization, actual row renderer and revisioned lifecycle actions.
 const {chromium}=require('playwright'),fs=require('fs'),path=require('path'),assert=require('node:assert/strict');
-(async()=>{const browser=await chromium.launch({headless:true,channel:'chrome'});try{
+(async()=>{const browser=await chromium.launch({headless:true,channel:process.env.PLAYWRIGHT_CHANNEL||'chromium'});try{
  const page=await browser.newPage({viewport:{width:390,height:844}}),errors=[];page.on('pageerror',e=>errors.push(e.message));
  await page.route('**/*',r=>r.abort());
  await page.setContent('<div id="chatInboxRows" style="margin-top:650px"></div>');
@@ -10,12 +10,12 @@ const {chromium}=require('playwright'),fs=require('fs'),path=require('path'),ass
   document.documentElement.dataset.theme='jarvis';
   window.state={key:'inbox',slot:'lifecycle',revision:0,value:{items:{}}};window.writes=0;window.conflict=true;
   window.fetch=async(url,opts={})=>{if(opts.method==='PUT'){writes++;const body=JSON.parse(opts.body);if(conflict){conflict=false;state.revision++;state.value.items['terminal:codex/other']='archived';return {status:409};}assertRevision=body.revision===state.revision;state={...state,revision:state.revision+1,value:body.value};}return {ok:true,status:200,json:async()=>structuredClone(state)};};
-  Object.assign(window,{chatInboxKey:e=>'terminal:'+e.agent+'/'+e.session.id,chatOpenId:'',chatAgent:'codex',chatPins:{},chatWorkstreamFilter:'all',chatInboxFilter:'all',chatSearchQuery:'',chatTermKinds:{codex:'Codex'},chatWorkstreams:{groups:{}},chatWorkstreamMember:()=>'',chatAgentLabel:x=>x,fmtWhen:()=> 'today',terminalStateDot:()=>el('span','','●'),chatTermFolder:()=>'',chatTermRename:()=>{},chatCreateProject:()=>{},chatChooseWorkstream:()=>{},chatSetPinned:()=>{},showToast:message=>{throw Error(message)},chatRemember:()=>{},chatSectionHash:()=> '#/chat'});
+  Object.assign(window,{chatInboxKey:e=>'terminal:'+e.agent+'/'+e.session.id,chatOpenId:'',chatAgent:'codex',chatPins:{},chatWorkstreamFilter:'all',chatInboxFilter:'all',chatSearchQuery:'',chatTermKinds:{codex:'Codex'},chatWorkstreams:{groups:{}},chatWorkstreamMember:()=>'',chatAgentLabel:x=>x,fmtWhen:()=> 'today',terminalStateDot:()=>el('span','','●'),chatTermFolder:()=>'',chatTermRename:()=>{},chatCreateProject:()=>{},chatChooseWorkstream:()=>{},chatSetPinned:()=>{},chatPrefetchEntry:()=>{},showToast:message=>{throw Error(message)},chatRemember:()=>{},chatSectionHash:()=> '#/chat'});
   window.entry={terminal:true,agent:'codex',session:{id:'fixture',kind:'codex',name:'A conversation'}};
   window.chatInboxEntries=()=>[entry].filter(e=>(chatLifecycle[chatInboxKey(e)]||'active')===chatLifecycleFilter);
  });
  const chat=fs.readFileSync(path.join(root,'js/48-chat.js'),'utf8');
- for(const [a,b] of [['let chatLifecycle=','let chatWorkstreams='],['function renderChatInboxRows()','function renderChatRail()'],['function chatTermRow(se)','function chatTermFolder(se)'],['function chatTermEndIsKill(se)','async function chatTermEnd(se)']])await page.addScriptTag({content:chat.slice(chat.indexOf(a),chat.indexOf(b))});
+ for(const [a,b] of [['let chatInboxLoadFailed','async function loadChatRoster'],['let chatSeen=','async function chatLoadSeen'],['function chatTaskAutoArchived','// chatTaskEntry'],['let chatReviewStatus=','function chatInboxEntries()'],['let chatLifecycle=','let chatWorkstreams='],['function renderChatInboxRows()','function renderChatRail()'],['function chatTermRow(se)','function chatTermFolder(se)'],['function chatTermEndIsKill(se)','async function chatTermEnd(se)']])await page.addScriptTag({content:chat.slice(chat.indexOf(a),chat.indexOf(b))});
  await page.evaluate(()=>renderChatInboxRows());
  await page.locator('summary').click();
  await page.waitForTimeout(30);

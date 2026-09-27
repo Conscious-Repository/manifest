@@ -1,5 +1,5 @@
 const {chromium}=require('playwright'),fs=require('fs'),path=require('path'),assert=require('node:assert/strict');
-(async()=>{const browser=await chromium.launch({headless:true,channel:'chrome'});try{
+(async()=>{const browser=await chromium.launch({headless:true,channel:process.env.PLAYWRIGHT_CHANNEL||'chromium'});try{
  const page=await browser.newPage();const root=path.join(__dirname,'../web');
  await page.setContent('<main class="chat-shell"><aside class="chat-rail" id="chatRail"><div class="chat-inbox-controls"><input class="chat-inbox-search" placeholder="Search chats"><div class="chat-inbox-filters"><select><option>All agents</option></select><select><option>All workstreams</option></select></div></div><div class="chat-inbox-rows"><div class="chat-rail-row open"><div class="chat-rail-title">Improve the recruiting experience</div><div class="chat-rail-meta">Codex · today</div></div></div></aside><section class="chat-main term"><div id="chatTranscript" class="chat-transcript"><p>The candidate review is ready. Open Changes to review the implementation, or continue the conversation below.</p></div><div id="chatComposer" class="chat-composer"><textarea class="chat-input" placeholder="Message Codex…"></textarea><button class="chat-send">↑</button></div></section></main>');
  for(const f of ['00-core','05-primitives','48-chat'])await page.addStyleTag({content:fs.readFileSync(path.join(root,'css',f+'.css'),'utf8')});
@@ -12,7 +12,7 @@ const {chromium}=require('playwright'),fs=require('fs'),path=require('path'),ass
  });
  const source=fs.readFileSync(path.join(root,'js/48-chat.js'),'utf8');
  await page.addScriptTag({content:source.slice(source.indexOf('function chatConversationInfo'))});
- for(const [start,end] of [['function chatMountHeader','const chatDrafts'],['function chatTermHead(o)','function chatTermRepaintHead'],['const chatTermQuickKeys','async function chatTermScreenFetch']])await page.addScriptTag({content:source.slice(source.indexOf(start),source.indexOf(end))});
+ for(const [start,end] of [['function chatFocusKey','// chatComposerShape'],['function chatMountHeader','const chatDrafts'],['let chatReviewStatus','function chatEntryMatchesAttention'],['function chatTermHead(o)','function chatTermRepaintHead'],['const chatTermQuickKeys','async function chatTermScreenFetch']])await page.addScriptTag({content:source.slice(source.indexOf(start),source.indexOf(end))});
  await page.evaluate(()=>{chatMountHeader(chatTermHead(o));chatTermPaintStrip();});
  for(const width of [1440,390]){
  await page.setViewportSize({width,height:850});
@@ -22,5 +22,12 @@ const {chromium}=require('playwright'),fs=require('fs'),path=require('path'),ass
  await page.locator('.chat-details > summary').click();await page.getByRole('button',{name:'Rename',exact:true}).waitFor();await page.locator('.chat-details > summary').click();
  await page.screenshot({path:'/tmp/manifest-simple-chat-'+width+'.png'});
  }
- console.log('PASS: long titles, compact header, More actions, exact-session side-terminal action and phone bounds.');
+ // Every run-state label fits the phone header: the badge shrinks with an
+ // ellipsis (full label in its title) and More stays on screen.
+ for(const [state,label] of [['unknown','Status unavailable'],['running','Working'],['blocked','Needs input'],['idle','Ready']]){
+  await page.locator('.chat-execution-state').evaluate((e,[state,label])=>{e.dataset.state=state;e.textContent=label;},[state,label]);
+  assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false,'badge overflow 390 '+label);
+  const more=await page.locator('.chat-details > summary').boundingBox();assert.ok(more.x+more.width<=390,'More on screen with '+label);
+ }
+ console.log('PASS: long titles, compact header, More actions, exact-session side-terminal action and phone bounds for every run-state label.');
 }finally{await browser.close();}})().catch(e=>{console.error(e);process.exit(1)});

@@ -851,7 +851,7 @@ button.chat-attach-chip { min-height: 44px; max-width: 100%; background: transpa
 .chat-workspace-tiled[data-panes="1"] {grid-template-rows:minmax(0,1fr);}
 .chat-workspace-tiled[data-panes="3"] {grid-template-rows:repeat(3,minmax(0,1fr));}
 .chat-workspace-tiled > .chat-workspace-tabbody {min-height:0;overflow:auto;background:var(--surface-field);}
-@media(max-width:860px){.chat-layout-select{display:none;} .chat-execution-state{font-size:11px;}.chat-sidebar-toggle{display:none;}}
+@media(max-width:860px){.chat-layout-select{display:none;} .chat-execution-state{font-size:11px;flex:0 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;}.chat-sidebar-toggle{display:none;}}
 
 /* Conversation selection is a list, matching the chat rail rather than action cards. */
 .chat-conversation-picker { display:flex; flex-direction:column; gap:var(--sp-5); padding:var(--sp-7); min-height:0; }

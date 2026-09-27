@@ -1,5 +1,5 @@
 const {chromium}=require('playwright'),fs=require('fs'),path=require('path'),assert=require('node:assert/strict');
-(async()=>{const browser=await chromium.launch({channel:'chrome',headless:true});try{
+(async()=>{const browser=await chromium.launch({channel:process.env.PLAYWRIGHT_CHANNEL||'chromium',headless:true});try{
  const page=await browser.newPage();await page.route('https://recovery.test/**',r=>r.fulfill({contentType:'text/html',body:'<div id="composer"></div>'}));await page.goto('https://recovery.test');const root=path.join(__dirname,'../web');await page.addScriptTag({content:fs.readFileSync(path.join(root,'js/05-components.js'),'utf8')});
  await page.evaluate(()=>{window.chatSyncedDrafts=new Map();window.chatBaseFor=a=>'/api/agents/chat/'+a+'/sessions';window.chatDraftKey='codex/new';window.chatOpenId='';window.chatStateEqual=(a,b)=>JSON.stringify(a)===JSON.stringify(b);});
  const src=fs.readFileSync(path.join(root,'js/48-chat.js'),'utf8');await page.addScriptTag({content:src.slice(src.indexOf('const chatDeliveryStorageKey ='),src.indexOf('function chatAddSharedTerminal('))});
