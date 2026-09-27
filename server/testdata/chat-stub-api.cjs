@@ -9,6 +9,7 @@
 //   /__delay?ms=N         hold a send's acknowledgement N ms
 //   /__legacy?on=1        404 /api/chat/inbox (an older server)
 // /api/chat/resolve names alfred as the owner of a/b; spirit reads are 404.
+// The app shell's reads outside chat answer empty (a fresh vault), not 404.
 // A send (POST …/messages) appends the user turn, records a queued delivery
 // and a "submitted" supervision state: accepted, not started.
 const fs=require('node:fs'),path=require('node:path'),http=require('node:http');
@@ -75,6 +76,14 @@ function makeStub(){
    if(p==='/api/terminal/sessions')return json(res,200,{sessions:[],enabled:true});
    if(p==='/api/terminal/folders')return json(res,200,{enabled:true,home:'/home/owner',recent:['/home/owner/src/manifest'],repos:['/home/owner/src/manifest','/home/owner/src/lab-apps']});
    if(p==='/api/chat/review-status')return json(res,200,{by_scope:{},by_task:{}});
+   // the app shell's own reads on every page (rail counts, feed badge,
+   // connections, the terminal event stream): empty, as a fresh vault answers,
+   // so a capture's console carries only the chat's own errors
+   // (the terminal stream ends at once with a day-long retry: held open, one
+   // per tile frame would exhaust the browser's six connections to the host)
+   if(p==='/api/terminal/events'){res.writeHead(200,{'Content-Type':'text/event-stream','Cache-Control':'no-store'});return res.end('retry: 86400000\n\n');}
+   const shell={'/api/feed/badge':{count:0},'/api/tasks':{outstanding:[],assignees:{},counts:{tasks:0}},'/api/goals':{areas:[]},'/api/aion':{backlog:[]},'/api/properties':{properties:[],deals:[],templates:[],holdings:{}},'/api/re/backlog':{items:[],goalsArea:null},'/api/settings/connections':{rows:[]}};
+   if(req.method==='GET'&&shell[p])return json(res,200,shell[p]);
    const st=p.match(/^\/api\/chat\/state\/([^/]+)\/([^/]+)$/);
    if(st){const k=st[1]+'/'+st[2];if(req.method==='PUT'){let b='';req.on('data',c=>b+=c);req.on('end',()=>{const v=JSON.parse(b||'{}');const cur=state.get(k)||{revision:0};const next={key:decodeURIComponent(st[1]),slot:decodeURIComponent(st[2]),revision:cur.revision+1,value:v.value};state.set(k,next);json(res,200,next);});return;}
     return json(res,200,state.get(k)||{key:decodeURIComponent(st[1]),slot:decodeURIComponent(st[2]),revision:0,value:null});}
