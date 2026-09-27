@@ -4,7 +4,8 @@
 // the open thread (/__push?ev=&data= sends an event), and test hooks:
 //   /__down?on=1          every API call answers 503 (an outage)
 //   /__set?id=a&patch={}  merge fields into a session (status, supervision,
-//                         deliveries…) — the next read sees them
+//                         deliveries…) — the next read sees them; &append=text
+//                         adds a turn (&who=system|user|alfred, default alfred)
 //   /__delay?ms=N         hold a send's acknowledgement N ms
 //   /__legacy?on=1        404 /api/chat/inbox (an older server)
 // /api/chat/resolve names alfred as the owner of a/b; spirit reads are 404.
@@ -42,7 +43,7 @@ function makeStub(){
   if(p==='/__down'){down=url.searchParams.get('on')==='1';return json(res,200,{down});}
   if(p==='/__delay'){delay=Number(url.searchParams.get('ms'))||0;return json(res,200,{delay});}
   if(p==='/__legacy'){legacy=url.searchParams.get('on')==='1';return json(res,200,{legacy});}
-  if(p==='/__set'){const s=sessions[url.searchParams.get('id')];Object.assign(s,JSON.parse(url.searchParams.get('patch')||'{}'));if(url.searchParams.has('append')){s.turns++;bodies[s.id]+='\n\n'+turn(s.turns,'alfred',url.searchParams.get('append'));}s.updated=new Date().toISOString();return json(res,200,s);}
+  if(p==='/__set'){const s=sessions[url.searchParams.get('id')];Object.assign(s,JSON.parse(url.searchParams.get('patch')||'{}'));if(url.searchParams.has('append')){s.turns++;bodies[s.id]+='\n\n'+turn(s.turns,url.searchParams.get('who')||'alfred',url.searchParams.get('append'));}s.updated=new Date().toISOString();return json(res,200,s);}
   if(p.startsWith('/api/')&&down){log.push('DOWN '+req.method+' '+p);return json(res,503,{error:'unavailable'});}
   if(p.startsWith('/api/')){
    log.push(req.method+' '+p+url.search);

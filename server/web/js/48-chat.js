@@ -2408,9 +2408,24 @@ function chatPaintTurns(host, turns, ctx) {
       return;
     }
     if (t.who === "system") {
+      // a calm system note: the recorded words, and for a restart
+      // interruption one clear action — look at the reply it concerns
       const b = el("div", "chat-turn chat-system");
       b.dataset.chatReadTurn=String(t.n);
-      b.textContent = t.text;
+      b.setAttribute("role", "note");
+      b.append(el("span", "chat-system-text", t.text));
+      if (/^The (previous turn was interrupted by a restart|server restarted after interruption was requested)/.test(t.text || "")) {
+        const review = el("button", "sprt-quiet chat-system-act", "Review the last reply");
+        review.type = "button";
+        review.onclick = () => {
+          let prev = b.previousElementSibling;
+          while (prev && !prev.classList.contains("chat-turn")) prev = prev.previousElementSibling;
+          if (!prev) return;
+          prev.scrollIntoView({block: "center", behavior: "smooth"});
+          prev.classList.add("chat-turn-flash"); setTimeout(() => prev.classList.remove("chat-turn-flash"), 1600);
+        };
+        b.append(review);
+      }
       host.append(b);
       return;
     }

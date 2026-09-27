@@ -17,7 +17,8 @@
 //      at phone and desktop widths, both themes (the rail is folded on
 //      phones, so the rail row cannot be the only place);
 //   7. the closed phone nav drawer is not a Tab stop;
-//   8. desktop streaming keeps a reader's place in history.
+//   8. desktop streaming keeps a reader's place in history;
+//   9. a restart note is a calm note with one action (review the last reply).
 // Run: NODE_PATH=<node_modules with playwright> node server/testdata/chat-workbench-quirks.cjs
 const {chromium}=require('playwright'),assert=require('node:assert/strict');
 const {makeStub}=require('./chat-stub-api.cjs');
@@ -141,6 +142,21 @@ const {makeStub}=require('./chat-stub-api.cjs');
    assert.deepEqual(await anchor(),before,'desktop streaming moved the reader');
    await ctx.close();}
   console.log('desktop streaming keeps the reading position');
+  // 9. a restart note reads as a calm note with one clear action: look at
+  // the reply it concerns (the recorded words are kept as written)
+  {const s=await serve();servers.push(s);
+   await s.hook('/__set?id=b&who=system&append='+encodeURIComponent('The previous turn was interrupted by a restart. It was not replayed; review its result before asking to run it again.'));
+   const ctx=await browser.newContext({viewport:{width:390,height:844},hasTouch:true,isMobile:true});const page=await open(ctx,s.base);
+   const note=page.locator('#chatTranscript .chat-system').last();await note.waitFor();
+   assert.equal(await note.getAttribute('role'),'note');
+   assert.match(await note.textContent(),/interrupted by a restart/);
+   assert.equal(await note.locator('button').count(),1,'one clear action');
+   const style=await note.evaluate(e=>({italic:getComputedStyle(e).fontStyle,h:e.querySelector('button').getBoundingClientRect().height}));
+   assert.equal(style.italic,'normal');assert.ok(style.h>=44,'the action meets the touch floor');
+   await note.getByRole('button',{name:'Review the last reply'}).click();
+   await page.waitForFunction(()=>!!document.querySelector('#chatTranscript .chat-turn-flash'));
+   await ctx.close();}
+  console.log('a restart note is calm, with one action that shows the reply it concerns');
  }finally{await browser.close();servers.forEach(s=>s.server.close());}
  process.exit(0);
 })().catch(e=>{console.error(e);process.exit(1);});
