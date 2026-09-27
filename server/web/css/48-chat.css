@@ -997,3 +997,4 @@ label.chat-artifact-handoff{display:flex;flex-direction:row;align-items:flex-sta
 .chat-status-meter > span { display: block; height: 100%; background: var(--base-60); }
 .chat-status-context[data-level="high"] .chat-status-meter > span { background: var(--warn); }
 @media (max-width: 860px) { .chat-status-stop { min-height: 44px; } .chat-status-line { padding: 0 var(--sp-4); } }
+.chat-turn-worked { font-size: var(--fs-2xs); color: var(--base-50); font-variant-numeric: tabular-nums; }

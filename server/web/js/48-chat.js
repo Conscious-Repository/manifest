@@ -2421,6 +2421,8 @@ function chatPaintTurns(host, turns, ctx) {
     foot.append(el("span","chat-turn-author",chatAgentLabel(t.who.replace(/^agent:/,""))));
     // when the turn landed — a conversation with no times reads as stalled
     // while Alfred's turn takes minutes
+    const worked = typeof chatDuration === "function" && t.ts && t.end ? chatDuration(Date.parse(t.end) - Date.parse(t.ts)) : "";
+    if (worked) foot.append(el("span", "chat-turn-worked", "Worked for " + worked));
     if (t.ts) foot.append(el("span", "chat-turn-when", fmtWhen(t.ts)));
     if (t.usd) foot.append(el("span", "chat-turn-usd", "$" + t.usd));
     if(t.native){const native=el("a","chat-turn-act","Native chat ↗");native.href=t.native.route;foot.append(native);}

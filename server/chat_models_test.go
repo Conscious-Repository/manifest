@@ -9,6 +9,8 @@ import (
 	"strings"
 	"sync"
 	"testing"
+
+	"manifest/agentchat"
 )
 
 const codexCacheSample = `{"models":[
@@ -287,5 +289,20 @@ func TestTranscriptEndpointCarriesSettingsContextAndLaunch(t *testing.T) {
 	}
 	if out.Launch["model"] != "fable" || out.Launch["effort"] != "max" {
 		t.Fatalf("launch: %+v", out.Launch)
+	}
+}
+
+// A native reply shown in a planning timeline keeps its span, so its footer
+// can say "Worked for" too.
+func TestTimelineTurnCarriesNativeReplySpan(t *testing.T) {
+	view := codingContinuationView{ID: "abcdef0123456789", Agent: "claude", Created: "2026-09-26T09:00:00Z", Turns: []termTurn{{ID: "r1", Who: "assistant", TS: "2026-09-26T10:00:05Z", End: "2026-09-26T10:04:17Z", Blocks: []termBlock{{T: "say", Text: "done"}}}}}
+	var found bool
+	for _, turn := range conversationTimeline(agentchat.Session{Created: "2026-09-26T09:00:00Z"}, "", []codingContinuationView{view}) {
+		if turn.End == "2026-09-26T10:04:17Z" && turn.TS == "2026-09-26T10:00:05Z" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("the timeline dropped the native reply's end time")
 	}
 }

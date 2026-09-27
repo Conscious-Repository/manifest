@@ -156,6 +156,7 @@ type conversationTimelineTurn struct {
 	N            any                       `json:"n"`
 	Who          string                    `json:"who"`
 	TS           string                    `json:"ts"`
+	End          string                    `json:"end,omitempty"` // native reply: last record time ("Worked for …")
 	USD          string                    `json:"usd,omitempty"`
 	Text         string                    `json:"text,omitempty"`
 	Blocks       []termBlock               `json:"blocks,omitempty"`
@@ -192,7 +193,7 @@ func conversationTimeline(source agentchat.Session, body string, views []codingC
 			if who == "assistant" {
 				who = "agent:" + v.Agent
 			}
-			item := conversationTimelineTurn{N: "terminal:" + v.ID + ":" + t.ID, Who: who, TS: t.TS, Text: t.Text, Blocks: t.Blocks, Native: &continuationNativeSource{Agent: v.Agent, Model: v.Model, ID: v.ID, Route: v.Conversation.Route}, orderTime: stamp(t.TS, v.Created)}
+			item := conversationTimelineTurn{N: "terminal:" + v.ID + ":" + t.ID, Who: who, TS: t.TS, End: t.End, Text: t.Text, Blocks: t.Blocks, Native: &continuationNativeSource{Agent: v.Agent, Model: v.Model, ID: v.ID, Route: v.Conversation.Route}, orderTime: stamp(t.TS, v.Created)}
 			if r, ok := v.Submissions[t.ID]; ok {
 				item.Submission = &r
 			}
