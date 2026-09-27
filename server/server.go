@@ -1012,6 +1012,15 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/note/task", s.handleNoteTask)
 	mux.HandleFunc("GET /api/note/resolve", s.handleNoteResolve)
 
+	mux.Handle("/", WebHandler())
+	return mux
+}
+
+// WebHandler serves the embedded front end: the shell and every asset, with
+// the same cache rules the app serves them under. tools/perf/webserve runs it
+// alone so a browser measurement sees production caching.
+func WebHandler() http.Handler {
+	mux := http.NewServeMux()
 	sub, err := fs.Sub(webFiles, "web")
 	if err != nil {
 		log.Fatal(err)

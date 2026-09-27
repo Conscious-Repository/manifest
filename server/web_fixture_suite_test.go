@@ -295,3 +295,10 @@ func TestFixtureChatStatusLine(t *testing.T) { runFixture(t, "chat-status-line.c
 // The virtual browser tool captures and compares two pages end to end
 // (tools/ui-compare, ui-compare.cjs).
 func TestFixtureUICompare(t *testing.T) { runFixture(t, "ui-compare.cjs", true, false) }
+
+// Chat performance budgets: cold/warm open, switch, idle requests, heap, and
+// tiles with a hidden workspace, measured by tools/perf/chat-perf.cjs over
+// the app's own cache headers (chat-perf-budget.cjs).
+func TestFixtureChatPerfBudget(t *testing.T) {
+	runFixture(t, "chat-perf-budget.cjs", true, false)
+}
