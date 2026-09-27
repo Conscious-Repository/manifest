@@ -3640,6 +3640,9 @@ function chatTermOpenFrom(id, se, d) {
     sharedConversation:d.sharedConversation,
     planningTimeline:d.planningTimeline,
     timelineHash:d.timelineHash||"", older:d.older||0, olderTimeline:d.olderTimeline||0,
+    // what the CLI recorded, from the first read: the chips and context meter
+    // are right on open, not after the first poll
+    settings:d.settings||null, context:d.context||null, launch:d.launch||null,
     planningRecipients:d.planningRecipients||[],
     planRevisions:d.planRevisions||{},
     questions:d.questions||[],
