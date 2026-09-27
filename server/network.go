@@ -277,7 +277,7 @@ func (s *Server) handleNetwork(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, map[string]any{
 		"people": people, "kinds": recruiting.PersonTypes, "tags": tags,
 		"vocabulary": s.networkVocabulary(people, tagText),
-		"contacts": s.contacts != nil, "fundraising": s.fundraising != nil, "team": s.aion != nil,
+		"contacts":   s.contacts != nil, "fundraising": s.fundraising != nil, "team": s.aion != nil,
 	})
 }
 

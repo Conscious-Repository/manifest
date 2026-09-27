@@ -745,3 +745,8 @@ a.rec-place-name:hover { text-decoration: underline; }
 .rec-ranked-from { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--sp-3); font-size: var(--fs-xs); overflow-wrap: anywhere; }
 .rec-ranked-acts { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-3); }
 .rec-ranked-foot { display: flex; flex-wrap: wrap; gap: var(--sp-2); padding: var(--sp-4) 0; font-family: var(--mono); font-size: var(--fs-2xs); color: var(--base-40); }
+
+/* the rejection email section */
+.rec-seen-before { color: var(--warn); }
+.rec-reject-preview { font-size: var(--fs-sm); display: flex; flex-direction: column; gap: var(--sp-2); padding: var(--sp-2) 0; }
+.rec-reject-preview > summary { font-family: var(--mono); font-size: var(--fs-2xs); color: var(--base-60); cursor: pointer; }

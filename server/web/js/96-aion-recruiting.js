@@ -3422,6 +3422,7 @@ function paintInspector(host) {
   }
   host.append(pair);
   if (c.ashbyApplicationId) host.append(recApplicationControls(c));
+  if (c.ashbyApplicationId) { const rej = recRejectionSection(c); if (rej) host.append(rej); }
 
   // PROFILE — on the face
   const p = c.profile || {};
@@ -4849,5 +4850,100 @@ function recRankedRow(p, n) {
       (p.members || []).slice(1).map((m) => ({ run: m.run, draft: m.draft }))), pass);
     row.append(acts);
   }
+  return row;
+}
+
+// ---- REJECTION EMAIL (social graph plan phase 5). The applicant hears from
+// us before the application closes: the template renders here, "prepare"
+// freezes that exact email as an approval (nothing sends until you approve
+// it, here or in Feed), and only a SENT receipt unlocks "reject in Ashby".
+let recReject = {};  // candidate id → {loading} | {draft, error, operations, template}
+
+async function recRejectLoad(id) {
+  recReject[id] = { loading: true };
+  try {
+    const r = await fetch("/api/aion/recruiting/reject/" + id, { cache: "no-store" });
+    recReject[id] = r.ok ? await r.json() : { error: (await r.text()).slice(0, 160) };
+  } catch (e) {
+    recReject[id] = { error: String(e.message || e).slice(0, 160) };
+  }
+  if (recSel === id && recPaint) recPaint();
+}
+
+function recRejectionSection(c) {
+  const app = (c.applications || []).find((a) => a.id === c.ashbyApplicationId);
+  const active = !app || recApplicationActive(app);
+  const st = recReject[c.id];
+  if (!st) { recRejectLoad(c.id); return null; }
+  if (st.loading) return null;
+  const ops = st.operations || [];
+  if (!active && !ops.length) return null;
+
+  const sec = recSection("rejection email", ops.length ? ops[ops.length - 1].record.status.replace(/_/g, " ") : "");
+  (((st.draft || {}).seenBefore) || []).forEach((f) => sec.append(el("div", "rec-foot rec-seen-before", "seen before · " + f)));
+  if (st.error) {
+    sec.append(el("div", "rec-foot", "can't write the email: " + st.error));
+    return sec;
+  }
+  const d = st.draft || {};
+  const current = ops.find((it) => (((it.record.input || {}).sourceRecord) || {}).revision === d.revision);
+  ops.forEach((item) => {
+    sec.append(manifestOperationCard(item));
+    if (item.record.status === "succeeded" && active) sec.append(recRejectFinish(c, item.record.operationId));
+  });
+  if (!current && active) {
+    const prev = el("details", "rec-reject-preview");
+    prev.append(el("summary", "", "preview · to " + (d.to || []).join(", ")));
+    prev.append(el("strong", "", d.subject || ""));
+    const body = el("pre", "rec-resume-text", d.body || "");
+    prev.append(body);
+    const tpl = el("a", "rec-linkish", "edit the template →");
+    tpl.href = "#/note/" + encodeURIComponent(st.template || "");
+    prev.append(tpl);
+    sec.append(prev);
+    const prep = el("button", "rec-quiet-btn", "prepare rejection email");
+    prep.title = "saves this exact email for your approval — nothing is sent until you approve it";
+    prep.disabled = !st.approvals;
+    prep.onclick = async () => {
+      prep.disabled = true;
+      try {
+        const out = await recOutreachCall("/api/aion/recruiting/reject/prepare/" + c.id, { revision: d.revision });
+        if (!out.operationId) throw new Error(out.error || "the approval was not prepared");
+        showToast("rejection email ready for your approval — here or in Feed");
+        recRejectLoad(c.id);
+      } catch (e) { showToast(String(e.message || e).slice(0, 180), null, "error"); prep.disabled = false; }
+    };
+    sec.append(prep);
+    sec.append(el("div", "rec-foot", "approve the email first; the Ashby rejection unlocks once it has sent"));
+  }
+  if (ops.length) {
+    const refresh = el("button", "rec-linkish", "refresh");
+    refresh.onclick = () => recRejectLoad(c.id);
+    sec.append(refresh);
+  }
+  return sec;
+}
+
+// recRejectFinish: the email went; now close the application in Ashby.
+function recRejectFinish(c, operationId) {
+  const row = el("div", "rec-reject-row");
+  const reasons = el("select", "pp-in rec-in rec-reject-reason");
+  const none = el("option", "", "archive reason — choose"); none.value = ""; reasons.append(none);
+  (recReasons || []).forEach((r) => { const o = el("option", "", r.text); o.value = r.id; reasons.append(o); });
+  if (recReasons === null) recLoadReasons();
+  const go = el("button", "rec-quiet-btn", "reject in Ashby");
+  go.title = "the email is sent — this archives the application in Ashby with the reason";
+  go.onclick = async () => {
+    if (!reasons.value) { showToast("pick the archive reason first"); return; }
+    go.disabled = true;
+    try {
+      const out = await recOutreachCall("/api/aion/recruiting/reject/complete/" + c.id,
+        { operationId, archiveReasonId: reasons.value, applicationId: c.ashbyApplicationId });
+      if (out.candidates) recCache = out;
+      showToast("rejection sent and recorded in Ashby");
+      recRejectLoad(c.id);
+    } catch (e) { showToast(String(e.message || e).slice(0, 200), null, "error"); go.disabled = false; }
+  };
+  row.append(reasons, go);
   return row;
 }

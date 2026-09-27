@@ -43,7 +43,7 @@ func (a *Adapter) mailStore() gmailsend.DeliveryStore {
 	return gmailsend.DeliveryStore{Dir: filepath.Join(a.Data, "email-deliveries")}
 }
 func (a *Adapter) emailPrepare(q EmailInput) (Object, error) {
-	if q.SourceRecord != nil && (q.SourceRecord.Kind != "recruiting-outreach" || q.SourceRecord.ID == "" || len(q.SourceRecord.ID) > 512 || !artifacts.ValidHash(q.SourceRecord.Revision)) {
+	if q.SourceRecord != nil && ((q.SourceRecord.Kind != "recruiting-outreach" && q.SourceRecord.Kind != "recruiting-rejection") || q.SourceRecord.ID == "" || len(q.SourceRecord.ID) > 512 || !artifacts.ValidHash(q.SourceRecord.Revision)) {
 		return nil, fmt.Errorf("invalid email source record")
 	}
 	if strings.TrimSpace(q.IdempotencyKey) == "" {

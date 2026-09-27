@@ -21,6 +21,9 @@ var Corpora = map[string]func(raw string) string{
 	"roles/*.md":        func(raw string) string { return SerializeRole(ParseRole(raw)) },
 	"candidates/*.md":   func(raw string) string { return SerializeCandidate(ParseCandidate(raw)) },
 	"outreach/*.md":     func(raw string) string { return SerializeOutreach(ParseOutreach(raw)) },
+	// owner-edited message templates: read and filled, never re-serialized,
+	// so the bytes on disk are the record
+	"templates/*.md": func(raw string) string { return raw },
 }
 
 // Files are the fixed, non-glob records — the ones Ensure seeds by name.

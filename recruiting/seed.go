@@ -112,4 +112,5 @@ var SeedOrder = []string{
 	"network/people.md",
 	"network/edges.md",
 	"passed.md",
+	RejectionTemplateFile,
 }
