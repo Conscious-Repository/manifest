@@ -976,3 +976,42 @@
 .chat-embedded .chat-main .chat-composer { padding:var(--sp-5); border-radius:var(--radius-message); gap:var(--sp-4); }
 .chat-embedded .chat-main .chat-composer:not(.has-ritual) > textarea.chat-input { flex:1 0 100%; width:100%; min-height:56px; max-height:none; order:0; padding:var(--sp-2); overflow:auto; }
 .chat-embedded .chat-main .chat-composer > .chat-attach { order:1; }
+
+/* ================= CHAT — phone pass 3 (2026-09-27) =================
+   Measured on the stub at 320/390/412 (before → after in
+   .ui-compare/pass3-*; fixture chat-mobile-pass3.cjs).
+   - rhythm: a reply's text sat 19px above its own meta and 10px above the
+     next turn, so the meta read as the next turn's. One rhythm: 24px between
+     turns, the meta 9px under its text (the 44px ··· box overlaps the gap,
+     not the words);
+   - the meta row has one shape: who · when · ··· together at the reply's
+     start (··· sat alone at the far edge, 208px of empty row at 390); its
+     menu opens from the same edge;
+   - the composer: once the field has its own row (wrapped text, or a long
+     run-state hint), the chips join the controls row when they fit whole
+     (chatComposerShape's chips-inline): 3 rows → 2, 148 → 100px at 390;
+   - one primary per region, in our primary colour: send with text is the
+     accent filled circle (desktop's send and the dialogs' primary already
+     are; Rev 7's ink circle read as a void), ＋ New chat is a quiet accent
+     glyph like ‹ Chats, not a second filled primary;
+   - radii from the tokens: the composer is --radius-message (the token names
+     composers; it was 26px), ＋ is --radius-lg like ‹ Chats (22px). */
+@media (max-width: 860px) {
+  .chat-main .chat-transcript > .chat-turn { margin-block: var(--sp-9); }
+  .chat-main .chat-transcript > .chat-turn.is-queued:has(+ .chat-turn-receipt) { margin-bottom: var(--sp-2); }
+  .chat-main .chat-transcript > .chat-turn-receipt { margin-bottom: var(--sp-9); }
+  .chat-turn-foot { margin-top: calc(-1 * var(--sp-3)); }
+  .chat-main .chat-composer.chips-inline::after { display: none; }
+  .chat-main .chat-composer.chips-inline > .chat-attach { margin-right: 0; }
+  .chat-main .chat-composer.chips-inline > .chat-composer-recipient { order: 1; }
+  .chat-main .chat-composer.chips-inline > :is(.chat-composer-model, .chat-composer-permission) { order: 2; }
+  .chat-main .chat-composer.chips-inline > .mic-btn { order: 3; margin-left: auto; }
+  .chat-main .chat-composer { border-radius: var(--radius-message); }
+  .chat-main .chat-composer.has-text > .chat-send, .chat-main .chat-composer > .chat-send[aria-busy="true"] { background-color: var(--accent); color: var(--on-accent); }
+  .mf-chat-new { background: none; color: var(--accent); border-radius: var(--radius-lg); font-size: var(--fs-2xl); }
+  .mf-chat-new:hover { background: var(--hover); }
+}
+@media (hover: none), (max-width: 860px) {
+  .chat-turn-more { margin-left: 0; }
+  .chat-turn-actions { left: 0; right: auto; }
+}

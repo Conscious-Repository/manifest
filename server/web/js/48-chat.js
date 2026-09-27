@@ -180,7 +180,25 @@ function chatComposerShape(host, ta) {
   // note: "Can't steer; messages queue…", 205px, in 146px at 390) takes the
   // field's own row, so the hint reads whole instead of clipping mid-word
   host.classList.toggle("has-long-hint", !text && chatHintOverflows(host, ta));
+  // with the field on its own row the controls row holds only + · mic · send:
+  // the chips join it when they fit whole (pass 3: a third row took the
+  // composer to 148px at 390), else they keep their own row
+  const own = host.matches(".is-wrapped, .has-long-hint") && !host.classList.contains("has-ritual");
+  host.classList.toggle("chips-inline", own && chatChipsFit(host));
   return host.className !== was;
+}
+
+// chatChipsFit — the recipient/model/permission chips, read at their whole
+// width, fit one row beside + · mic · send (the mic is counted even before
+// 79-mic.js mounts it, so its arrival cannot overflow the row).
+function chatChipsFit(host) {
+  if (chatEmbedded || !window.matchMedia("(max-width: 860px)").matches) return false;
+  const chips = [...host.querySelectorAll(":scope > :is(.chat-composer-recipient, .chat-composer-model, .chat-composer-permission)")].filter(e => e.offsetParent);
+  if (!chips.length) return false;
+  const cs = getComputedStyle(host), gap = parseFloat(cs.columnGap) || 0;
+  const room = host.clientWidth - (parseFloat(cs.paddingLeft) || 0) - (parseFloat(cs.paddingRight) || 0);
+  const whole = chips.reduce((sum, e) => sum + Math.max(e.scrollWidth, e.getBoundingClientRect().width), 0);
+  return whole + 3 * 44 + (chips.length + 2) * gap <= room;
 }
 
 // chatHintOverflows — the placeholder is wider than the compact phone row's
@@ -2439,12 +2457,15 @@ function chatPaintTurns(host, turns, ctx) {
       const row=chatUserTurn(chatQuestionReplyDisplay(t.text));
       row.dataset.chatReadTurn=String(t.n);
       const receipt=t.delivery||(t.submission?{context:{recipient:{agent:t.native.agent,model:t.native.model},task:t.submission.task,artifacts:t.submission.artifacts,explicitArtifacts:t.submission.explicitArtifacts},historyOmitted:t.submission.historyOmitted}:ctx?.deliveries?.find(d=>d.userTurn===t.n));
-      // a queued message reads as not yet sent (↑ in the empty composer pulls
-      // it back); one cancelled before dispatch says so. While the thread's
-      // own run-state line says "Queued · accepted, not started" the greyed
-      // bubble does not say it again; while another turn runs, the bubble is
-      // the only place its queued state shows (2026-09-27 pass 2).
-      if(receipt?.state==="queued"||receipt?.state==="cancelled"){row.classList.add(receipt.state==="queued"?"is-queued":"is-cancelled");row.append(el("div","chat-turn-queue-note",receipt.state==="queued"?(ctx?.threadQueued?"↑ to edit":"Queued · ↑ to edit"):"Cancelled before dispatch"));}
+      // a queued message reads as not yet sent, and its run state lives with
+      // it (2026-09-27 pass 3): one row under the greyed bubble says
+      // "Queued · accepted, not started" and holds Edit and Cancel, whether
+      // the thread is idle or another turn runs (the state and its cancel had
+      // floated 67px apart at the transcript's foot, and "↑ to edit" named a
+      // key a phone does not have). One cancelled before dispatch says so.
+      let after=null;
+      if(receipt?.state==="queued"&&ctx?.queuedRow){row.classList.add("is-queued");after=ctx.queuedRow(receipt);}
+      else if(receipt?.state==="cancelled"){row.classList.add("is-cancelled");row.append(el("div","chat-turn-queue-note","Cancelled before dispatch"));}
       if(receipt?.context?.recipient){
         const target=receipt.context.recipient,to="To "+chatAgentLabel(target.agent)+(target.model?" · "+shortModel(target.model):"");
         if(to!==lastTo||receipt.historyOmitted)row.append(el("div","chat-context-attribution",to+(receipt.historyOmitted?" · "+receipt.historyOmitted+" earlier turns omitted":"")));
@@ -2462,6 +2483,7 @@ function chatPaintTurns(host, turns, ctx) {
         open.onclick=()=>chatOpenAttachment(file,href);row.append(open);
       }
       host.append(row);
+      if(after)host.append(after);
       return;
     }
     if (t.who === "system") {
@@ -2591,7 +2613,12 @@ function renderChatTranscript(d) {
   chatMountHeader(chatHead(s));
 
   // → task (§3.4f): every agent turn in an agent section can become work
-  chatPaintTurns(host, d.timeline||parseChatTurns(d.body || ""), chatAgent ? { who, outputs:d.outputs||[],deliveries:s.deliveries||[], threadQueued:!portal&&chatEntryState({session:s}).execution==="queued", planRevisions:d.planRevisions||[],operations: d.operations || [], promote: (t) => chatPromoteTurn(s, t.n) } : null);
+  // queued receipts painted with their message; the controls and the
+  // run-state line below leave those out
+  const nativeBase = chatBase(), nativeActions = !portal && !s.sharing, attached = new Set();
+  const nativeRefresh = () => { if (nativeBase === chatBase() && s.id === chatOpenId) refetchChatSession(s.id); };
+  const queuedRow = (r) => { attached.add(r.id); return chatQueuedReceipt(s, r, nativeBase, nativeRefresh, nativeActions); };
+  chatPaintTurns(host, d.timeline||parseChatTurns(d.body || ""), chatAgent ? { who, outputs:d.outputs||[],deliveries:s.deliveries||[], queuedRow, planRevisions:d.planRevisions||[],operations: d.operations || [], promote: (t) => chatPromoteTurn(s, t.n) } : null);
 
   const turnNumbers = new Set(parseChatTurns(d.body || "").filter(t => t.who !== "user" && t.who !== "system").map(t => t.n));
   (d.operations || []).filter(item => !turnNumbers.has(Number(item.record.turn) + 1)).forEach(item => host.append(manifestOperationCard(item)));
@@ -2603,7 +2630,7 @@ function renderChatTranscript(d) {
     b.classList.add("chat-queued");
     host.append(b);
   });
-  if(!portal&&!s.sharing){const base=chatBase();host.append(chatNativeInterruptionControls(s,base,()=>{if(base===chatBase()&&s.id===chatOpenId)refetchChatSession(s.id);}));}
+  if(nativeActions)host.append(chatNativeInterruptionControls(s,nativeBase,nativeRefresh,attached));
   // the live layer's mount point (turn.started paints into it); when the ES
   // hasn't caught the turn yet — or there is no ES at all (agent sessions) —
   // the status flag still shows a quiet indicator
@@ -2617,7 +2644,7 @@ function renderChatTranscript(d) {
   const run = portal ? null : chatEntryState({session:s});
   if (portal ? s.status === "thinking" && !chatLive : run.execution === "running" && !chatLive) {
     area.append(el("div", "chat-thinking", portal ? "✦ order spooled — " + who + " answers when its run lands…" : "✦ " + run.label + "…"));
-  } else if (run && ["queued", "disconnected", "failed"].includes(run.execution)) {
+  } else if (run && ["queued", "disconnected", "failed"].includes(run.execution) && !(run.execution === "queued" && attached.size)) {
     const failed = run.execution === "failed" ? (s.deliveries || []).filter(x => x.state === "failed").at(-1)?.error : "";
     const line = el("div", "chat-run-state", run.execution === "queued" ? "Queued · accepted, not started" : run.label + (failed ? " · " + String(failed).slice(0, 160) : ""));
     line.dataset.execution = run.execution; line.setAttribute("role", "status");
@@ -4712,15 +4739,16 @@ function chatQueuedFor(scope){
 }
 // pull back = take it out of the queue first, then put its words in the
 // composer: a message is never both queued and in the composer
-async function chatPullBackQueued(scope,ta,grow){
- const q=chatQueuedFor(scope);if(!q)return;
+async function chatPullBackQueued(scope,ta,grow,receipt){
+ const q=receipt?{kind:'native',receipt,text:receipt.text||''}:chatQueuedFor(scope);if(!q)return;
  if(/^\[context-file:: [a-f0-9]{32}\]$/m.test(q.text)){showToast('This queued message carries attachments; edit it from its row.');return;}
  try{
   if(q.kind==='staged')await chatUpdateStaged(q.item,null);
   else{const id=chatOpenId;await postJSONOk(chatBase()+'/'+encodeURIComponent(id)+'/cancel-queued',{requestId:q.receipt.id});}
  }catch(e){showToast(e.message||'Could not take it out of the queue; it is unchanged.');return;}
- if(chatDraftKey!==scope||ta.value)return;
- ta.value=q.text;grow?.();ta.dispatchEvent(new Event('input',{bubbles:true}));ta.setSelectionRange(ta.value.length,ta.value.length);
+ // words typed meanwhile (or already there, from Edit) stay, after these
+ if(chatDraftKey!==scope)return;
+ ta.value=ta.value?q.text+'\n\n'+ta.value:q.text;grow?.();ta.dispatchEvent(new Event('input',{bubbles:true}));ta.setSelectionRange(ta.value.length,ta.value.length);
  const host=document.getElementById('chatComposer');if(host)chatRenderDeliveryNotice(host,scope);
  if(q.kind==='native')refetchChatSession(chatOpenId);
 }
@@ -5054,7 +5082,7 @@ function chatConversationInfo(title){
  const info=el("details","chat-conversation-info");info.append(el("summary","","Conversation details"),el("p","",title));return info;
 }
 
-function chatNativeInterruptionControls(session,base,refresh) {
+function chatNativeInterruptionControls(session,base,refresh,attached) {
  const box=el('section','chat-native-interruption');
  const running=(session.deliveries||[]).find(d=>d.state==='running');
  // Capability truth: offer only what the adapter honours; say so otherwise.
@@ -5070,19 +5098,50 @@ function chatNativeInterruptionControls(session,base,refresh) {
   button.onclick=async()=>{button.disabled=true;status.textContent='Requesting interruption…';try{await postJSONOk(base+'/'+encodeURIComponent(session.id)+'/interrupt',{requestId:running.id});status.textContent='Interruption requested; waiting for the runner to return.';refresh();}catch(e){status.textContent=e.message||'Could not request interruption. Check status and retry.';button.disabled=false;}};
   box.append(button,status);
  }
- // One statement of the queued state (2026-09-27 pass 2): the run-state line
- // says "Queued · accepted, not started" and the greyed bubble holds the text,
- // so a lone queued instruction's cancel row repeats neither; with several
- // queued, each row names its text so the cancels can be told apart.
- const queuedCount=(session.deliveries||[]).filter(d=>d.state==='queued').length;
- for(const receipt of session.deliveries||[]){if(receipt.state!=='queued')continue;
+ // A queued instruction painted with its message carries its own state and
+ // cancel (chatQueuedReceipt); one with no message on screen is cancelled
+ // here, and with several each row names its text so they can be told apart.
+ const loose=(session.deliveries||[]).filter(d=>d.state==='queued'&&!attached?.has(d.id));
+ for(const receipt of loose){
   if(caps&&!caps.cancelQueued){box.append(el('p','chat-workspace-hint','Queued: '+(receipt.text||'').replace(/\s+/g,' ').slice(0,120)+' — this adapter ('+caps.adapter+') cannot cancel a queued instruction.'));continue;}
-  const row=el('div','chat-queued-control'),cancel=el('button','sprt-quiet','Cancel'),status=el('p','chat-workspace-hint');status.setAttribute('role','status');
-  cancel.setAttribute('aria-label','Cancel queued instruction: '+(receipt.text||'').replace(/\s+/g,' ').slice(0,80));
-  cancel.onclick=async()=>{cancel.disabled=true;try{await postJSONOk(base+'/'+encodeURIComponent(session.id)+'/cancel-queued',{requestId:receipt.id});status.textContent='Instruction cancelled before dispatch.';refresh();}catch(e){status.textContent=e.message||'Could not cancel queued instruction. Check status and retry.';cancel.disabled=false;}};
-  if(queuedCount>1)row.append(el('p','chat-workspace-hint',(receipt.text||'').replace(/\s+/g,' ').slice(0,120)));
-  cancel.title='Cancel queued instruction';row.append(cancel,status);box.append(row);
+  const row=el('div','chat-queued-control'),status=el('p','chat-workspace-hint');status.setAttribute('role','status');
+  if(loose.length>1)row.append(el('p','chat-workspace-hint',(receipt.text||'').replace(/\s+/g,' ').slice(0,120)));
+  row.append(chatQueuedCancel(session,receipt,base,refresh,status),status);box.append(row);
  }
  for(const receipt of session.deliveries||[]){if(receipt.state!=='cancelled')continue;const note=el('details','chat-cancelled-instruction');note.append(el('summary','','Cancelled before dispatch'),el('pre','chat-activity-text',receipt.text||''));box.append(note);}
  return box;
+}
+
+// chatQueuedCancel — cancel one queued (not yet dispatched) instruction; the
+// status element says what happened, and a failure leaves the button to retry.
+function chatQueuedCancel(session,receipt,base,refresh,status){
+ const cancel=el('button','sprt-quiet chat-queued-cancel','Cancel');cancel.type='button';cancel.title='Cancel queued instruction';
+ cancel.setAttribute('aria-label','Cancel queued instruction: '+(receipt.text||'').replace(/\s+/g,' ').slice(0,80));
+ cancel.onclick=async()=>{cancel.disabled=true;try{await postJSONOk(base+'/'+encodeURIComponent(session.id)+'/cancel-queued',{requestId:receipt.id});status.textContent='Instruction cancelled before dispatch.';refresh();}catch(e){status.textContent=e.message||'Could not cancel queued instruction. Check status and retry.';cancel.disabled=false;}};
+ return cancel;
+}
+
+// chatQueuedReceipt — a queued message's run state, under its bubble
+// (2026-09-27 pass 3): the words the delivery contract uses ("Queued ·
+// accepted, not started"; started and finished say otherwise), then Edit
+// (out of the queue, back into the composer: the ↑ shortcut as a 44px
+// control) and Cancel. Without actions (a shared view) it states the state;
+// an adapter that cannot cancel says so instead of offering either.
+function chatQueuedReceipt(session,receipt,base,refresh,actions){
+ const row=el('div','chat-turn-receipt chat-queued-control');row.dataset.request=receipt.id;
+ const state=el('span','chat-run-state','Queued · accepted, not started');state.dataset.execution='queued';state.setAttribute('role','status');
+ row.append(state);
+ if(!actions)return row;
+ const caps=session.capabilities||null;
+ if(caps&&!caps.cancelQueued){row.append(el('span','chat-workspace-hint','This adapter ('+caps.adapter+') cannot cancel it.'));return row;}
+ const words=(receipt.text||'').replace(/\s+/g,' ').slice(0,80),status=el('span','chat-workspace-hint');status.setAttribute('role','status');
+ const edit=el('button','sprt-quiet chat-queued-edit','Edit');edit.type='button';
+ edit.title='Take it out of the queue and back into the composer (↑ in the empty composer)';
+ edit.setAttribute('aria-label','Edit queued instruction: '+words);edit.setAttribute('aria-keyshortcuts','ArrowUp');
+ edit.onclick=async()=>{const ta=document.querySelector('#chatComposer textarea');if(!ta)return;edit.disabled=true;try{await chatPullBackQueued(chatDraftKey,ta,null,receipt);}finally{edit.disabled=false;}ta.focus();};
+ // words with attachments cannot go back into the field whole (the pull-back
+ // refuses them); such a message offers Cancel only
+ if(/^\[context-file:: [a-f0-9]{32}\]$/m.test(receipt.text||''))row.append(chatQueuedCancel(session,receipt,base,refresh,status),status);
+ else row.append(edit,chatQueuedCancel(session,receipt,base,refresh,status),status);
+ return row;
 }

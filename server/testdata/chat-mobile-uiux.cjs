@@ -79,7 +79,8 @@ const {makeStub}=require('./chat-stub-api.cjs');
    await page.waitForFunction(()=>document.querySelector('#chatTranscript .chat-term-cmd.pending'),null,{timeout:500});
    assert.deepEqual(await echo(),['❯firstsending…'],'the echo says sending until the server accepts');
    const send=await page.evaluate(()=>{const s=document.querySelector('#chatComposer .chat-send'),cs=getComputedStyle(s);return {busy:s.getAttribute('aria-busy'),op:cs.opacity,bg:cs.backgroundColor,dis:s.disabled};});
-   assert.deepEqual(send,{busy:'true',op:'1',bg:'rgb(23, 23, 23)',dis:true},'a send in flight keeps its ink');
+   // full ink in the send's primary colour: the accent since pass 3 (was ink rgb(23, 23, 23))
+   assert.deepEqual(send,{busy:'true',op:'1',bg:'rgb(38, 90, 204)',dis:true},'a send in flight keeps its ink');
    await ta.pressSequentially(' and one more');
    await page.waitForFunction(()=>/delivered/.test(document.querySelector('#chatTranscript .chat-term-cmd.pending')?.textContent||''));
    await page.waitForFunction(()=>!document.querySelector('#chatComposer .chat-send[aria-busy]'));

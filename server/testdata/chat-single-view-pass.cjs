@@ -62,11 +62,11 @@ const contrastOf=(sel,pseudo)=>{const parse=c=>(c.match(/[\d.]+/g)||[]).map(Numb
    await open(page,'/#/chat/a/alfred/b');
    const ta=page.locator('#chatComposer textarea');
    await ta.fill('Please check the build');await page.locator('#chatComposer .chat-send').click();
-   await page.locator('.chat-queued-control > .sprt-quiet').waitFor();
+   await page.locator('.chat-queued-control > .chat-queued-cancel').waitFor();
    await page.waitForFunction(()=>document.querySelector('#chatComposer textarea').placeholder==="Can't steer; messages queue…");
-   const cancel=await box(page,'.chat-queued-control > .sprt-quiet');
+   const cancel=await box(page,'.chat-queued-control > .chat-queued-cancel');
    assert.ok(cancel.h>=44,'queued cancel is '+cancel.h+'px tall');
-   const cc=await page.evaluate(contrastOf,'.chat-queued-control > .sprt-quiet');assert.ok(cc>=4.5,'queued cancel contrast '+cc.toFixed(2));
+   const cc=await page.evaluate(contrastOf,'.chat-queued-control > .chat-queued-cancel');assert.ok(cc>=4.5,'queued cancel contrast '+cc.toFixed(2));
    const fit=await page.evaluate(()=>{const t=document.querySelector('#chatComposer textarea'),cs=getComputedStyle(t),g=document.createElement('canvas').getContext('2d');
     g.font=cs.fontStyle+' '+cs.fontWeight+' '+cs.fontSize+' '+cs.fontFamily;return {need:g.measureText(t.placeholder).width,room:t.clientWidth-parseFloat(cs.paddingLeft)-parseFloat(cs.paddingRight),hint:t.placeholder};});
    assert.ok(fit.need<=fit.room,'the hint "'+fit.hint+'" needs '+fit.need.toFixed(0)+'px in '+fit.room.toFixed(0)+'px');

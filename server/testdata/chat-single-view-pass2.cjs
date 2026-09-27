@@ -9,9 +9,11 @@
 //   2. 390: the owner's sent words are the replies' body size (were 13px);
 //   3. 390: the model chip's target is the chip (was a 350px row), ≥44px;
 //   4. 390, after a send: the queued state is stated once — the run-state line
-//      "Queued · accepted, not started" — not five times; the bubble keeps
-//      "↑ to edit", the cancel is a 44×44 target named for what it cancels;
-//      while another turn runs, the bubble says "Queued · ↑ to edit" itself;
+//      "Queued · accepted, not started" — not five times; the cancel is a
+//      44×44 target named for what it cancels; while another turn runs the
+//      message keeps its own queued row (pass 3 moved the state, Edit — once
+//      "↑ to edit" — and Cancel under the bubble: chat-mobile-pass3.cjs) and
+//      nothing floats at the transcript's foot;
 //   5. a thread whose agent is the only possible recipient spends no input-row
 //      width on the recipient chip, and the head names the agent; with coding
 //      agents on (three recipients) the chip stays;
@@ -81,19 +83,20 @@ const census=()=>{const out=[];for(const e of document.querySelectorAll('button,
    const ctx=await browser.newContext(phone(390)),page=await ctx.newPage();
    await open(page,base+'/#/chat/a/alfred/b');
    await page.locator('#chatComposer textarea').fill('Please check the build');await page.locator('#chatComposer .chat-send').click();
-   await page.locator('#chatTranscript .chat-run-state').waitFor();await page.locator('.chat-queued-control > .sprt-quiet').waitFor();await page.waitForTimeout(300);
+   await page.locator('#chatTranscript .chat-run-state').waitFor();await page.locator('.chat-queued-control > .chat-queued-cancel').waitFor();await page.waitForTimeout(300);
    const says=await page.evaluate(()=>[...document.querySelectorAll('.chat-shell *')].filter(e=>e.getBoundingClientRect().height>0&&[...e.childNodes].some(n=>n.nodeType===3&&/queued/i.test(n.textContent))).map(e=>e.textContent.trim()));
    assert.deepEqual(says,['Queued · accepted, not started'],'the queued state is stated once');
    assert.equal(await page.locator('#chatComposer textarea').getAttribute('placeholder'),"Can't steer; messages queue…",'capability truth stays in the field');
-   assert.equal((await page.locator('#chatTranscript .chat-user.is-queued .chat-turn-queue-note').textContent()),'↑ to edit');
+   assert.equal(await page.locator('#chatTranscript .chat-user.is-queued + .chat-turn-receipt .chat-queued-edit').textContent(),'Edit');
    const cancel=page.getByRole('button',{name:'Cancel queued instruction: Please check the build',exact:true});
    const cb=await cancel.evaluate(e=>{const r=e.getBoundingClientRect();return {w:r.width,h:r.height};});
    assert.ok(cb.w>=44&&cb.h>=44,'cancel is '+cb.w+'×'+cb.h);
-   // while another turn runs the thread line says Working, so the bubble is
-   // where this message's queued state shows: it keeps the word
+   // while another turn runs the thread says Working; the message's own row
+   // still says it is queued (the delivery's state, not the thread's)
    {const b=main.sessions.b;b.deliveries=[{id:'run-0',state:'running',text:'earlier'},...b.deliveries];b.supervision={...b.supervision,state:'running',runs:[{id:'run-0',state:'running'}]};b.updated=new Date().toISOString();}
-   await page.waitForFunction(()=>document.querySelector('#chatTranscript .chat-user.is-queued .chat-turn-queue-note')?.textContent==='Queued · ↑ to edit',null,{timeout:8000});
-   assert.equal(await page.locator('#chatTranscript .chat-run-state').count(),0,'a running thread has no queued line');
+   await page.locator('#chatTranscript .chat-native-stop').waitFor({timeout:8000});
+   assert.equal(await page.locator('#chatTranscript .chat-user.is-queued + .chat-turn-receipt .chat-run-state').textContent(),'Queued · accepted, not started','the queued message keeps its state');
+   assert.equal(await page.locator('#chatLiveArea .chat-run-state').count(),0,'a running thread has no floating queued line');
    await ctx.close();
   }
   // 5. the only possible recipient: no chip in the input row, the head names it

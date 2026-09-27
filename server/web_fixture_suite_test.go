@@ -296,6 +296,11 @@ func TestFixtureChatStatusLine(t *testing.T) { runFixture(t, "chat-status-line.c
 // busy send ink, legible Activity and context, runs kept apart (chat-mobile-uiux.cjs).
 func TestFixtureChatMobileUIUX(t *testing.T) { runFixture(t, "chat-mobile-uiux.cjs", true, false) }
 
+// Phone chat pass 3: a queued send's state, Edit and Cancel under its own
+// bubble, a grouped reply meta row, one transcript rhythm, a two-row composer
+// after a send, one primary per region (chat-mobile-pass3.cjs).
+func TestFixtureChatMobilePass3(t *testing.T) { runFixture(t, "chat-mobile-pass3.cjs", true, false) }
+
 // The virtual browser tool captures and compares two pages end to end
 // (tools/ui-compare, ui-compare.cjs).
 func TestFixtureUICompare(t *testing.T) { runFixture(t, "ui-compare.cjs", true, false) }

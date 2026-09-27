@@ -1161,3 +1161,20 @@ label.chat-artifact-handoff{display:flex;flex-direction:row;align-items:flex-sta
   .chat-details[open] > a, .chat-details[open] > button, .chat-details[open] .chat-head-acts > *, .chat-conversation-info > summary { min-height: var(--control-touch); }
   .chat-queued-control > .sprt-quiet, .chat-native-stop { min-height: var(--control-touch); min-width: var(--control-touch); }
 }
+
+/* Run state lives with its message (mobile pass 3, 2026-09-27). A queued
+   message's "Queued · accepted, not started", Edit and Cancel are one row
+   under its bubble, ending on the bubble's edge (the state and a bare 11px
+   mono Cancel floated 67px below at the transcript's foot). The row keeps full
+   ink while the bubble is greyed; the bubble gives up its bottom margin so
+   the row reads as its foot, and the row carries the turn's spacing on. */
+.chat-turn.is-queued:has(+ .chat-turn-receipt) { margin-bottom: var(--sp-2); }
+.chat-turn-receipt { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 0; margin: 0 0 var(--sp-5) auto; font: var(--fs-md)/1.4 var(--sans); }
+.chat-turn-receipt > .chat-run-state { padding: 0 var(--sp-2) 0 0; font-size: var(--fs-sm); }
+.chat-turn-receipt > .sprt-quiet { display: inline-flex; align-items: center; justify-content: center; min-height: var(--control-height); padding: 0 var(--sp-4); border-radius: var(--radius); font: var(--fs-md) var(--sans); color: var(--base-80); }
+.chat-turn-receipt > .sprt-quiet:hover, .chat-turn-receipt > .sprt-quiet:focus-visible { background: var(--hover); color: var(--base-100); }
+.chat-turn-receipt > .chat-workspace-hint:empty { display: none; }
+.chat-turn-receipt > .chat-workspace-hint { flex-basis: 100%; text-align: right; }
+@media (max-width: 860px), (hover: none) {
+  .chat-turn-receipt > .sprt-quiet { min-height: var(--control-touch); min-width: var(--control-touch); padding: 0 var(--sp-3); }
+}
