@@ -1033,45 +1033,36 @@ func WebHandler() http.Handler {
 	// the catch-all. Shadow it so the private cockpit serves no team surface.
 	mux.HandleFunc("/portal", http.NotFound)
 	mux.HandleFunc("/portal/", http.NotFound)
-	// Cache-bust: the shell (index.html) is served with a build-hash ?v= injected
-	// into every js/css URL, so a deploy always forces a fresh fetch — no stale
-	// asset behind a browser cache or service worker. The hash changes exactly
-	// when any embedded asset changes (assetBuildVersion over the content ETags).
+	// Cache-bust: the shell (index.html) is served with each js/css file's own
+	// content hash as its ?v=, so a deploy changes exactly the URLs whose bytes
+	// changed, and an asset asked for by its current hash is immutable (noCache).
 	etags := etagFor(sub)
-	idx := versionedIndex(sub, assetBuildVersion(etags))
+	idx := versionedIndex(sub, etags)
 	mux.HandleFunc("GET /{$}", idx)        // exact "/"
 	mux.HandleFunc("GET /index.html", idx) // and the explicit path
 	mux.Handle("/", noCache(etags, http.FileServer(http.FS(sub))))
 	return mux
 }
 
-// assetBuildVersion is a short hash over every embedded asset's content ETag —
-// stable for the binary's life, changing exactly when a rebuild ships new assets.
-func assetBuildVersion(etags map[string]string) string {
-	keys := make([]string, 0, len(etags))
-	for k := range etags {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	h := sha256.New()
-	for _, k := range keys {
-		h.Write([]byte(k))
-		h.Write([]byte(etags[k]))
-	}
-	return hex.EncodeToString(h.Sum(nil))[:8]
-}
+var assetRefRe = regexp.MustCompile(`(src|href)="((?:js|css|vendor)/[^"?]+\.(?:js|css))(?:\?v=[^"]*)?"`)
 
-var assetRefRe = regexp.MustCompile(`(src|href)="((?:js|css)/[^"?]+\.(?:js|css))"`)
-
-// versionedIndex serves index.html with ?v=<ver> appended to every local js/css
-// reference, computed once at startup. index.html itself is no-cache so the
-// browser always re-reads it (and thus the fresh ?v=) after a deploy.
-func versionedIndex(sub fs.FS, ver string) http.HandlerFunc {
+// versionedIndex serves index.html with ?v=<content hash> on every local
+// js/css reference (replacing any hand-written stamp), computed once at
+// startup. index.html itself is no-cache so the browser always re-reads it
+// (and thus the current hashes) after a deploy.
+func versionedIndex(sub fs.FS, etags map[string]string) http.HandlerFunc {
 	raw, err := fs.ReadFile(sub, "index.html")
 	if err != nil {
 		return func(w http.ResponseWriter, r *http.Request) { http.Error(w, "index missing", 500) }
 	}
-	body := []byte(assetRefRe.ReplaceAllString(string(raw), `$1="$2?v=`+ver+`"`))
+	body := []byte(assetRefRe.ReplaceAllStringFunc(string(raw), func(ref string) string {
+		m := assetRefRe.FindStringSubmatch(ref)
+		tag, ok := etags[m[2]]
+		if !ok {
+			return ref // not embedded: leave it for the 404 it will get
+		}
+		return m[1] + `="` + m[2] + "?v=" + strings.Trim(tag, `"`) + `"`
+	}))
 	return func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Cache-Control", "no-cache")
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
@@ -1079,12 +1070,12 @@ func versionedIndex(sub fs.FS, ver string) http.HandlerFunc {
 	}
 }
 
-// noCache makes the browser revalidate the embedded assets every load. embed.FS
-// files have a zero modtime (no Last-Modified/ETag), so without this a rebuilt
-// app.js/style.css can stay cached and the UI looks stale after an upgrade.
-// The content-hash ETags (etagFor) make that revalidation CHEAP: an unchanged
-// asset answers 304 with no body instead of re-transferring the whole file on
-// every reload (~840KB of JS/CSS otherwise re-downloaded per page load).
+// noCache revalidates every asset by its content ETag — except one asked for
+// by its current content hash (?v=, as versionedIndex writes it), which can
+// never change under that URL and is cached for good: a page load, and every
+// chat tile (each a full copy of the app), then costs the shell alone instead
+// of ~110 revalidations. A URL naming any other hash (an old page during a
+// deploy) keeps no-cache, so a stale asset is never pinned.
 func noCache(etags map[string]string, h http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Cache-Control", "no-cache")
@@ -1093,6 +1084,9 @@ func noCache(etags map[string]string, h http.Handler) http.Handler {
 			p = path.Join(p, "index.html")
 		}
 		if tag, ok := etags[p]; ok {
+			if v := r.URL.Query().Get("v"); v != "" && `"`+v+`"` == tag {
+				w.Header().Set("Cache-Control", "private, max-age=31536000, immutable")
+			}
 			w.Header().Set("ETag", tag)
 			if r.Header.Get("If-None-Match") == tag {
 				w.WriteHeader(http.StatusNotModified)

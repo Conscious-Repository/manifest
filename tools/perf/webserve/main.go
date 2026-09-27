@@ -6,7 +6,9 @@
 //
 //	webserve -addr 127.0.0.1:0 -api http://127.0.0.1:PORT
 //
-// It prints "listening http://HOST:PORT" once ready.
+// It prints "listening http://HOST:PORT" once ready. GET /__perf/requests
+// answers how many requests reached it (what the network carried, as opposed
+// to what the browser answered from its cache).
 package main
 
 import (
@@ -18,6 +20,7 @@ import (
 	"net/http/httputil"
 	"net/url"
 	"strings"
+	"sync/atomic"
 
 	"manifest/server"
 )
@@ -33,7 +36,13 @@ func main() {
 	proxy := httputil.NewSingleHostReverseProxy(target)
 	proxy.FlushInterval = -1 // event streams pass through as they are written
 	web := server.WebHandler()
+	var served atomic.Int64
 	h := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/__perf/requests" {
+			fmt.Fprintf(w, `{"n":%d}`, served.Load())
+			return
+		}
+		served.Add(1)
 		if strings.HasPrefix(r.URL.Path, "/api/") || strings.HasPrefix(r.URL.Path, "/__") {
 			proxy.ServeHTTP(w, r)
 			return

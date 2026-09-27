@@ -10,7 +10,8 @@
 //
 // Measures (printed as a table; --json writes the numbers):
 //   cold open    first paint of a long thread's turns in a fresh browser
-//                (ms from navigation start) and the requests it took
+//                (ms from navigation start), the requests the page made and
+//                how many reached the server (the rest the HTTP cache answered)
 //   warm open    the same in a second tab of the same browser (HTTP cache warm)
 //   switch       hash change to another thread until its turns paint
 //   idle         requests per minute with one chat open and nothing happening
@@ -75,17 +76,18 @@ async function measure({idle=30,webserve=''}={}){
  try{
   const ctx=await browser.newContext({viewport:{width:1440,height:900}});
   // cold open (empty HTTP cache), three runs in fresh contexts
-  const colds=[],coldReqs=[];
+  const served=async()=>(await (await fetch(base+'/__perf/requests')).json()).n;
+  const colds=[],coldReqs=[],coldNet=[];
   for(let i=0;i<3;i++){
    const c=await browser.newContext({viewport:{width:1440,height:900}});const p=await c.newPage();const log=recorder(p);
-   await p.goto(base+'/#/chat/a/alfred/a');colds.push(await painted(p,LONG_TURNS));coldReqs.push(log.length);await c.close();
+   const n0=await served();await p.goto(base+'/#/chat/a/alfred/a');colds.push(await painted(p,LONG_TURNS));coldReqs.push(log.length);coldNet.push(await served()-n0);await c.close();
   }
-  out.coldOpenMs=Math.round(median(colds));out.coldOpenRequests=median(coldReqs);
+  out.coldOpenMs=Math.round(median(colds));out.coldOpenRequests=median(coldReqs);out.coldOpenNetwork=median(coldNet);
   // warm open: a second tab in one context, the first having filled the cache
   const page=await ctx.newPage();await page.goto(base+'/#/chat/a/alfred/b');await painted(page,2);
-  const warms=[],warmReqs=[];
-  for(let i=0;i<3;i++){const p=await ctx.newPage();const log=recorder(p);await p.goto(base+'/#/chat/a/alfred/a');warms.push(await painted(p,LONG_TURNS));warmReqs.push(log.length);await p.close();}
-  out.warmOpenMs=Math.round(median(warms));out.warmOpenRequests=median(warmReqs);
+  const warms=[],warmReqs=[],warmNet=[];
+  for(let i=0;i<3;i++){const p=await ctx.newPage();const log=recorder(p);const n0=await served();await p.goto(base+'/#/chat/a/alfred/a');warms.push(await painted(p,LONG_TURNS));warmReqs.push(log.length);warmNet.push(await served()-n0);await p.close();}
+  out.warmOpenMs=Math.round(median(warms));out.warmOpenRequests=median(warmReqs);out.warmOpenNetwork=median(warmNet);
   // switch between a long and a short thread, both directions
   await page.goto(base+'/#/chat/a/alfred/a');await painted(page,LONG_TURNS);await page.waitForTimeout(500);
   const switches=[];
@@ -128,8 +130,8 @@ async function measure({idle=30,webserve=''}={}){
 }
 
 function report(out){
- const rows=[['cold open → first paint (long thread)',out.coldOpenMs+' ms, '+out.coldOpenRequests+' requests'],
-  ['warm open (second tab)',out.warmOpenMs+' ms, '+out.warmOpenRequests+' requests'],
+ const rows=[['cold open → first paint (long thread)',out.coldOpenMs+' ms, '+out.coldOpenRequests+' requests, '+out.coldOpenNetwork+' reached the server'],
+  ['warm open (second tab)',out.warmOpenMs+' ms, '+out.warmOpenRequests+' requests, '+out.warmOpenNetwork+' reached the server'],
   ['chat switch',out.switchMs+' ms'],
   ['idle, one chat open',out.idleRequestsPerMin+' req/min'],
   ['heap / DOM nodes, long thread',out.heapMB+' MB / '+out.nodes],

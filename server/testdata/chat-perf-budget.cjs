@@ -17,6 +17,9 @@ const {measure,report}=require(path.join(__dirname,'../../tools/perf/chat-perf.c
  within('switchMs',750);
  within('coldOpenRequests',140);
  within('warmOpenRequests',140);
+ // a second tab takes its scripts and styles from the HTTP cache: 21 reach
+ // the server (the shell and the API), where every asset used to revalidate (109)
+ within('warmOpenNetwork',35);
  within('idleRequestsPerMin',60);
  within('heapMB',60);
  within('nodes',30000);
