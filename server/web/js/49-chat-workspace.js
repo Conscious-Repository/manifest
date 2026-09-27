@@ -280,6 +280,13 @@ function chatPolishComposer(host){
   if(hint){if(!status){status=el('div','chat-composer-status');status.setAttribute('role','status');host.append(status);}status.textContent=hint;}else status?.remove();
   input.placeholder='Message…';
  }else status?.remove();
+ // while a coding agent works the field says what Enter and Tab do, in its
+ // adapter's terms (capability matrix: steer "explicit" or not at all); a
+ // native agent's own placeholder already says it cannot steer
+ if(input&&chatIsTerm()&&typeof chatAgentWorking==='function'&&chatAgentWorking()){
+  const caps=chatTermOpen?.id===chatOpenId?chatTermOpen.capabilities:chatTermFind(chatOpenId)?.capabilities;
+  input.placeholder=caps?.steer==='explicit'?'Enter steers this run · Tab queues for after it':chatTermKinds[chatAgent]+' cannot steer a running turn · Enter queues for after it';
+ }
  input?._grow?.();
 }
 

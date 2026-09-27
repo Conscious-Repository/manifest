@@ -2385,6 +2385,9 @@ function chatPaintTurns(host, turns, ctx) {
       const row=chatUserTurn(chatQuestionReplyDisplay(t.text));
       row.dataset.chatReadTurn=String(t.n);
       const receipt=t.delivery||(t.submission?{context:{recipient:{agent:t.native.agent,model:t.native.model},task:t.submission.task,artifacts:t.submission.artifacts,explicitArtifacts:t.submission.explicitArtifacts},historyOmitted:t.submission.historyOmitted}:ctx?.deliveries?.find(d=>d.userTurn===t.n));
+      // a queued message reads as not yet sent (↑ in the empty composer pulls
+      // it back); one cancelled before dispatch says so
+      if(receipt?.state==="queued"||receipt?.state==="cancelled"){row.classList.add(receipt.state==="queued"?"is-queued":"is-cancelled");row.append(el("div","chat-turn-queue-note",receipt.state==="queued"?"Queued · ↑ to edit":"Cancelled before dispatch"));}
       if(receipt?.context?.recipient){
         const target=receipt.context.recipient,to="To "+chatAgentLabel(target.agent)+(target.model?" · "+shortModel(target.model):"");
         if(to!==lastTo||receipt.historyOmitted)row.append(el("div","chat-context-attribution",to+(receipt.historyOmitted?" · "+receipt.historyOmitted+" earlier turns omitted":"")));
@@ -2697,7 +2700,9 @@ function renderChatComposer(session) {
     // the live mark follows the run state, not the raw status flag: a stale
     // "thinking" under a disconnected projection is not work in progress
     const run = session ? chatEntryState({session}) : null;
-    return run && run.execution === "running" ? "✦ " + run.label + " — messages queue…" : run && run.execution === "queued" ? "Queued — messages queue…" : "Message…";
+    // this adapter cannot steer a running turn (capabilities.steer), so the
+    // field says so, and that a message now waits for the next turn
+    return run && run.execution === "running" ? "✦ " + run.label + " — can't steer; messages queue…" : run && run.execution === "queued" ? "Queued — can't steer; messages queue…" : "Message…";
   };
   // a portal agent takes one order at a time: a send while it runs 409s, so
   // the button says so instead (the placeholder already says why)
@@ -2880,7 +2885,9 @@ function renderChatComposer(session) {
   send.setAttribute("aria-label", uploading?"Uploading attachments":chatSending||chatTermSending?"Sending message":"Send message");
   send.title = uploading ? "Uploading attachments…" : chatSending||chatTermSending ? "Sending message…" : "send · Enter (Shift+Enter for a new line)";
   send.disabled = busy;
-  const submit = async () => {
+  // opts.queue (Tab while the agent works): hold the message for the next
+  // turn instead of steering this one (chatStageOrSteer)
+  const submit = async (opts = {}) => {
     const text = ta.value.trim();
     const files = chatPendingFiles.slice();
     if (!text && !files.length) return;
@@ -2952,7 +2959,7 @@ function renderChatComposer(session) {
         if(sendFiles.length&&!session?.shared)throw new Error("File uploads are not supported by this coding continuation yet. Remove the attachment or choose a planning agent.");
         const url=chatTermBase(chosenRecipient.id)+"/input";
         const input={text:messageText,...(sendFiles.length?{files:sendFiles.map(f=>f.hash)}:{}),conversationAgent:sendAgent,conversationId:sendSession,task:session?.shared?"":selected?.task||session?.task||"",...chatArtifactPayload(selected)};
-        if(chatTermFind(chosenRecipient.id)?.agentState==='working')await chatStageMessage(draftKey,chosenRecipient.agent,url,input);
+        if(chatTermFind(chosenRecipient.id)?.agentState==='working')await chatStageOrSteer(draftKey,chosenRecipient.agent,url,input,{queue:opts.queue,caps:chatTermFind(chosenRecipient.id)?.capabilities});
         else{
           const remembered=chatRememberDelivery(draftKey,chosenRecipient.agent,url,input);
           try{await chatDeliverRemembered(remembered);}
@@ -2972,7 +2979,7 @@ function renderChatComposer(session) {
     if (chatIsTerm()) {
       // claude/codex: runtime input (explicitly resuming an ended session first); a
       // landing send creates the registry row, then delivers
-      try { if (!await chatTermSend(initialText,selected?{task:selected.task,...chatArtifactPayload(selected)}:{})) {
+      try { if (!await chatTermSend(initialText,{...(selected?{task:selected.task,...chatArtifactPayload(selected)}:{}),...(opts.queue?{queue:true}:{})})) {
         showToast("Send not confirmed. Your draft is retained.");
       }else acceptedDraft(); }
       finally { echo.settle(); chatSending = false; renderChatComposer(chatCurSession); }
@@ -3032,9 +3039,15 @@ function renderChatComposer(session) {
       if (first) { e.preventDefault(); pickMention(first.textContent); return; }
     }
     if (e.key === "Enter" && !e.shiftKey && (!window.matchMedia("(max-width: 860px)").matches || e.metaKey || e.ctrlKey)) { e.preventDefault(); submit(); }
+    // steer vs queue (2026-09-27): while the agent works, Enter steers where
+    // the adapter can and Tab queues for the next turn; with nothing running
+    // Tab keeps moving focus. ↑ in an empty composer pulls the latest queued
+    // message back to edit.
+    else if (e.key === "Tab" && !e.shiftKey && !e.altKey && !e.ctrlKey && !e.metaKey && ta.value.trim() && chatAgentWorking() && !document.querySelector(".chat-command-picker:not([hidden])")) { e.preventDefault(); submit({queue: true}); }
+    else if (e.key === "ArrowUp" && !e.shiftKey && !e.altKey && !ta.value && ta.selectionStart === 0 && chatQueuedFor(draftKey)) { e.preventDefault(); chatPullBackQueued(draftKey, ta, grow); }
   });
   if(typeof chatInstallCommands==='function')chatInstallCommands(host,ta);
-  send.onclick = submit;
+  send.onclick = () => submit();
   host.append(chips, mention, records, ta, fi, attach, ritual, send);
   chatRenderDeliveryNotice(host,draftKey);
   chatRenderArtifactContext(session?.task,"chat:"+draftKey);
@@ -4127,8 +4140,9 @@ async function chatTermSend(text,context={}) {
   if (chatTermSending) return false;
   const current=chatTermFind(chatOpenId);
   if(context.command&&current?.agentState==='working'){showToast('Wait for this run to finish before running a native command.');return false;}
+  const {queue,...payloadContext}=context;
   if(current?.agentState==='working'){
-    try{await chatStageMessage(chatAgent+'/'+chatOpenId,chatAgent,chatTermBase(chatOpenId)+'/input',{text,...context});return true;}
+    try{await chatStageOrSteer(chatAgent+'/'+chatOpenId,chatAgent,chatTermBase(chatOpenId)+'/input',{text,...payloadContext},{queue,caps:chatTermOpen?.id===chatOpenId?chatTermOpen.capabilities:current.capabilities});return true;}
     catch(e){showToast(e.message);return false;}
   }
   chatTermSending = true;
@@ -4150,7 +4164,7 @@ async function chatTermSend(text,context={}) {
       // not a landing with a hidden open id
       if(route===chatRouteVersion){chatOpenId=id;chatLanding=false;location.hash="#/chat/a/"+encodeURIComponent(agent)+"/"+encodeURIComponent(id);}
     }
-    const url=chatTermBase(id)+"/input",payload={text,...context};
+    const url=chatTermBase(id)+"/input",payload={text,...payloadContext};
     // where the transcript stood when this send began: the echo and the tail
     // reconcile against the user turns that land from here on
     const since=chatTermOpen&&chatTermOpen.id===id&&Array.isArray(chatTermOpen.turns)?chatTermOpen.turns.length:0;
@@ -4531,11 +4545,63 @@ async function chatStageMessage(scope,agent,url,payload){
  if(!chatSyncedDrafts.get(scope)?.key)throw Error('Wait for the conversation to finish loading before saving a follow-up.');
  const prior=chatReadDeliveryOutbox().find(x=>x.scope===scope&&x.url===url&&x.signature===JSON.stringify(payload));
  if(prior&&!prior.staged)throw Error("This message already has an unconfirmed send. Check its status before trying again.");
- if(prior){await chatUpdateStaged(prior,prior);return;}
+ if(prior){await chatUpdateStaged(prior,prior);return prior;}
  const item=chatRememberDelivery(scope,agent,url,payload);
  item.staged=true;item.draft=null;item.stateKey=chatSyncedDrafts.get(scope).key;
  const items=chatReadDeliveryOutbox().filter(x=>x.payload.requestId!==item.payload.requestId);items.push(item);chatWriteDeliveryOutbox(items);
  await chatSaveDeliveryRecovery(item);
+ return item;
+}
+// ---- steer vs queue (2026-09-27) ----
+// A message sent while the agent works is always staged first (recorded
+// before anything crosses the runtime boundary). Enter then steers it into
+// the running turn where the adapter can (capabilities.steer "explicit");
+// Tab leaves it queued for after the run. An adapter that cannot steer says
+// so in words, and the message stays queued.
+async function chatStageOrSteer(scope,agent,url,payload,{queue,caps}={}){
+ const item=await chatStageMessage(scope,agent,url,payload);
+ if(queue){showToast('Queued for after this run · ↑ in the empty composer pulls it back.',null,'info');return;}
+ if(caps&&caps.steer!=='explicit'){showToast((chatTermKinds[agent]||chatAgentLabel(agent))+' cannot steer a running turn ('+caps.adapter+'). Queued for after this run.',null,'info');return;}
+ await chatSteerStaged(item);
+}
+// chatSteerStaged — the ↳ Steer dispatch: claim the staged item as a steer
+// send (CAS), deliver it; an agent that turned out to need input puts it
+// back as a staged message with the reason.
+async function chatSteerStaged(item){
+ const sending={...item,staged:false,stagedError:'',payload:{...item.payload,afterRun:false,steer:true}};await chatUpdateStaged(item,sending);
+ try{await chatDeliverRemembered(sending);showToast('Steered into the current run.');}
+ catch(e){if(e.notSent){sending.payload={...sending.payload,steer:false,afterRun:false};sending.staged=true;sending.waitingForAgent=true;sending.stagedError='Agent needs input. Answer its questions or open Terminal, then steer.';await chatSaveDeliveryRecovery(sending);const all=chatReadDeliveryOutbox().filter(x=>x.payload.requestId!==sending.payload.requestId);all.push(sending);chatWriteDeliveryOutbox(all);}else showToast(e.message||'Delivery is unconfirmed. Check status before sending again.');}
+}
+// chatAgentWorking — is a turn running in the open conversation?
+function chatAgentWorking(){
+ if(chatIsTerm())return chatTermFind(chatOpenId)?.agentState==='working';
+ // the run projection, not the raw flag: a stale "thinking" under a
+ // disconnected projection is not a running turn
+ return !!chatCurSession&&chatCurSession.id===chatOpenId&&chatEntryState({agent:chatAgent,session:chatCurSession}).execution==='running';
+}
+// the newest queued message this composer can pull back: a staged coding
+// message, or a native agent's queued delivery (cancellable before dispatch)
+function chatQueuedFor(scope){
+ const staged=chatReadDeliveryOutbox().filter(x=>x.staged&&x.scope===scope).at(-1);
+ if(staged)return {kind:'staged',item:staged,text:staged.payload.text||''};
+ if(chatIsTerm()||!chatCurSession||chatCurSession.id!==chatOpenId)return null;
+ const q=(chatCurSession.deliveries||[]).filter(d=>d.state==='queued').at(-1);
+ if(q&&chatCurSession.capabilities?.cancelQueued!==false)return {kind:'native',receipt:q,text:q.text||''};
+ return null;
+}
+// pull back = take it out of the queue first, then put its words in the
+// composer: a message is never both queued and in the composer
+async function chatPullBackQueued(scope,ta,grow){
+ const q=chatQueuedFor(scope);if(!q)return;
+ if(/^\[context-file:: [a-f0-9]{32}\]$/m.test(q.text)){showToast('This queued message carries attachments; edit it from its row.');return;}
+ try{
+  if(q.kind==='staged')await chatUpdateStaged(q.item,null);
+  else{const id=chatOpenId;await postJSONOk(chatBase()+'/'+encodeURIComponent(id)+'/cancel-queued',{requestId:q.receipt.id});}
+ }catch(e){showToast(e.message||'Could not take it out of the queue; it is unchanged.');return;}
+ if(chatDraftKey!==scope||ta.value)return;
+ ta.value=q.text;grow?.();ta.dispatchEvent(new Event('input',{bubbles:true}));ta.setSelectionRange(ta.value.length,ta.value.length);
+ const host=document.getElementById('chatComposer');if(host)chatRenderDeliveryNotice(host,scope);
+ if(q.kind==='native')refetchChatSession(chatOpenId);
 }
 async function chatUpdateStaged(item,next){
  if(!item.stateKey)throw Error('Pending message has no saved conversation.');
@@ -4561,15 +4627,14 @@ function chatRenderStagedMessages(host,scope){
   const caps=chatTermOpen?.capabilities;if(caps&&caps.steer!=='explicit'){steer.disabled=true;steer.title='This runtime ('+caps.adapter+') cannot steer a working agent.';}
   const remove=el('button','sprt-quiet','×');remove.setAttribute('aria-label','Remove pending message');
   const more=el('details','chat-pending-more'),summary=el('summary','','…');summary.setAttribute('aria-label','Pending message actions');const menu=el('div','chat-pending-menu');more.append(summary,menu);more.addEventListener('toggle',()=>{if(more.open)more.classList.toggle('below',more.getBoundingClientRect().top<120);});
-  const status=el('span','chat-pending-status',item.stagedError||'Queued · sends after this run');status.setAttribute('role','status');
+  row.classList.add('is-queued');
+  const status=el('span','chat-pending-status',item.stagedError||'Queued · sends after this run · ↑ to edit');status.setAttribute('role','status');
   const refresh=()=>chatRenderDeliveryNotice(host,scope);
   remove.onclick=async()=>{remove.disabled=true;try{await chatUpdateStaged(item,null);refresh();}catch(e){status.textContent=e.message;remove.disabled=false;}};
   steer.onclick=async()=>{
    steer.disabled=remove.disabled=true;more.open=false;
    try{
-    const sending={...item,staged:false,stagedError:'',payload:{...item.payload,afterRun:false,steer:true}};await chatUpdateStaged(item,sending);
-    try{await chatDeliverRemembered(sending);showToast('Message sent.');}
-    catch(e){if(e.notSent){sending.payload={...sending.payload,steer:false,afterRun:false};sending.staged=true;sending.waitingForAgent=true;sending.stagedError='Agent needs input. Answer its questions or open Terminal, then steer.';await chatSaveDeliveryRecovery(sending);const all=chatReadDeliveryOutbox().filter(x=>x.payload.requestId!==sending.payload.requestId);all.push(sending);chatWriteDeliveryOutbox(all);}else showToast(e.message||'Delivery is unconfirmed. Check status before sending again.');}
+    await chatSteerStaged(item);
     refresh();
    }catch(e){status.textContent=e.message;steer.disabled=remove.disabled=false;}
   };

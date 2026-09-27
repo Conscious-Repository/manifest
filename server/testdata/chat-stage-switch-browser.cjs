@@ -130,10 +130,10 @@ const server=http.createServer((req,res)=>{
   // queued is accepted-not-started: a neutral line, never the live ✦ accent
   await page.getByText('Queued · accepted, not started',{exact:true}).waitFor();
   assert.equal(await page.getByText('✦ Queued…',{exact:true}).count(),0);
-  await page.getByPlaceholder('Queued — messages queue…',{exact:true}).waitFor();
+  await page.getByPlaceholder('Queued — can\'t steer; messages queue…',{exact:true}).waitFor();
   await page.evaluate(()=>{pendingFixture.session.deliveries.unshift({id:'running-request',state:'running'});renderChatTranscript(pendingFixture);renderChatComposer(pendingFixture.session);});
   await page.getByText('✦ Working…',{exact:true}).waitFor();
-  await page.getByPlaceholder('✦ Working — messages queue…',{exact:true}).waitFor();
+  await page.getByPlaceholder('✦ Working — can\'t steer; messages queue…',{exact:true}).waitFor();
   const interruptions=[];
   await page.route('**/api/agents/chat/alfred/sessions/a/interrupt',route=>{interruptions.push(route.request().postDataJSON());return route.fulfill({status:409,body:'Fixture interruption target changed'});});
   await page.locator('#chatComposer textarea').focus();
@@ -147,7 +147,7 @@ const server=http.createServer((req,res)=>{
   assert.deepEqual(interruptions,[{requestId:'running-request'}]);
   await page.evaluate(()=>{pendingFixture.session.deliveries[0].stopRequested=true;renderChatTranscript(pendingFixture);renderChatComposer(pendingFixture.session);});
   await page.getByText('✦ Interruption requested…',{exact:true}).waitFor();
-  await page.getByPlaceholder('✦ Interruption requested — messages queue…',{exact:true}).waitFor();
+  await page.getByPlaceholder('✦ Interruption requested — can\'t steer; messages queue…',{exact:true}).waitFor();
   assert.deepEqual(errors.filter(e=>!/EventSource|terminal\/events/.test(e)),[]);
   // Polling must notice metadata-only changes from another device, even when
   // second-resolution timestamps and the running state are unchanged.

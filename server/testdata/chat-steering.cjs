@@ -11,5 +11,23 @@ await p.evaluate(()=>reject=true);await p.getByRole('button',{name:'↳ Steer'})
 await p.evaluate(()=>reject=false);await p.getByRole('button',{name:'↳ Steer'}).click();await p.waitForFunction(()=>!document.querySelector('.chat-pending-message'));assert.equal(await p.evaluate(()=>chatReadDeliveryOutbox().length),0);assert.equal(await p.evaluate(()=>sends),2);assert.equal(await p.evaluate(()=>lastPayload.steer),true,'steer flag');
 await p.evaluate(()=>chatStageMessage('codex/abcdef123456','codex','/api/terminal/session/abcdef123456/input',{text:'Remove me'}));await render();await p.getByRole('button',{name:'Remove pending message'}).click();await p.waitForFunction(()=>!document.querySelector('.chat-pending-message'));assert.equal(await p.evaluate(()=>sends),2);
 await p.evaluate(()=>chatRememberDelivery('codex/abcdef123456','codex','/api/terminal/session/abcdef123456/input',{text:'Uncertain prior send'}));await assert.rejects(()=>p.evaluate(()=>chatStageMessage('codex/abcdef123456','codex','/api/terminal/session/abcdef123456/input',{text:'Uncertain prior send'})),/unconfirmed send/);
-console.log('PASS pending steering: persisted queue, edit, side context, blocked recovery, explicit dispatch, remove without send, mobile bounds.');
+// steer vs queue (2026-09-27): a message typed while the agent works is
+// staged first; Enter steers it where the adapter can, Tab queues it, an
+// adapter that cannot steer queues it and says so; ↑ pulls the newest back
+const scope='codex/abcdef123456',url='/api/terminal/session/abcdef123456/input';
+await p.evaluate(()=>{for(const x of chatReadDeliveryOutbox())chatForgetDelivery?.(x);window.chatTermKinds={codex:'Codex'};window.chatAgentLabel=a=>a;window.toasts=[];window.showToast=m=>toasts.push(m);window.sends=0;window.reject=false;});
+const staged=()=>p.evaluate(s=>chatReadDeliveryOutbox().filter(x=>x.staged&&x.scope===s).map(x=>x.payload.text),scope);
+const before=(await staged()).length;
+await p.evaluate(([s,u])=>chatStageOrSteer(s,'codex',u,{text:'Steer now'},{caps:{steer:'explicit',adapter:'herdr-codex'}}),[scope,url]);
+assert.equal(await p.evaluate(()=>sends),1,'Enter steers at once');assert.equal(await p.evaluate(()=>lastPayload.steer),true);assert.equal((await staged()).length,before,'a steered message is not left queued');
+await p.evaluate(([s,u])=>chatStageOrSteer(s,'codex',u,{text:'After this run'},{queue:true,caps:{steer:'explicit',adapter:'herdr-codex'}}),[scope,url]);
+assert.equal(await p.evaluate(()=>sends),1,'Tab queues, nothing sent');assert.ok((await staged()).includes('After this run'));
+await p.evaluate(([s,u])=>chatStageOrSteer(s,'codex',u,{text:'Legacy runtime'},{caps:{steer:'unsupported',adapter:'tmux-legacy'}}),[scope,url]);
+assert.equal(await p.evaluate(()=>sends),1,'an adapter that cannot steer is not steered');assert.ok((await staged()).includes('Legacy runtime'));
+assert.ok((await p.evaluate(()=>toasts)).some(t=>/Codex cannot steer a running turn \(tmux-legacy\)\. Queued/.test(t)),'says so in words');
+await p.evaluate(()=>{window.chatDraftKey='codex/abcdef123456';});
+await p.evaluate(s=>chatPullBackQueued(s,document.querySelector('#composer textarea')),scope);
+assert.equal(await p.locator('#composer textarea').inputValue(),'Legacy runtime','↑ pulls back the newest queued message');
+assert.ok(!(await staged()).includes('Legacy runtime'),'and takes it out of the queue');assert.equal(await p.evaluate(()=>sends),1);
+console.log('PASS pending steering: persisted queue, edit, side context, blocked recovery, explicit dispatch, remove without send, mobile bounds; Enter steers, Tab queues, cannot-steer said in words, ↑ pulls back.');
 }finally{await b.close()}})().catch(e=>{console.error(e);process.exit(1)});

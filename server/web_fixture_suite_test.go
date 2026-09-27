@@ -314,3 +314,8 @@ func TestFixtureChatTilesPanes(t *testing.T) {
 // the draft carried across an agent switch, starters, Ctrl+Alt+N, phone
 // (chat-new-flow.cjs).
 func TestFixtureChatNewFlow(t *testing.T) { runFixture(t, "chat-new-flow.cjs", true, false) }
+
+// Steer vs queue on a native agent: cannot-steer said in words, Tab queues,
+// ↑ pulls a queued message back (cancelled first), Tab moves focus when idle
+// (chat-steer-queue.cjs). The coding-agent side is in chat-steering.cjs.
+func TestFixtureChatSteerQueue(t *testing.T) { runFixture(t, "chat-steer-queue.cjs", true, false) }

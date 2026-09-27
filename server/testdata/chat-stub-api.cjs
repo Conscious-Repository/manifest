@@ -56,6 +56,9 @@ function makeStub(){
    const gm=p.match(/^\/api\/agents\/chat\/alfred\/sessions\/([^/]+)\/goal$/);
    if(gm&&!sessions[gm[1]])return json(res,404,{});
    if(gm&&req.method==='POST'){let b='';req.on('data',c=>b+=c);req.on('end',()=>{const v=JSON.parse(b||'{}'),s=sessions[gm[1]];s.goal=(v.goal||'').trim();s.goalState=s.goal?(v.state||'active'):'';json(res,200,{goal:s.goal,goalState:s.goalState});});return;}
+   // cancel a queued (not yet dispatched) instruction, as the server does
+   const cq=p.match(/^\/api\/agents\/chat\/alfred\/sessions\/([^/]+)\/cancel-queued$/);
+   if(cq&&req.method==='POST'){let b='';req.on('data',c=>b+=c);req.on('end',()=>{const v=JSON.parse(b||'{}'),s=sessions[cq[1]],d=s&&s.deliveries.find(x=>x.id===v.requestId&&x.state==='queued');if(!d)return json(res,409,{error:'not queued'});d.state='cancelled';s.updated=new Date().toISOString();json(res,200,{ok:true});});return;}
    const sm=p.match(/^\/api\/agents\/chat\/alfred\/sessions\/([^/]+)(\/stream|\/messages)?$/);
    if(sm&&!sessions[sm[1]])return json(res,404,{});
    if(sm&&sm[2]==='/stream'){res.writeHead(200,{'Content-Type':'text/event-stream','Cache-Control':'no-store'});res.write(':ok\n\n');streams.push(res);req.on('close',()=>streams.splice(streams.indexOf(res),1));return;}
