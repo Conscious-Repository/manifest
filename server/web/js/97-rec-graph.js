@@ -806,7 +806,7 @@ function rgMenu(id, ev) {
     b.onclick = () => { rgCloseMenu(); fn(); };
     menu.append(b);
   };
-  item("stand here", () => rgStand(id));
+  item("show their connections", () => rgStand(id));
   item("why connected", () => rgSelect(id));
   if (rgLens === "network" && typeof netOpen === "function" && netHas(id)) item("edit in the list", () => netOpen(id));
   if (node.kind === "bridge" && node.run && node.draft) {
@@ -1302,7 +1302,8 @@ function rgPanel(data) {
     edit.onclick = () => netOpen(node.id);
     acts.append(edit);
   }
-  const here = el("button", "pill light", "stand here");
+  const here = el("button", "pill light", "show their connections");
+  here.title = "redraw the graph around this person — who they connect to, a few hops out (double-click a dot does the same)";
   here.onclick = () => rgStand(node.id);
   acts.append(here);
   box.append(acts);

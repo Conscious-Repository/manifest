@@ -313,3 +313,27 @@ func TestNetworkListsContactsWithTheirSignalsWithoutRecruiting(t *testing.T) {
 		t.Fatalf("without recruiting, contacts still list read-only: %+v", carol)
 	}
 }
+
+// A link is undone by clearing it: the row and the contact draw as two again,
+// and nothing else (the note, the row's other fields) changes.
+func TestNetworkUnlinkSplitsTheRowBackApart(t *testing.T) {
+	s, vault := networkTestServer(t)
+	noteBefore := readFile(t, filepath.Join(vault, "Alice Ray.md"))
+	if err := s.recruiting.AddNetworkPerson(recruiting.NetworkPerson{Name: "Alice Ray", Ref: "alice ray", Type: "advisor"}); err != nil {
+		t.Fatal(err)
+	}
+	alice := networkGet(t, s)["Alice Ray"]
+	if w := recruitingPost(t, s, s.handleNetworkPerson, "/api/network/person/x", alice.ID, `{"set":{"ref":""}}`); w.Code != http.StatusOK {
+		t.Fatalf("%d %s", w.Code, w.Body.String())
+	}
+	got := networkGet(t, s)
+	if _, two := got["Alice Ray#2"]; !two {
+		t.Fatal("clearing the link did not split the row from the contact")
+	}
+	if a := got["Alice Ray"]; a.Kind != "advisor" && got["Alice Ray#2"].Kind != "advisor" {
+		t.Fatal("unlinking lost the row's own fields")
+	}
+	if readFile(t, filepath.Join(vault, "Alice Ray.md")) != noteBefore {
+		t.Fatal("unlinking touched the vault note")
+	}
+}

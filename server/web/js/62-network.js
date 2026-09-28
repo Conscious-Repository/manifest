@@ -21,7 +21,7 @@
 let netCache = null;            // {people, kinds, tags, contacts, fundraising, team}
 let netQuery = "";
 let netKind = "";               // "" | hire | advisor | expert | connector | team
-let netSource = "";             // "" | kept | contact | investor | team
+let netSource = "";             // "" | sweep | contact | investor | team
 let netTag = "";                // a tag's TopicID-ish lowercase text
 let netSel = null;              // selected person id
 let netGraphStale = false;      // an edit landed since the graph last loaded
@@ -37,7 +37,17 @@ function netSetViewMode(v) {
 }
 
 const NET_KIND_WORD = { hire: "future hire", advisor: "advisor", expert: "expert", connector: "connector" };
-const NET_SOURCE_WORD = { kept: "kept", contact: "contacts", investor: "investors", team: "team" };
+const NET_SOURCE_WORD = { sweep: "from sweeps", contact: "contacts", investor: "investors", team: "team" };
+
+// Where a person comes from, in words you'd use. "sweep" = someone you kept
+// from a recruiting sweep. The internal "kept" source only means "has a
+// network record" (every edited contact gets one, and the install wrote two
+// for you and RJ), so it is never shown as a filter or a label.
+function netFrom(p) {
+  const out = (p.sources || []).filter((s) => s !== "kept");
+  if (p.source && p.source !== "owner") out.unshift("sweep");
+  return out;
+}
 
 // Routes: #/network · #/network/cold · #/network/review · #/network/<id>
 // where <id> is a row id (contact/<key>, aion-net/…, team/<INI>). The old
@@ -124,7 +134,7 @@ function netVisible() {
     if (p.archived) return false;
     if (netLens === "cold" && !p.cold) return false;
     if (netKind && p.kind !== netKind) return false;
-    if (netSource && !(p.sources || []).includes(netSource)) return false;
+    if (netSource && !netFrom(p).includes(netSource)) return false;
     if (netTag && !(p.tags || []).some((t) => netTagKey(t) === netTag)) return false;
     if (!q) return true;
     return [p.name, p.org, p.title, p.role, p.location, (p.tags || []).join(" "), (p.firms || []).join(" ")]
@@ -282,8 +292,8 @@ function netFacets() {
 
   const srcs = el("div", "net-facet-row");
   srcs.append(el("span", "net-facet-label", "from"));
-  ["kept", "contact", "investor", "team"].forEach((s) => {
-    const n = people.filter((p) => (p.sources || []).includes(s)).length;
+  ["sweep", "contact", "investor", "team"].forEach((s) => {
+    const n = people.filter((p) => netFrom(p).includes(s)).length;
     if (!n) return;
     srcs.append(chip(NET_SOURCE_WORD[s], netSource === s, () => { netSource = netSource === s ? "" : s; netPaint(); }, n));
   });
@@ -354,7 +364,7 @@ function netRow(p) {
     side.append(el("span", "net-when", (p.neglectBasis === "meetings" ? "met " : "mentioned ") + p.daysSince + "d ago" +
       (p.medianGap ? " · usually every " + p.medianGap + "d" : "")));
   } else side.append(el("span", "net-when" + (rec ? "" : " none"), rec ? rec.how + " " + netShortDate(rec.date) : "—"));
-  const srcs = (p.sources || []).filter((s) => s !== "contact");
+  const srcs = netFrom(p).filter((s) => s !== "contact");
   if (srcs.length) side.append(el("span", "net-src", srcs.map((s) => NET_SOURCE_WORD[s] || s).join(" · ")));
   if ((p.sameName || []).length) side.append(el("span", "net-src net-same", "same name ×" + (p.sameName.length + 1)));
   row.append(side);
@@ -541,7 +551,7 @@ function netPaintBuild(p, insp) {
     if (!other) return;
     const box = el("div", "net-same-box");
     box.append(el("span", "net-insp-hint", "also in your " +
-      (other.sources || []).map((s) => NET_SOURCE_WORD[s] || s).join(" + ") + " as " + other.name));
+      netFrom(other).map((s) => NET_SOURCE_WORD[s] || s).join(" + ") + " as " + other.name));
     const yes = el("button", "pill light", "same person — link");
     yes.title = "writes one explicit link; a wrong link can be undone by clearing it";
     yes.onclick = async () => {
@@ -560,6 +570,24 @@ function netPaintBuild(p, insp) {
     box.append(yes);
     insp.append(box);
   });
+
+  // LINKED — when one row joins two identities (a contact note and a team
+  // member, or a sweep and a contact), each link can be undone. A wrong link
+  // is one click to fix; nothing was merged but the link itself.
+  const ids = [];
+  if (p.editable && p.contactKey) ids.push(["contact", p.contactKey, { ref: "" }]);
+  if (p.editable && p.team) ids.push(["team", p.team, { team: "" }]);
+  if (ids.length > 1 || (ids.length && p.source && p.source !== "owner")) {
+    const box = el("div", "net-same-box");
+    box.append(el("span", "net-insp-hint", "one person across"));
+    ids.forEach(([what, val, clear]) => {
+      const b = el("button", "net-sug", what + " " + val + " ✕");
+      b.title = "not the same person — undo this link (nothing else changes)";
+      b.onclick = async () => { b.disabled = true; if (await netSave(p, clear)) { showToast("unlinked"); netCache = null; showNetwork(); } else b.disabled = false; };
+      box.append(b);
+    });
+    insp.append(box);
+  }
 
   // where they live elsewhere
   const links = el("div", "net-links");
