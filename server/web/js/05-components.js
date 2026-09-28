@@ -405,7 +405,7 @@ function makeDirtyBar(host, onSave, onDiscard) {
 }
 
 // ---- statusDot: the quiet dot as a library function — muted when off,
-// accent when on (the AION publish rail's per-section dirty dots). ----
+// accent when on. ----
 function statusDot(on, title) {
   const d = el("span", "status-dot" + (on ? " on" : ""));
   if (title) d.title = title;

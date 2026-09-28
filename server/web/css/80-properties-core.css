@@ -580,8 +580,6 @@
 .pp3-op-sub { display: flex; flex-wrap: wrap; gap: var(--sp-3); padding: 0 var(--sp-4) var(--sp-2); }
 .pp3-op-chip { font-family: var(--mono); font-size: var(--fs-2xs); color: var(--base-40); background: var(--base-05); border-radius: var(--radius-lg); padding: var(--sp-1) var(--sp-3); }
 
-/* PUBLISH in the RE rail foot — the aion button shape, rail-sized */
-.re-publish-btn { margin-top: var(--sp-3); width: 100%; justify-content: center; }
 
 /* the money row's phone meta line — desktop keeps the 4-column grid instead */
 .re-money-meta { display: none; }

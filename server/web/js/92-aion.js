@@ -16,7 +16,6 @@ let aionRevision = "";
 let aionRevisionETag = "";
 let aionPollDelay = 3000;
 let aionPollTimer = null;
-let aionWarningsOpen = false;
 
 function scheduleAionPoll(delay) {
   if (aionPollTimer) clearTimeout(aionPollTimer);
@@ -65,7 +64,9 @@ async function loadAion() {
 }
 
 function renderAion() {
-  renderAionRail();
+  // the portals are live-synced, so there is no sync status to show here;
+  // only RECRUITING writes a header meta, so clear it for every other view
+  if (els.aionMeta && aionMode !== "recruiting") els.aionMeta.textContent = "";
   if (typeof railSetCount === "function") railSetCount("aion", aionOpenCount());
   const host = els.aionBody;
   const recruitingFocus = document.activeElement?.dataset?.recNav || "";
@@ -102,47 +103,6 @@ async function aionPost(url, body, okMsg) {
     if (okMsg) showToast(okMsg);
     await loadAion();
   } catch (e) { showToast(String(e.message || e).slice(0, 120)); }
-}
-
-function renderAionRail() {
-  const rail = els.aionLiveRail;
-  rail.innerHTML = "";
-  if (els.aionView.hidden) return;
-  const sync = (aionCache && aionCache.sync) || {};
-  const warningCount = (sync.warnings || []).length;
-  if (els.aionMeta) {
-    els.aionMeta.textContent = sync.stale
-      ? "SYNC DEGRADED · serving " + (sync.servingRevision || "last good")
-      : "LIVE" + (sync.lastGoodAt ? " · " + fmtWhen(sync.lastGoodAt) : "") + (warningCount ? " · " + warningCount + " WARNING" + (warningCount === 1 ? "" : "S") : "");
-  }
-  const dot = el(warningCount ? "button" : "span", "aion-status " + (sync.stale ? "alarm" : "active"), sync.stale ? "STALE" : (warningCount ? "LIVE · WARN" : "LIVE"));
-  if (sync.error || warningCount) dot.title = sync.error || sync.warnings.join("\n");
-  if (warningCount) {
-    dot.type = "button";
-    dot.setAttribute("aria-expanded", String(aionWarningsOpen));
-    dot.setAttribute("aria-label", warningCount + " Aion warning" + (warningCount === 1 ? "" : "s") + "; show details");
-    dot.onclick = () => { aionWarningsOpen = !aionWarningsOpen; renderAionRail(); };
-  }
-  rail.append(dot);
-  if (aionWarningsOpen && warningCount) {
-    const panel = el("div", "aion-warning-panel");
-    panel.append(el("div", "aion-warning-head", warningCount + " contract warning" + (warningCount === 1 ? "" : "s")));
-    sync.warnings.forEach((message) => {
-      const row = el("button", "aion-warning-row", message);
-      row.type = "button";
-      const id = message.split(":", 1)[0];
-      row.onclick = () => {
-        if ((aionCache.backlog || []).some((it) => it.id === id)) {
-          aionWarningsOpen = false;
-          aionSelId = id;
-          if (location.hash !== "#/aion") location.hash = "#/aion";
-          else renderAion();
-        }
-      };
-      panel.append(row);
-    });
-    rail.append(panel);
-  }
 }
 
 async function pollAionLive() {

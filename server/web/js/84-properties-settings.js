@@ -203,14 +203,14 @@ function renderAssumptionsPanel(pane) {
     try {
       await putJSON("/api/realestate/assumptions", { values });
       reAssumptionsCache = null;
-      showToast("Assumptions saved — PUBLISH pushes them to the portal engine");
+      showToast("Assumptions saved — portal.ooda.group picks them up live");
       renderREsettings();
     } catch (e) { showToast("Couldn't save — " + (e.message || "")); }
   };
   saveBar.append(save);
   pane.append(saveBar);
   pane.append(el("div", "re-foot-note",
-    "system/realestate/assumptions.md → published to oodagroup/src/engine/defaults.js"));
+    "system/realestate/assumptions.md · portal.ooda.group reads these live"));
 }
 
 // ---- flat registries (Partners · Contractors · Lenders · Tenants) ----

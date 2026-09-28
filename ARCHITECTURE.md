@@ -293,6 +293,14 @@ single-writer. (The 2026-08-24 amendment above widens what that surface may
 write and where it lands, and leaves the authorization rules themselves
 untouched.)
 
+**2026-09-27 — no PUBLISH gesture anywhere.** Owner decision: both portals
+(portal.aion.bio and portal.ooda.group) read live, so the Real Estate
+deals.json/defaults.js publisher, its receipts and the legacy
+`publish-deals` endpoint are removed, along with the cockpit's AION
+"LIVE · WARN" rail and the Real Estate "PUBLISH" rail. The AION live
+projection, its last-known-good snapshot and its FEED signal are unchanged;
+only the cockpit's status chrome is gone.
+
 **2026-08-19 — approved goals placement (the first knowledge-zone proposal
 lane).** Owner decision (telegram→feed goals plan, approved 2026-08-19): a
 user-CONFIRMED `goals-item` proposal may write `goals.md` — exactly one

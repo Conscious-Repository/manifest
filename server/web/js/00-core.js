@@ -43,8 +43,6 @@ const els = {
   propertiesView: document.getElementById("propertiesView"),
   propertyBoard: document.getElementById("propertyBoard"),
   reToggle: document.getElementById("reToggle"),
-  reMeta: document.getElementById("reMeta"),
-  rePublishRail: document.getElementById("rePublishRail"),
   propertyPage: document.getElementById("propertyPage"),
   propertySettings: document.getElementById("propertySettings"),
   propertyMapWrap: document.getElementById("propertyMapWrap"),
@@ -56,7 +54,6 @@ const els = {
   aionMeta: document.getElementById("aionMeta"),
   aionToggle: document.getElementById("aionToggle"),
   aionBody: document.getElementById("aionBody"),
-  aionLiveRail: document.getElementById("aionLiveRail"),
   // universal note view
   noteView: document.getElementById("noteView"),
   noteTitle: document.getElementById("noteTitle"),

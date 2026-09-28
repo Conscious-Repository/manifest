@@ -36,8 +36,8 @@
 .approval-card.pinned { border-color: var(--base-25); border-left: 2px solid var(--accent); box-shadow: none; }
 .appr-agent { font-family: var(--mono); font-size: var(--fs-xs); color: var(--muted); }
 .appr-body { font-family: var(--sans); font-size: var(--fs-md); color: var(--streak-ink); line-height: 1.5; white-space: pre-wrap; background: var(--streak-bg); border-radius: var(--radius); padding: var(--sp-5) var(--sp-6); margin: 0; overflow-x: auto; }
-/* .appr-actions stays for the one non-card consumer left (the RE publish
-   modal, 85-re-domain.js) — every approval card's own row is .feed-actions now. */
+/* every approval card's own row is .feed-actions now; .appr-actions is the
+   generic action row the phone band still sizes (95-mobile.css). */
 .appr-actions { display: flex; gap: var(--sp-4); }
 
 /* ---- actionable approvals: apply-path chip + current→proposed diff ---- */

@@ -170,7 +170,7 @@ type Server struct {
 	reIntakeRun       func(context.Context, string, reintake.Config, hermes.DutyAuthority, reintake.ProductionContract) (approvals.Proposal, reintake.ProductionReceipt, error)
 	reFiles           *realestate.FileStore // CAS document store (overhaul §3.3). Nilable.
 	bgParcelsPath     string                // <dataDir>/realestate/bgParcels.json (map background layer)
-	rePortalPath      string                // ooda site checkout for the deals.json publish ("" = disabled)
+	rePortalPath      string                // ooda site checkout (study parcels for the map; "" = disabled)
 	// studyFallback is where the parcel-study geojson lives on a host with no
 	// re-portal checkout. The checkout is preferred (studyParcelsPath) so the
 	// snapshot tracks the repo instead of needing a hand copy per deploy.
@@ -240,8 +240,7 @@ type Server struct {
 	// Real-estate decision log (system/realestate/backlog.md — an aion.Store
 	// pointed at the RE root; backlog methods ONLY). Nilable.
 	re          *aion.Store
-	aionDataDir string      // live cache/journal, plus legacy/RE operational records
-	rePublishes *publishLog // RE publish receipts
+	aionDataDir string // live cache/journal, plus legacy/RE operational records
 	// aionSink receives vault-relative paths to consider for extraction —
 	// the post-confirm nudge (aion.ExtractSink satisfies it). Nilable.
 	aionSink interface{ Notify([]string) }
@@ -945,7 +944,6 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/deals/{slug}/field", s.handleDealField)
 	mux.HandleFunc("POST /api/properties/{slug}/ledger/mutate", s.handleLedgerMutate)
 	mux.HandleFunc("POST /api/properties/{slug}/work", s.handlePropertyWork)
-	mux.HandleFunc("POST /api/realestate/publish-deals", s.handlePublishDeals)
 	mux.HandleFunc("GET /api/realestate/assumptions", s.handleAssumptionsGet)
 	// real-estate decision log (the aion-mirror domain half)
 	mux.HandleFunc("GET /api/re/backlog", s.handleReBacklog)
@@ -957,9 +955,6 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/re/backlog/delete/{id...}", s.handleReBacklogDelete)
 	mux.HandleFunc("POST /api/re/backlog/decide/{id...}", s.handleReBacklogDecide)
 	mux.HandleFunc("POST /api/re/backlog/{legacy...}", s.handleReBacklogLegacy)
-	mux.HandleFunc("GET /api/re/publish/preview", s.handleRePublishPreview)
-	mux.HandleFunc("POST /api/re/publish", s.handleRePublish)
-	mux.HandleFunc("POST /api/re/publish/ack/{id}", s.handleRePublishAck)
 	mux.HandleFunc("PUT /api/realestate/assumptions", s.handleAssumptionsPut)
 	mux.HandleFunc("POST /api/realestate/contractors/{slug}", s.handleContractorTrade)
 	// contracts + CAS + contractor surfaces (overhaul pass 2)

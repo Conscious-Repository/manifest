@@ -308,7 +308,7 @@ function reBacklogTaskRow(it) {
   const sel = reBacklogSelId === it.id && reBacklogSelSrc === "re";
   const row = el("div", "aion-task-row" + (done ? " done" : "") + (alarmed ? " alarm" : "") + (sel ? " sel" : ""));
   const c = el("button", "aion-check" + (done ? " off" : ""), done ? "●" : "○");
-  c.title = done ? "unmark — stays in place until PUBLISH" : "mark done (stays here until PUBLISH)";
+  c.title = done ? "unmark done" : "mark done (held here for this session so it is easy to undo)";
   c.onclick = (e) => {
     e.stopPropagation();
     if (done) reFreshDone.delete(it.id); else reFreshDone.add(it.id);
@@ -2132,7 +2132,7 @@ async function renderDealPage(slug) {
   host.append(totals);
 
   host.append(el("div", "re-foot-note",
-    "screening numbers (tier 1) — the portal runs the full engine on PUBLISH; overrides live on the deal's source.json"));
+    "screening numbers (tier 1) — portal.ooda.group runs the full engine live; overrides live on the deal's source.json"));
 
   // bank-ready checklist — derived from what the deal actually has
   const check = el("div", "re-deal-check");
@@ -2141,7 +2141,6 @@ async function renderDealPage(slug) {
     ["every member has units + rent inputs", members.length > 0 && members.every((p) => reScreeningCalc(p).complete)],
     ["deal note exists", true],
     ["DSCR ≥ 1.25 at globals", dscr >= 1.25],
-    ["published to the portal", false],
   ];
   items.forEach(([label, ok]) => {
     const li = el("div", "re-check-row" + (ok ? " ok" : ""));
@@ -2154,7 +2153,7 @@ async function renderDealPage(slug) {
 // ---- tier-1 screening math (spec §3 property page: computed NOI · ARV ·
 // DSCR). Deliberately the MINIMAL mirror of calcDeal's core — go/no-go
 // numbers, labeled as screening; the portal engine remains the pro-forma
-// truth on publish. ----
+// truth. ----
 let reAssumptionsCache = null;
 function reAssumptions() { return reAssumptionsCache || {}; }
 async function loadReAssumptions() {
@@ -2173,70 +2172,4 @@ async function loadReAssumptions() {
 // reSrcNum and reDebtService are globals from there too.
 function reScreeningCalc(p) {
   return reScreen(p, p.__source || {}, reScreeningAssumptions(reAssumptions(), p.__source || {}));
-}
-
-// ---- PUBLISH → oodagroup — the portal export effector (RE spec §4) ----
-// The AION gesture: PREVIEW (nothing written) → CONFIRM carrying the preview
-// hash → one commit, pushed. Two contract paths only: deals.json + defaults.js.
-
-async function openRePublishPanel() {
-  if (document.getElementById("rePublishModal")) return;
-  const overlay = el("div", "cmdbar");
-  overlay.id = "rePublishModal";
-  const back = el("div", "cmdbar-backdrop");
-  const panel = el("div", "cmdbar-card aion-publish-panel");
-  overlay.append(back, panel);
-  document.body.append(overlay);
-  const close = () => overlay.remove();
-  back.onclick = close;
-  panel.append(el("div", "appr-diff-label", "PUBLISH → oodagroup — preview"));
-  const bodyHost = el("div", "aion-publish-body");
-  panel.append(bodyHost, el("div", "aion-publish-note", "fetching preview…"));
-  let prev;
-  try { prev = await (await fetch("/api/re/publish/preview")).json(); }
-  catch (e) { panel.lastChild.textContent = "preview failed: " + e; return; }
-  panel.lastChild.remove();
-
-  if ((prev.blockers || []).length) {
-    prev.blockers.forEach((b) => bodyHost.append(el("div", "appr-blocked", "⚠ " + b)));
-    panel.append(pillLight("close", close));
-    return;
-  }
-  const changed = (prev.files || []).filter((f) => f.status !== "unchanged");
-  if (!changed.length && !(prev.unpushed > 0)) {
-    bodyHost.append(el("div", "aion-publish-note", "nothing to publish — the checkout matches the record."));
-    panel.append(pillLight("close", close));
-    return;
-  }
-  if (prev.unpushed > 0) {
-    bodyHost.append(el("div", "aion-publish-note", prev.unpushed + " unpushed commit(s) — publish completes the push."));
-  }
-  if ((prev.kept || []).length) {
-    // template deals with no vault record pass through verbatim — say so
-    bodyHost.append(el("div", "aion-publish-note", "kept as-is (no vault record): " + prev.kept.join(", ")));
-  }
-  changed.forEach((f) => {
-    const head = el("div", "aion-pub-file");
-    head.append(el("code", "", f.path), el("span", "aion-pub-status " + f.status, f.status));
-    bodyHost.append(head);
-    if (f.diff) bodyHost.append(collapsibleBlock(diffView(f.diff), f.diff.split("\n").length));
-  });
-  const actions = el("div", "appr-actions");
-  const confirmBtn = pill("CONFIRM — commit + push", async () => {
-    confirmBtn.disabled = true;
-    try {
-      const r = await fetch("/api/re/publish", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ hash: prev.hash }) });
-      const res = await r.json().catch(() => ({}));
-      if (r.status === 409) { showToast("Vault changed since preview — re-open PUBLISH"); close(); return; }
-      if (!r.ok || res.ok === false) {
-        showToast("Publish failed at " + (res.stage || "?") + (res.commit ? " (commit " + res.commit.slice(0, 7) + " kept locally)" : ""));
-      } else {
-        showToast("Published " + (res.commit || "").slice(0, 7) + " → oodagroup");
-      }
-      close();
-      renderProperties();
-    } finally { confirmBtn.disabled = false; }
-  });
-  actions.append(confirmBtn, pillLight("cancel", close));
-  panel.append(actions);
 }

@@ -4,14 +4,13 @@
 // owner-grouped tasks (aion's backlog shape); PORTFOLIO folds in Deals;
 // CONTRACTORS is the counterparty ledger (graduated out of the Settings
 // registries, owner call 2026-08-18); SETTINGS is the org-style registry
-// sub-rail. PUBLISH rides the breadcrumb. Decision log = system/realestate/
+// sub-rail. Decision log = system/realestate/
 // backlog.md, the aion mirror. Bare #/properties = BACKLOG (like #/aion).
 let propertyCache = [];
 let dealCache = [];
 let templateCache = [];
 let holdingsCache = {};      // entity name → {owned, acquiring} (derived server-side)
-let reBacklogCache = null;   // /api/re/backlog — {items, goalsArea, publish}
-let rePortalEnabled = false; // deals.json publish configured server-side
+let reBacklogCache = null;   // /api/re/backlog — {items, goalsArea}
 let propMode = "backlog"; // backlog | portfolio | goals | money | contractors | map | settings | page | deal | contract | contractor
 let propSlug = "";    // the open property (page mode)
 let propDealSlug = ""; // the open deal (deal mode)
@@ -65,29 +64,6 @@ function rePropertyLink(slug, label, cls = "") {
   return link;
 }
 
-// renderRePublishRail — mirror renderAionRail: the deals.json PUBLISH badge in
-// the page header actions (next to the tabs), plus the header's status meta.
-function renderRePublishRail() {
-  const rail = els.rePublishRail;
-  if (!rail) return;
-  rail.innerHTML = "";
-  if (els.propertiesView.hidden) return;
-  const pub = (reBacklogCache && reBacklogCache.publish) || {};
-  if (els.reMeta) {
-    els.reMeta.textContent = activePortfolio().length + " in portfolio · " + propertyCache.filter((p) => !p.hidden && !(p.control === "owned" || p.entity)).length + " research";
-  }
-  if (!pub.configured) return;
-  const btn = el("button", "aion-publish-btn re-publish-btn", "PUBLISH");
-  const n = Object.values(pub.dirty || {}).filter(Boolean).length;
-  if (n) {
-    const badge = el("span", "aion-publish-badge", String(n));
-    badge.title = n + " contract file" + (n === 1 ? "" : "s") + " with unpublished changes";
-    btn.append(badge);
-  }
-  btn.onclick = openRePublishPanel;
-  rail.append(btn);
-}
-
 async function loadProperties() {
   try {
     const d = await (await fetch("/api/properties")).json();
@@ -95,7 +71,6 @@ async function loadProperties() {
     dealCache = d.deals || [];
     templateCache = d.templates || [];
     holdingsCache = d.holdings || {};
-    rePortalEnabled = !!d.rePortal;
   } catch (e) { propertyCache = []; dealCache = []; templateCache = []; holdingsCache = {}; }
 }
 
@@ -112,7 +87,6 @@ async function loadPropTodosMeta() {
 async function renderProperties() {
   await Promise.all([loadProperties(), loadPropTodosMeta(), loadReBacklog()]);
   renderReToggle();
-  renderRePublishRail();
   // the WORK rail counts WORK — open tasks + open decisions, the same
   // derivation the BACKLOG page renders from (reOpenCount in 85-re-domain.js)
   if (typeof railSetCount === "function") railSetCount("properties", reOpenCount());
@@ -157,7 +131,7 @@ function openTodoCount(p) {
 }
 
 // (renderPropRail deleted — the left rail became the AION-style top tab-bar;
-//  #reToggle + renderRePublishRail replace it. Deals live in Portfolio, the
+//  #reToggle replaces it. Deals live in Portfolio, the
 //  per-property list is redundant with the Portfolio board, Parcels is gone.)
 
 // projMoney: one property's plan-vs-spend numbers.

@@ -349,8 +349,7 @@ function recPendingDrafts() {
   }, 0);
 }
 
-// recHeaderMeta — RECRUITING owns its own header meta per view; the AION
-// backlog's "LIVE · …" contract means nothing here.
+// recHeaderMeta — RECRUITING owns its own header meta per view.
 function recHeaderMeta() {
   const cs = recCache.candidates || [];
   const net = recCache.network || {};
@@ -413,10 +412,8 @@ async function renderAionRecruiting(host, focusNav = "") {
     const inspecting = recView === "board" && recPeopleFacet !== "known" &&
       (recCache.candidates || []).some((c) => c.id === recSel && recVisible(c));
     wrap.classList.toggle("rec-wide", !inspecting);
-    // the AION header's LIVE meta + dot describe the backlog engine —
-    // RECRUITING overwrites them with its own derived meta (problem 13)
+    // RECRUITING is the one AION view with a header meta (problem 13)
     if (els.aionMeta) els.aionMeta.textContent = recHeaderMeta();
-    if (els.aionLiveRail) els.aionLiveRail.innerHTML = "";
     if (window.mf && window.mf.phone()) {
       if (inspecting) {
         window.mfSheet.open((body) => paintInspector(body), {
