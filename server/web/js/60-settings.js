@@ -781,6 +781,25 @@ function renderSettingsDisplay(pane) {
   th.append(...btns, el("span", "set-kv-val dim", "this browser only"));
   row("manifest.theme", th);
 
+  // 5b. jarvis style (manifest.jarvisStyle) — cinematic (the MCU HUD layer,
+  //     css/98-jarvis-hud.css) | classic (jarvis as it was); the rollback
+  //     switch for the cinematic pass, this browser only.
+  if (typeof setJarvisStyle === "function") {
+    const js = el("span", "set-kv-val");
+    const curStyle = jarvisStylePref();
+    const styleBtns = ["cinematic", "classic"].map((name) => {
+      const b = pillLight(name, () => {
+        setJarvisStyle(name);
+        styleBtns.forEach((x) => x.classList.toggle("on", x.textContent === name));
+        showToast("Jarvis style: " + name + (themePref() === "jarvis" ? "" : " (applies when the theme is jarvis)"));
+      });
+      if (name === curStyle) b.classList.add("on");
+      return b;
+    });
+    js.append(...styleBtns, el("span", "set-kv-val dim", "jarvis theme only"));
+    row("manifest.jarvisStyle", js);
+  }
+
   pane.append(g);
 }
 

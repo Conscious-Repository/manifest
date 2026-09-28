@@ -16,7 +16,7 @@
   <!-- theme (manifest.theme, this browser's preference): set data-theme on <html>
        BEFORE the stylesheets parse so the JARVIS override block applies on the
        first paint — 99-boot's setTheme() owns it from there. Default = no attr. -->
-  <script>try { var t = localStorage.getItem("manifest.theme"); if (t && t !== "default") document.documentElement.setAttribute("data-theme", t); } catch (e) {}</script>
+  <script>try { var t = localStorage.getItem("manifest.theme"); if (t && t !== "default") document.documentElement.setAttribute("data-theme", t); if (t === "jarvis" && localStorage.getItem("manifest.jarvisStyle") !== "classic") document.documentElement.setAttribute("data-hud", "cinematic"); } catch (e) {}</script>
   <!-- Styles (§11): core tokens first, then the shared primitives, then one
        file per tab — cascade order matters, keep it aligned with js/. -->
   <link rel="stylesheet" href="css/00-core.css?v=20260911-workbench-release" />
@@ -53,6 +53,8 @@
   <link rel="stylesheet" href="css/97-rec-graph.css?v=8" />
   <!-- phone band (<860px) only — every rule is width- or hover-gated; desktop untouched -->
   <link rel="stylesheet" href="css/95-mobile.css?v=20260926-verdict-row" />
+  <!-- jarvis · cinematic HUD: inert unless html[data-hud="cinematic"] (Settings › Display › jarvis style) -->
+  <link rel="stylesheet" href="css/98-jarvis-hud.css?v=20260927-mk1" />
 </head>
 <body class="booting">
   <!-- the boot veil (00-core.css) hides the static Day skeleton until 99-boot
@@ -614,6 +616,7 @@
   <script src="js/96-aion-recruiting.js?v=20260927-reject"></script>
   <script src="js/97-rec-graph.js?v=20260927-ranked"></script>
   <script src="js/98-mobile.js?v=20260921-chat-fast"></script>
+  <script src="js/98-jarvis-hud.js?v=20260927-mk1"></script>
   <script src="js/99-boot.js?v=20260927-network"></script>
   <script>
     if ("serviceWorker" in navigator) {

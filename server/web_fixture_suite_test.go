@@ -356,3 +356,8 @@ func TestFixtureChatSingleViewPass2(t *testing.T) {
 // earlier turns keep the place, step output on demand, long pastes fold
 // (chat-snappy.cjs).
 func TestFixtureChatSnappy(t *testing.T) { runFixture(t, "chat-snappy.cjs", true, false) }
+
+// The jarvis cinematic HUD is a clean, reversible layer: only in jarvis,
+// from first paint; classic rolls it back; boot once, never with reduced
+// motion; AA contrast (jarvis-hud.cjs).
+func TestFixtureJarvisHUD(t *testing.T) { runFixture(t, "jarvis-hud.cjs", true, false) }
