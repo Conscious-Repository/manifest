@@ -92,6 +92,9 @@ type Service struct {
 
 	nowFn func() time.Time
 	mu    sync.Mutex
+	// laterMu serialises writes to extrinsic/later.md. It is its own lock so
+	// a slow page being resolved for the queue never holds up a poll.
+	laterMu sync.Mutex
 }
 
 // VaultIO is the injected vault access. Both halves are required; a Service
@@ -250,7 +253,10 @@ func (s *Service) Subscribe(ctx context.Context, input, title, list, mirror stri
 	// reads to the scanner exactly like a pasted key (live refusal
 	// 2026-09-03: drss.io/rss/naddr1…). Scrub them first; the guard stands
 	// for everything else.
-	if findings := secrets.Scan(nostrIDRe.ReplaceAllString(feedURL, "nostr-id")); len(findings) > 0 {
+	// YouTube channel ids (channel_id=UC + 22 characters) are public
+	// addresses of the same kind, printed on every channel page.
+	scrubbed := youtubeChannelIDRe.ReplaceAllString(nostrIDRe.ReplaceAllString(feedURL, "nostr-id"), "channel_id=youtube-channel")
+	if findings := secrets.Scan(scrubbed); len(findings) > 0 {
 		return Subscription{}, errors.New(
 			"that URL carries what looks like a secret, and the subscription list lives in your vault — " +
 				"subscribe to the public feed instead and sign in to the site to unlock paid posts")
@@ -346,6 +352,54 @@ func (s *Service) UpdateSub(in Subscription) error {
 	return s.save(d)
 }
 
+// SetSubSwitches flips a subscription's yes/no settings. A nil switch is left
+// as it is, so the manage panel can send only the one it changed.
+func (s *Service) SetSubSwitches(id string, pays, shorts *bool) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	d, err := s.doc()
+	if err != nil {
+		return err
+	}
+	cur, ok := d.Find(id)
+	if !ok {
+		return fmt.Errorf("no subscription %q", id)
+	}
+	if pays != nil {
+		cur.Pays = *pays
+	}
+	if shorts != nil {
+		cur.Shorts = *shorts
+	}
+	if !d.Update(cur) {
+		return fmt.Errorf("no subscription %q", id)
+	}
+	return s.save(d)
+}
+
+// RenameStream renames a stream: its heading in extrinsic/feeds.md is
+// rewritten in place, so every source under it moves with it and nothing
+// else in the file changes.
+func (s *Service) RenameStream(from, to string) error {
+	from, to = strings.TrimSpace(from), strings.TrimSpace(to)
+	if from == "" || to == "" {
+		return errors.New("name the stream")
+	}
+	if strings.EqualFold(from, ungrouped) {
+		return errors.New("unfiled sources are not a stream — move them into one instead")
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	d, err := s.doc()
+	if err != nil {
+		return err
+	}
+	if !d.RenameGroup(from, to) {
+		return fmt.Errorf("no stream %q", from)
+	}
+	return s.save(d)
+}
+
 // Unsubscribe removes the line and forgets the cache. Curated notes stay:
 // unsubscribing is not un-reading, and those notes are the owner's.
 func (s *Service) Unsubscribe(id string) error {
@@ -378,6 +432,9 @@ func (s *Service) Start(ctx context.Context) {
 		// excerpt-only — see BackfillCurated. Before the ticker: the public
 		// feed should carry full bodies from the first request after boot.
 		s.BackfillCurated(ctx)
+		// Once ever: re-ask Substack about posts an older build labelled a
+		// preview by scraping the page (see HealSubstackPreviews).
+		s.HealSubstackPreviews(ctx)
 		t := time.NewTicker(tickEvery)
 		defer t.Stop()
 		for {
@@ -700,6 +757,19 @@ type Card struct {
 	Episode   int    `json:"episode,omitempty"`
 	Season    int    `json:"season,omitempty"`
 	Image     string `json:"image,omitempty"`
+
+	// Embed is the allowlisted player descriptor for a video.
+	Embed string `json:"embed,omitempty"`
+
+	// The Watch Later fields. Later marks a card that is in the queue — the
+	// queue's own card, or a feed card saved to it. LaterID is the queue
+	// line's id (what done/remove take); Saved is the date it was queued.
+	// Pending is a queue card whose piece is still being read from its URL.
+	Later     bool   `json:"later,omitempty"`
+	LaterID   string `json:"laterId,omitempty"`
+	LaterDone bool   `json:"laterDone,omitempty"`
+	Saved     string `json:"saved,omitempty"`
+	Pending   bool   `json:"pending,omitempty"`
 }
 
 // readingWPM is the conventional silent-reading rate. The number on the card
@@ -709,11 +779,38 @@ const readingWPM = 235
 // Query is what the lane is being asked for. A struct rather than four
 // positional arguments, which is where this was heading.
 type Query struct {
-	View string // "unread" (default) | "all" — all means everything not dismissed
-	List string // group filter
+	View string // "unread" (default) | "all" | "today" | "later" | "later-done"
+	List string // stream filter
 	Sub  string // one subscription's history
 	Q    string // free text over title, excerpt, author, source
+	Type string // "" | article | video | podcast | post — what the piece is
 }
+
+// Media types, the owner's vocabulary for what a piece is. A card's Type is
+// the finer source flavour; MediaType folds it into these four.
+const (
+	MediaArticle = "article"
+	MediaVideo   = "video"
+	MediaPodcast = "podcast"
+	MediaPost    = "post"
+)
+
+// MediaType folds a card's flavour into the four media types.
+func MediaType(cardType string) string {
+	switch cardType {
+	case TypeVideo:
+		return MediaVideo
+	case TypePodcast:
+		return MediaPodcast
+	case KindX:
+		return MediaPost
+	}
+	return MediaArticle
+}
+
+// todayWindow is what "Today" means: published in the last day, whatever
+// its read state — the newspaper, not the queue.
+const todayWindow = 24 * time.Hour
 
 // Cards returns the lane.
 //
@@ -724,6 +821,29 @@ func (s *Service) Cards(q Query) []Card {
 	curated := s.curatedURLs()
 	needle := strings.ToLower(strings.TrimSpace(q.Q))
 
+	keep := func(c Card) bool {
+		if q.Type != "" && MediaType(c.Type) != q.Type {
+			return false
+		}
+		if needle != "" && !strings.Contains(strings.ToLower(strings.Join([]string{c.Title, c.Excerpt, c.Author, c.Source}, " ")), needle) {
+			return false
+		}
+		return true
+	}
+
+	// The queue is its own list, in the order it was saved.
+	if q.View == "later" || q.View == "later-done" {
+		out := []Card{}
+		for _, c := range s.laterCards(q.View == "later-done", curated) {
+			if keep(c) {
+				out = append(out, c)
+			}
+		}
+		return out
+	}
+
+	queued := s.laterIndex()
+	since := s.now().Add(-todayWindow)
 	out := []Card{}
 	for _, sub := range s.Subscriptions() {
 		if q.Sub != "" && !strings.EqualFold(sub.ID, q.Sub) {
@@ -740,17 +860,86 @@ func (s *Service) Cards(q Query) []Card {
 			if it.DismissedAt != "" {
 				continue
 			}
-			if q.View != "all" && !it.Unread() {
-				continue
+			switch q.View {
+			case "all":
+			case "today":
+				if itemTime(it).Before(since) {
+					continue
+				}
+			default:
+				if !it.Unread() {
+					continue
+				}
 			}
 			if needle != "" && !matches(it, sub, needle) {
 				continue
 			}
-			out = append(out, card(it, sub, curated, xPost))
+			c := card(it, sub, curated, xPost)
+			if q.Type != "" && MediaType(c.Type) != q.Type {
+				continue
+			}
+			if e, ok := queued[curateKey(it.URL)]; ok && it.URL != "" {
+				c.Later, c.LaterID, c.LaterDone = true, e.ID, e.Done != ""
+			}
+			out = append(out, c)
 		}
 	}
 	sort.SliceStable(out, func(i, j int) bool { return out[i].Published > out[j].Published })
 	return out
+}
+
+// Nav is the reader sidebar's counts, computed in one pass. Every number is
+// UNREAD except Later (entries in the queue) and Today (published in the last
+// day, read or not — the newspaper, not the queue).
+type Nav struct {
+	Unread  int            `json:"unread"`
+	Today   int            `json:"today"`
+	Later   int            `json:"later"`
+	Types   map[string]int `json:"types"`
+	Streams map[string]int `json:"streams"`
+	Subs    map[string]int `json:"subs"`
+}
+
+// Nav counts the lane for the sidebar.
+func (s *Service) Nav() Nav {
+	n := Nav{Types: map[string]int{}, Streams: map[string]int{}, Subs: map[string]int{}}
+	since := s.now().Add(-todayWindow)
+	for _, sub := range s.Subscriptions() {
+		xPost := s.fromRSSHub(sub)
+		n.Subs[sub.ID] += 0
+		for _, it := range s.store.Items(sub.ID) {
+			if it.DismissedAt != "" {
+				continue
+			}
+			if !itemTime(it).Before(since) {
+				n.Today++
+			}
+			if !it.Unread() {
+				continue
+			}
+			n.Unread++
+			n.Subs[sub.ID]++
+			if sub.List != "" && !strings.EqualFold(sub.List, ungrouped) {
+				n.Streams[sub.List]++
+			}
+			flavour := sub.Kind
+			switch {
+			case xPost:
+				flavour = KindX
+			case it.Embed != "":
+				flavour = TypeVideo
+			case it.Podcast():
+				flavour = TypePodcast
+			}
+			n.Types[MediaType(flavour)]++
+		}
+	}
+	for _, e := range s.LaterEntries() {
+		if e.Done == "" {
+			n.Later++
+		}
+	}
+	return n
 }
 
 // matches is the search predicate. Bodies live in their own snapshot files and
@@ -784,6 +973,9 @@ func card(it Item, sub Subscription, curated map[string]bool, xPost bool) Card {
 	if it.Podcast() {
 		kind = TypePodcast
 	}
+	if it.Embed != "" {
+		kind = TypeVideo
+	}
 	if xPost {
 		kind = KindX
 		preview = ""
@@ -800,6 +992,7 @@ func card(it Item, sub Subscription, curated map[string]bool, xPost bool) Card {
 		Curated: curated[curateKey(it.URL)], Minutes: minutes,
 		Audio: it.Audio, AudioType: it.AudioType, Duration: it.Duration,
 		Episode: it.Episode, Season: it.Season, Image: it.Image,
+		Embed: it.Embed,
 	}
 }
 
@@ -839,6 +1032,10 @@ func (s *Service) Get(itemID string) (Item, Subscription, bool) {
 	subID, ok := subOf(itemID)
 	if !ok {
 		return Item{}, Subscription{}, false
+	}
+	if subID == laterSub {
+		it, ok := s.store.Get(laterSub, itemID)
+		return it, Subscription{ID: laterSub, Kind: KindRSS, Title: firstNonEmpty(it.Source, "Later"), Mirror: MirrorFull}, ok
 	}
 	d, err := s.doc()
 	if err != nil {
@@ -893,6 +1090,19 @@ func (s *Service) MarkAllRead(list string) int {
 	return n
 }
 
+// MarkViewRead marks everything unread in one view read — a stream, a source,
+// a media type or a search — for the reader's "mark all read" (Shift+A).
+func (s *Service) MarkViewRead(q Query) int {
+	q.View = "unread"
+	n := 0
+	for _, c := range s.Cards(q) {
+		if s.MarkRead(c.ID) {
+			n++
+		}
+	}
+	return n
+}
+
 // PollAll refreshes every subscription regardless of when it is next due, for
 // the "refresh now" button. Bounded concurrency: a reader with thirty feeds
 // should not open thirty sockets at once.
@@ -937,12 +1147,18 @@ type SubStatus struct {
 	Site          string `json:"site,omitempty"`
 	SignedIn      bool   `json:"signedIn"`
 	SignInExpired bool   `json:"signInExpired,omitempty"`
-	// Paid marks a subscription whose items are preview-only — the cue to
-	// offer signing in.
-	Paid     bool `json:"paid,omitempty"`
-	Unread   int  `json:"unread"`
-	Archived int  `json:"archived"` // seeded or read — browsable, not queued
-	Total    int  `json:"total"`
+	// Paid marks a subscription that has posts the publisher keeps for paying
+	// subscribers, and PaidPosts counts them. It is information, not a prompt:
+	// sign-in is offered only when the owner says he pays (Subscription.Pays).
+	// A truncated FREE post never counts — Substack's own API completes those.
+	Paid      bool `json:"paid,omitempty"`
+	PaidPosts int  `json:"paidPosts,omitempty"`
+	// Media is what this source mostly delivers — article, video, podcast or
+	// post — so the sidebar can say what a source is at a glance.
+	Media    string `json:"media"`
+	Unread   int    `json:"unread"`
+	Archived int    `json:"archived"` // seeded or read — browsable, not queued
+	Total    int    `json:"total"`
 }
 
 // Statuses returns the manage panel's rows: the subscription plus how its last
@@ -956,6 +1172,7 @@ func (s *Service) Statuses() []SubStatus {
 			st.LastOK = lastOK.UTC().Format(time.RFC3339)
 		}
 		xPost := s.fromRSSHub(sub)
+		media := map[string]int{}
 		for _, it := range s.store.Items(sub.ID) {
 			if it.DismissedAt != "" {
 				continue // dismissed is gone, not archived
@@ -966,12 +1183,31 @@ func (s *Service) Statuses() []SubStatus {
 			} else {
 				st.Archived++
 			}
-			// One preview item marks the whole sub paid — the cue to sign in.
-			// Never for an X account: its posts are whole, and any stored
-			// preview label there is stale mislabelling, not a paywall.
-			if it.Preview != "" && !xPost {
+			// Only a post the publisher CALLS paid counts. Never for an X
+			// account: its posts are whole, and any stored preview label
+			// there is stale mislabelling, not a paywall.
+			if it.Preview == PreviewPaid && !xPost {
 				st.Paid = true
+				st.PaidPosts++
 			}
+			switch {
+			case it.Embed != "":
+				media[MediaVideo]++
+			case it.Podcast():
+				media[MediaPodcast]++
+			default:
+				media[MediaArticle]++
+			}
+		}
+		st.Media = MediaArticle
+		if xPost || sub.Kind == KindX {
+			st.Media = MediaPost
+		} else if media[MediaVideo] > media[MediaArticle] && media[MediaVideo] >= media[MediaPodcast] {
+			st.Media = MediaVideo
+		} else if media[MediaPodcast] > media[MediaArticle] {
+			st.Media = MediaPodcast
+		} else if media[MediaArticle] == 0 && strings.Contains(sub.URL, "youtube.com/feeds/") {
+			st.Media = MediaVideo
 		}
 		if sub.Kind != KindX {
 			st.Site = SiteKey(sub.URL)

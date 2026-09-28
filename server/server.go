@@ -147,9 +147,12 @@ type Server struct {
 	// CONSUME (subscribed reading → the fifth attention kind; §5 amendment
 	// 2026-08-24). Nilable. consumePublicURL is the public curation feed's
 	// address, for display only — this server never serves it.
-	consume           *consume.Service
-	consumeXTokenPath string // <dataDir>/consume/x-creds, injected (0600)
-	consumePublicURL  string
+	consume *consume.Service
+	// consumeLaterResolving keeps background re-reads of the Watch Later
+	// queue to one run at a time.
+	consumeLaterResolving atomic.Bool
+	consumeXTokenPath     string // <dataDir>/consume/x-creds, injected (0600)
+	consumePublicURL      string
 	// OODA portal projection (real-estate team surface; ooda-portal plan). Nilable.
 	oodaLive  *OodaLive
 	oodaTeam  *teamportal.Store // the cockpit's read of the OODA team store (bid lane)
@@ -850,6 +853,11 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/consume/subscriptions/{id}/poll", s.handleConsumePoll)
 	mux.HandleFunc("GET /api/consume/item/{id}", s.handleConsumeItem)
 	mux.HandleFunc("POST /api/consume/item/{id}/read", s.handleConsumeRead)
+	mux.HandleFunc("POST /api/consume/later", s.handleConsumeLaterAdd)
+	mux.HandleFunc("POST /api/consume/later/{id}/done", s.handleConsumeLaterDone)
+	mux.HandleFunc("POST /api/consume/later/{id}/undone", s.handleConsumeLaterUndone)
+	mux.HandleFunc("POST /api/consume/later/{id}/remove", s.handleConsumeLaterRemove)
+	mux.HandleFunc("POST /api/consume/streams/rename", s.handleConsumeStreamRename)
 	mux.HandleFunc("POST /api/consume/item/{id}/dismiss", s.handleConsumeDismiss)
 	mux.HandleFunc("POST /api/consume/item/{id}/undismiss", s.handleConsumeUndismiss)
 	mux.HandleFunc("POST /api/consume/item/{id}/unread", s.handleConsumeUnread)

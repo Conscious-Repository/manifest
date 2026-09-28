@@ -77,6 +77,18 @@ func (s *Server) captureMultipart(w http.ResponseWriter, r *http.Request, source
 		httpError(w, errBadRequest("upload too large or malformed"))
 		return
 	}
+	// A bare link shared from the phone goes to Watch Later (owner decision
+	// 2026-09-27); anything with files or a written note stays in the tray.
+	if source == "share" {
+		files := 0
+		if r.MultipartForm != nil {
+			files = len(r.MultipartForm.File["files"])
+		}
+		if s.shareToLater(r.FormValue("title"), r.FormValue("text"), r.FormValue("url"), files) {
+			http.Redirect(w, r, "/#/feed/later", http.StatusSeeOther)
+			return
+		}
+	}
 	it := s.capture.NewForFiles(r.FormValue("title"), r.FormValue("text"), r.FormValue("url"), source)
 	if r.MultipartForm != nil {
 		for _, fh := range r.MultipartForm.File["files"] {

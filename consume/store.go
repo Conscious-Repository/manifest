@@ -523,6 +523,51 @@ func (s *Store) Complete(subID string, it Item) {
 	}
 }
 
+// PutItem upserts one item, body included, into a cache that no poll owns —
+// the Watch Later queue. Nothing prunes it: the queue's line in the vault is
+// what decides whether the item is still wanted.
+func (s *Store) PutItem(subID string, it Item) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	st := s.read(subID)
+	body := it.Body
+	it.Body = ""
+	replaced := false
+	for i := range st.Items {
+		if st.Items[i].ID == it.ID {
+			// Read state belongs to the owner, not to a re-resolve.
+			it.ReadAt = firstNonEmpty(it.ReadAt, st.Items[i].ReadAt)
+			st.Items[i] = it
+			replaced = true
+			break
+		}
+	}
+	if !replaced {
+		st.Items = append(st.Items, it)
+	}
+	st.Schema = itemSchema
+	s.write(subID, st)
+	if body != "" {
+		s.putBody(it.ID, body)
+	}
+}
+
+// DeleteItem drops one item and its body from a cache.
+func (s *Store) DeleteItem(subID, itemID string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	st := s.read(subID)
+	kept := st.Items[:0]
+	for _, it := range st.Items {
+		if it.ID != itemID {
+			kept = append(kept, it)
+		}
+	}
+	st.Items = kept
+	s.write(subID, st)
+	s.dropBody(itemID)
+}
+
 // Body returns one item's stored HTML ("" when the snapshot is gone).
 func (s *Store) Body(itemID string) string {
 	s.mu.Lock()

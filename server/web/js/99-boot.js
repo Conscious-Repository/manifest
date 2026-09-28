@@ -263,7 +263,7 @@ function renderCrumbs(h) {
     parts.push({ label: p.split("/").pop().replace(/\.md$/, "") });
   } else if (h.startsWith("#/read/")) {
     // The id is opaque (consume:rss:sub:hash) — show where you are, not it.
-    parts.push({ label: "FEED", hash: "#/feed" });
+    parts.push({ label: "FEED", hash: typeof consumeHash === "function" ? consumeHash() : "#/feed" });
     parts.push({ label: "reading" });
   } else if (h.startsWith("#/artifact/")) {
     const seg = h.slice("#/artifact/".length).split("/");
@@ -390,7 +390,7 @@ function route() {
     // not greet the next navigation as a near-empty inbox (a stale APPROVALS
     // filter reads as "the feed is broken"). readBack() re-sets consume AFTER
     // this, so the reading list's return path keeps its filter.
-    if (_curHash === "#/feed" && h !== "#/feed") state.feedFilter = "";
+    if ((_curHash === "#/feed" || _curHash.startsWith("#/feed/")) && !(h === "#/feed" || h.startsWith("#/feed/"))) state.feedFilter = "";
     _curHash = h;
   }
   updateCrumbNav();
@@ -404,7 +404,7 @@ function route() {
   const goals = h === "#/goals" || h.startsWith("#/goals/"); // #/goals/<id> deep-links a Rock
   const todosTab = h === "#/tasks" || h.startsWith("#/tasks/");
   const cal = h === "#/calendar" || /^#\/calendar\/\d{4}-\d{2}-\d{2}$/.test(h);
-  const fd = h === "#/feed";
+  const fd = h === "#/feed" || h.startsWith("#/feed/"); // #/feed/<view> — the reader's addresses
   const chat = h === "#/chat" || h.startsWith("#/chat/");
   // FILES lives inside the terminal cockpit now (its stage tab)
   if (h === "#/files") {
@@ -466,7 +466,7 @@ function route() {
     loadTodos();
   }
   else if (cal) { if(h.startsWith("#/calendar/")){const parts=h.slice(11).split("-").map(Number);state.cal={year:parts[0],month:parts[1]-1};} loadCalendar(); }
-  else if (fd) showFeed(); // manifest's one inbox
+  else if (fd) showFeed(h); // manifest's one reader: the Inbox and the reading views
   else if (chat) showChat(h); // conversations with chattable spirits
   else if (terminalTab) showTerminal(); // the cockpit: terminal / files / activity
   else if (sp) showSpirits(h); // agents cockpit: rituals / runs / (legacy settings chip) / spirit pages

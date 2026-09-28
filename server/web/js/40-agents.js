@@ -146,7 +146,7 @@ let knownDigestIds = null;  // feed digest ids seen, for the digest-landed toast
 let liveRunSig = "";        // running run ids at the last tick — a change repaints the SCHEDULE board
 
 function pollScopeOpen() {
-  return location.hash.startsWith("#/agents") || location.hash === "#/feed";
+  return location.hash.startsWith("#/agents") || location.hash === "#/feed" || location.hash.startsWith("#/feed/");
 }
 function activeRuns() {
   const running = (spiritRuns.data || []).filter((r) => r.outcome === "running");
@@ -228,7 +228,7 @@ async function livePoll() {
     // fires whenever any agent run finishes (AION's list does the same)
     const typing = els.feedView && els.feedView.contains(document.activeElement) &&
       /^(INPUT|TEXTAREA|SELECT)$/.test((document.activeElement || {}).tagName || "");
-    if (location.hash === "#/feed" && !typing) loadFeed(); // new findings land in place
+    if ((location.hash === "#/feed" || location.hash === "#/feed/approvals") && !typing) loadFeed(); // new findings land in place (the Inbox, never mid-reading)
   }
   if (firstPoll || anyFinished) detectNewDigest();   // baseline on first look; then catch a landed digest
 

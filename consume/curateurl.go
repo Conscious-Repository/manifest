@@ -64,6 +64,15 @@ func (s *Service) CurateURL(ctx context.Context, rawURL, note string) (CuratedEn
 		ref.Author = prior.Author
 	}
 
+	s.resolvePasted(ctx, clean, &ref, isRefresh)
+	return s.CurateExternal(ctx, ref, note)
+}
+
+// resolvePasted fills ref from the piece at a pasted address: an X post from
+// the bridge, a paper from its registry, anything else through the metadata
+// ladder and the canonical feed lookup. It fetches and never writes, so the
+// curate verb and Watch Later share one account of what a link is.
+func (s *Service) resolvePasted(ctx context.Context, clean string, ref *ExternalRef, isRefresh bool) {
 	// AN X POST is asked of the bridge before it is asked of X. The oEmbed
 	// endpoint below truncates a long post at roughly a screenful; RSSHub's
 	// timeline carries the whole text, which is why the same post curated from
@@ -80,7 +89,7 @@ func (s *Service) CurateURL(ctx context.Context, rawURL, note string) (CuratedEn
 				ref.PublishedAt = post.PublishedAt
 			}
 			ref.body = post.Body
-			return s.CurateExternal(ctx, ref, note)
+			return
 		}
 	}
 
@@ -98,7 +107,7 @@ func (s *Service) CurateURL(ctx context.Context, rawURL, note string) (CuratedEn
 				ref.Author = firstNonEmpty(ref.Author, strings.Join(paper.Authors, ", "))
 			}
 		}
-		return s.CurateExternal(ctx, ref, note)
+		return
 	}
 
 	m := s.resolveLink(ctx, clean)
@@ -143,7 +152,6 @@ func (s *Service) CurateURL(ctx context.Context, rawURL, note string) (CuratedEn
 	if m.Kind == linkPost && xLooksClipped(Text(m.body)) {
 		ref.partial = true
 	}
-	return s.CurateExternal(ctx, ref, note)
 }
 
 // LinkKind names what a pasted URL turned out to be, for the toast that tells

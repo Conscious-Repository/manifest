@@ -382,6 +382,11 @@ func main() {
 			vaultwriter.Capability{Name: "consume-feeds", Zone: record.ZoneExtrinsic,
 				Pattern: filepath.ToSlash(filepath.Join(cfg.ExtrinsicRoot, "feeds.md")),
 				Actor:   vaultwriter.ActorUserAction},
+			// consume-later is the Watch Later queue: one exact file, the
+			// same shape as the subscription list (owner decision 2026-09-27).
+			vaultwriter.Capability{Name: "consume-later", Zone: record.ZoneExtrinsic,
+				Pattern: filepath.ToSlash(filepath.Join(cfg.ExtrinsicRoot, "later.md")),
+				Actor:   vaultwriter.ActorUserAction},
 			vaultwriter.Capability{Name: "consume-curate", Zone: record.ZoneExtrinsic,
 				Pattern: filepath.ToSlash(cfg.ExtrinsicRoot) + "/**",
 				Actor:   vaultwriter.ActorUserAction},
@@ -791,6 +796,9 @@ func main() {
 		Write: func(rel string, data []byte) error {
 			if rel == filepath.ToSlash(filepath.Join(cfg.ExtrinsicRoot, "feeds.md")) {
 				return vw.WriteCap("consume-feeds", rel, data)
+			}
+			if rel == filepath.ToSlash(filepath.Join(cfg.ExtrinsicRoot, "later.md")) {
+				return vw.WriteCap("consume-later", rel, data)
 			}
 			return vw.WriteCap("consume-curate", rel, data)
 		},

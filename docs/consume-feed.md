@@ -6,25 +6,83 @@ can share.
 
 | | |
 |---|---|
-| Private surface | FEED → **CONSUME** view (and a capped strip in INBOX) |
+| Private surface | FEED — one reader: Inbox, Approvals, Unread, Today, Later, media types, streams |
 | Public surface | `GET /feed.xml` + a plain index, on its own loopback port |
 | Subscriptions | `extrinsic/feeds.md` in the vault — hand-editable in Obsidian |
+| Watch Later | `extrinsic/later.md` in the vault — hand-editable in Obsidian |
 | Curated items | `extrinsic/<title>.md`, `categories: [articles]` + `curated:` |
 | Caches | `<dataDir>/consume/` — disposable, rebuildable by re-polling |
 | X token | `<dataDir>/consume/x-creds`, 0600 (or `MANIFEST_PORTAL_X_TOKEN`) |
 
+## The reader
+
+FEED is one reader with the Inbox inside it. The sidebar holds:
+
+- **Inbox** and **Approvals** — what wants a decision from you
+- **Unread**, **Today** (published in the last day, read or not), **Later**
+  and **All**
+- the four media types — **Articles**, **Videos**, **Podcasts**, **Posts**
+- your **streams**, each with its sources, and the sources in no stream
+
+Every view has its own address — `#/feed/unread`, `#/feed/later`,
+`#/feed/type/video`, `#/feed/stream/essays`, `#/feed/source/<id>` — so back,
+bookmarks and tiles land where they should. On a phone the sidebar is a strip
+of views above the list.
+
+On a wide screen an item opens in the pane beside the list; on a narrow one it
+opens on its own page (`#/read/<id>`). Opening an item marks it read.
+
+| key | |
+|---|---|
+| `j` / `k` | next / previous (opens it in the pane) |
+| `o` / `Enter` | open |
+| `v` | open the original in a new tab |
+| `m` | toggle read |
+| `l` | save to Later |
+| `e` | done (in Later) |
+| `⇧A` | mark everything in this view read |
+| `Esc` | close the pane, or leave the reading page |
+
+The next few bodies are fetched ahead with `?peek=1`, which never marks
+anything read, and a view you have visited repaints from memory before the
+network answers.
+
+## Watch Later
+
+A deliberate queue of anything you mean to read, watch or listen to:
+
+- **＋ save link** in the list header takes any link — an article, a YouTube
+  video, a podcast episode, an X post — and reads it into a readable, playable
+  item
+- `l`, or **◷ later** on a row, saves a feed item
+- a bare link shared from your phone to Manifest lands in Later (a share with
+  files or a written note still goes to the capture tray)
+
+Opening something does not take it out of Later. **Done** (`e`) does, and it
+stays findable under **Later · done**. The queue is `extrinsic/later.md`, one
+line per entry; a line you add by hand with only a `[url:: …]` is read the
+next time Later opens. Each entry's readable copy lives in dataDir and is
+re-read from its URL if the cache is wiped, so a saved feed item outlives the
+feed's own 90-day retention.
+
 ## Following something
 
-In FEED → CONSUME → **MANAGE**, paste any of:
+In the reader's **MANAGE** panel (or **＋ follow a source** in the sidebar),
+paste any of:
 
 - a feed URL (`https://blog.example/feed.xml`)
 - a site address (`blog.example`) — the feed is auto-discovered from the page's
   `<link rel="alternate">`
-- a Substack URL — `/feed` is appended automatically
-- `@handle` — an X account (needs a bearer token; see below)
+- a Substack, on `substack.com` or its own domain — no sign-in needed
+- a YouTube channel (`youtube.com/@name` or `/channel/UC…`) — its videos arrive
+  with a thumbnail and play in the reader; **Shorts are left out** unless you
+  tick *include Shorts* on the channel
+- a podcast's feed or its Apple Podcasts page — episodes play in the reader
+- `@handle` — an X account (through the RSSHub bridge)
 
-The optional second box is a **group** (`essays`, `ai`, …), which becomes a
-`## heading` in `extrinsic/feeds.md` and a filter chip in the view.
+The optional second box is a **stream** (`essays`, `ai`, …), which becomes a
+`## heading` in `extrinsic/feeds.md` and an entry in the sidebar. Rename a
+stream from its heading in MANAGE; every source under it moves with it.
 
 ### What happens when you follow something
 
@@ -60,13 +118,22 @@ piece; when the article is behind a paywall it cannot, and the card is labelled
 preview the publisher shares, plus a link to the source. It never replaces a
 usable preview with a paywall notice.
 
+### Free and paid posts
+
+A Substack truncates its feed for every post, free or paid. Manifest asks
+Substack's own post API (`/api/v1/posts/<slug>`) for each cut-short post: a
+free post comes back whole, with no sign-in, and a post Substack marks paid is
+labelled **paid post** and shows the preview the publisher shares.
+
+Paid posts are information, not a prompt. MANAGE says how many a source has
+("1 paid post shows as a preview · free posts arrive whole") and never asks you
+to sign in.
+
 ### Publications you pay for
 
-A paid publication truncates its feed, so anonymously you get a preview and a
-`paid post` label. If you subscribe, you can sign in and read it here in full.
-
-In **MANAGE**, a subscription whose posts are previews shows `paid posts · sign
-in`. Paste the session cookie from your browser — DevTools → Application →
+If you pay for a publication, tick **I pay for this** on it in MANAGE (it is
+written as `[pays:: yes]` on its line). Only then is sign-in offered. Paste the
+session cookie from your browser — DevTools → Application →
 Cookies → the publication's domain → copy `substack.sid`. One paste covers
 **every publication on that domain**, because that is how the cookie itself is
 scoped; a publication on its own domain needs its own.

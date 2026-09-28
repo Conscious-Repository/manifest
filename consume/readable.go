@@ -3,8 +3,12 @@ package consume
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"io"
 	"net/http"
+	"net/url"
+	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"time"
@@ -123,9 +127,18 @@ var positiveHints = []string{
 // page announced a paywall. The second return is why a failed extraction can be
 // explained to the owner instead of silently leaving a stub.
 func (s *Service) fetchArticle(ctx context.Context, pageURL, cookie string) (string, bool) {
+	body, paywalled, _ := s.fetchArticlePage(ctx, pageURL, cookie)
+	return body, paywalled
+}
+
+// fetchArticlePage is fetchArticle that also says whether the page is a
+// Substack post (its assets load from substackcdn.com), so a caller can ask
+// Substack's post API for a second opinion without a request to any other
+// publisher.
+func (s *Service) fetchArticlePage(ctx context.Context, pageURL, cookie string) (string, bool, bool) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, pageURL, nil)
 	if err != nil {
-		return "", false
+		return "", false, false
 	}
 	req.Header.Set("User-Agent", userAgent)
 	req.Header.Set("Accept", "text/html,application/xhtml+xml;q=0.9,*/*;q=0.5")
@@ -135,25 +148,158 @@ func (s *Service) fetchArticle(ctx context.Context, pageURL, cookie string) (str
 	}
 	resp, err := s.hc.Do(req)
 	if err != nil {
-		return "", false
+		return "", false, false
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
 		// A paywall often answers 403 rather than a page saying so.
-		return "", resp.StatusCode == http.StatusForbidden || resp.StatusCode == http.StatusPaymentRequired
+		return "", resp.StatusCode == http.StatusForbidden || resp.StatusCode == http.StatusPaymentRequired, false
 	}
 	if ct := resp.Header.Get("Content-Type"); ct != "" && !strings.Contains(strings.ToLower(ct), "html") {
-		return "", false
+		return "", false, false
 	}
 	raw, err := io.ReadAll(io.LimitReader(resp.Body, maxArticle))
 	if err != nil {
-		return "", false
+		return "", false, false
 	}
 	doc, err := html.Parse(bytes.NewReader(raw))
 	if err != nil {
-		return "", false
+		return "", false, false
 	}
-	return Readable(doc), looksPaywalled(nodeText(doc), string(raw))
+	return Readable(doc), looksPaywalled(nodeText(doc), string(raw)), bytes.Contains(raw, []byte("substackcdn.com"))
+}
+
+// substackPostPath is Substack's permalink shape, on its own domain or a
+// publication's custom one.
+var substackPostPath = regexp.MustCompile(`^/p/([A-Za-z0-9-]{1,200})/?$`)
+
+// substackPost reads one post through the publication's public post API
+// (/api/v1/posts/<slug>). answered is false when the URL is not a Substack
+// post or the API gave no usable answer, and the caller falls back to the page.
+//
+// For a free post ("audience": "everyone") the API returns the whole body,
+// which is why a free reader never needs to sign in. For a paid post it
+// returns no body unless the session belongs to a paying subscriber.
+func (s *Service) substackPost(ctx context.Context, pageURL, cookie string) (body string, paid, answered bool) {
+	u, err := url.Parse(pageURL)
+	if err != nil || u.Host == "" {
+		return "", false, false
+	}
+	m := substackPostPath.FindStringSubmatch(u.Path)
+	if m == nil {
+		return "", false, false
+	}
+	api := u.Scheme + "://" + u.Host + "/api/v1/posts/" + m[1]
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, api, nil)
+	if err != nil {
+		return "", false, false
+	}
+	req.Header.Set("User-Agent", userAgent)
+	req.Header.Set("Accept", "application/json")
+	if cookie != "" {
+		req.Header.Set("Cookie", cookie)
+	}
+	resp, err := s.hc.Do(req)
+	if err != nil {
+		return "", false, false
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return "", false, false
+	}
+	if ct := strings.ToLower(resp.Header.Get("Content-Type")); !strings.Contains(ct, "json") {
+		return "", false, false
+	}
+	var post struct {
+		Audience string `json:"audience"`
+		BodyHTML string `json:"body_html"`
+	}
+	if err := json.NewDecoder(io.LimitReader(resp.Body, maxArticle)).Decode(&post); err != nil {
+		return "", false, false
+	}
+	free := post.Audience == "" || strings.EqualFold(post.Audience, "everyone")
+	if strings.TrimSpace(post.BodyHTML) == "" {
+		if free {
+			return "", false, false
+		}
+		return "", true, true
+	}
+	clean := Sanitize(post.BodyHTML)
+	if free {
+		return clean, false, true
+	}
+	// A paid post read without a session is the free part ending at the
+	// paywall: paid, whatever its length. With a session it is whole unless
+	// Substack still marks a paywall in it (a session that does not pay).
+	if cookie == "" {
+		return clean, true, true
+	}
+	return clean, looksPaywalled(Text(clean), post.BodyHTML) || strings.Contains(post.BodyHTML, "paywall"), true
+}
+
+// substackHealMark records that the one-time preview heal has run.
+const substackHealMark = "heal-substack-previews-v1"
+
+// HealSubstackPreviews re-asks Substack's post API about every stored post an
+// earlier build labelled "paid" or "preview" by scraping its page. A free
+// post comes back whole and loses the label; a paid one keeps "paid". It runs
+// once per dataDir (a marker file), because the answer for a post does not
+// change and asking again on every boot would be a request per paid post for
+// nothing. Returns how many posts it completed.
+func (s *Service) HealSubstackPreviews(ctx context.Context) int {
+	mark := filepath.Join(s.store.root, substackHealMark)
+	if _, err := os.Stat(mark); err == nil {
+		return 0
+	}
+	healed := 0
+	for _, sub := range s.Subscriptions() {
+		if sub.Kind == KindX || s.fromRSSHub(sub) || sub.FullText() == FullTextOff {
+			continue
+		}
+		for _, it := range s.store.Items(sub.ID) {
+			if ctx.Err() != nil {
+				return healed
+			}
+			if it.Preview == "" || it.DismissedAt != "" {
+				continue
+			}
+			fetchCtx, cancel := context.WithTimeout(ctx, 20*time.Second)
+			body, paid, ok := s.substackPost(fetchCtx, it.URL, s.cookieFor(it.URL))
+			cancel()
+			if !ok {
+				continue
+			}
+			text := Text(body)
+			switch {
+			case !paid && body != "" && len([]rune(text)) > it.Chars:
+				it.Body, it.Preview = body, ""
+				it.Chars, it.Excerpt = len([]rune(text)), Excerpt(text, 280)
+				s.store.Complete(sub.ID, it)
+				healed++
+			case paid && it.Preview != PreviewPaid:
+				it.Preview = PreviewPaid
+				s.store.Complete(sub.ID, it)
+			}
+		}
+	}
+	if ctx.Err() == nil {
+		_ = os.MkdirAll(filepath.Dir(mark), 0o755)
+		_ = os.WriteFile(mark, []byte(s.now().Format(time.RFC3339)+"\n"), 0o644)
+	}
+	return healed
+}
+
+// readArticle is fetchArticle with Substack's post API as the second opinion
+// for a Substack page that could not be completed — the path every "get me
+// the whole piece" caller wants.
+func (s *Service) readArticle(ctx context.Context, pageURL, cookie string) (string, bool) {
+	body, paywalled, isSubstack := s.fetchArticlePage(ctx, pageURL, cookie)
+	if isSubstack && (body == "" || paywalled) {
+		if b, paid, ok := s.substackPost(ctx, pageURL, cookie); ok && (b != "" || paid) {
+			return b, paid
+		}
+	}
+	return body, paywalled
 }
 
 // Readable extracts the article from a parsed page and sanitizes it.
@@ -284,7 +430,8 @@ func (s *Service) fillFullText(ctx context.Context, sub Subscription, items []It
 	}
 	for i := range items {
 		it := items[i]
-		if it.URL == "" {
+		// A video's page is a player, not an article: never scrape it.
+		if it.URL == "" || it.Embed != "" {
 			continue
 		}
 		if mode == FullTextAuto && !it.truncated && !(it.teaser && it.Chars < teaserUnder) {
@@ -300,7 +447,19 @@ func (s *Service) fillFullText(ctx context.Context, sub Subscription, items []It
 		}
 		// Never let one slow site stall the rest of the poll.
 		fetchCtx, cancel := context.WithTimeout(ctx, 20*time.Second)
-		body, paywalled := s.fetchArticle(fetchCtx, it.URL, s.cookieFor(it.URL))
+		// The page first, as for any publisher. When the page is a Substack
+		// post that could not be completed, Substack's own post API is asked:
+		// it says outright whether the post is free, and for a free post it
+		// returns the whole body — no guessing, and no sign-in. Only a post the
+		// API (or the page) calls paid is labelled paid.
+		cookie := s.cookieFor(it.URL)
+		body, paywalled, isSubstack := s.fetchArticlePage(fetchCtx, it.URL, cookie)
+		answered := false
+		if isSubstack && (body == "" || paywalled || len([]rune(Text(body))) <= it.Chars) {
+			if b, paid, ok := s.substackPost(fetchCtx, it.URL, cookie); ok {
+				body, paywalled, answered = b, paid, true
+			}
+		}
 		cancel()
 
 		text := Text(body)
@@ -317,12 +476,19 @@ func (s *Service) fillFullText(ctx context.Context, sub Subscription, items []It
 		// So a page that announces a paywall disqualifies its own extraction
 		// outright, however much text came back: whatever we scraped is the
 		// wrapper, not the writing.
-		if body == "" || paywalled || looksPaywalled(text, body) || len([]rune(text)) <= it.Chars {
+		// Substack's post API said "free" and returned the body: that is the
+		// publisher's own answer, not a scrape, so the page-furniture test
+		// below does not apply to it (a free post may well mention paid tiers).
+		trusted := answered && !paywalled && body != ""
+		if trusted && len([]rune(text)) <= it.Chars {
+			continue // the feed already carried the whole free post
+		}
+		if body == "" || paywalled || (!trusted && looksPaywalled(text, body)) || len([]rune(text)) <= it.Chars {
 			// We tried and could not complete it. If we KNOW it was truncated,
 			// that is worth recording — a 367-character stub ending "Read more"
 			// with no explanation reads like a bug in the reader rather than a
 			// decision by the publisher.
-			if it.teaser {
+			if it.teaser || (answered && paywalled) {
 				items[i].Preview = PreviewPartial
 				if paywalled {
 					items[i].Preview = PreviewPaid

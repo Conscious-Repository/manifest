@@ -127,6 +127,10 @@ func parseSubLine(trimmed, group string) (Subscription, bool) {
 			sub.Fulltext = strings.ToLower(f.Value)
 		case "added":
 			sub.Added = f.Value
+		case "pays":
+			sub.Pays = yesValue(f.Value)
+		case "shorts":
+			sub.Shorts = yesValue(f.Value)
 		default:
 			sub.Unknown = append(sub.Unknown, Field{Key: f.Key, Value: f.Value})
 		}
@@ -232,6 +236,46 @@ func (d *Doc) Remove(id string) bool {
 	return false
 }
 
+// RenameGroup rewrites one "## heading" in place. When the new name already
+// exists, the sources move under it one by one instead, so two headings with
+// one name never appear.
+func (d *Doc) RenameGroup(from, to string) bool {
+	at := -1
+	exists := false
+	for i, ln := range d.lines {
+		t := strings.TrimSpace(ln)
+		if !strings.HasPrefix(t, "## ") {
+			continue
+		}
+		name := strings.TrimSpace(strings.TrimPrefix(t, "## "))
+		if strings.EqualFold(name, from) && at < 0 {
+			at = i
+		} else if strings.EqualFold(name, to) {
+			exists = true
+		}
+	}
+	if at < 0 {
+		return false
+	}
+	if !exists || strings.EqualFold(from, to) {
+		d.lines[at] = "## " + to
+		for i := range d.subs {
+			if strings.EqualFold(d.subs[i].sub.List, from) {
+				d.subs[i].sub.List = to
+			}
+		}
+		return true
+	}
+	for _, sub := range d.Subs() {
+		if strings.EqualFold(sub.List, from) {
+			moved := sub
+			moved.List = to
+			d.Update(moved)
+		}
+	}
+	return true
+}
+
 // reindex shifts cached line numbers after an insert or delete at `at`.
 func (d *Doc) reindex(at, delta int) {
 	for i := range d.subs {
@@ -315,6 +359,8 @@ func renderSubLine(prior string, sub Subscription) string {
 		{"min-chars", minCharsValue(sub)},
 		{"fulltext", fulltextValue(sub)},
 		{"added", sub.Added},
+		{"pays", boolValue(sub.Pays)},
+		{"shorts", boolValue(sub.Shorts)},
 	}
 	if strings.TrimSpace(prior) == "" {
 		var b strings.Builder
@@ -359,6 +405,24 @@ func fulltextValue(sub Subscription) string {
 		return v
 	}
 	return ""
+}
+
+// boolValue writes a yes/no switch only when it is on, so an ordinary line
+// stays uncluttered and switching it off removes the field.
+func boolValue(on bool) string {
+	if on {
+		return "yes"
+	}
+	return ""
+}
+
+// yesValue reads a hand-typed switch generously: yes, true, on and 1.
+func yesValue(v string) bool {
+	switch strings.ToLower(strings.TrimSpace(v)) {
+	case "yes", "true", "on", "1", "y":
+		return true
+	}
+	return false
 }
 
 func minCharsValue(sub Subscription) string {

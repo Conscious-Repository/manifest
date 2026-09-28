@@ -50,6 +50,10 @@ const (
 // The enclosure answers it per item, at render time.
 const TypePodcast = "podcast"
 
+// TypeVideo is the card type of a YouTube (or other embeddable) video: the
+// piece is the player, and the text is the video's own description.
+const TypeVideo = "video"
+
 // Mirror modes decide how much of an item the PUBLIC feed carries once curated.
 // Per-subscription rather than global, so one publisher asking to be excerpted
 // is a one-field edit and not a redesign.
@@ -128,6 +132,15 @@ type Subscription struct {
 	MinChars int    `json:"minChars"` // x only; 0 = defaultMinChars
 	Fulltext string `json:"fulltext"` // auto | on | off
 	Added    string `json:"added"`    // ISO date
+
+	// Pays records that the owner pays for this publication. Only then is the
+	// session sign-in offered: a free reader of a Substack with some paid posts
+	// reads the free ones whole and sees the paid ones as labelled previews,
+	// and is never asked to authenticate (owner decision 2026-09-27).
+	Pays bool `json:"pays"`
+	// Shorts keeps a YouTube channel's Shorts. Off by default: a channel feed
+	// carries both, and the owner follows channels for their videos.
+	Shorts bool `json:"shorts"`
 
 	// Unknown carries inline fields this build does not recognize, so a
 	// hand-added [tag:: x] in Obsidian survives a round trip through the app.

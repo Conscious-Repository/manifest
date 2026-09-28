@@ -39,6 +39,10 @@ func runFixture(t *testing.T, file string, browser, fromRoot bool) {
 	}
 }
 
+// The reader: views by address, pane and page, prefetch that never marks
+// read, Watch Later, paid posts as information (feed-reader.cjs).
+func TestFixtureFeedReader(t *testing.T) { runFixture(t, "feed-reader.cjs", true, false) }
+
 // Apply responsive interaction safeguards across Manifest screens (app-responsive.cjs).
 func TestFixtureAppResponsive(t *testing.T) { runFixture(t, "app-responsive.cjs", true, false) }
 

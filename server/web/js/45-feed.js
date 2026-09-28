@@ -12,7 +12,10 @@
 // returns zero findings silently, with no error (feed/feed.go:108). Sending a
 // kind name down that path would have emptied the feed and looked like a bug in
 // the data.
-const FEED_FILTERS = [["proposal", "APPROVALS"], ["consume", "CONSUME"]];
+// The reader pass (2026-09-27) made FEED one reader with the Inbox inside it:
+// the sidebar (46-consume.js) is the navigation on a wide screen and these
+// chips are the narrow screen's. Each view has its own address (#/feed…).
+const FEED_FILTERS = [["proposal", "APPROVALS"], ["consume", "READ"]];
 const FEED_STATUS = "inbox"; // never user-selectable — see above
 const SIGNAL_CAP = 8; // most-overdue signals shown; the rest fold behind "N more"
 let signalsExpanded = false;
@@ -74,30 +77,53 @@ const FEED_LANES = [
   // the inline pickers (owner ask 2026-08-31: address them from the feed too)
   { kind: "bank", slice: (c) => ((c.bankPending || []).length ? [c.bankPending] : []) },
   { kind: "notice", slice: (c) => c.portalItems },
-  // CONSUME: subscribed reading. Capped like the signals strip — a week of
-  // newsletters must not bury the things that actually want a decision. The
-  // rest live behind the CONSUME view, which is where reading belongs anyway.
-  { kind: "consume", slice: (c) => (c.consumeItems || []).filter(consumeQueued).slice(0, CONSUME_CAP) },
+  // Subscribed reading is NOT an Inbox lane any more: it has its own views
+  // (Unread, Today, Later …) beside the Inbox, and the Inbox keeps to what
+  // wants a decision. One line below the lanes points at what is unread.
 ];
 const FEED_TAIL_LANES = [ // after the empty-state check, like today
   { kind: "finding", slice: (c) => c.items },
   { kind: "receipt", slice: (c) => c.receipts },
 ];
 
-function showFeed() {
+function showFeed(h) {
+  // The address decides the view: #/feed is the Inbox, #/feed/approvals the
+  // approvals lane, anything else a reader view (46-consume.js).
+  if (typeof consumeApplyHash === "function") consumeApplyHash(h || location.hash);
   renderFeedFilters();
-  // paint the last known inbox at once and refresh behind it — the fetch used
+  feedLayout();
+  // paint the last known view at once and refresh behind it — the fetch used
   // to be the only thing on screen every time the tab opened
-  if (feedLoaded && feedFilter() !== "consume") renderFeed();
+  if (feedFilter() === "consume") {
+    const memo = typeof consumeMemo === "object" && consumeMemo.get(consumeQueryString(0));
+    if (memo) { consumeCache = memo; renderConsume(); }
+  } else if (feedLoaded) renderFeed();
+  if (typeof renderFeedSide === "function") renderFeedSide();
+  // the sidebar's sources and counts: once per visit, not per view
+  if (typeof loadConsumeSubs === "function" && !feedSubsLoaded) { feedSubsLoaded = true; loadConsumeSubs(); }
   loadFeed();
   ensureLivePoll(); // a dig/ask spooled from here is watched without leaving the tab
+}
+let feedSubsLoaded = false;
+
+// feedLayout sets the view's geometry: the reader gets the wide three-pane
+// shape and the pane; the Inbox keeps its list + inspector.
+function feedLayout() {
+  const reading = feedFilter() === "consume";
+  if (els.feedView) els.feedView.classList.toggle("rdr-reading", reading);
+  if (els.feedPane) {
+    const pane = reading && typeof consumePaneMode === "function" && consumePaneMode();
+    els.feedPane.hidden = !pane;
+    if (pane && !els.feedPane.firstChild && typeof readPaneIdle === "function") readPaneIdle();
+  }
 }
 
 async function loadFeed() {
   const token = feedClaimRender();
   // CONSUME is its own surface over its own endpoint — the reading backlog is
   // not an inbox and does not want the inbox's empty states.
-  if (feedFilter() === "consume") { renderFeedFilters(); await loadConsume(token); refreshFeedBadge(); return; }
+  if (feedFilter() === "consume") { renderFeedFilters(); feedLayout(); await loadConsume(token); refreshFeedBadge(); return; }
+  feedLayout();
   // Drop the cached approval registries so the next card built pulls the LIVE
   // rock ladder (goals edited elsewhere in-session must not serve a stale
   // rock list into the payload editor's typeahead).
@@ -132,6 +158,7 @@ async function loadFeed() {
   }
   renderFeedFilters();
   renderFeed();
+  if (typeof renderFeedSide === "function") renderFeedSide(); // Inbox + Approvals counts
 }
 
 // feedFilter is the active lane kind ("" = show everything).
@@ -143,12 +170,16 @@ async function refreshFeedBadge() {
   try {
     const d = await (await fetch("/api/feed/badge")).json();
     setBadge(els.feedNavBadge, d.count || 0);
+    if (typeof renderFeedSide === "function" && els.feedView && !els.feedView.hidden) renderFeedSide();
   } catch (e) {}
 }
 
 function renderFeedFilters() {
   renderFilterButtons(els.feedFilters,FEED_FILTERS,feedFilter(),value=>{
-    state.feedFilter=feedFilter()===value?'':value;
+    const next=feedFilter()===value?'':value;
+    // a view is an address: the chip moves the URL and the route loads it
+    if(typeof consumeHash==='function'){location.hash=next==='consume'?consumeHash():next==='proposal'?'#/feed/approvals':'#/feed';return;}
+    state.feedFilter=next;
     renderFeedFilters(); // acknowledge the filter immediately, before the fetch
     loadFeed();
   });
@@ -188,13 +219,15 @@ function renderFeed() {
     if (!laneVisible(lane.kind)) return;
     lane.slice(feedCache).forEach((c) => host.appendChild(FEED_CARD[lane.kind](c)));
   });
-  // the tail button for the capped consume lane, before the empty-state check
+  // one line pointing at the reading, which lives in its own views now; it
+  // goes last, and never counts as something in the Inbox
   const unreadConsume = (feedCache.consumeItems || []).filter(consumeQueued).length;
-  if (!filter && unreadConsume > CONSUME_CAP) {
-    const more = el("button", "signal-more", `▾ ${unreadConsume - CONSUME_CAP} more in CONSUME`);
-    more.onclick = () => { state.feedFilter = "consume"; loadFeed(); };
+  const readLink = () => {
+    if (filter || !unreadConsume) return;
+    const more = el("a", "signal-more feed-read-link", `${unreadConsume} unread to read →`);
+    more.href = "#/feed/unread";
     host.appendChild(more);
-  }
+  };
   // ⚠ the empty check used to look ONLY at the "finding" lane — a receipts-only
   // inbox (nothing else pending, findings empty) still had errand cards waiting
   // in FEED_TAIL_LANES, and this returned before ever painting them: "Inbox
@@ -213,10 +246,11 @@ function renderFeed() {
       const row = el("div", "ro-row empty feed-empty-filtered");
       row.append(el("span", null, filter === "proposal" ? "Nothing awaiting approval." : "Nothing here."));
       const hidden = FEED_LANES.concat(FEED_TAIL_LANES).reduce((n, l) => n + l.slice(feedCache).length, 0) + stripSignals.length;
-      if (hidden) row.append(pillLight("show all (" + hidden + ")", () => { state.feedFilter = ""; loadFeed(); }));
+      if (hidden) row.append(pillLight("show all (" + hidden + ")", () => { location.hash = "#/feed"; }));
       host.appendChild(row);
     } else {
       host.appendChild(emptyRow("Inbox zero — nothing awaiting you."));
+      readLink();
     }
     if (laneVisible("proposal")) appendFeedSettled(host);
     return;
@@ -225,6 +259,7 @@ function renderFeed() {
     if (!laneVisible(lane.kind)) return;
     lane.slice(feedCache).forEach((c) => host.appendChild(FEED_CARD[lane.kind](c)));
   });
+  readLink();
   if (laneVisible("proposal")) appendFeedSettled(host);
   // the rail: drafts and the selection outlive this repaint (the 3s poll can
   // rebuild the list under an open edit), so re-mark and re-fill from them

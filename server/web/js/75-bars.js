@@ -310,6 +310,11 @@ function cmdDestinations() {
   [["Backlog", "#/properties"], ["Portfolio", "#/properties/portfolio"], ["Rocks", "#/properties/rocks"],
    ["Money", "#/properties/money"], ["Map", "#/properties/map"], ["Settings", "#/properties/settings"]].forEach(([n, h]) =>
     _cmdDests.push({ name: "Properties · " + n, hint: "properties view", hash: h }));
+  // the reader's views (2026-09-27): each has its own address
+  [["Inbox", "#/feed"], ["Approvals", "#/feed/approvals"], ["Unread", "#/feed/unread"], ["Today", "#/feed/today"],
+   ["Later", "#/feed/later"], ["All", "#/feed/all"], ["Articles", "#/feed/type/article"], ["Videos", "#/feed/type/video"],
+   ["Podcasts", "#/feed/type/podcast"], ["Posts", "#/feed/type/post"]].forEach(([n, h]) =>
+    _cmdDests.push({ name: "Feed · " + n, hint: "reader view", hash: h }));
   return _cmdDests;
 }
 async function cmdProperties() {

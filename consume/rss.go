@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -157,6 +158,17 @@ type xmlItem struct {
 	// the itunes: fields above. It is the only way to say "this entry is that
 	// watch link" without parsing a URL, and feedresolve.go matches on it.
 	VideoID string `xml:"videoId"`
+
+	// Group is Media RSS's <media:group>: YouTube's thumbnail and the video's
+	// own description, which its Atom entries carry nowhere else.
+	Group xmlMediaGroup `xml:"group"`
+}
+
+type xmlMediaGroup struct {
+	Description string `xml:"description"`
+	Thumbnails  []struct {
+		URL string `xml:"url,attr"`
+	} `xml:"thumbnail"`
 }
 
 type xmlFeed struct {
@@ -244,7 +256,7 @@ func (r *rssFetcher) Fetch(ctx context.Context, sub Subscription, cur map[string
 		req.Header.Set("If-Modified-Since", v)
 	}
 
-	resp, err := r.hc.Do(req)
+	resp, err := r.do(req)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -320,6 +332,16 @@ func itemFrom(xi xmlItem, sub Subscription, feedTitle string, now time.Time) (It
 		return Item{}, false
 	}
 
+	// A YouTube entry is a VIDEO: the piece is the player, and the text is the
+	// video's own description. Shorts are dropped unless the channel keeps
+	// them — the feed links a Short as /shorts/<id>, which is exact.
+	if vid := strings.TrimSpace(xi.VideoID); vid != "" {
+		if isShortLink(link) && !sub.Shorts {
+			return Item{}, false
+		}
+		return videoItem(xi, sub, feedTitle, now, link, external, vid), true
+	}
+
 	// content:encoded and Atom <content> carry the FULL post; description and
 	// summary usually carry a teaser. Prefer the long one — the whole point of
 	// the reader is not having to leave for the rest of the article.
@@ -385,6 +407,52 @@ func itemFrom(xi xmlItem, sub Subscription, feedTitle string, now time.Time) (It
 		it.teaser = false
 	}
 	return it, true
+}
+
+// isShortLink reports whether a YouTube link is a Short.
+func isShortLink(link string) bool {
+	return strings.Contains(strings.ToLower(link), "youtube.com/shorts/")
+}
+
+// videoIDRe bounds what may become an embed descriptor: YouTube ids are eleven
+// URL-safe characters, and anything else is not ours to build a player from.
+var videoIDRe = regexp.MustCompile(`^[A-Za-z0-9_-]{6,20}$`)
+
+// videoItem projects a YouTube entry. The body is the description as plain
+// paragraphs (escaped, never parsed as markup), and the embed descriptor is
+// what the private reader turns into a player from its own template.
+func videoItem(xi xmlItem, sub Subscription, feedTitle string, now time.Time, link, external, vid string) Item {
+	desc := strings.TrimSpace(xi.Group.Description)
+	thumb := ""
+	for _, t := range xi.Group.Thumbnails {
+		if u := cleanLink(strings.TrimSpace(t.URL)); u != "" {
+			thumb = u
+			break
+		}
+	}
+	title := collapse(html.UnescapeString(strings.TrimSpace(xi.Title)))
+	if title == "" {
+		title = Excerpt(desc, 80)
+	}
+	it := Item{
+		ID:          itemID(KindRSS, sub.ID, external),
+		SubID:       sub.ID,
+		Source:      firstNonEmpty(strings.TrimSpace(sub.Title), feedTitle),
+		List:        sub.List,
+		Author:      collapse(firstNonEmpty(strings.TrimSpace(xi.Author.Name), strings.TrimSpace(xi.Author.Text))),
+		Title:       title,
+		URL:         link,
+		Excerpt:     Excerpt(desc, 280),
+		Chars:       len([]rune(desc)),
+		PublishedAt: parseDate(xi.PubDate, xi.Published, xi.Updated, xi.Date),
+		FetchedAt:   now,
+		Body:        paragraphs(desc),
+		Image:       thumb,
+	}
+	if videoIDRe.MatchString(vid) {
+		it.Embed = "youtube:video:" + vid
+	}
+	return it
 }
 
 // audioExts are what podcast hosts actually serve. They matter because a large
@@ -620,6 +688,14 @@ func (r *rssFetcher) Discover(ctx context.Context, input string) (feedURL, title
 	if !strings.Contains(raw, "://") {
 		raw = "https://" + raw
 	}
+	// A YouTube channel id names its feed exactly; no page fetch needed. A
+	// handle or custom URL falls through to autodiscovery, which the channel
+	// page answers with the same feed.
+	if fu := youtubeChannelFeed(raw); fu != "" {
+		if u, t, e := r.probe(ctx, fu); e == nil {
+			return u, t, nil
+		}
+	}
 	// Substack hides its feed at a fixed path and its homepage does not always
 	// advertise it. Knowing this one convention removes a whole class of "why
 	// didn't it work" — and Substack is the reason this lane exists.
@@ -639,6 +715,75 @@ func (r *rssFetcher) Discover(ctx context.Context, input string) (feedURL, title
 	return r.probe(ctx, alt)
 }
 
+// youtubeChannelRe matches /channel/UC… — the one YouTube URL shape that names
+// a channel id outright.
+var youtubeChannelRe = regexp.MustCompile(`^/channel/(UC[A-Za-z0-9_-]{10,40})`)
+
+// youtubeChannelIDRe matches the channel id in a YouTube feed URL's query, so
+// the secret scanner can tell a public address from a pasted credential.
+var youtubeChannelIDRe = regexp.MustCompile(`channel_id=UC[A-Za-z0-9_-]{20,24}\b`)
+
+// youtubeChannelFeed returns the channel's own feed for a /channel/UC… link.
+func youtubeChannelFeed(raw string) string {
+	u, err := url.Parse(raw)
+	if err != nil {
+		return ""
+	}
+	host := strings.TrimPrefix(strings.ToLower(u.Hostname()), "www.")
+	if host != "youtube.com" && host != "m.youtube.com" {
+		return ""
+	}
+	m := youtubeChannelRe.FindStringSubmatch(u.Path)
+	if m == nil {
+		return ""
+	}
+	return "https://www.youtube.com/feeds/videos.xml?channel_id=" + m[1]
+}
+
+// do sends one feed request. YouTube's feed endpoint answers 404 (and now
+// and then 5xx) for a channel that exists — measured 2026-09-27, roughly half
+// of fresh requests — and once a connection has answered 404 it keeps doing
+// so; a connection that just fetched the channel page (autodiscovery) 404s
+// every feed request after it. So a YouTube feed request always goes out on a
+// fresh connection and is tried up to eight times, a few seconds at most,
+// before the failure is believed. Every other host is asked once.
+func (r *rssFetcher) do(req *http.Request) (*http.Response, error) {
+	if !isYouTubeFeed(req.URL) {
+		return r.hc.Do(req)
+	}
+	var (
+		resp *http.Response
+		err  error
+	)
+	for attempt := 0; attempt < 8; attempt++ {
+		if attempt > 0 {
+			select {
+			case <-req.Context().Done():
+				return nil, req.Context().Err()
+			case <-time.After(time.Duration(attempt) * 150 * time.Millisecond):
+			}
+		}
+		try := req.Clone(req.Context())
+		try.Close = true
+		resp, err = r.hc.Do(try)
+		if err == nil && resp.StatusCode != http.StatusNotFound && resp.StatusCode < 500 {
+			return resp, nil
+		}
+		if err == nil && attempt < 7 {
+			resp.Body.Close()
+		}
+	}
+	return resp, err
+}
+
+func isYouTubeFeed(u *url.URL) bool {
+	if u == nil {
+		return false
+	}
+	host := strings.TrimPrefix(strings.ToLower(u.Hostname()), "www.")
+	return host == "youtube.com" && strings.HasPrefix(u.Path, "/feeds/")
+}
+
 // probe fetches a candidate URL and reports whether it parsed as a feed.
 func (r *rssFetcher) probe(ctx context.Context, u string) (string, string, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
@@ -646,7 +791,7 @@ func (r *rssFetcher) probe(ctx context.Context, u string) (string, string, error
 		return "", "", err
 	}
 	req.Header.Set("User-Agent", userAgent)
-	resp, err := r.hc.Do(req)
+	resp, err := r.do(req)
 	if err != nil {
 		return "", "", err
 	}
@@ -673,7 +818,7 @@ func (r *rssFetcher) autodiscover(ctx context.Context, pageURL string) (string, 
 		return "", err
 	}
 	req.Header.Set("User-Agent", userAgent)
-	resp, err := r.hc.Do(req)
+	resp, err := r.do(req)
 	if err != nil {
 		return "", err
 	}

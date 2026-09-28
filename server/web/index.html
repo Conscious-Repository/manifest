@@ -215,12 +215,18 @@
     <!-- list + docked inspector, the AION backlog geometry. The rail is a
          SIBLING of #feedList: renderFeed() empties the list on every repaint,
          and the panel has to outlive that. -->
+    <!-- the reader (2026-09-27): sidebar of views · the list · the reading
+         pane beside it on a wide screen. -->
+    <div class="rdr-shell">
+    <nav class="rdr-side" id="feedSide" aria-label="Feed views"></nav>
     <div class="feed-split">
       <div class="feed-col">
         <div id="feedSignals" class="feed-signals"></div>
         <div id="feedList" class="feed-list"></div>
       </div>
       <aside class="feed-inspector" id="feedInspector" hidden></aside>
+      <aside class="rdr-pane" id="feedPane" aria-label="Reading pane" hidden></aside>
+    </div>
     </div>
   </section>
 
@@ -474,6 +480,7 @@
       </div>
     </div>
     <div id="readMeta" class="read-meta"></div>
+    <div id="readPlayer" class="read-player"></div>
     <div id="readBody" class="consume-body"></div>
     <div id="readFoot" class="read-foot"></div>
   </section>

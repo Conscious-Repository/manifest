@@ -744,7 +744,7 @@ func (s *Service) captureFull(ctx context.Context, it Item, sub Subscription) (I
 	}
 	ctx, cancel := context.WithTimeout(ctx, 20*time.Second)
 	defer cancel()
-	body, _ := s.fetchArticle(ctx, it.URL, s.cookieFor(it.URL))
+	body, _ := s.readArticle(ctx, it.URL, s.cookieFor(it.URL))
 	text := Text(body)
 	if body == "" || looksPaywalled(text, "") || LooksTruncated(text) {
 		return it, false

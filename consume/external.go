@@ -189,7 +189,7 @@ func (s *Service) fetchExternal(ctx context.Context, pageURL string, ref Externa
 	if body == "" {
 		ctx, cancel := context.WithTimeout(ctx, 20*time.Second)
 		defer cancel()
-		body, _ = s.fetchArticle(ctx, pageURL, s.cookieFor(pageURL))
+		body, _ = s.readArticle(ctx, pageURL, s.cookieFor(pageURL))
 	}
 	text := Text(body)
 	if body == "" || looksPaywalled(text, "") || LooksTruncated(text) {

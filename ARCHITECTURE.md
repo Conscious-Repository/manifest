@@ -387,6 +387,18 @@ actor `user-action`, because subscribing and curating are the owner clicking in
 his own cockpit. **Removing those two grants is the feature's rollback:** the
 lane keeps reading and curation goes read-only.
 
+*2026-09-27 — the reader, and Watch Later.* FEED became one reader with the
+Inbox inside it: a sidebar of views (Inbox, Approvals, Unread, Today, Later,
+the four media types, the owner's streams), each at its own `#/feed/…`
+address. The subscription list's `## headings` are now called **streams**.
+**Watch Later** is a deliberate queue of anything to read, watch or listen to
+— a pasted link, a saved feed item, a link shared from the phone — kept in
+`extrinsic/later.md` under a third exact-file grant, `consume-later`, with each
+entry's readable copy cached in dataDir and re-resolved from its URL when the
+cache is gone. Paid posts are information, not a prompt: Substack's own post
+API completes every free post with no sign-in, and the session sign-in is
+offered only on a source marked `[pays:: yes]`.
+
 *A public listener exists for the first time.* Everything else in this system is
 loopback + Tailscale or OAuth-gated. The curation feed is served on its own
 loopback port behind the existing cloudflared tunnel, and it is **opt-in** —

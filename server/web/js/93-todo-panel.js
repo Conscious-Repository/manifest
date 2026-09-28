@@ -955,7 +955,7 @@ function appendTaskPending(host, data) {
     // Older servers provide only a pointer; do not invent an actionable preview.
     if (!proposal.type) {
       section.append(pillLight(proposal.action + " · review in Feed", () => {
-        pendingApprovalFocus = proposal.id; state.feedFilter = "proposal"; location.hash = "#/feed";
+        pendingApprovalFocus = proposal.id; state.feedFilter = "proposal"; location.hash = "#/feed/approvals";
       }));
     } else section.append(approvalCardEl(proposal));
   });
