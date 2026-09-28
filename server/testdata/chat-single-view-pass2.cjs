@@ -14,9 +14,9 @@
 //      message keeps its own queued row (pass 3 moved the state, Edit — once
 //      "↑ to edit" — and Cancel under the bubble: chat-mobile-pass3.cjs) and
 //      nothing floats at the transcript's foot;
-//   5. a thread whose agent is the only possible recipient spends no input-row
-//      width on the recipient chip, and the head names the agent; with coding
-//      agents on (three recipients) the chip stays;
+//   5. a private thread answers as its own agent (the "Choose agent" hand-off
+//      was retired 2026-09-27): no recipient chip in the input row and no
+//      "Agent:" control in the head, with or without coding agents on;
 //   6. 320/390/412 idle and one-recipient: no VISIBLE control under 44px
 //      (visible: a box in the viewport, not inert, not inside a closed
 //      <details>, and the hit target at its own centre — ui-compare's count
@@ -74,8 +74,9 @@ const census=()=>{const out=[];for(const e of document.querySelectorAll('button,
    const chip=await page.locator('#chatComposer .chat-composer-model').evaluate(e=>{const r=e.getBoundingClientRect(),g=document.createRange();g.selectNodeContents(e);return {w:r.width,h:r.height,text:g.getBoundingClientRect().width};});
    assert.ok(chip.h>=44&&chip.w>=44,'model chip '+chip.w+'×'+chip.h);
    assert.ok(chip.w<=chip.text+40,'model chip spans '+chip.w+'px for '+Math.round(chip.text)+'px of text (was 350)');
-   // 5. coding agents on: Alfred is one of three recipients, the chip stays
-   assert.equal(await page.locator('#chatComposer .chat-composer-recipient').count(),1,'the recipient chip routes to Claude Code and Codex too');
+   // 5. the hand-off is retired (2026-09-27): a private thread answers as its
+   // own agent, so no recipient chip even with coding agents on
+   assert.equal(await page.locator('#chatComposer .chat-composer-recipient').count(),0,'no recipient chip in a private thread');
    await ctx.close();
   }
   // 4. the queued state, stated once
@@ -104,9 +105,7 @@ const census=()=>{const out=[];for(const e of document.querySelectorAll('button,
    const ctx=await browser.newContext(phone(width)),page=await ctx.newPage();
    await open(page,solo+'/#/chat/a/alfred/a');
    assert.equal(await page.locator('#chatComposer .chat-composer-recipient').count(),0,width+': a one-recipient thread spends no row on the chip');
-   const who=await page.locator('#chatThreadHeader .chat-recipient-control').evaluate(e=>{const r=e.getBoundingClientRect();return {t:e.textContent.trim(),w:r.width,h:r.height,right:r.right};});
-   assert.equal(who.t,'Alfred',width+': the head names who the thread is with');
-   assert.ok(who.w>=44&&who.h>=44&&who.right<=width,width+': the head recipient is a whole 44px target on screen');
+   assert.equal(await page.locator('#chatThreadHeader .chat-recipient-control').count(),0,width+': no "Agent:" hand-off control in the head');
    const small=(await page.evaluate(census)).filter(c=>c.w<44||c.h<44);
    assert.deepEqual(small,[],width+': visible controls under 44px (one recipient)');
    await ctx.close();

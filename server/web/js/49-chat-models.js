@@ -1,11 +1,16 @@
 // MODEL · EFFORT · PERMISSIONS — one picker for every agent (server
-// chat_models.go is the catalog). The composer shows what the conversation is
-// running with; the picker changes it in the agent's own terms:
-//   native agents (Hermes)  the next message names model, provider and effort
+// chat_models.go is the catalog). THE MODEL IS CHOSEN WHEN A CHAT STARTS
+// (owner, 2026-09-27): on the new-chat screen, defaulting to what your last
+// chat with that agent ran with (the catalog's `last`, derived from your
+// sessions); a change there becomes the new default. Inside a running chat
+// the model is shown as it ran and only EFFORT changes — and that change
+// carries over to the next new chat, because it is what the chat ran with.
+//   new chat, native agent  the first message names model, provider, effort
+//   new chat, coding        the launch flags
 //   a coding draft          the launch flags, before the first message
-//   Claude Code, running    its own /model and /effort commands, confirmed
-//                           from its transcript (never assumed)
-//   Codex, running          its own interactive picker, in the live strip
+//   running chat            effort only: the next message's (native agent),
+//                           or the CLI's own /effort, confirmed from its
+//                           transcript (never assumed)
 // /model, /effort and /permissions open this picker on every agent.
 let chatModelCatalog = null, chatModelCatalogAt = 0, chatModelCatalogPending = null;
 const chatModelRequested = new Map(); // coding session id -> {model, effort, at}: sent, not yet observed
@@ -28,18 +33,51 @@ function chatModelContext() {
     const o = chatTermOpen;
     if (!o || o.se.id !== chatOpenId) {
       if (chatOpenId) return null;
-      return {kind: "landing", agent: chatAgent, launch: {model: chatRecall("manifest.chatTermModel." + chatAgent), effort: chatRecall("manifest.chatTermEffort." + chatAgent), permission: chatRecall("manifest.chatTermPermission." + chatAgent)}};
+      return {kind: "landing", agent: chatAgent, launch: chatLandingLaunch(chatAgent)};
     }
-    const se = o.se, rec = chatRecipients.get(se.kind + "/" + se.id);
+    const se = o.se, rec = chatUsableRecipient(se.kind + "/" + se.id, !!o.sharedConversation);
     if (rec) return null;
     const draft = se.launchPhase === "draft";
     return {kind: draft ? "draft" : "live", agent: se.kind, id: se.id, observed: o.settings || null, launch: o.launch || {model: se.model || "", effort: se.effort || "", permission: se.permission || ""}, requested: chatModelRequested.get(se.id) || null};
   }
   const entry = chatRosterEntry(chatAgent);
   if (!entry || (entry.backend && entry.backend !== "hermes") || (!entry.backend && !entry.durableSend)) return null;
-  const key = chatAgent + "/" + (chatOpenId || "new"), rec = chatRecipients.get(key);
-  if (rec && rec.agent !== chatAgent) return null;
-  return {kind: "hermes", agent: chatAgent, key, current: {model: rec?.model || chatCurSession?.model || entry.model || "", provider: rec?.provider || "", effort: rec?.effort || ""}};
+  const key = chatAgent + "/" + (chatOpenId || "new"), rec = chatUsableRecipient(key, !!chatCurSession?.shared);
+  if (rec && (rec.agent !== chatAgent || rec.backend)) return null;
+  // a new chat starts from what your last chat with this agent ran with; an
+  // open one runs with what its messages have been sent with
+  const last = chatOpenId ? chatSessionRecipient(chatCurSession?.id === chatOpenId ? chatCurSession : null) : chatLastRecipient(chatAgent);
+  return {kind: "hermes", agent: chatAgent, key, fresh: !chatOpenId, current: {model: rec ? rec.model || "" : last?.model || chatCurSession?.model || entry.model || "", provider: rec ? rec.provider || "" : last?.provider || "", effort: rec ? rec.effort || "" : last?.effort || ""}};
+}
+
+// chatSessionRecipient — the model, provider and effort this native chat's
+// latest message was sent with (its delivery receipt): what the chat runs
+// with, and what its next message keeps.
+function chatSessionRecipient(session) {
+  const d = (session?.deliveries || []).slice().reverse().find(x => x.context?.recipient);
+  const r = d?.context?.recipient;
+  return r ? {agent: r.agent, model: r.requestedModel ?? r.model ?? "", provider: r.provider || "", effort: r.effort || ""} : null;
+}
+
+// chatModelFixed — a running chat keeps the model it started with.
+function chatModelFixed(ctx) { return !!ctx && (ctx.kind === "live" || (ctx.kind === "hermes" && !ctx.fresh)); }
+
+// chatLandingLaunch — what a new coding chat launches with: your choice on
+// the new-chat screen when it is newer than your last chat, else what that
+// last chat ran with. Permission is only ever the screen's own choice.
+function chatLandingLaunch(agent) {
+  const local = {model: chatRecall("manifest.chatTermModel." + agent), effort: chatRecall("manifest.chatTermEffort." + agent), permission: chatRecall("manifest.chatTermPermission." + agent)};
+  const last = chatModelCatalog?.[agent]?.last, chosenAt = Date.parse(chatRecall("manifest.chatTermChoiceAt." + agent) || "") || 0;
+  if (last && (Date.parse(last.at) || 0) > chosenAt) return {model: last.model || "", effort: last.effort || "", permission: local.permission};
+  return local;
+}
+// chatLastRecipient — the model/provider/effort your last chat with a native
+// agent used, still offered by its catalog (a retired model is dropped).
+function chatLastRecipient(agent) {
+  const cat = chatModelCatalog?.[agent], last = cat?.last;
+  if (!last) return null;
+  const known = !last.model || (cat.models || []).some(m => m.id === last.model && (!last.provider || !m.provider || m.provider === last.provider));
+  return known ? {agent, model: last.model || "", provider: last.provider || "", effort: last.effort || ""} : null;
 }
 
 // chatModelState — the model/effort/permission to show, and whether each is
@@ -91,8 +129,9 @@ function chatModelChips(host) {
   }
   const effort = st.effort ? " · " + st.effort : "";
   chip.textContent = chatModelLabel(cat, st.model) + effort + (st.source.model === "requested" || st.source.effort === "requested" ? " …" : "") + " ⌄";
-  const how = {observed: "as the agent last recorded it", launch: "as launched", requested: "requested; waiting for the agent to confirm", chosen: "for the next message", default: "the agent's default"};
-  chip.title = "Model " + (st.model || "default") + " (" + how[st.source.model] + ")" + (st.effort ? " · effort " + st.effort + " (" + how[st.source.effort] + ")" : "") + " · /model";
+  const how = {observed: "as the agent last recorded it", launch: "as launched", requested: "requested; waiting for the agent to confirm", chosen: ctx.kind === "hermes" && ctx.fresh ? "for this new chat" : "for the next message", default: "the agent's default"};
+  const fixed = chatModelFixed(ctx);
+  chip.title = "Model " + (st.model || "default") + (fixed ? " (set when this chat started)" : " (" + how[st.source.model] + ")") + (st.effort ? " · effort " + st.effort + " (" + how[st.source.effort] + ")" : "") + (fixed ? " · /effort" : " · /model");
   chip.setAttribute("aria-label", "Model and effort: " + chip.title);
   chip.dataset.source = st.source.model;
   if (ctx.kind === "hermes") { perm?.remove(); return true; }
@@ -124,7 +163,7 @@ function chatCloseModelPicker() {
 }
 async function chatOpenModelPicker(focus = "model", preset = {}) {
   const ctx = chatModelContext();
-  if (!ctx) { showToast("This message goes to another agent. Choose it above the conversation."); return; }
+  if (!ctx) { showToast("This message goes to a coding continuation — choose who answers on the chip beside the message box."); return; }
   chatCloseModelPicker();
   const composer = document.getElementById("chatComposer");
   if (!composer) return;
@@ -149,7 +188,8 @@ async function chatOpenModelPicker(focus = "model", preset = {}) {
   const efforts = el("div", "chat-model-efforts"); efforts.setAttribute("role", "radiogroup"); efforts.setAttribute("aria-label", "Effort");
   const perms = el("div", "chat-model-perms"); perms.setAttribute("role", "radiogroup"); perms.setAttribute("aria-label", "Permissions");
   const live = ctx.kind === "live", codexLive = live && ctx.agent === "codex", claudeLive = live && ctx.agent === "claude";
-  const modelEditable = !codexLive, effortEditable = !codexLive, permEditable = !live && !!cat.permissions?.length;
+  const fixed = chatModelFixed(ctx);
+  const modelEditable = !fixed, effortEditable = true, permEditable = !live && !!cat.permissions?.length;
   let active = -1, rows = [];
   const modelOf = () => cat.models.find(m => m.id === chosen.model && (!chosen.provider || !m.provider || m.provider === chosen.provider)) || cat.models.find(m => m.id === chosen.model);
   const paintList = () => {
@@ -190,7 +230,7 @@ async function chatOpenModelPicker(focus = "model", preset = {}) {
     const def = el("button", "chat-model-seg", "default"); def.type = "button"; def.setAttribute("role", "radio"); def.setAttribute("aria-checked", String(!chosen.effort));
     def.title = modelOf()?.defaultEffort ? "The model's default (" + modelOf().defaultEffort + ")" : "The agent's configured default";
     def.onclick = () => { chosen.effort = ""; paintEfforts(); paintStatus(); efforts.querySelector('[aria-checked="true"]')?.focus(); };
-    def.disabled = !effortEditable || claudeLive; efforts.append(def);
+    def.disabled = !effortEditable || live; efforts.append(def);
     for (const e of list) {
       const b = el("button", "chat-model-seg", e.id); b.type = "button"; b.setAttribute("role", "radio"); b.setAttribute("aria-checked", String(chosen.effort === e.id));
       if (e.description) b.title = e.description;
@@ -232,9 +272,9 @@ async function chatOpenModelPicker(focus = "model", preset = {}) {
       hermes: "Applies to your next message in this chat.",
       landing: "Applies when this new coding session launches.",
       draft: "Applies when your first message launches this session.",
-      live: claudeLive ? "Sends Claude Code's own /model and /effort. The chip confirms once Claude records the change." : "Codex switches model and effort in its own picker, shown below the conversation.",
+      live: "Sends " + (claudeLive ? "Claude Code" : "Codex") + "'s own /effort. The chip confirms once it records the change, and your next new chat starts with it.",
     };
-    status.textContent = words[ctx.kind];
+    status.textContent = ctx.kind === "hermes" ? (ctx.fresh ? "Applies to this new chat, and becomes your default for " + chatAgentLabel(ctx.agent) + "." : "Applies to your next message, and carries over to your next new chat.") : ctx.kind === "landing" ? "Applies when this new chat launches, and becomes your default for " + (chatTermKinds[ctx.agent] || ctx.agent) + "." : words[ctx.kind];
     const danger = needsConfirm();
     if (!danger) confirmBox.checked = false;
     confirm.hidden = !danger;
@@ -244,7 +284,7 @@ async function chatOpenModelPicker(focus = "model", preset = {}) {
   };
   const actions = el("div", "chat-model-actions");
   const cancel = el("button", "sprt-quiet", "Cancel"); cancel.type = "button"; cancel.onclick = chatCloseModelPicker;
-  const apply = el("button", "sprt-quiet chat-dialog-primary chat-model-apply", codexLive ? "Open Codex /model" : "Apply"); apply.type = "button";
+  const apply = el("button", "sprt-quiet chat-dialog-primary chat-model-apply", "Apply"); apply.type = "button";
   apply.onclick = async () => {
     if (needsConfirm() && !confirmBox.checked) { confirmBox.focus(); return; }
     apply.disabled = true;
@@ -253,19 +293,30 @@ async function chatOpenModelPicker(focus = "model", preset = {}) {
     finally { if (apply.isConnected) paintStatus(); }
   };
   actions.append(cancel, apply);
-  const hint = el("p", "chat-model-hint", "↑↓ model · ←→ effort · Enter apply · Esc close");
-  box.append(search, list, efforts, perms, status, confirm, actions, hint);
+  const hint = el("p", "chat-model-hint", fixed ? "←→ effort · Enter apply · Esc close" : "↑↓ model · ←→ effort · Enter apply · Esc close");
+  // a running chat shows the model it runs with — changing it is a new chat
+  const fixedRow = el("div", "chat-model-fixed");
+  if (fixed) {
+    fixedRow.append(el("span", "chat-model-section", "Model"), el("span", "chat-model-name", chatModelLabel(cat, st.model)), el("span", "chat-model-meta", "set when this chat started"));
+    const fresh = el("button", "sprt-quiet chat-model-native", "New chat with this context →"); fresh.type = "button";
+    fresh.title = "Start a separate linked chat — choose its agent and model there; this one keeps running";
+    fresh.onclick = () => { chatCloseModelPicker(); chatHandoffFromHere(); };
+    fixedRow.append(fresh);
+  }
+  box.append(...(fixed ? [fixedRow] : [search, list]), efforts, perms, status, confirm, actions, hint);
+  // a running chat: the effort row takes the keys (←→ effort, Enter apply)
+  if (fixed) efforts.tabIndex = -1;
   search.addEventListener("input", paintList);
   box.addEventListener("keydown", e => {
     if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); chatCloseModelPicker(); return; }
     if (e.target.closest(".chat-model-seg,.chat-model-actions button,.chat-model-native")) { if (e.key === "Enter" || e.key === " ") return; }
-    if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+    if ((e.key === "ArrowDown" || e.key === "ArrowUp") && !fixed) {
       e.preventDefault(); if (!rows.length) return;
       rows[active]?.row.classList.remove("is-active");
       active = (active + (e.key === "ArrowDown" ? 1 : -1) + rows.length) % rows.length;
       const r = rows[active]; r.row.classList.add("is-active"); r.row.scrollIntoView({block: "nearest"}); search.setAttribute("aria-activedescendant", r.row.id);
       if (modelEditable) { chosen.model = r.m.id; chosen.provider = cat.backend === "hermes" ? (r.m.provider || "") : ""; rows.forEach(x => x.row.setAttribute("aria-selected", String(x === r))); paintEfforts(); paintStatus(); }
-    } else if ((e.key === "ArrowLeft" || e.key === "ArrowRight") && e.target === search && !search.value && effortEditable) {
+    } else if ((e.key === "ArrowLeft" || e.key === "ArrowRight") && (fixed ? !e.target.closest(".chat-model-seg,.chat-model-actions button,.chat-model-native") : e.target === search && !search.value) && effortEditable) {
       e.preventDefault();
       const ids = ["", ...effortChoices().map(x => x.id)], i = ids.indexOf(chosen.effort);
       chosen.effort = ids[Math.min(ids.length - 1, Math.max(0, i + (e.key === "ArrowRight" ? 1 : -1)))];
@@ -277,7 +328,7 @@ async function chatOpenModelPicker(focus = "model", preset = {}) {
   document.addEventListener("pointerdown", outside, true);
   paintList(); paintEfforts(); paintPerms(); paintStatus();
   chatPlaceModelPicker(box, composer, box._return);
-  (focus === "permission" && permEditable ? perms.querySelector('[aria-checked="true"]') : search).focus({preventScroll: true});
+  (focus === "permission" && permEditable ? perms.querySelector('[aria-checked="true"]') : fixed ? efforts : search).focus({preventScroll: true});
 }
 
 // chatPlaceModelPicker — at desktop width the picker is a panel of at most
@@ -314,6 +365,7 @@ async function chatApplyModelChoice(ctx, cat, before, chosen) {
       localStorage.setItem("manifest.chatTermModel." + ctx.agent, chosen.model);
       localStorage.setItem("manifest.chatTermEffort." + ctx.agent, chosen.effort);
       localStorage.setItem("manifest.chatTermPermission." + ctx.agent, chosen.permission);
+      localStorage.setItem("manifest.chatTermChoiceAt." + ctx.agent, new Date().toISOString());
     } catch (e) { throw Error("This browser cannot keep the choice. The session will launch with its defaults."); }
     chatModelChipsRefresh();
     return true;
@@ -327,15 +379,14 @@ async function chatApplyModelChoice(ctx, cat, before, chosen) {
     chatModelChipsRefresh();
     return true;
   }
-  if (ctx.agent === "codex") { await chatModelNative("/model"); return true; }
-  // Claude Code, running: its own commands. Recorded as requested until the
-  // transcript shows the agent running with them.
+  // A running coding chat: effort only, through the CLI's own /effort (Claude
+  // Code, and Codex 0.117+). Recorded as requested until the transcript
+  // shows the agent running with it.
   const sends = [];
-  if (chosen.model && chosen.model !== before.model) sends.push("/model " + chosen.model);
   if (chosen.effort && chosen.effort !== before.effort) sends.push("/effort " + chosen.effort);
   if (!sends.length) return true;
-  for (const command of sends) if (!await chatTermSend(command, {command: true})) throw Error("Claude did not take " + command + ". Nothing else was sent.");
-  chatModelRequested.set(ctx.id, {model: sends.some(s => s.startsWith("/model")) ? chosen.model : "", effort: sends.some(s => s.startsWith("/effort")) ? chosen.effort : "", at: Date.now()});
+  for (const command of sends) if (!await chatTermSend(command, {command: true})) throw Error((chatTermKinds[ctx.agent] || "The agent") + " did not take " + command + ". Nothing else was sent.");
+  chatModelRequested.set(ctx.id, {model: "", effort: chosen.effort, at: Date.now()});
   chatModelChipsRefresh();
   return true;
 }
@@ -359,6 +410,11 @@ async function chatSurfaceCommand(text, clear) {
   if (!ctx) return false;
   const verb = m[1].toLowerCase().replace(/s$/, ""), arg = m[2] || "";
   if (!arg) { clear(); chatOpenModelPicker(verb === "permission" ? "permission" : "model"); return true; }
+  if (verb === "model" && chatModelFixed(ctx)) {
+    clear();
+    showToast("This chat keeps the model it started with. To use " + arg + ", start a new chat with this context (/model shows the option).");
+    return true;
+  }
   if (ctx.kind === "live") return false; // the agent's own command, verbatim
   const catalog = await chatLoadModelCatalog().catch(() => null), cat = catalog?.[ctx.agent];
   if (!cat) { showToast("Model list unavailable; nothing changed."); return true; }

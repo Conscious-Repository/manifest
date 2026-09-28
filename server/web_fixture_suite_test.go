@@ -135,7 +135,10 @@ func TestFixtureChatLatestBrowser(t *testing.T) {
 	runFixture(t, "chat-latest-browser.cjs", true, false)
 }
 
-// Add chat project creation and explicit coding model choices (chat-model-picker.cjs).
+// "New chat with this context": the composer hand-off panel (chat-handoff.cjs).
+func TestFixtureChatHandoff(t *testing.T) { runFixture(t, "chat-handoff.cjs", true, false) }
+
+// The side-chat model list reads the chips' catalog, last chat as default (chat-model-picker.cjs).
 func TestFixtureChatModelPicker(t *testing.T) { runFixture(t, "chat-model-picker.cjs", true, false) }
 
 // Interrupt native chat runners with durable targeted stop receipts (chat-native-interrupt.cjs).

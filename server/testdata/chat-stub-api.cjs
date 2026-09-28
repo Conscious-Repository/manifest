@@ -58,7 +58,7 @@ function makeStub({terminal=true,codex=false,longCodex=false}={}){
  const sessions={a:{id:'a',title:'Long research thread',status:'idle',agent:'alfred',turns:40,updated:'2026-09-25T11:00:00Z',created:'2026-09-25T10:00:00Z',spentUsd:0,deliveries:[]},
   b:{id:'b',title:'Second thread',status:'idle',agent:'alfred',turns:2,updated:'2026-09-25T09:00:00Z',created:'2026-09-25T09:00:00Z',spentUsd:0,deliveries:[]}};
  const bodies={a:long(40),b:long(2)};
- const state=new Map();const streams=[];const log=[];const lastSend={value:null};let down=false,delay=0,legacy=false;
+ const state=new Map();const streams=[];const log=[];const related=[],launches=[];const lastSend={value:null};let down=false,delay=0,legacy=false;
  const json=(res,code,body)=>{res.writeHead(code,{'Content-Type':'application/json'});res.end(JSON.stringify(body));};
  const roster={agents:[{name:'alfred',label:'Alfred',enabled:true,durableSend:true,model:'claude-x'}]};
  const detail=id=>{const s=sessions[id];return {session:s,body:bodies[id],conversation:{key:'conv-'+id},capabilities:caps,supervision:s.supervision||{adapter:'hermes-oneshot',state:'unknown',evidence:'x',capabilities:caps,runs:[]},outputs:[],queued:[],operations:[],proposals:[],related:[],continuations:[],sharedFiles:[]};};
@@ -67,6 +67,7 @@ function makeStub({terminal=true,codex=false,longCodex=false}={}){
   if(p==='/__push'){const ev=url.searchParams.get('ev'),data=url.searchParams.get('data')||'{}';streams.forEach(s=>s.write('event: '+ev+'\ndata: '+JSON.stringify({data:JSON.parse(data)})+'\n\n'));return json(res,200,{n:streams.length});}
   if(p==='/__log')return json(res,200,{log});
   if(p==='/__last')return json(res,200,{send:lastSend.value});
+  if(p==='/__related')return json(res,200,{related,launches});
   if(p==='/__down'){down=url.searchParams.get('on')==='1';return json(res,200,{down});}
   if(p==='/__delay'){delay=Number(url.searchParams.get('ms'))||0;return json(res,200,{delay});}
   if(p==='/__legacy'){legacy=url.searchParams.get('on')==='1';return json(res,200,{legacy});}
@@ -79,6 +80,19 @@ function makeStub({terminal=true,codex=false,longCodex=false}={}){
      efforts:['none','minimal','low','medium','high','xhigh','max','ultra'].map(id=>({id})),
      models:[{id:'claude-x',label:'claude-x',provider:'anthropic',description:'Anthropic'},{id:'gpt-5.6-luna',label:'gpt-5.6-luna',provider:'openai-codex',description:'OpenAI'},{id:'grok-4.6',label:'grok-4.6',provider:'xai-oauth',description:'xAI'},{id:'deepseek-v4.1-flash',label:'deepseek-v4.1-flash',provider:'lab-sparks',description:'Lab (192.168.87.11:8000/v1)'}]},
     claude:codingCatalog.claude,codex:codingCatalog.codex}});
+   // a new chat's first message creates it, recording the recipient as the
+   // server's delivery receipt does
+   // "New chat with this context" creates a linked chat (never sends); a
+   // coding one is an unlaunched draft whose effort is a launch setting
+   const rel=p.match(/^\/api\/agents\/chat\/alfred\/sessions\/([^/]+)\/related$/);
+   if(rel&&req.method==='POST'){let b='';req.on('data',c=>b+=c);req.on('end',()=>{const v=JSON.parse(b||'{}');related.push(v);const id='rel'+related.length;
+     json(res,200,{id,agent:v.agent,model:v.model||'',conversation:{route:'#/chat/a/'+v.agent+'/'+id}});});return;}
+   const put=p.match(/^\/api\/terminal\/session\/(rel\d+)$/);
+   if(put&&req.method==='PUT'){let b='';req.on('data',c=>b+=c);req.on('end',()=>{launches.push({id:put[1],...JSON.parse(b||'{}')});json(res,200,{id:put[1],kind:'codex',launchPhase:'draft'});});return;}
+   if(p==='/api/agents/chat/alfred/sessions'&&req.method==='POST'){let b='';req.on('data',c=>b+=c);req.on('end',()=>{
+     const v=JSON.parse(b||'{}'),id='n'+Object.keys(sessions).length,now=new Date().toISOString();lastSend.value=v;
+     sessions[id]={id,title:'New chat',status:'idle',agent:'alfred',turns:1,updated:now,created:now,spentUsd:0,deliveries:[{id:v.requestId||'req-1',state:'queued',userTurn:1,text:v.text,...(v.recipient?{context:{recipient:{...v.recipient,requestedModel:v.recipient.model}}}:{})}]};
+     bodies[id]=turn(1,'user',v.text||'');json(res,200,{ok:true,id,requestId:v.requestId||'req-1'});});return;}
    if(p==='/api/agents/chat/alfred/sessions')return json(res,200,{sessions:Object.values(sessions)});
    const gm=p.match(/^\/api\/agents\/chat\/alfred\/sessions\/([^/]+)\/goal$/);
    if(gm&&!sessions[gm[1]])return json(res,404,{});
@@ -91,7 +105,7 @@ function makeStub({terminal=true,codex=false,longCodex=false}={}){
    if(sm&&sm[2]==='/stream'){res.writeHead(200,{'Content-Type':'text/event-stream','Cache-Control':'no-store'});res.write(':ok\n\n');streams.push(res);req.on('close',()=>streams.splice(streams.indexOf(res),1));return;}
    if(sm&&sm[2]==='/messages'&&req.method==='POST'){let b='';req.on('data',c=>b+=c);req.on('end',()=>setTimeout(()=>{
      const v=JSON.parse(b||'{}'),s=sessions[sm[1]];lastSend.value=v;s.turns++;bodies[s.id]+='\n\n'+turn(s.turns,'user',v.text||'');
-     const id=v.requestId||'req-'+s.turns;s.deliveries=[...s.deliveries,{id,state:'queued',userTurn:s.turns,text:v.text}];
+     const id=v.requestId||'req-'+s.turns;s.deliveries=[...s.deliveries,{id,state:'queued',userTurn:s.turns,text:v.text,...(v.recipient?{context:{recipient:{...v.recipient,requestedModel:v.recipient.model}}}:{})}];
      s.supervision={adapter:'hermes-oneshot',state:'submitted',evidence:'delivery receipt '+id,capabilities:caps,runs:[{id,state:'queued'}]};s.updated=new Date().toISOString();
      json(res,200,{ok:true,id:s.id,requestId:id});},delay));return;}
    if(sm)return json(res,200,detail(sm[1]));

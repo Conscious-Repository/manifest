@@ -52,14 +52,12 @@ function chatWorkspaceIcon(kind){
 }
 function chatWorkspaceHeader(head){
  queueMicrotask(()=>chatRestoreWorkspace());
- for(const child of Array.from(head.children))if(child.tagName==='BUTTON'&&child.textContent.startsWith('Agent: '))child.classList.add('chat-recipient-control');
  queueMicrotask(()=>{const composer=document.getElementById('chatComposer');if(composer?.dataset.built)chatPolishComposer(composer);});
  if(chatEmbedded){const more=head.querySelector('.chat-details');if(more)for(const button of Array.from(head.children))if(button.matches('.chat-terminal-view')||button.textContent==='Changes')more.append(button);return;}
  const more=head.querySelector('.chat-details');
  for(const child of Array.from(head.children)){
   if(child.textContent==='Changes'&&more)more.append(child);
   if(child.matches('.chat-terminal-view')){child.setAttribute('aria-label','Terminal');child.title='Toggle terminal';child.replaceChildren(chatWorkspaceIcon('terminal'));child.classList.add('chat-icon-button');}
-  if(child.tagName==='BUTTON'&&child.textContent.startsWith('Agent: ')){child.setAttribute('aria-label',child.textContent);child.textContent=child.textContent.slice(7);}
  }
  const summary=more?.querySelector(':scope > summary');if(summary){summary.textContent='···';summary.setAttribute('aria-label','Conversation options');summary.title='Conversation options';more.classList.add('chat-options-compact');}
  const button=el('button','sprt-quiet chat-workspace-toggle chat-icon-button');button.append(chatWorkspaceIcon('panel'));
@@ -253,19 +251,18 @@ function chatWorkspaceSideSetup(source,restore=null){
 // Keep routing beside the instruction, while reusing the existing recipient
 // chooser and all of its capability/authorization checks.
 function chatPolishComposer(host){
- const main=host.closest('.chat-main'),source=document.querySelector('#chatThreadHeader .chat-recipient-control');
+ const main=host.closest('.chat-main');
+ // Who answers is the thread's own agent (the "Choose agent" hand-off was
+ // retired 2026-09-27). Only a shared thread with coding continuations still
+ // chooses per message, on this chip.
+ const shared=!chatIsTerm()&&chatCurSession?.id===chatOpenId&&chatCurSession?.shared&&(chatCurSession.continuations||[]).length?chatCurSession:null;
  let picker=host.querySelector('.chat-composer-recipient');
- // With exactly one possible recipient the chip names a constant and opens a
- // one-item chooser: the input row does not spend its width on it (2026-09-27
- // pass 2). The head's own recipient control then shows, and every reply names
- // its agent. With coding agents on, an Alfred thread offers three, and keeps it.
- if(source&&typeof chatRecipientChoiceCount==='function'&&chatRecipientChoiceCount()<=1){picker?.remove();picker=null;}
- else if(source){
-  if(!picker){picker=el('button','sprt-quiet chat-composer-recipient');picker.setAttribute('aria-label','Choose agent or model');picker.onclick=()=>document.querySelector('#chatThreadHeader .chat-recipient-control')?.click();host.append(picker);}
-  const recipient=chatRecipients.get((chatAgent||'spirits')+'/'+(chatOpenId||'new'));
-  const model=recipient?.model||(chatIsTerm()?chatTermOpen?.se.model:chatCurSession?.model)||'';
-  const agent=chatAgentLabel(recipient?.agent||chatAgent);
-  picker.textContent=(model?shortModel(model):agent)+' ⌄';picker.title=agent+(model?' · '+model:'')+' · Choose agent or model';
+ if(shared){
+  if(!picker){picker=el('button','sprt-quiet chat-composer-recipient');picker.type='button';picker.setAttribute('aria-haspopup','dialog');picker.setAttribute('aria-expanded','false');host.append(picker);}
+  picker.onclick=()=>chatChipMenu(picker,'Who answers',chatSharedRecipientItems(shared));
+  const recipient=chatRecipients.get((chatAgent||'spirits')+'/'+chatOpenId);
+  const name=recipient?chatAgentLabel(recipient.agent)+(recipient.backend==='terminal'?' · coding':''):'Choose who answers';
+  picker.textContent=name+' ⌄';picker.title='Next message goes to '+(recipient?name:'— choose the team agent or a coding continuation');picker.setAttribute('aria-label',picker.title);
  }else{picker?.remove();picker=null;}
  // Model, effort and permissions have their own chips (49-chat-models.js);
  // the recipient chip then names only the agent the message goes to.
@@ -273,7 +270,6 @@ function chatPolishComposer(host){
  if(typeof chatGoalBar==='function')chatGoalBar(host);
  // a new chat's agent, project and folder chips, and what sits under it
  if(typeof chatLandingChips==='function'){chatLandingChips(host);chatLandingBelow();chatLandingTakeCarry();}
- if(chips&&picker){const agentName=chatAgentLabel(chatRecipients.get((chatAgent||'spirits')+'/'+(chatOpenId||'new'))?.agent||chatAgent);picker.textContent=agentName+' ⌄';picker.title='Next message goes to '+agentName+' · choose another agent';picker.setAttribute('aria-label','Choose agent');}
  main?.classList.toggle('has-composer-recipient',!!picker);
  const input=host.querySelector('textarea'),send=host.querySelector('.chat-send');
  if(send&&send.textContent!=='…'){send.setAttribute('aria-label','Send message');send.title=window.matchMedia('(max-width: 860px)').matches?'Send message · Enter adds a new line':'Send message · Enter (Shift+Enter for a new line)';}
@@ -370,19 +366,21 @@ function chatCopyResponseControl(blocks,turnID){
  return button;
 }
 
-let chatCodingCatalogPromise;
+// chatPopulateModelSelect — the side-chat setup's model list, from the same
+// catalog the composer chips use (/api/chat/models), so every model reads by
+// its label; a new chat defaults to what your last chat with that agent ran.
 function chatPopulateModelSelect(select,kind,requested=''){
  const ticket=Symbol();select._modelTicket=ticket;select.replaceChildren();
  const initial=el('option','',requested||'Configured default');initial.value=requested;select.append(initial);select.value=requested;
- if(!['codex','claude'].includes(kind))return;
- if(!chatCodingCatalogPromise)chatCodingCatalogPromise=fetch('/api/terminal/models').then(r=>{if(!r.ok)throw Error('Models unavailable');return r.json();}).catch(e=>{chatCodingCatalogPromise=null;throw e;});
- chatCodingCatalogPromise.then(all=>{
+ chatLoadModelCatalog().then(all=>{
   if(select._modelTicket!==ticket)return;
-  const catalog=all[kind];if(!catalog)return;select.dataset.default=catalog.default||'';const value=requested||catalog.default||'';
-  select.replaceChildren();for(const m of catalog.models||[]){const o=el('option','',m.label);o.value=m.id;select.append(o);}
+  const cat=all[kind];if(!cat)return;
+  const value=requested||cat.last?.model||cat.default||'';
+  select.replaceChildren();const def=el('option','','Configured default');def.value='';select.append(def);
+  for(const m of cat.models||[]){const o=el('option','',(m.label||m.id)+(m.provider&&cat.backend==='hermes'?' · '+m.provider:''));o.value=m.id;select.append(o);}
   if(value&&!Array.from(select.options).some(o=>o.value===value)){const o=el('option','',value+' · current');o.value=value;select.prepend(o);}
-  select.value=value;select.dispatchEvent(new Event('change'));select.title='Models configured for this server';
- }).catch(()=>{if(select._modelTicket===ticket)select.title='Model list unavailable. Using the displayed configured/current model.';});
+  select.value=value;select.dispatchEvent(new Event('change'));
+ }).catch(()=>{if(select._modelTicket===ticket)select.title='Model list unavailable. Using the configured default.';});
 }
 
 // Explicit control+option/alt shortcuts avoid ordinary typing and browser tabs.

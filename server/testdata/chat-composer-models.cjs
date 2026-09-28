@@ -1,12 +1,14 @@
 // chat-composer-models.cjs — the real front end over the stub chat API: the
 // composer's model · effort chip and the /model, /effort surface commands on a
 // native (Hermes) agent.
-//   1. the chip names the conversation's model; the picker groups models by
-//      provider, searches, sets effort, and the next message carries exactly
-//      that model, provider and effort as its recipient;
-//   2. /effort low applies without sending a message; /model with a name the
-//      catalog lacks refuses in words and sends nothing; bare /model opens the
-//      picker and Esc returns focus to the composer;
+//   1. THE MODEL IS CHOSEN WHEN A CHAT STARTS (2026-09-27): on a new chat the
+//      picker groups models by provider, searches, sets effort, and the first
+//      message carries exactly that model, provider and effort; the open chat
+//      then shows its model fixed ("New chat with this context" to change it)
+//      and keeps sending with it;
+//   2. /effort low applies without sending a message; /model with a name, in
+//      a running chat, says the chat keeps its model and sends nothing; bare
+//      /model opens the effort-only picker and Esc returns focus;
 //   3. the command menu offers Manifest's commands on a native agent, an
 //      exact command runs on Enter, and /goal sets, shows, pauses and clears
 //      the chat's standing objective without sending a message;
@@ -28,7 +30,9 @@ const {makeStub}=require('./chat-stub-api.cjs');
   await page.waitForFunction(()=>/claude-x/.test(document.querySelector('#chatComposer .chat-composer-model')?.textContent||''));
   // a native (Hermes) reply has no recorded span: its footer never claims one
   assert.equal(await page.locator('#chatTranscript').getByText(/Worked for/).count(),0,'a native reply claimed a worked-for time');
-  // 1. choose a model under another provider, and an effort
+  // 1. a new chat: choose a model under another provider, and an effort
+  await page.goto(base+'/#/chat/a/alfred/new');await input.waitFor();
+  await page.waitForFunction(()=>!!document.querySelector('#chatComposer .chat-composer-model'));
   await chip.click();
   const picker=page.getByRole('dialog',{name:'Model, effort and permissions'});await picker.waitFor();
   assert.deepEqual(await picker.locator('.chat-model-group').allTextContents(),['Anthropic','OpenAI','xAI','Lab (192.168.87.11:8000/v1)'],'models are grouped by provider');
@@ -42,7 +46,15 @@ const {makeStub}=require('./chat-stub-api.cjs');
   await input.fill('What changed?');await input.press('Enter');
   await page.waitForFunction(async()=>true);
   let last;for(let i=0;i<50&&!(last=(await hook('/__last')).send);i++)await page.waitForTimeout(100);
-  assert.deepEqual({agent:last.recipient.agent,model:last.recipient.model,provider:last.recipient.provider,effort:last.recipient.effort},{agent:'alfred',model:'grok-4.6',provider:'xai-oauth',effort:'high'},'the message names the chosen model, provider and effort');
+  assert.deepEqual({agent:last.recipient.agent,model:last.recipient.model,provider:last.recipient.provider,effort:last.recipient.effort},{agent:'alfred',model:'grok-4.6',provider:'xai-oauth',effort:'high'},'the first message names the chosen model, provider and effort');
+  await page.waitForFunction(()=>/^#\/chat\/a\/alfred\/n\d+$/.test(location.hash));
+  const chatId=await page.evaluate(()=>location.hash.split('/').pop());
+  // the open chat runs with that model: shown fixed, effort only
+  await page.waitForFunction(()=>/grok-4\.6 · high/.test(document.querySelector('#chatComposer .chat-composer-model')?.textContent||''));
+  await chip.click();await picker.waitFor();
+  assert.equal(await picker.locator('.chat-model-group').count(),0,'a running chat offers no model list');
+  assert.match(await picker.locator('.chat-model-fixed').textContent(),/grok-4\.6.*set when this chat started.*New chat with this context/);
+  await page.keyboard.press('Escape');await picker.waitFor({state:'detached'});
   // a surface command while a send is still in flight applies at once (it
   // used to be swallowed until the send settled: the flake behind this step)
   await hook('/__delay?ms=2000');await input.fill('Held send');await input.press('Enter');
@@ -57,14 +69,14 @@ const {makeStub}=require('./chat-stub-api.cjs');
   await input.fill('/effort low');await input.press('Enter');
   await page.waitForFunction(()=>/· low/.test(document.querySelector('#chatComposer .chat-composer-model')?.textContent||''));
   assert.equal(await input.inputValue(),'','an applied command clears the composer');
-  await input.fill('/model nonsense-model');await input.press('Enter');
-  await page.getByText('No model named nonsense-model',{exact:false}).waitFor();
-  assert.equal(await input.inputValue(),'/model nonsense-model','a refused command keeps what was typed');
+  await input.fill('/model gpt-5.6-luna');await input.press('Enter');
+  await page.getByText('This chat keeps the model it started with',{exact:false}).waitFor();
+  assert.match(await chip.textContent(),/grok-4\.6/,'/model in a running chat changed nothing');
   await input.fill('/model');await input.press('Enter');
   await picker.waitFor();
   await page.keyboard.press('Escape');await picker.waitFor({state:'detached'});
   assert.equal(await page.evaluate(()=>document.activeElement===document.querySelector('#chatComposer textarea')),true,'Esc returns focus to the composer');
-  // keyboard: ↓ picks the next model, → raises effort, Enter applies
+  // keyboard: → raises effort, Enter applies (no model list to move through)
   await input.fill('/model');await input.press('Enter');await picker.waitFor();
   await page.keyboard.press('ArrowRight');
   assert.equal(await picker.locator('[role="radio"][aria-checked="true"]').textContent(),'medium','→ raises effort one step');
@@ -81,15 +93,15 @@ const {makeStub}=require('./chat-stub-api.cjs');
   await input.fill('/goal Ship tiles with every test green');await input.press('Enter');
   const bar=page.locator('#chatComposer .chat-goal-bar');await bar.waitFor();
   assert.match(await bar.textContent(),/Goal.*Ship tiles with every test green/);
-  assert.equal(stub.sessions.b.goal,'Ship tiles with every test green');
+  assert.equal(stub.sessions[chatId].goal,'Ship tiles with every test green');
   assert.equal(await posts(),before,'/goal sent a message');
   assert.equal(await page.evaluate(()=>{const b=document.querySelector('.chat-goal-bar .chat-goal-act');chatModelChipsRefresh();chatPolishComposer(document.getElementById('chatComposer'));return b===document.querySelector('.chat-goal-bar .chat-goal-act');}),true,'a composer repaint replaced the goal controls under the pointer');
   await bar.getByRole('button',{name:'Pause'}).click();
   await page.waitForFunction(()=>document.querySelector('.chat-goal-bar')?.classList.contains('is-paused'));
-  assert.equal(stub.sessions.b.goalState,'paused');
+  assert.equal(stub.sessions[chatId].goalState,'paused');
   await input.fill('/goal clear');await input.press('Enter');
   await bar.waitFor({state:'detached'});
-  assert.equal(stub.sessions.b.goal,'');
+  assert.equal(stub.sessions[chatId].goal,'');
   // 3. survives a reload
   await page.evaluate(()=>{for(const s of chatSyncedDrafts.values())s.flush?.();});await page.waitForTimeout(800);
   await page.reload();await input.waitFor();

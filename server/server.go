@@ -713,7 +713,6 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/agents/chat/{agent}/tasks", s.handleAgentChatTasks)
 
 	// TERMINAL — in-app PTY over tmux (metis-local; claude/codex presets).
-	mux.HandleFunc("GET /api/terminal/models", s.handleChatCodingModels)
 	mux.HandleFunc("GET /api/chat/models", s.handleChatModels)
 	mux.HandleFunc("GET /api/terminal/sessions", s.handleTermSessions)
 	mux.HandleFunc("GET /api/terminal/folders", s.handleTermFolders) // new-chat folder chip (2026-09-27)

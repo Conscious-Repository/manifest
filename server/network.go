@@ -33,13 +33,13 @@ import (
 
 // NetPerson is one resolved human as the Network list draws them.
 type NetPerson struct {
-	ID          string   `json:"id"` // aion-net/… (editable) · contact/<key> · team/<initials>
-	Name        string   `json:"name"`
-	Kind        string   `json:"kind,omitempty"`
-	Org         string   `json:"org,omitempty"`
-	Title       string   `json:"title,omitempty"`
-	Tags        []string `json:"tags,omitempty"`
-	Suggest     []string `json:"suggest,omitempty"` // source topics not yet tags
+	ID      string   `json:"id"` // aion-net/… (editable) · contact/<key> · team/<initials>
+	Name    string   `json:"name"`
+	Kind    string   `json:"kind,omitempty"`
+	Org     string   `json:"org,omitempty"`
+	Title   string   `json:"title,omitempty"`
+	Tags    []string `json:"tags,omitempty"`
+	Suggest []string `json:"suggest,omitempty"` // source topics not yet tags
 	// Topics are what a SOURCE said the person knows (kept from a sweep) —
 	// shown as their experience, marked as the source's, beside your tags.
 	Topics []string `json:"topics,omitempty"`
@@ -48,11 +48,11 @@ type NetPerson struct {
 	// investor or registry name), "notes" (a name from meeting notes). ONE
 	// rule decides it: your people have a contact note, or are on the team.
 	// "make them a contact" (the note) is the only way in. "" = your people.
-	Pending string `json:"pending,omitempty"`
-	origin  string // the contacts layer's origin for a note-less contact
-	Note        string   `json:"note,omitempty"`
-	LastContact string   `json:"lastContact,omitempty"` // the owner's own date
-	LastMet     string   `json:"lastMet,omitempty"`     // the calendar's, when a contact is linked
+	Pending     string `json:"pending,omitempty"`
+	origin      string // the contacts layer's origin for a note-less contact
+	Note        string `json:"note,omitempty"`
+	LastContact string `json:"lastContact,omitempty"` // the owner's own date
+	LastMet     string `json:"lastMet,omitempty"`     // the calendar's, when a contact is linked
 	// the Contacts signals (contacts.Contact), copied on read for linked contacts
 	LastMentioned string   `json:"lastMentioned,omitempty"`
 	HasNote       bool     `json:"hasNote,omitempty"`
