@@ -89,17 +89,19 @@ func ValidSeedClass(s string) bool { return inSet(SeedClasses, s) }
 // deliberately no `visibility` field: everything here is private by
 // construction, and a field that says "private" invites one that says
 // otherwise.
-var PersonTypes = []string{"hire", "advisor", "expert", "connector", "team"}
+var PersonTypes = []string{"hire", "advisor", "expert", "connector"}
 
 // legacyPersonTypes maps the pre-Network (2026-09-27) vocabulary onto the
 // kinds the owner builds his network around: future hires, advisors,
-// experts to consult, connectors — plus his own team. The old words are read
+// experts to consult, connectors. Being on the team is NOT a kind: it is the
+// explicit `team` link to the AION roster (one fact, one place — a kind
+// "team" beside a team link was the same fact twice). The old words are read
 // forever (hand-edited rows and the install seed carry `founder`) but never
 // written again: personOf projects them, Update/normalizeType rewrites the
 // row, so one fact keeps one spelling. Investors are NOT a kind here — they
 // live in fundraising, and a row once typed `investor` reads as a connector.
 var legacyPersonTypes = map[string]string{
-	"founder": "team", "employee": "team", "candidate": "hire",
+	"team": "", "founder": "", "employee": "", "candidate": "hire",
 	"collaborator": "expert", "investor": "connector", "external": "",
 }
 

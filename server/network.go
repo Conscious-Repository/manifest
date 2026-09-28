@@ -57,6 +57,16 @@ type NetPerson struct {
 	LinkedIn    string   `json:"linkedin,omitempty"`
 	ORCID       string   `json:"orcid,omitempty"`
 	Archived    string   `json:"archived,omitempty"`
+	// SameName are the OTHER rows with exactly this name that an explicit
+	// link could join — offered for the owner to confirm, never merged
+	// (§9: a wrong merge writes one person's history onto another).
+	SameName []NetAlias `json:"sameName,omitempty"`
+}
+
+// NetAlias is one same-name row, and the id to open it by.
+type NetAlias struct {
+	ID      string   `json:"id"`
+	Sources []string `json:"sources"`
 }
 
 func addSource(p *NetPerson, s string) {
@@ -146,17 +156,16 @@ func (s *Server) networkPeople(now time.Time) []*NetPerson {
 			}
 			np, ok := byTeam[ini]
 			if !ok {
-				np = &NetPerson{ID: "team/" + ini, Name: tp.Name, Kind: "team", Sources: []string{}}
+				np = &NetPerson{ID: "team/" + ini, Name: tp.Name, Sources: []string{}}
 				byTeam[ini] = np
 				out = append(out, np)
 			}
 			addSource(np, "team")
 			np.Role, np.TeamLink = tp.Role, ini
-			if np.Kind == "" {
-				np.Kind = "team"
-			}
 		}
 	}
+
+	sameNameSuggestions(out)
 
 	// recency first: whichever date is newer, the owner's or the calendar's;
 	// an undated person sorts last rather than pretending to be old
@@ -382,7 +391,7 @@ func (s *Server) networkAdopt(id string) (string, error) {
 	case strings.HasPrefix(id, "contact/"):
 		row.Ref = np.ContactKey
 	case strings.HasPrefix(id, "team/"):
-		row.Team, row.Type = np.TeamLink, "team"
+		row.Team = np.TeamLink
 	default:
 		return "", errBadRequest("cannot edit " + id)
 	}
@@ -441,6 +450,9 @@ func (s *Server) networkLens(now time.Time) *networkLens {
 			l.alias["team/"+t] = p.ID
 		}
 		k := p.Kind
+		if k == "" && p.TeamLink != "" {
+			k = "team"
+		}
 		if k == "" {
 			k = "known"
 			for _, src := range p.Sources {
@@ -537,4 +549,42 @@ func (s *Server) handleRecruitingSourcePeople(w http.ResponseWriter, r *http.Req
 		people = []recruiting.MergedPerson{}
 	}
 	writeJSON(w, map[string]any{"people": people, "total": total, "formula": recruiting.RankFormula})
+}
+
+// sameNameSuggestions pairs rows whose names fold to the same letters when a
+// link could actually join them: one side still lacks the contact link or
+// the team link the other supplies. Two kept rows are never paired — there
+// is no link that merges rows, and guessing one is exactly what §9 forbids.
+func sameNameSuggestions(people []*NetPerson) {
+	fold := func(s string) string {
+		var b strings.Builder
+		for _, r := range strings.ToLower(s) {
+			if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || r > 127 {
+				b.WriteRune(r)
+			}
+		}
+		return b.String()
+	}
+	byName := map[string][]*NetPerson{}
+	for _, p := range people {
+		if k := fold(p.Name); k != "" && p.Archived == "" {
+			byName[k] = append(byName[k], p)
+		}
+	}
+	joinable := func(a, b *NetPerson) bool {
+		if a.Editable && b.Editable {
+			return false
+		}
+		return (a.ContactKey == "" && b.ContactKey != "") || (b.ContactKey == "" && a.ContactKey != "") ||
+			(a.TeamLink == "" && b.TeamLink != "") || (b.TeamLink == "" && a.TeamLink != "")
+	}
+	for _, group := range byName {
+		for _, a := range group {
+			for _, b := range group {
+				if a != b && joinable(a, b) {
+					a.SameName = append(a.SameName, NetAlias{ID: b.ID, Sources: b.Sources})
+				}
+			}
+		}
+	}
 }

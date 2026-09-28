@@ -116,6 +116,14 @@ func TestNetworkResolvesRegistriesByExplicitLinksOnly(t *testing.T) {
 	if team.ID != "team/BA" || team.Role != "CEO" || seed.ID != "aion-net/ben-anderson" {
 		t.Fatalf("before linking: team=%+v seed=%+v", team, seed)
 	}
+	// the pair is OFFERED as the same person (both ways), never merged
+	if len(seed.SameName) != 1 || seed.SameName[0].ID != "team/BA" || len(team.SameName) != 1 {
+		t.Fatalf("same-name suggestion: seed=%+v team=%+v", seed.SameName, team.SameName)
+	}
+	// two KEPT rows with one name have no link that joins them — not offered
+	if b := got["Bob Stone"]; len(b.SameName) != 1 || b.SameName[0].ID != "contact/bob stone" {
+		t.Fatalf("kept row vs contact is joinable by ref: %+v", b.SameName)
+	}
 	w := recruitingPost(t, s, s.handleNetworkPerson, "/api/network/person/x", seed.ID, `{"set":{"team":"BA"}}`)
 	if w.Code != http.StatusOK {
 		t.Fatalf("%d %s", w.Code, w.Body.String())
@@ -124,7 +132,7 @@ func TestNetworkResolvesRegistriesByExplicitLinksOnly(t *testing.T) {
 	if _, dup := got["Benjamin Anderson#2"]; dup {
 		t.Fatal("an explicit team link did not merge the seed row onto the team member")
 	}
-	if b := got["Benjamin Anderson"]; b.Role != "CEO" || strings.Join(b.Sources, ",") != "kept,team" {
+	if b := got["Benjamin Anderson"]; b.Role != "CEO" || strings.Join(b.Sources, ",") != "kept,team" || len(b.SameName) != 0 {
 		t.Fatalf("linked: %+v", b)
 	}
 }

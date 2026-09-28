@@ -9,17 +9,17 @@ import (
 )
 
 // ⚠ THE NETWORK VOCABULARY (2026-09-27): the kinds are hire · advisor · expert
-// · connector · team. The install seed wrote `type:: founder`, so the old words
+// · connector. Being on the team is the `team` LINK, never a kind. The install seed wrote `type:: founder`, so the old words
 // are READ forever but written never — the projection maps them, and the next
 // edit of the row converges it on disk.
 func TestNetworkPersonLegacyTypeMapsOnReadAndConvergesOnEdit(t *testing.T) {
-	doc := ParseNetworkPeople("---\n---\n- [id:: aion-net/ben] [name:: Ben] [type:: founder]\n" +
+	doc := ParseNetworkPeople("---\n---\n- [id:: aion-net/ben] [name:: Ben] [type:: founder]\n- [id:: aion-net/rj] [name:: RJ] [type:: team]\n" +
 		"- [id:: aion-net/x] [name:: X] [type:: investor]\n- [id:: aion-net/y] [name:: Y] [type:: external]\n")
 	got := map[string]string{}
 	for _, p := range doc.People() {
 		got[p.ID] = p.Type
 	}
-	if got["aion-net/ben"] != "team" || got["aion-net/x"] != "connector" || got["aion-net/y"] != "" {
+	if got["aion-net/ben"] != "" || got["aion-net/rj"] != "" || got["aion-net/x"] != "connector" || got["aion-net/y"] != "" {
 		t.Fatalf("legacy kinds not mapped on read: %+v", got)
 	}
 	// untouched rows keep their bytes (the fixpoint) …
@@ -31,12 +31,16 @@ func TestNetworkPersonLegacyTypeMapsOnReadAndConvergesOnEdit(t *testing.T) {
 		t.Fatal(err)
 	}
 	out := SerializeNetworkPeople(doc)
-	if strings.Contains(out, "[type:: founder]") || !strings.Contains(out, "[type:: team]") {
+	if strings.Contains(out, "[id:: aion-net/ben] [name:: Ben] [type::") || !strings.Contains(out, "[type:: team]") {
 		t.Fatalf("an edit did not converge the old type:\n%s", out)
 	}
 	// the old words are refused as NEW input only through the mapping, never raw
 	if _, err := doc.Update("aion-net/x", map[string]string{"kind": "wizard"}); err == nil {
 		t.Fatal("an unknown kind was accepted")
+	}
+	// "team" is not a kind any more: setting it clears the kind, the link stays the fact
+	if p, err := doc.Update("aion-net/x", map[string]string{"kind": "team"}); err != nil || p.Type != "" {
+		t.Fatalf("kind team: %+v %v", p, err)
 	}
 }
 

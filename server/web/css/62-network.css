@@ -31,7 +31,6 @@
 .net-sub { font-family: var(--mono); font-size: var(--fs-2xs); color: var(--base-40); overflow-wrap: anywhere; }
 .net-line { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--sp-3); }
 .net-tag { font-family: var(--mono); font-size: var(--fs-2xs); color: var(--base-60); background: var(--base-10); border-radius: var(--radius); padding: 0 var(--sp-2); }
-.net-note { font-size: var(--fs-sm); color: var(--base-60); overflow-wrap: anywhere; }
 .net-side { flex: none; display: flex; flex-direction: column; align-items: flex-end; gap: var(--sp-1); }
 .net-when { font-family: var(--mono); font-size: var(--fs-2xs); color: var(--base-60); white-space: nowrap; }
 .net-when.none { color: var(--base-30); }
@@ -90,3 +89,7 @@
 .net-lev { display: flex; align-items: baseline; gap: var(--sp-3); padding: var(--sp-4) 0; border-bottom: 1px solid var(--base-25); }
 .net-lev-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: var(--sp-2); }
 .net-lev-people { display: flex; flex-wrap: wrap; gap: var(--sp-2); }
+
+/* same name, not yet the same person: offered, confirmed by a click */
+.net-same-box { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-3); padding: var(--sp-2) 0; }
+.net-src.net-same { color: var(--warn); }

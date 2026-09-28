@@ -5,8 +5,9 @@
 // them. LIST FIRST: building a network is scanning, tagging and noting; the
 // graph is a second view of the same people (Phase 2).
 //
-// Tracking is deliberately minimal: one note, one last-contact date. Nothing
-// here reminds, schedules or scores.
+// Tracking is deliberately minimal: kind, tags, one last-contact date.
+// There is no note field — a contact's note is their vault note (one fact,
+// one place), linked from the inspector. Nothing here reminds or scores.
 //
 // ⚠ Rows join ONLY by explicit link (a kept row's contact ref / team link),
 // never by name — two "Ben"s are two rows until the owner links them.
@@ -31,7 +32,7 @@ function netSetViewMode(v) {
   try { localStorage.setItem("manifest.network.view", v); } catch (e) {}
 }
 
-const NET_KIND_WORD = { hire: "future hire", advisor: "advisor", expert: "expert", connector: "connector", team: "team" };
+const NET_KIND_WORD = { hire: "future hire", advisor: "advisor", expert: "expert", connector: "connector" };
 const NET_SOURCE_WORD = { kept: "kept", contact: "contacts", investor: "investors", team: "team" };
 
 async function showNetwork() {
@@ -62,7 +63,7 @@ function netVisible() {
     if (netSource && !(p.sources || []).includes(netSource)) return false;
     if (netTag && !(p.tags || []).some((t) => netTagKey(t) === netTag)) return false;
     if (!q) return true;
-    return [p.name, p.org, p.title, p.note, p.role, (p.tags || []).join(" "), (p.firms || []).join(" ")]
+    return [p.name, p.org, p.title, p.role, (p.tags || []).join(" "), (p.firms || []).join(" ")]
       .join(" ").toLowerCase().includes(q);
   });
 }
@@ -214,17 +215,18 @@ function netRow(p) {
   if (p.role) sub.push(p.role);
   if ((p.firms || []).length) sub.push(p.firms.join(", "));
   if (sub.length) main.append(el("div", "net-sub", sub.join(" · ")));
-  if ((p.tags || []).length || p.note) {
+  if ((p.tags || []).length) {
     const line = el("div", "net-line");
-    (p.tags || []).forEach((t) => line.append(el("span", "net-tag", t)));
-    if (p.note) line.append(el("span", "net-note", p.note));
+    p.tags.forEach((t) => line.append(el("span", "net-tag", t)));
     main.append(line);
   }
   row.append(main);
   const side = el("div", "net-side");
   const rec = netRecency(p);
   side.append(el("span", "net-when" + (rec ? "" : " none"), rec ? rec.how + " " + netShortDate(rec.date) : "—"));
-  side.append(el("span", "net-src", (p.sources || []).map((s) => NET_SOURCE_WORD[s] || s).join(" · ")));
+  const srcs = (p.sources || []).filter((s) => s !== "contact");
+  if (srcs.length) side.append(el("span", "net-src", srcs.map((s) => NET_SOURCE_WORD[s] || s).join(" · ")));
+  if ((p.sameName || []).length) side.append(el("span", "net-src net-same", "same name ×" + (p.sameName.length + 1)));
   row.append(side);
   const pick = () => {
     netSel = p.id;
@@ -253,7 +255,6 @@ async function netSave(p, set) {
     }
     if ("type" in kept || "kind" in set) p.kind = kept.type || "";
     p.tags = kept.tags || [];
-    p.note = kept.note || "";
     p.lastContact = kept.lastContact || "";
     if ("team" in set) p.team = kept.team || "";
     netGraphStale = true;
@@ -271,7 +272,7 @@ function netPaintInspector() {
   insp.innerHTML = "";
   const p = (netCache.people || []).find((x) => x.id === netSel);
   if (!p) {
-    insp.append(el("div", "aion-insp-empty", "select someone — tag them, note why they matter, date the last touch"));
+    insp.append(el("div", "aion-insp-empty", "select someone — say what they are to you, tag what they know, date the last touch"));
     return;
   }
   const head = el("div", "aion-insp-head");
@@ -347,16 +348,6 @@ function netPaintInspector() {
     insp.append(sug);
   }
 
-  // note
-  const note = el("input", "pp-in");
-  note.type = "text";
-  note.placeholder = "why they matter, in a line";
-  note.value = p.note || "";
-  const noteWas = note.value;
-  note.onblur = () => { if (note.value !== noteWas) netSave(p, { note: note.value }); };
-  note.onkeydown = (e) => { if (e.key === "Enter") { e.preventDefault(); note.blur(); } };
-  field("note", note);
-
   // last contact: a date, or "today" in one click
   const lc = el("span", "net-lc");
   const date = el("input", "pp-in");
@@ -374,45 +365,36 @@ function netPaintInspector() {
   field("last contact", lc);
   if (p.lastMet) insp.append(el("div", "net-insp-hint", "calendar: last met " + netShortDate(p.lastMet)));
 
-  // an explicit team link — the only way a kept row and a team member merge
-  if ((p.sources || []).includes("kept") || p.editable) {
-    const teamPeople = (netCache.people || []).filter((x) => (x.sources || []).includes("team") && x.team);
-    if (teamPeople.length) {
-      const team = document.createElement("select");
-      team.className = "pp-in";
-      const none = el("option", "", "— not on the team"); none.value = ""; team.append(none);
-      teamPeople.forEach((t) => {
-        const o = el("option", "", t.name + " (" + t.team + ")"); o.value = t.team;
-        o.selected = (p.team || "") === t.team; team.append(o);
-      });
-      team.onchange = async () => { if (await netSave(p, { team: team.value })) showNetwork(); };
-      field("team link", team);
-    }
-  }
+  // on the team: a fact the roster states, shown — not a second picker
+  if (p.team) insp.append(el("div", "net-insp-hint", "AION team · " + [p.role, p.team].filter(Boolean).join(" · ")));
 
-  // an explicit contact link — how a team member or a kept person who is ALSO
-  // one of your contacts becomes one row. Offered only when there is no link
-  // yet; picking one writes `ref` and nothing ever touches the note itself.
-  if (!p.contactKey) {
-    const contactsOnly = (netCache.people || []).filter((x) => x.id.startsWith("contact/") && x.contactKey);
-    if (contactsOnly.length) {
-      const inp = el("input", "pp-in");
-      inp.type = "text";
-      inp.placeholder = "same person as a contact? type their name";
-      const dlId = "netContactList";
-      let cdl = document.getElementById(dlId);
-      if (!cdl) { cdl = document.createElement("datalist"); cdl.id = dlId; document.body.append(cdl); }
-      cdl.innerHTML = "";
-      contactsOnly.forEach((c) => { const o = document.createElement("option"); o.value = c.name; cdl.append(o); });
-      inp.setAttribute("list", dlId);
-      inp.onchange = async () => {
-        const hit = contactsOnly.find((c) => c.name.toLowerCase() === inp.value.trim().toLowerCase());
-        if (!hit) { showToast("pick a contact from the list"); return; }
-        if (await netSave(p, { ref: hit.contactKey })) { showToast(p.name + " linked to " + hit.name); showNetwork(); }
-      };
-      field("contact", inp);
-    }
-  }
+  // SAME NAME, NOT YET THE SAME PERSON. Rows join only by an explicit link
+  // (never by name), so an exact name match is offered for you to confirm —
+  // one click writes the contact or team link, nothing is inferred.
+  (p.sameName || []).forEach((alias) => {
+    const other = (netCache.people || []).find((x) => x.id === alias.id);
+    if (!other) return;
+    const box = el("div", "net-same-box");
+    box.append(el("span", "net-insp-hint", "also in your " +
+      (other.sources || []).map((s) => NET_SOURCE_WORD[s] || s).join(" + ") + " as " + other.name));
+    const yes = el("button", "pill light", "same person — link");
+    yes.title = "writes one explicit link; a wrong link can be undone by clearing it";
+    yes.onclick = async () => {
+      yes.disabled = true;
+      // write on whichever side holds (or can hold) the row, naming the other's key
+      let target = p, set = null;
+      if (!p.contactKey && other.contactKey) set = { ref: other.contactKey };
+      else if (!p.team && other.team) set = { team: other.team };
+      if (!set || (!p.editable && other.editable)) {
+        target = other;
+        set = (!other.contactKey && p.contactKey) ? { ref: p.contactKey } : { team: p.team };
+      }
+      if (await netSave(target, set)) { showToast(p.name + " linked"); showNetwork(); }
+      else yes.disabled = false;
+    };
+    box.append(yes);
+    insp.append(box);
+  });
 
   // where they live elsewhere
   const links = el("div", "net-links");
@@ -426,7 +408,17 @@ function netPaintInspector() {
   if (p.orcid) link("orcid ↗", p.orcid);
   if (p.github) link("github ↗", p.github);
   if (p.linkedin) link("linkedin ↗", p.linkedin);
-  if (p.editable && p.id.startsWith("aion-net/")) link("in the recruiting graph →", "#/aion/recruiting/network", true);
+  const inGraph = el("a", "rec-linkish", "in the graph →");
+  inGraph.href = "#/network";
+  inGraph.onclick = (e) => {
+    e.preventDefault();
+    netSetViewMode("graph");
+    rgUseLens("network");
+    const st = rgInit();
+    st.sel = p.id; st.reveal = p.id;
+    netPaint();
+  };
+  links.append(inGraph);
   if (links.children.length) insp.append(links);
 
   if ((p.firms || []).length) insp.append(el("div", "net-insp-hint", "investor · " + p.firms.join(", ")));
