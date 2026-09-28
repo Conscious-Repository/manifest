@@ -125,8 +125,10 @@ async function readOpenInPane(id) {
   if (readPaneLoading !== id) return; // raced a newer selection
   readPaneItem = d;
   if (typeof consumeMarkOpened === "function") consumeMarkOpened(id);
+  if (readFullPref() && els.feedView && !els.feedView.classList.contains("rdr-full")) readSetFull(true, false);
   renderReadPane();
   pane.scrollTop = 0;
+  if (els.feedView && els.feedView.classList.contains("rdr-full") && els.contentScroll) els.contentScroll.scrollTop = 0;
 }
 
 function readPaneSkeleton(pane, id) {
@@ -140,8 +142,36 @@ function readPaneSkeleton(pane, id) {
   pane.replaceChildren(readPaneBar(), art);
 }
 
+// ---- full view ----
+//
+// The pane beside the list is for moving through the list; a long piece wants
+// the whole width. Full view hides the sidebar and the list and gives the
+// article the page, with j/k still moving through the list behind it. The
+// choice is remembered, so someone who reads that way stays in it.
+function readFullPref() { try { return localStorage.getItem("manifest.readerFull") === "1"; } catch (e) { return false; } }
+
+function readSetFull(on, persist) {
+  if (!els.feedView) return;
+  els.feedView.classList.toggle("rdr-full", !!on);
+  if (persist) { try { localStorage.setItem("manifest.readerFull", on ? "1" : "0"); } catch (e) {} }
+  const b = els.feedPane && els.feedPane.querySelector(".rdr-full-btn");
+  if (b) { b.textContent = on ? "⤡ exit full view" : "⤢ full view"; b.setAttribute("aria-pressed", String(!!on)); }
+  if (els.contentScroll) els.contentScroll.scrollTop = 0;
+}
+
+// readToggleFull flips full view for the open article; false when none is open.
+function readToggleFull() {
+  if (!readPaneItem || !els.feedView) return false;
+  readSetFull(!els.feedView.classList.contains("rdr-full"), true);
+  return true;
+}
+
 function readPaneBar() {
   const bar = el("div", "rdr-pane-bar");
+  const full = el("button", "rdr-act rdr-full-btn", els.feedView && els.feedView.classList.contains("rdr-full") ? "⤡ exit full view" : "⤢ full view");
+  full.type = "button"; full.title = "Read at full width (f)";
+  full.onclick = () => readToggleFull();
+  bar.append(full);
   const up = el("button", "rdr-act", "↑"); up.type = "button"; up.title = "Previous (k)";
   up.onclick = () => (typeof consumeStep === "function" ? consumeStep(-1) : null);
   const down = el("button", "rdr-act", "↓"); down.type = "button"; down.title = "Next (j)";
@@ -182,6 +212,7 @@ function readClosePane() {
   const pane = els.feedPane;
   if (!pane || pane.hidden || !readPaneItem) return false;
   readPaneItem = null; readPaneLoading = null;
+  readSetFull(false, false);
   readPaneIdle();
   if (typeof consumeSelect === "function") consumeSelect("", false);
   return true;

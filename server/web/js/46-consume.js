@@ -55,6 +55,7 @@ function consumeHashFor(st) {
   if (v === "later") return "#/feed/later";
   if (v === "later-done") return "#/feed/later/done";
   if (v === "today") return "#/feed/today";
+  if (v === "curated") return "#/feed/curated";
   const tail = v === "all" ? "/all" : "";
   if (st.sub) return "#/feed/source/" + encodeURIComponent(st.sub) + tail;
   if (st.list) return "#/feed/stream/" + encodeURIComponent(st.list) + tail;
@@ -80,6 +81,7 @@ function consumeApplyHash(h) {
   switch (parts[0]) {
     case "later": consumeView = parts[1] === "done" ? "later-done" : "later"; break;
     case "today": consumeView = "today"; break;
+    case "curated": consumeView = "curated"; break;
     case "all": consumeView = "all"; break;
     case "type": consumeType = parts[1] || ""; consumeView = all ? "all" : "unread"; break;
     case "stream": consumeList = parts[1] || ""; consumeView = all ? "all" : "unread"; break;
@@ -446,6 +448,7 @@ let consumeLoadError = "";
 let consumeShownSig = "";
 async function loadConsume(token) {
   if (token === undefined) token = feedClaimRender();
+  if (consumeView === "curated") { await loadConsumeCuratedView(token); return; }
   const key = consumeQueryString(0);
   let next, error = "";
   try {
@@ -463,6 +466,25 @@ async function loadConsume(token) {
   if (same) { consumeHeaderRefresh(); if (typeof renderFeedSide === "function") renderFeedSide(); return; }
   renderConsume();
   consumePrefetchTop();
+}
+
+// loadConsumeCuratedView — the Curated view: what the public feed serves,
+// as the list, with each note editable in place.
+async function loadConsumeCuratedView(token) {
+  let data = null, error = "";
+  try {
+    const r = await fetch('/api/consume/curated');
+    if (!r.ok) throw Error("HTTP " + r.status);
+    data = await r.json();
+  } catch (e) { error = "Could not load curated items. Try again."; }
+  if (feedRenderStale(token) || consumeView !== "curated") return;
+  consumeLoadError = error;
+  if (data) {
+    consumeCurated = data;
+    consumeCache = { items: [], lists: consumeCache.lists || [], count: (data.entries || []).length, more: false };
+  }
+  consumeShownSig = "";
+  renderConsume();
 }
 
 // consumeLoadMore appends the next page in place.
@@ -514,6 +536,7 @@ function renderConsume() {
   let head = surface.querySelector(".consume-head"), host = surface.querySelector(".consume-content");
   if (!head || !host) { surface.replaceChildren(); head = consumeHeader(); host = el("div", "consume-content"); surface.append(head, host); }
   else consumeHeader(head);
+  surface.querySelectorAll(":scope > .consume-public").forEach((n) => n.remove());
   host.replaceChildren();
   els.feedSignals.innerHTML = "";
   renderApprovalInspector(); // release the proposal column/sheet after replacing its cards
@@ -527,6 +550,22 @@ function renderConsume() {
   const oldBanner = surface.querySelector(".consume-subbar");
   if (oldBanner) oldBanner.remove();
   if (consumeSub) surface.insertBefore(consumeSubBanner(), host);
+
+  if (consumeView === "curated") {
+    consumeShownSig = "";
+    const entries = (consumeCurated && consumeCurated.entries) || [];
+    if (consumeCurated && consumeCurated.public) {
+      const pub = el("div", "consume-public");
+      pub.append(el("span", "micro-label", "public feed"), el("span", "consume-public-url", consumeCurated.public));
+      pub.append(pillLight("open ↗", () => window.open(consumeCurated.public, "_blank", "noopener")));
+      surface.insertBefore(pub, host);
+    }
+    if (!entries.length) host.append(emptyRow("Nothing curated yet — → CURATE on anything you read puts it here."));
+    else entries.forEach((en) => host.append(typeof consumeCuratedRow === "function" ? consumeCuratedRow(en) : el("div", "", en.title)));
+    consumeRenderMore();
+    if (typeof renderFeedSide === "function") renderFeedSide();
+    return;
+  }
 
   const items = consumeCache.items || [];
   consumeShownSig = typeof consumeSignature === "function" ? consumeSignature(consumeCache) : "";
@@ -580,12 +619,25 @@ function consumeRenderMore() {
 }
 
 // consumeSubBanner names the source whose history is open, with the way out.
+// In a source's own view this is its settings card: stream, rename, check,
+// unfollow, and the paid and Shorts switches — the source is managed where
+// you are looking at it.
 function consumeSubBanner() {
   const sub = (consumeSubs.subscriptions || []).find((x) => x.id === consumeSub);
   const bar = el("div", "consume-subbar");
-  bar.append(el("span", "micro-label", (sub ? sub.title : consumeSub) + " · everything we have"));
-  bar.append(pillLight("× all sources", () => (typeof consumeGo === "function" ? consumeGo({ view: "unread" }) : null)));
+  const top = el("div", "consume-subbar-top");
+  top.append(el("span", "micro-label", "source settings"));
+  top.append(pillLight("× all sources", () => (typeof consumeGo === "function" ? consumeGo({ view: "unread" }) : null)));
+  bar.append(top);
+  if (sub && typeof consumeSubRow === "function") bar.append(consumeSubRow(sub, true));
+  else bar.append(el("span", "micro-label", sub ? sub.title : "loading…"));
   return bar;
+}
+
+// consumeRefreshSourceCard redraws the card once the sources have loaded.
+function consumeRefreshSourceCard() {
+  const old = els.feedList && els.feedList.querySelector(".consume-subbar");
+  if (old && consumeSub) old.replaceWith(consumeSubBanner());
 }
 
 // consumeTitle names the current view for the list header.
@@ -595,6 +647,7 @@ function consumeTitle() {
   if (consumeView === "later") return "Later";
   if (consumeView === "later-done") return "Later · done";
   if (consumeView === "today") return "Today";
+  if (consumeView === "curated") return "Curated";
   if (consumeSub) {
     const sub = (consumeSubs.subscriptions || []).find((x) => x.id === consumeSub);
     return sub ? sub.title : consumeSub;
@@ -630,7 +683,7 @@ function consumeHeader(head) {
       if (res) { if (typeof consumeMemo === "object") consumeMemo.clear(); showToast((res.marked || 0) + " marked read"); await loadConsume(); }
     }); mark.classList.add("consume-mark-all");
     const curated = pillLight("CURATED", () => consumeTogglePanel("curated")); curated.classList.add("consume-curated-toggle");
-    const manage = pillLight("MANAGE", () => consumeTogglePanel("subscriptions")); manage.classList.add("consume-manage-toggle");
+    const manage = pillLight("SOURCES", () => consumeTogglePanel("subscriptions")); manage.classList.add("consume-manage-toggle");
     right.append(count, save, refresh, mark, curated, manage); head.append(left, right);
   }
   const title = head.querySelector(".rdr-title");
@@ -639,7 +692,7 @@ function consumeHeader(head) {
   // done within Later, none for Today.
   const inLater = consumeView === "later" || consumeView === "later-done";
   const viewChoices = inLater ? [["later", "QUEUE"], ["later-done", "DONE"]]
-    : consumeView === "today" ? [] : [["unread", "UNREAD"], ["all", "ALL"]];
+    : consumeView === "today" || consumeView === "curated" ? [] : [["unread", "UNREAD"], ["all", "ALL"]];
   renderFilterButtons(head.querySelector(".consume-view-filters"), viewChoices, consumeView, (value) => {
     consumeView = value;
     if (typeof consumeGo === "function") consumeGo({ view: value, list: consumeList, sub: consumeSub, type: typeof consumeType === "string" ? consumeType : "" });
@@ -647,19 +700,20 @@ function consumeHeader(head) {
   });
   // Stream chips stand in for the sidebar on a narrow screen (CSS hides them
   // beside it).
-  renderFilterButtons(head.querySelector(".consume-list-filters"), inLater ? [] : (consumeCache.lists || []).map((value) => [value, value]), consumeList, (value) => {
+  renderFilterButtons(head.querySelector(".consume-list-filters"), inLater || consumeView === "curated" ? [] : (consumeCache.lists || []).map((value) => [value, value]), consumeList, (value) => {
     const list = consumeList === value ? "" : value;
     if (typeof consumeGo === "function") consumeGo({ view: consumeView === "today" ? "unread" : consumeView, list });
     else { consumeList = list; consumeFilterChanged(); }
   });
   const unread = consumeCache.unread || 0;
   const shown = (consumeCache.items || []).length, total = consumeCache.count;
-  head.querySelector(".consume-count").textContent = inLater || consumeView === "today" || consumeView === "all"
+  head.querySelector(".consume-count").textContent = consumeView === "curated" ? (total || 0) + " curated"
+    : inLater || consumeView === "today" || consumeView === "all"
     ? (total != null ? total : shown) + (inLater ? " saved" : " items")
     : (consumeList && consumeCache.total > unread ? unread + " unread in " + consumeList : (total != null ? total : unread) + " unread");
-  head.querySelector(".consume-mark-all").hidden = inLater || consumeView === "today" || !(total != null ? total : unread);
+  head.querySelector(".consume-mark-all").hidden = inLater || consumeView === "today" || consumeView === "curated" || !(total != null ? total : unread);
   head.querySelector(".consume-curated-toggle").textContent = consumeCuratedOpen ? "close curated" : "CURATED";
-  head.querySelector(".consume-manage-toggle").textContent = consumeManageOpen ? "close" : "MANAGE";
+  head.querySelector(".consume-manage-toggle").textContent = consumeManageOpen ? "close" : "SOURCES";
   head.querySelector(".consume-manage-toggle").setAttribute("aria-expanded", String(consumeManageOpen));
   head.querySelector(".consume-curated-toggle").setAttribute("aria-expanded", String(consumeCuratedOpen));
   return head;
@@ -725,7 +779,7 @@ function consumeRenderPanels(){
 function consumeTogglePanel(kind){
  if(kind==='curated')consumeCuratedOpen=!consumeCuratedOpen;else consumeManageOpen=!consumeManageOpen;
  const head=els.feedList.querySelector('.consume-head');if(head)consumeHeader(head);
- if(kind==='curated'?consumeCuratedOpen:consumeManageOpen)consumeLoadPanel(kind);
+ if(kind==='curated'?consumeCuratedOpen:consumeManageOpen){consumeLoadPanel(kind);const host=els.feedList.querySelector('.consume-panels');if(host&&host.scrollIntoView)host.scrollIntoView({block:'nearest'});}
  else consumeRenderPanels();
 }
 async function consumeLoadPanel(kind){
@@ -739,6 +793,7 @@ async function consumeLoadPanel(kind){
  if(request!==status.request)return;status.loading=false;
  consumeRenderPanels();
  if(kind==='subscriptions'&&typeof renderFeedSide==='function')renderFeedSide();
+ if(kind==='subscriptions'&&typeof consumeRefreshSourceCard==='function')consumeRefreshSourceCard();
 }
 async function loadConsumeSubs(){await consumeLoadPanel('subscriptions');}
 
@@ -844,8 +899,8 @@ function consumeAddRow() {
   return row;
 }
 
-function consumeSubRow(s) {
-  const row = el("div", "consume-sub");
+function consumeSubRow(s, inCard) {
+  const row = el("div", "consume-sub" + (inCard ? " consume-sub-card" : ""));
 
   const dot = el("span", "consume-dot " + (s.lastErr ? "bad" : s.lastOk ? "ok" : "idle"));
   dot.title = s.lastErr || (s.lastOk ? "last checked " + fmtWhen(s.lastOk) : "not checked yet");
@@ -862,6 +917,7 @@ function consumeSubRow(s) {
   if (s.mirror === "excerpt") row.append(el("span", "consume-sub-kind micro-label", "excerpt"));
 
   const acts = el("div", "consume-sub-acts");
+  acts.append(consumeStreamSelect(s));
   acts.append(pillLight("check now", async (e) => {
     const b = e && e.currentTarget; if (b) { b.disabled = true; b.textContent = "checking…"; }
     await consumePost(`/api/consume/subscriptions/${encodeURIComponent(s.id)}/poll`);
@@ -892,6 +948,39 @@ function consumeSubRow(s) {
   if (s.kind !== "x" && s.media !== "post") row.append(consumePaidRow(s));
   if (s.media === "video") row.append(consumeSwitchRow(s, "shorts", "include Shorts", !!s.shorts));
   return row;
+}
+
+// consumeStreamSelect moves a source into a stream (or out of one) in one
+// step; "new stream…" asks for the name in place.
+function consumeStreamSelect(s) {
+  const current = s.list && s.list.toLowerCase() !== "unfiled" ? s.list : "";
+  const sel = el("select", "consume-mirror consume-stream-select");
+  sel.setAttribute("aria-label", "Stream for " + (s.title || s.id));
+  const opt = (value, label) => { const o = el("option", "", label); o.value = value; if (value === current) o.selected = true; sel.append(o); };
+  opt("", current ? "no stream" : "stream: none");
+  consumeStreams().forEach((n) => opt(n, "stream: " + n));
+  opt("__new", "new stream…");
+  const move = async (list) => {
+    if (!(await consumePost(`/api/consume/subscriptions/${encodeURIComponent(s.id)}/update`, { list }))) { sel.value = current; return; }
+    s.list = list;
+    if (consumeList && consumeList !== list && consumeList === current) consumeList = "";
+    consumeMemo.clear();
+    showToast(list ? "moved to " + list : "taken out of " + current);
+    await loadConsumeSubs(); await loadConsume();
+  };
+  sel.onchange = () => {
+    if (sel.value !== "__new") { move(sel.value); return; }
+    const input = inputEl("new stream name");
+    input.className = "pp-in consume-stream-new";
+    input.onkeydown = (e) => {
+      if (e.key === "Enter" && input.value.trim()) { e.preventDefault(); move(input.value.trim()); }
+      if (e.key === "Escape") { input.replaceWith(sel); sel.value = current; }
+    };
+    input.onblur = () => { if (!input.value.trim() && input.isConnected) { input.replaceWith(sel); sel.value = current; } };
+    sel.replaceWith(input);
+    input.focus();
+  };
+  return sel;
 }
 
 // consumeSwitchRow: one yes/no setting, saved on change.
@@ -1032,7 +1121,15 @@ function consumeCuratedPanel() {
 
 function consumeCuratedRow(en) {
   const row = el("div", "consume-sub consume-curated-row");
-  row.append(el("span", "consume-curated-title", en.title || "(untitled)"));
+  // A curated piece the reader still holds opens there; one curated from a
+  // pasted link opens at its source.
+  const title = el("button", "consume-curated-title consume-sub-name", en.title || "(untitled)");
+  title.type = "button";
+  title.onclick = () => {
+    if (/^consume:/.test(en.itemId || "") && typeof consumeOpen === "function") consumeOpen(en.itemId);
+    else if (en.url) window.open(en.url, "_blank", "noopener");
+  };
+  row.append(title);
   const meta = [en.source, en.author, en.curated ? "curated " + fmtWhen(en.curated) : ""]
     .filter(Boolean).join(" · ");
   if (meta) row.append(el("span", "consume-sub-count micro-label", meta));
@@ -1152,6 +1249,7 @@ function feedSideActiveKey() {
   if (f === "proposal") return "approvals";
   if (consumeView === "later" || consumeView === "later-done") return "later";
   if (consumeView === "today") return "today";
+  if (consumeView === "curated") return "curated";
   if (consumeSub) return "source:" + consumeSub;
   if (consumeList) return "stream:" + consumeList;
   if (consumeType) return "type:" + consumeType;
@@ -1163,6 +1261,7 @@ function feedSideHashFor(key) {
   if (key === "approvals") return "#/feed/approvals";
   if (key === "later") return "#/feed/later";
   if (key === "today") return "#/feed/today";
+  if (key === "curated") return "#/feed/curated";
   if (key === "all") return "#/feed/all";
   if (key === "unread") return "#/feed/unread";
   const [kind, ...rest] = key.split(":");
@@ -1200,7 +1299,7 @@ function renderFeedSide() {
     const inbox = sec("");
     inbox.append(feedSideEntry("inbox", "Inbox"), feedSideEntry("approvals", "Approvals"));
     const read = sec("Read");
-    read.append(feedSideEntry("unread", "Unread"), feedSideEntry("today", "Today"), feedSideEntry("later", "Later"), feedSideEntry("all", "All"));
+    read.append(feedSideEntry("unread", "Unread"), feedSideEntry("today", "Today"), feedSideEntry("later", "Later"), feedSideEntry("all", "All"), feedSideEntry("curated", "Curated"));
     const media = sec("Media");
     FEED_SIDE_TYPES.forEach(([t, label]) => media.append(feedSideEntry("type:" + t, label, "rdr-nav-type rdr-" + t)));
     const st = sec("Streams");
@@ -1240,7 +1339,7 @@ function renderFeedSide() {
       };
       if (!consumeIsActiveView()) { consumeGo({ view: "unread" }); setTimeout(go, 150); } else go();
     };
-    const keys = el("div", "rdr-side-keys micro-label", "j/k next · o open · m read · l later · e done · v original · ⇧A all read");
+    const keys = el("div", "rdr-side-keys micro-label", "j/k next · o open · f full view · m read · l later · e done · v original · ⇧A all read");
     foot.append(follow, keys);
     side.append(foot);
   }
@@ -1254,6 +1353,7 @@ function renderFeedSide() {
     if (key === "unread") return nav.unread;
     if (key === "today") return nav.today;
     if (key === "later") return nav.later;
+    if (key === "curated") return nav.curated;
     if (key === "all") return null;
     const [kind, ...rest] = key.split(":"); const val = rest.join(":");
     if (kind === "type") return (nav.types || {})[val];
@@ -1295,7 +1395,11 @@ window.addEventListener("keydown", (e) => {
     case "l": if (c) { e.preventDefault(); consumeToggleLater(c); } break;
     case "e": if (c && c.later && c.laterId) { e.preventDefault(); consumeLaterDone(c, !c.laterDone); } break;
     case "A": if (e.shiftKey) { e.preventDefault(); const b = els.feedList.querySelector(".consume-mark-all"); if (b && !b.hidden) b.click(); } break;
-    case "Escape": if (typeof readClosePane === "function" && readClosePane()) e.preventDefault(); break;
+    case "f": if (typeof readToggleFull === "function" && readToggleFull()) e.preventDefault(); break;
+    case "Escape":
+      if (typeof readSetFull === "function" && els.feedView.classList.contains("rdr-full")) { readSetFull(false, true); e.preventDefault(); break; }
+      if (typeof readClosePane === "function" && readClosePane()) e.preventDefault();
+      break;
   }
 });
 

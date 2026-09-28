@@ -39,6 +39,7 @@ function makeFeedStub() {
   // many older, already-read articles so paging has something to page
   for (let n = 5; n <= 70; n++) add('letters', n, { read: true, published: iso(24 + n * 5) });
   const later = []; // {id, url, title, source, kind, item, added, done}
+  const curated = [{ title: 'A curated essay', url: 'https://letters.example/p/c1', source: 'Letters from Somewhere', author: 'L', curated: iso(30), note: 'why this one', itemId: 'consume:rss:letters:000000000001', path: 'extrinsic/a curated essay.md' }];
   const log = [];
   let delay = 0;
 
@@ -51,7 +52,7 @@ function makeFeedStub() {
     return e ? { ...rest, later: true, laterId: e.id, laterDone: !!e.done } : rest;
   };
   const nav = () => {
-    const n = { unread: 0, today: 0, later: later.filter((e) => !e.done).length, types: {}, streams: {}, subs: {} };
+    const n = { unread: 0, today: 0, later: later.filter((e) => !e.done).length, curated: curated.length, types: {}, streams: {}, subs: {} };
     subs.forEach((s) => { n.subs[s.id] = 0; });
     items.filter((c) => !c.dismissed).forEach((c) => {
       if (Date.parse(c.published) > now - 24 * 3600e3) n.today++;
@@ -112,7 +113,7 @@ function makeFeedStub() {
       log.push(req.method + ' ' + p + url.search);
       if (p === '/api/consume' && req.method === 'GET') { const body = list(url.searchParams); return setTimeout(() => json(res, 200, body), delay); }
       if (p === '/api/consume/subscriptions' && req.method === 'GET') return json(res, 200, { subscriptions: statuses(), xReady: false, nav: nav() });
-      if (p === '/api/consume/curated') return json(res, 200, { entries: [], public: '' });
+      if (p === '/api/consume/curated') return json(res, 200, { entries: curated, public: '' });
       let m = p.match(/^\/api\/consume\/item\/([^/]+)$/);
       if (m && req.method === 'GET') {
         const c = itemById(decodeURIComponent(m[1]));

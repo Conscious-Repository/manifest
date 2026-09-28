@@ -895,6 +895,7 @@ type Nav struct {
 	Unread  int            `json:"unread"`
 	Today   int            `json:"today"`
 	Later   int            `json:"later"`
+	Curated int            `json:"curated"` // notes on the public feed
 	Types   map[string]int `json:"types"`
 	Streams map[string]int `json:"streams"`
 	Subs    map[string]int `json:"subs"`
@@ -939,6 +940,7 @@ func (s *Service) Nav() Nav {
 			n.Later++
 		}
 	}
+	n.Curated = len(s.curatedEntries())
 	return n
 }
 

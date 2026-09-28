@@ -98,7 +98,7 @@
 .consume-head-left .filter-chip.on { opacity: 1; }
 .consume-search { flex: 1; min-width: 10rem; max-width: 20rem; font-size: var(--fs-sm); }
 /* the open-archive banner */
-.consume-subbar { display: flex; align-items: center; gap: var(--sp-4); margin-bottom: var(--sp-5); }
+.consume-subbar { display: flex; flex-direction: column; gap: var(--sp-3); margin-bottom: var(--sp-5); padding: var(--sp-4) var(--sp-5); border: 1px solid var(--line); border-radius: var(--radius); }
 .consume-subbar .micro-label { color: var(--muted); }
 .consume-head-right { display: flex; align-items: center; gap: var(--sp-4); margin-left: auto; }
 .consume-count { color: var(--muted); }
@@ -328,7 +328,7 @@
 
 @media (min-width: 1100px) {
   .feed-view.rdr-reading .feed-split {
-    display: grid; grid-template-columns: minmax(320px, 430px) minmax(0, 1fr); align-items: start;
+    display: grid; grid-template-columns: minmax(300px, 380px) minmax(0, 1fr); align-items: start;
   }
   .feed-view.rdr-reading .feed-col { padding-right: var(--sp-5); border-right: 1px solid var(--line); }
   .feed-view.rdr-reading .rdr-pane:not([hidden]) {
@@ -370,3 +370,18 @@
   }
   .rdr-act { min-height: var(--touch-sm, 36px); }
 }
+
+/* ---- full view (2026-09-27): the article takes the page ---- */
+@media (min-width: 1100px) {
+  .feed-view.rdr-reading.rdr-full .rdr-side,
+  .feed-view.rdr-reading.rdr-full .feed-col { display: none; }
+  .feed-view.rdr-reading.rdr-full .feed-split { grid-template-columns: minmax(0, 1fr); }
+  .feed-view.rdr-reading.rdr-full .rdr-pane:not([hidden]) { position: static; max-height: none; overflow: visible; padding: 0 var(--sp-8) var(--sp-9); }
+  .feed-view.rdr-reading.rdr-full .rdr-doc { max-width: 44em; }
+  .feed-view.rdr-reading.rdr-full .rdr-pane-bar { position: sticky; top: 0; z-index: 2; background: var(--bg); max-width: 44em; margin: 0 auto; }
+}
+/* beside the sidebar, the Curated view replaces the header's toggle */
+.feed-view.rdr-has-side .consume-curated-toggle { display: none; }
+.consume-subbar-top { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-4); }
+.consume-sub-card { border-bottom: 0; }
+.consume-stream-new { max-width: 12rem; }

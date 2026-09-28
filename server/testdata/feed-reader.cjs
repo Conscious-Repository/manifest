@@ -111,6 +111,44 @@ const { makeFeedStub } = require('./feed-stub-api.cjs');
     assert.equal(stub.subs.find((s) => s.id === 'letters').pays, true, 'the switch is saved');
     assert.ok(await p.locator('.consume-sub', { hasText: 'Veritasium' }).locator('.consume-switch', { hasText: 'include Shorts' }).count() === 1, 'a video channel offers its Shorts switch');
 
+    // a source's own view carries its settings; its stream changes in one step
+    await p.click('.consume-manage-toggle'); // close the all-sources panel
+    await p.click('.rdr-nav[data-key="source:jung"]');
+    await p.waitForFunction(() => location.hash === '#/feed/source/jung');
+    const card = p.locator('.consume-subbar .consume-sub-card');
+    await card.waitFor();
+    assert.match(await card.textContent(), /This Jungian Life/);
+    assert.ok(await card.locator('text=unfollow').count() === 1, 'unfollow is in the source view');
+    await card.locator('.consume-stream-select').selectOption('science');
+    await p.waitForFunction(() => document.querySelector('.rdr-nav[data-key="stream:science"]') && [...document.querySelectorAll('.rdr-stream-kids .rdr-nav')].some((a) => a.dataset.key === 'source:jung'));
+    assert.equal(stub.subs.find((s) => s.id === 'jung').list, 'science', 'the move is saved');
+
+    // Curated is a view of its own
+    await p.click('.rdr-nav[data-key="curated"]');
+    await p.waitForFunction(() => location.hash === '#/feed/curated');
+    await p.getByText('A curated essay').waitFor();
+    assert.equal(await p.locator('.rdr-nav[data-key="curated"] .rdr-nav-n').textContent(), '1');
+    assert.equal(await p.locator('.consume-curated-toggle').isVisible(), false, 'the header toggle gives way to the view');
+
+    // full view: the article takes the page, and Esc gives the list back
+    await p.click('.rdr-nav[data-key="all"]');
+    await p.locator('.consume-row').first().click();
+    await p.locator('#feedPane .rdr-full-btn').click();
+    await p.waitForFunction(() => document.getElementById('feedView').classList.contains('rdr-full'));
+    assert.equal(await p.locator('.feed-col').isVisible(), false, 'the list steps aside');
+    const paneW = await p.locator('#feedPane').evaluate((e) => e.getBoundingClientRect().width);
+    assert.ok(paneW > 900, 'the article gets the width: ' + paneW);
+    await p.keyboard.press('j');
+    await p.waitForTimeout(200);
+    assert.equal(await p.evaluate(() => document.getElementById('feedView').classList.contains('rdr-full')), true, 'j keeps full view');
+    await p.keyboard.press('Escape');
+    await p.waitForFunction(() => !document.getElementById('feedView').classList.contains('rdr-full'));
+    assert.equal(await p.locator('.feed-col').isVisible(), true);
+    await p.keyboard.press('f');
+    await p.waitForFunction(() => document.getElementById('feedView').classList.contains('rdr-full'));
+    await p.keyboard.press('f');
+    await p.waitForFunction(() => !document.getElementById('feedView').classList.contains('rdr-full'));
+
     // the Inbox is one click away, at its own address, and says when it is empty
     await p.click('.rdr-nav[data-key="inbox"]');
     await p.waitForFunction(() => location.hash === '#/feed');
