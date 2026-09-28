@@ -204,16 +204,18 @@ function chatChipsFit(host) {
 // chatHintOverflows — the placeholder is wider than the compact phone row's
 // field. Measured against the compact width (the class comes off for the
 // read, back on after; no paint in between), so the full row cannot talk
-// itself back into the compact shape.
+// itself back into the compact shape. chips-inline comes off too: it drops
+// the row break, so left on it pulls the chips into the compact row and the
+// shortest hint "overflows" for good (a private Codex thread at 412, 2026-09-28).
 let chatHintCanvas = null;
 function chatHintOverflows(host, ta) {
   if (!ta.placeholder || chatEmbedded || !window.matchMedia("(max-width: 860px)").matches) return false;
-  const had = host.classList.contains("has-long-hint");
-  if (had) host.classList.remove("has-long-hint");
+  const had = ["has-long-hint", "chips-inline"].filter(c => host.classList.contains(c));
+  host.classList.remove(...had);
   const cs = getComputedStyle(ta);
   const room = ta.clientWidth - (parseFloat(cs.paddingLeft) || 0) - (parseFloat(cs.paddingRight) || 0);
   const font = cs.fontStyle + " " + cs.fontWeight + " " + cs.fontSize + " " + cs.fontFamily;
-  if (had) host.classList.add("has-long-hint");
+  host.classList.add(...had);
   if (room <= 0) return false;
   chatHintCanvas = chatHintCanvas || document.createElement("canvas").getContext("2d");
   chatHintCanvas.font = font;

@@ -2,11 +2,12 @@
 // Codex thread, makeStub({codex:true})) at phone widths, pinning the
 // 2026-09-27 mobile UI/UX pass. Each number was measured on the rendered
 // surface before the change (in parentheses):
-//   1. one row of chips: who the next message goes to, the model and the
-//      permission share the row under the message; the first row is only
-//      + · field · mic · send, so the field keeps ≥45% of the composer at 320
-//      (Alfred 26%, the recipient chip sat in row one) and every chip is a
-//      44px target; the recipient reads "Codex", not the raw kind "codex";
+//   1. one row of chips: the model and the permission share the row under
+//      the message; the first row is only + · field · mic · send, so the
+//      field keeps ≥45% of the composer at 320 (Alfred 26%, the recipient
+//      chip sat in row one) and every chip is a 44px target; a private thread
+//      answers as its own agent, so it carries no recipient chip (the "Choose
+//      agent" hand-off was retired 2026-09-27);
 //   2. the phone head names the conversation: title ≥60px at 320 (0px, the
 //      finished run state took the row), no horizontal overflow, the head's
 //      Terminal icon 44px wide (36px);
@@ -35,7 +36,7 @@ const {makeStub}=require('./chat-stub-api.cjs');
   for(const w of [320,390,412])for(const route of ['/#/chat/a/alfred/b','/#/chat/a/codex/cx1']){
    const ctx=await browser.newContext(phone(w));const page=await ctx.newPage();const errors=[];page.on('pageerror',e=>errors.push(e.message));
    await page.goto(base+route);await page.locator('#chatComposer .chat-composer-model').waitFor();await page.locator('#chatComposer .mic-btn').waitFor();
-   const at=route.split('/')[3]+' at '+w;
+   const at=route.split('/')[4]+' at '+w;
    const g=await page.evaluate(()=>{
     const R=e=>e.getBoundingClientRect(),c=document.getElementById('chatComposer'),f=c.querySelector('textarea');
     const kids=[...c.children].filter(e=>e.offsetParent&&R(e).height>0&&!e.matches('.chat-composer-status'));
@@ -58,7 +59,7 @@ const {makeStub}=require('./chat-stub-api.cjs');
    assert.ok(g.title>=60,at+': the conversation title is squeezed to '+g.title+'px');
    for(const [iw,ih] of g.icons)assert.ok(iw>=44&&ih>=44,at+': a head icon is '+iw+'×'+ih);
    if(route.includes('codex')){
-    assert.equal(g.recipient,'Codex ⌄',at+': the recipient names the agent');
+    assert.equal(g.recipient,'',at+': a private thread carries no recipient chip');
     // 3. the wrapped shape keeps send at the row's end
     await page.locator('#chatComposer textarea').fill('A message long enough to wrap onto a second line in the phone composer field');
     await page.waitForFunction(()=>document.getElementById('chatComposer').classList.contains('is-wrapped'));

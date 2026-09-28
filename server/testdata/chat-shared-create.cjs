@@ -12,7 +12,7 @@ const {chromium}=require('playwright');
   await route.fulfill({contentType:'text/html',body:'<main></main>'});
  });
  const all=fs.readFileSync(path.join(__dirname,'../web/js/48-chat.js'),'utf8');
- const source=all.slice(all.indexOf('function chatAddSharedTerminal('),all.indexOf('function chatStartRelated('));
+ const source=all.slice(all.indexOf('function chatAddSharedTerminal('),all.search(/(?:async )?function chatStartRelated\(/));
  async function mount(title){
   await page.goto('http://localhost:7342/');
   await page.evaluate(()=>{
