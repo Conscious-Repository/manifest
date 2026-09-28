@@ -523,7 +523,7 @@ func graphRank(kind string) int {
 	switch kind {
 	case "you":
 		return 0
-	case "pursuing", "hire", "advisor", "expert", "connector":
+	case "pursuing", "saved":
 		return 1
 	case "in_touch", "team", "investor", "known":
 		return 2

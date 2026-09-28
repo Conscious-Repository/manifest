@@ -220,8 +220,8 @@ func TestNetworkGraphDrawsOneNodePerLinkedHumanAndNeverMergesByName(t *testing.T
 	for _, n := range g.Nodes {
 		byLabel[n.Label] = append(byLabel[n.Label], n)
 	}
-	if a := byLabel["Alice Ray"]; len(a) != 1 || a[0].ID != aliceRow || a[0].Kind != "advisor" {
-		t.Fatalf("Alice should be ONE advisor node on her row: %+v", a)
+	if a := byLabel["Alice Ray"]; len(a) != 1 || a[0].ID != aliceRow || a[0].Kind != "investor" {
+		t.Fatalf("Alice should be ONE investor node on her row: %+v", a)
 	}
 	if b := byLabel["Bob Stone"]; len(b) != 2 {
 		t.Fatalf("a same-name kept row and contact must stay two nodes: %+v", b)
@@ -246,9 +246,9 @@ func TestNetworkGraphDrawsOneNodePerLinkedHumanAndNeverMergesByName(t *testing.T
 		t.Fatal("an unconnected team member was not drawn")
 	}
 	// an unchecked kind is absent, not painted
-	g = networkGraphGet(t, s, "mode=whole&status=expert")
+	g = networkGraphGet(t, s, "mode=whole&status=team")
 	for _, n := range g.Nodes {
-		if n.Kind == "advisor" || n.Kind == "known" {
+		if n.Kind == "investor" || n.Kind == "known" {
 			t.Fatalf("a hidden kind was drawn: %+v", n)
 		}
 	}
@@ -335,5 +335,40 @@ func TestNetworkUnlinkSplitsTheRowBackApart(t *testing.T) {
 	}
 	if readFile(t, filepath.Join(vault, "Alice Ray.md")) != noteBefore {
 		t.Fatal("unlinking touched the vault note")
+	}
+}
+
+// SAVED people (kept from a sweep, no contact yet) sit apart from your
+// people, carry the source's topics as their experience, draw as "saved" in
+// the graph — and graduate by getting a contact link.
+func TestNetworkSavedPeopleSitApartUntilTheyBecomeContacts(t *testing.T) {
+	s, _ := networkTestServer(t)
+	if err := s.recruiting.AddNetworkPerson(recruiting.NetworkPerson{Name: "Ada Coil", Source: "openalex",
+		SourceRef: "openalex:A1", Topics: []string{"RF coils"}}); err != nil {
+		t.Fatal(err)
+	}
+	ada := networkGet(t, s)["Ada Coil"]
+	if !ada.Saved || strings.Join(ada.Topics, ",") != "RF coils" {
+		t.Fatalf("saved: %+v", ada)
+	}
+	var kind string
+	for _, n := range networkGraphGet(t, s, "mode=whole").Nodes {
+		if n.ID == ada.ID {
+			kind = n.Kind
+		}
+	}
+	if kind != "saved" {
+		t.Fatalf("graph kind %q", kind)
+	}
+	w := httptest.NewRecorder()
+	s.handleNetwork(w, httptest.NewRequest(http.MethodGet, "/api/network", nil))
+	if !strings.Contains(w.Body.String(), `"tag":"RF coils","count":1`) {
+		t.Fatalf("a source topic is not in the experience filter: %s", w.Body.String()[:200])
+	}
+	if w := recruitingPost(t, s, s.handleNetworkPerson, "/api/network/person/x", ada.ID, `{"set":{"ref":"carol tu"}}`); w.Code != http.StatusOK {
+		t.Fatal(w.Body.String())
+	}
+	if got := networkGet(t, s); got["Ada Coil"].Saved {
+		t.Fatal("a contact link should graduate a saved person")
 	}
 }

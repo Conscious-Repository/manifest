@@ -76,12 +76,11 @@ const RG_LENSES = {
   },
   network: {
     endpoint: "/api/network/graph", storage: "manifest.netgraph",
-    statuses: [["hire", "hires"], ["advisor", "advisors"], ["expert", "experts"], ["connector", "connectors"],
-      ["team", "team"], ["investor", "investors"], ["known", "known"],
-      ["pursuing", "applicants"], ["bridge", "swept"], ["stranger", "strangers"]],
+    statuses: [["team", "team"], ["investor", "investors"], ["known", "contacts"], ["saved", "saved from recruiting"],
+      ["pursuing", "applicants"], ["bridge", "swept, not saved"], ["stranger", "strangers"]],
     defaults: Object.assign({}, RG_DEFAULTS, {
       mode: "whole", sources: false,
-      statuses: { hire: true, advisor: true, expert: true, connector: true, team: true, investor: true, known: true,
+      statuses: { team: true, investor: true, known: true, saved: true,
         pursuing: false, bridge: false, stranger: false },
     }),
     fold: false,
@@ -811,7 +810,7 @@ function rgMenu(id, ev) {
   if (rgLens === "network" && typeof netOpen === "function" && netHas(id)) item("edit in the list", () => netOpen(id));
   if (node.kind === "bridge" && node.run && node.draft) {
     item("pursue", () => rgDecide(node, "pursue"));
-    item("keep in network…", () => { rgSelect(id); }); // the panel carries the four kinds
+    item("save to network…", () => { rgSelect(id); }); // the panel carries the button
     item("pass", () => rgDecide(node, "pass"));
   }
   if ((node.kind === "pursuing" || node.kind === "passed") && String(id).startsWith("cand/")) item("open the record", () => recNav("candidate/" + encodeURIComponent(id)));

@@ -39,7 +39,13 @@ type NetPerson struct {
 	Org         string   `json:"org,omitempty"`
 	Title       string   `json:"title,omitempty"`
 	Tags        []string `json:"tags,omitempty"`
-	Suggest     []string `json:"suggest,omitempty"` // source topics not yet tags — offered, never applied
+	Suggest     []string `json:"suggest,omitempty"` // source topics not yet tags
+	// Topics are what a SOURCE said the person knows (kept from a sweep) —
+	// shown as their experience, marked as the source's, beside your tags.
+	Topics []string `json:"topics,omitempty"`
+	// Saved: kept from a recruiting sweep and not yet one of your contacts.
+	// They sit apart from your people until you make them a contact.
+	Saved bool `json:"saved,omitempty"`
 	Note        string   `json:"note,omitempty"`
 	LastContact string   `json:"lastContact,omitempty"` // the owner's own date
 	LastMet     string   `json:"lastMet,omitempty"`     // the calendar's, when a contact is linked
@@ -102,7 +108,7 @@ func (s *Server) networkPeople(now time.Time) []*NetPerson {
 	for _, p := range kept {
 		np := &NetPerson{
 			ID: p.ID, Name: p.Name, Kind: p.Type, Org: p.Org, Title: p.Title,
-			Tags: p.Tags, Suggest: untagged(p.Topics, p.Tags), Note: p.Note, LastContact: p.LastContact, Editable: true,
+			Tags: p.Tags, Suggest: untagged(p.Topics, p.Tags), Topics: p.Topics, Note: p.Note, LastContact: p.LastContact, Editable: true,
 			ContactKey: p.Ref, TeamLink: p.Team, Consent: p.Consent, Source: p.Source,
 			SourceRef: p.SourceRef, GitHub: p.GitHub, LinkedIn: p.LinkedIn, ORCID: p.ORCID,
 			Archived: p.Archived, Sources: []string{"kept"},
@@ -184,6 +190,9 @@ func (s *Server) networkPeople(now time.Time) []*NetPerson {
 	}
 
 	sameNameSuggestions(out)
+	for _, p := range out {
+		p.Saved = p.Source != "" && p.Source != "owner" && p.ContactKey == ""
+	}
 
 	// recency first: whichever date is newer, the owner's or the calendar's;
 	// an undated person sorts last rather than pretending to be old
@@ -276,11 +285,16 @@ func (s *Server) handleNetwork(w http.ResponseWriter, _ *http.Request) {
 	tagCount := map[string]int{}
 	tagText := map[string]string{}
 	for _, p := range people {
-		for _, t := range p.Tags {
+		// your tags and the source's topics are one experience vocabulary:
+		// a filter on "RF coils" finds both your tagged contacts and the
+		// saved people a paper said know it
+		seen := map[string]bool{}
+		for _, t := range append(append([]string{}, p.Tags...), p.Topics...) {
 			id := recruiting.TopicID(t)
-			if id == "" {
+			if id == "" || seen[id] {
 				continue
 			}
+			seen[id] = true
 			tagCount[id]++
 			if tagText[id] == "" {
 				tagText[id] = t
@@ -434,16 +448,12 @@ func keptAs(kind string) string {
 // ---- the graph as a view of Network: the SAME renderer and walk as
 // Recruiting's, re-kinded by what the owner has decided each person is.
 
-// networkKinds are the statuses the Network lens can draw: the owner's kinds,
-// then the registries' own (an investor or a contact nobody has kinded yet),
-// then Recruiting's, which are off by default — applicants and swept people
-// belong to Recruiting until kept.
-var networkKinds = []string{"hire", "advisor", "expert", "connector", "team", "investor", "known",
-	"pursuing", "bridge", "stranger"}
-
+// The Network lens colours people by the group they are in — no taxonomy you
+// have to fill: your team, investors, contacts ("known"), and the people you
+// saved from recruiting. Recruiting's own statuses (applicants, swept
+// people, strangers) can be switched on to see where your graph reaches.
 func networkStatusDefault() map[string]bool {
-	return map[string]bool{"hire": true, "advisor": true, "expert": true, "connector": true,
-		"team": true, "investor": true, "known": true}
+	return map[string]bool{"team": true, "investor": true, "known": true, "saved": true}
 }
 
 type networkLens struct {
@@ -467,17 +477,17 @@ func (s *Server) networkLens(now time.Time) *networkLens {
 		if t := strings.ToUpper(strings.TrimSpace(p.TeamLink)); t != "" {
 			l.alias["team/"+t] = p.ID
 		}
-		k := p.Kind
-		if k == "" && p.TeamLink != "" {
-			k = "team"
-		}
-		if k == "" {
-			k = "known"
-			for _, src := range p.Sources {
-				if src == "investor" {
-					k = "investor"
-				}
+		k := "known"
+		for _, src := range p.Sources {
+			if src == "investor" {
+				k = "investor"
 			}
+		}
+		switch {
+		case p.TeamLink != "":
+			k = "team"
+		case p.Saved:
+			k = "saved"
 		}
 		l.kind[p.ID] = k
 	}

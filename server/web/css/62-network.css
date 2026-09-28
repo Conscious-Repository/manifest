@@ -110,3 +110,14 @@
 /* same name, not yet the same person: offered, confirmed by a click */
 .net-same-box { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-3); padding: var(--sp-2) 0; }
 .net-src.net-same { color: var(--warn); }
+
+/* experience a SOURCE named (a paper, a lab) — shown beside your own tags,
+   dashed so it never reads as something you said */
+.net-tag.from-source { background: transparent; border: 1px dashed var(--base-30); color: var(--base-60); }
+.net-saved-chip { margin-left: var(--sp-4); }
+
+/* the graph's groups (Network lens) */
+.rg-canvas .rg-node.rg-saved .rg-dot { fill: var(--warn); }
+.rg-canvas .rg-node.rg-known .rg-dot { fill: var(--base-60); }
+.rg-check .rg-swatch.rg-saved { background: var(--warn); }
+.rg-canvas .rg-node.rg-saved .rg-label { opacity: var(--rg-label-named); fill: var(--base-100); }

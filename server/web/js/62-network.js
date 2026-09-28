@@ -20,8 +20,8 @@
 
 let netCache = null;            // {people, kinds, tags, contacts, fundraising, team}
 let netQuery = "";
-let netKind = "";               // "" | hire | advisor | expert | connector | team
-let netSource = "";             // "" | sweep | contact | investor | team
+let netSaved = false;           // the "saved from recruiting" view instead of your people
+let netSource = "";             // "" | contact | investor | team
 let netTag = "";                // a tag's TopicID-ish lowercase text
 let netSel = null;              // selected person id
 let netGraphStale = false;      // an edit landed since the graph last loaded
@@ -36,7 +36,6 @@ function netSetViewMode(v) {
   try { localStorage.setItem("manifest.network.view", v); } catch (e) {}
 }
 
-const NET_KIND_WORD = { hire: "future hire", advisor: "advisor", expert: "expert", connector: "connector" };
 const NET_SOURCE_WORD = { sweep: "from sweeps", contact: "contacts", investor: "investors", team: "team" };
 
 // Where a person comes from, in words you'd use. "sweep" = someone you kept
@@ -126,6 +125,13 @@ function netGo(id) {
   netPaintPage();
 }
 
+// a person's experience: your tags, then what a source said they know
+function netExperience(p) {
+  const seen = new Set((p.tags || []).map(netTagKey));
+  const fromSource = (p.topics || []).filter((t) => { const k = netTagKey(t); if (seen.has(k)) return false; seen.add(k); return true; });
+  return { mine: p.tags || [], source: fromSource };
+}
+
 function netTagKey(t) { return String(t || "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, ""); }
 
 function netVisible() {
@@ -133,9 +139,11 @@ function netVisible() {
   const rows = (netCache.people || []).filter((p) => {
     if (p.archived) return false;
     if (netLens === "cold" && !p.cold) return false;
-    if (netKind && p.kind !== netKind) return false;
+    // your people and the people you saved from recruiting are two views:
+    // a saved person joins your people when you make them a contact
+    if (!!p.saved !== netSaved) return false;
     if (netSource && !netFrom(p).includes(netSource)) return false;
-    if (netTag && !(p.tags || []).some((t) => netTagKey(t) === netTag)) return false;
+    if (netTag && ![...(p.tags || []), ...(p.topics || [])].some((t) => netTagKey(t) === netTag)) return false;
     if (!q) return true;
     return [p.name, p.org, p.title, p.role, p.location, (p.tags || []).join(" "), (p.firms || []).join(" ")]
       .join(" ").toLowerCase().includes(q);
@@ -282,26 +290,24 @@ function netFacets() {
     b.onclick = onclick;
     return b;
   };
-  const kinds = el("div", "net-facet-row");
-  kinds.append(chip("everyone", !netKind, () => { netKind = ""; netPaint(); }));
-  (netCache.kinds || []).forEach((k) => {
-    const n = people.filter((p) => p.kind === k).length;
-    kinds.append(chip(NET_KIND_WORD[k] || k, netKind === k, () => { netKind = netKind === k ? "" : k; netPaint(); }, n));
-  });
-  box.append(kinds);
-
+  // the groups come from where people already are — nothing to fill in
+  const mine = people.filter((p) => !p.saved), saved = people.filter((p) => p.saved);
   const srcs = el("div", "net-facet-row");
-  srcs.append(el("span", "net-facet-label", "from"));
-  ["sweep", "contact", "investor", "team"].forEach((s) => {
-    const n = people.filter((p) => netFrom(p).includes(s)).length;
+  srcs.append(chip("your people", !netSaved && !netSource, () => { netSaved = false; netSource = ""; netPaint(); }, mine.length));
+  ["contact", "investor", "team"].forEach((s) => {
+    const n = mine.filter((p) => netFrom(p).includes(s)).length;
     if (!n) return;
-    srcs.append(chip(NET_SOURCE_WORD[s], netSource === s, () => { netSource = netSource === s ? "" : s; netPaint(); }, n));
+    srcs.append(chip(NET_SOURCE_WORD[s], !netSaved && netSource === s, () => { netSaved = false; netSource = netSource === s ? "" : s; netPaint(); }, n));
   });
+  const sv = chip("saved from recruiting", netSaved, () => { netSaved = !netSaved; netSource = ""; netPaint(); }, saved.length);
+  sv.classList.add("net-saved-chip");
+  sv.title = "people you saved from labs, papers and sweeps — they join your people when you make them a contact";
+  srcs.append(sv);
   box.append(srcs);
 
   if ((netCache.tags || []).length) {
     const tags = el("div", "net-facet-row");
-    tags.append(el("span", "net-facet-label", "tags"));
+    tags.append(el("span", "net-facet-label", "experience"));
     (netCache.tags || []).slice(0, 24).forEach((t) => {
       const k = netTagKey(t.tag);
       tags.append(chip(t.tag, netTag === k, () => { netTag = netTag === k ? "" : k; netPaint(); }, t.count));
@@ -340,7 +346,6 @@ function netRow(p) {
   if (p.cold) main.append(el("span", "contact-cold", "● going cold"));
   const top = el("div", "net-top");
   top.append(el("span", "net-name", p.name));
-  if (p.kind) top.append(el("span", "net-kind k-" + p.kind, NET_KIND_WORD[p.kind] || p.kind));
   if (p.location) top.append(el("span", "contact-location", p.location));
   if (p.contactKey && p.hasNote === false) top.append(el("span", "contact-dot", "○"));
   if (p.openLoops > 0) top.append(el("span", "contact-loops", p.openLoops + " open"));
@@ -351,9 +356,15 @@ function netRow(p) {
   if (p.role) sub.push(p.role);
   if ((p.firms || []).length) sub.push(p.firms.join(", "));
   if (sub.length) main.append(el("div", "net-sub", sub.join(" · ")));
-  if ((p.tags || []).length) {
+  const xp = netExperience(p);
+  if (xp.mine.length || xp.source.length) {
     const line = el("div", "net-line");
-    p.tags.forEach((t) => line.append(el("span", "net-tag", t)));
+    xp.mine.forEach((t) => line.append(el("span", "net-tag", t)));
+    xp.source.slice(0, 4).forEach((t) => {
+      const s = el("span", "net-tag from-source", t);
+      s.title = "from " + (p.source || "the source");
+      line.append(s);
+    });
     main.append(line);
   }
   row.append(main);
@@ -442,10 +453,10 @@ function netPaintPage() {
 // came from, and the one explicit way to make them a contact.
 function netPaintKept(p, host) {
   const sec = el("div", "cp-section");
-  sec.append(el("div", "cp-section-head", "Not a contact yet"));
-  if (p.source && p.source !== "owner") sec.append(el("div", "net-insp-hint", "kept from " + p.source + (p.sourceRef ? " · " + p.sourceRef : "")));
-  if ((p.suggest || []).length) sec.append(el("div", "net-insp-hint", "the source says: " + p.suggest.join(" · ")));
-  const make = el("button", "pill", "make a contact note");
+  sec.append(el("div", "cp-section-head", p.saved ? "Saved from recruiting" : "Not a contact yet"));
+  if (p.source && p.source !== "owner") sec.append(el("div", "net-insp-hint", "saved from " + p.source + (p.sourceRef ? " · " + p.sourceRef : "")));
+  sec.append(el("div", "net-insp-hint", "they join your people when you make them a contact — that creates their contact note"));
+  const make = el("button", "pill", "make them a contact");
   make.title = "creates " + p.name + ".md with categories: [people] and links this row to it";
   make.onclick = async () => {
     make.disabled = true;
@@ -474,19 +485,10 @@ function netPaintBuild(p, insp) {
     return node;
   };
 
-  // kind
-  const kind = document.createElement("select");
-  kind.className = "pp-in";
-  [["", "— kind"]].concat((netCache.kinds || []).map((k) => [k, NET_KIND_WORD[k] || k])).forEach(([v, l]) => {
-    const o = el("option", "", l); o.value = v; o.selected = (p.kind || "") === v; kind.append(o);
-  });
-  kind.onchange = () => netSave(p, { kind: kind.value });
-  field("kind", kind);
-
   // tags: comma-separated, autocompleted from the tags already in use
   const tags = el("input", "pp-in");
   tags.type = "text";
-  tags.placeholder = "e.g. fda-510k, mri-coils";
+  tags.placeholder = "what they know — e.g. fda-510k, mri-coils";
   tags.value = (p.tags || []).join(", ");
   const listId = "netTagList";
   let dl = document.getElementById(listId);
@@ -499,29 +501,16 @@ function netPaintBuild(p, insp) {
   let tagsWas = tags.value;
   tags.onblur = () => { if (tags.value !== tagsWas) { tagsWas = tags.value; netSave(p, { tags: tags.value }); } };
   tags.onkeydown = (e) => { if (e.key === "Enter") { e.preventDefault(); tags.blur(); } };
-  field("tags", tags);
+  field("experience", tags);
 
-  // what the SOURCE said they know, offered one click at a time — a topic is
-  // a suggestion until the owner accepts it; nothing tags itself
-  if ((p.suggest || []).length) {
-    const sug = el("div", "net-suggest");
-    sug.append(el("span", "net-facet-label", "suggested"));
-    p.suggest.forEach((t) => {
-      const b = el("button", "net-sug", "+ " + t);
-      b.title = "named by " + (p.source || "the source") + " — add as a tag";
-      b.onclick = async () => {
-        const next = (tags.value.trim() ? tags.value.replace(/[,\s]+$/, "") + ", " : "") + t;
-        tags.value = next;
-        tagsWas = next;
-        if (await netSave(p, { tags: next })) {
-          p.suggest = (p.suggest || []).filter((x) => x !== t);
-          b.remove();
-          if (!sug.querySelector(".net-sug")) sug.remove();
-        }
-      };
-      sug.append(b);
-    });
-    insp.append(sug);
+  // what the SOURCE said they know — shown as experience straight away,
+  // marked as the source's (your own tags above are yours alone)
+  const fromSource = netExperience(p).source;
+  if (fromSource.length) {
+    const box = el("div", "net-suggest");
+    box.append(el("span", "net-facet-label", "from " + (p.source || "source")));
+    fromSource.forEach((t) => box.append(el("span", "net-tag from-source", t)));
+    insp.append(box);
   }
 
   // last contact: a date, or "today" in one click
@@ -625,7 +614,8 @@ function netHas(id) { return !!netCache && (netCache.people || []).some((p) => p
 // where kind, tags, note and last contact are edited.
 function netOpen(id) {
   netQuery = "";
-  netKind = netSource = netTag = "";
+  netSource = netTag = "";
+  netSaved = !!(netPerson(id) || {}).saved;
   netLens = "";
   netSetViewMode("list");
   netSel = id;
@@ -638,7 +628,7 @@ function netOpen(id) {
 // netDimmed answers, for the graph, whether the list's filters leave a person
 // out. Nobody is dimmed while no filter is set.
 function netDimmed(id) {
-  if (!netCache || !(netQuery.trim() || netKind || netSource || netTag)) return false;
+  if (!netCache || !(netQuery.trim() || netSource || netTag || netSaved)) return false;
   if (!netHas(id)) return true;
   return !netVisible().some((p) => p.id === id);
 }
@@ -647,7 +637,7 @@ function netDimGraph() {
   const st = typeof rgState !== "undefined" && rgState;
   if (!st || !st.sim || rgLens !== "network") return;
   const keep = new Set(netVisible().map((p) => p.id));
-  const on = !!(netQuery.trim() || netKind || netSource || netTag);
+  const on = !!(netQuery.trim() || netSource || netTag || netSaved);
   st.sim.nodes.forEach((n) => n.el.classList.toggle("rg-dim", on && !keep.has(n.id)));
   const count = document.querySelector(".net-count");
   if (count) {

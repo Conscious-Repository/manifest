@@ -130,36 +130,24 @@ async function loadRecruitingSources() {
 
 // recSourcesPost: every sources route answers with the run list, and only a
 // route that wrote a record (accept) adds the board view.
-// recKeepControl — "keep in network" for one queued person (Network tab,
-// 2026-09-27). A candidate is the wrong promise for an advisor or an expert to
-// consult; keep writes a network row instead, chosen as one of four kinds, and
-// the person stops expiring with their run's cache. One click unfolds the
-// kinds; a second picks one. `after` runs on success (refresh the caller).
+// Saving writes a network row instead of a candidate, and the person stops
+// expiring with their run's cache. `after` runs on success.
+// recKeepControl saves a swept person to Network — set apart from your
+// contacts ("saved from recruiting") until you make them one. One click, no
+// category to pick: what they know comes from the source's topics.
 function recKeepControl(runId, draftId, name, after, also) {
   const wrap = el("span", "rec-keep");
-  const open = el("button", "pill light", "keep in network");
-  open.title = "keep " + name + " as a future hire, advisor, expert or connector — a network record, not a candidate";
-  open.onclick = (e) => {
+  const save = el("button", "pill light", "save to network");
+  save.title = "save " + name + " to Network — a network record, not a candidate; they join your contacts when you make them one";
+  save.onclick = async (e) => {
     e.stopPropagation();
-    wrap.innerHTML = "";
-    wrap.append(el("span", "rec-keep-as", "keep as"));
-    [["hire", "future hire"], ["advisor", "advisor"], ["expert", "expert"], ["connector", "connector"]].forEach(([k, label]) => {
-      const b = el("button", "pill light", label);
-      b.onclick = async (ev) => {
-        ev.stopPropagation();
-        wrap.querySelectorAll("button").forEach((x) => { x.disabled = true; });
-        const out = await recSourcesPost("/api/network/keep", { run: runId, draft: draftId, kind: k, also: also || [] },
-          name + " kept in your network as " + label);
-        if (out) { if (typeof netCache !== "undefined") netCache = null; if (after) after(out); }
-        else wrap.querySelectorAll("button").forEach((x) => { x.disabled = false; });
-      };
-      wrap.append(b);
-    });
-    const x = el("button", "rec-linkish", "cancel");
-    x.onclick = (ev) => { ev.stopPropagation(); wrap.replaceWith(recKeepControl(runId, draftId, name, after, also)); };
-    wrap.append(x);
+    save.disabled = true;
+    const out = await recSourcesPost("/api/network/keep", { run: runId, draft: draftId, kind: "", also: also || [] },
+      name + " saved to your network");
+    if (out) { if (typeof netCache !== "undefined") netCache = null; if (after) after(out); }
+    else save.disabled = false;
   };
-  wrap.append(open);
+  wrap.append(save);
   return wrap;
 }
 
