@@ -300,6 +300,9 @@ function cmdDestinations() {
   _cmdDests = [];
   NAV_SECTIONS.forEach((g) => g.items.forEach((it) =>
     _cmdDests.push({ name: it.label, hint: g.label.toLowerCase() + " · view", hash: it.hash })));
+  // Contacts lives in Network now; the old words still find it
+  _cmdDests.push({ name: "Contacts", hint: "people · network", hash: "#/network" });
+  _cmdDests.push({ name: "People", hint: "people · network", hash: "#/network" });
   [["Backlog", "#/aion"], ["Heuristics", "#/aion/heuristics"], ["V/TO", "#/aion/vto"],
    ["Goals", "#/aion/goals"], ["Org", "#/aion/org"], ["Fundraising", "#/aion/fundraising"],
    ["Recruiting", "#/aion/recruiting"]].forEach(([n, h]) =>
@@ -449,11 +452,11 @@ async function cmdShowCard(key) {
   if (c.latestTranscript) {
     const f = cmdFact("Latest transcript", c.latestTranscript.date + " · " + c.latestTranscript.title);
     f.classList.add("cmd-fact-link");
-    f.onclick = () => { closeCmdbar(); _noteReturn = "#/contacts/" + encodeURIComponent(c.key); openNoteByPath(c.latestTranscript.path); };
+    f.onclick = () => { closeCmdbar(); _noteReturn = personHref(c.key); openNoteByPath(c.latestTranscript.path); };
     facts.append(f);
   }
   host.append(facts);
-  const jump = pill("Open contact page →", () => { closeCmdbar(); location.hash = "#/contacts/" + encodeURIComponent(c.key); });
+  const jump = pill("Open their page →", () => { closeCmdbar(); location.hash = personHref(c.key); });
   host.append(jump);
 }
 function cmdFact(label, val) {

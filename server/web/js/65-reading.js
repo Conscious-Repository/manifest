@@ -104,7 +104,7 @@ function starsEl(b) {
 async function resolveAndOpen(target) {
   try {
     const r = await (await fetch("/api/note/resolve?target=" + encodeURIComponent(target))).json();
-    if (r.kind === "contact") location.hash = "#/contacts/" + encodeURIComponent(r.key);
+    if (r.kind === "contact") location.hash = personHref(r.key);
     else if (r.kind === "note") { _noteReturn = "#/reading"; openNoteByPath(r.path); }
   } catch (e) {}
 }

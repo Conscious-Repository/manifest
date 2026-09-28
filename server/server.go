@@ -541,7 +541,6 @@ func (s *Server) Handler() http.Handler {
 			// path origin
 			mux.HandleFunc("GET /api/aion/recruiting/people/known", s.handleRecruitingKnownPeople)
 			// NETWORK — the top-level tab over the same people store (network.go)
-			mux.HandleFunc("GET /api/network", s.handleNetwork)
 			mux.HandleFunc("POST /api/network/keep", s.handleNetworkKeep)
 			mux.HandleFunc("GET /api/network/graph", s.handleNetworkGraph)
 			mux.HandleFunc("POST /api/network/person/{id...}", s.handleNetworkPerson)
@@ -811,6 +810,10 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/contacts/email", s.handleContactsEmail)
 	mux.HandleFunc("GET /api/contacts/email-review", s.handleContactsEmailReview)
 	mux.HandleFunc("POST /api/contacts/email-dismiss", s.handleContactsEmailDismiss)
+	// NETWORK's list is the people layer too (contacts merged in, 2026-09-27),
+	// so it answers whether or not the recruiting store is wired; the kept
+	// rows, keep, graph and edits stay registered with recruiting above.
+	mux.HandleFunc("GET /api/network", s.handleNetwork)
 
 	// FEED — manifest's one inbox, a first-class surface (feed-central §1).
 	// Spirit items + (later) app signals and virtual proposal cards. The old

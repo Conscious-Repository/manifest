@@ -1,13 +1,15 @@
-// ---- NETWORK — the people around AION (owner decisions 2026-09-27) ----
+// ---- NETWORK — the people you know, and the people around AION ----
 //
-// Future hires, advisors, experts to consult, connectors — plus the vault's
-// contacts, the fundraising investors and the team, drawn read-only beside
-// them. LIST FIRST: building a network is scanning, tagging and noting; the
-// graph is a second view of the same people (Phase 2).
+// ONE place for people (Contacts merged in, 2026-09-27): your vault contacts,
+// fundraising investors, the AION team and the people you kept from sweeps.
+// The list is on the left; the right is the person's page — what they are to
+// you (kind, tags, last contact) above what the vault and calendar know
+// (61-person.js: timeline, open loops, emails, location, note). The graph is
+// a second view of the same people.
 //
 // Tracking is deliberately minimal: kind, tags, one last-contact date.
 // There is no note field — a contact's note is their vault note (one fact,
-// one place), linked from the inspector. Nothing here reminds or scores.
+// one place), edited on their page. Nothing here reminds or scores.
 //
 // ⚠ Rows join ONLY by explicit link (a kept row's contact ref / team link),
 // never by name — two "Ben"s are two rows until the owner links them.
@@ -23,6 +25,8 @@ let netSource = "";             // "" | kept | contact | investor | team
 let netTag = "";                // a tag's TopicID-ish lowercase text
 let netSel = null;              // selected person id
 let netGraphStale = false;      // an edit landed since the graph last loaded
+let netLens = "";               // "" | cold (going cold) | nearby
+let netReviewOpen = false;      // the review queues are expanded
 
 // list | graph is a per-viewer convenience, so it lives in the browser
 function netViewMode() {
@@ -35,44 +39,108 @@ function netSetViewMode(v) {
 const NET_KIND_WORD = { hire: "future hire", advisor: "advisor", expert: "expert", connector: "connector" };
 const NET_SOURCE_WORD = { kept: "kept", contact: "contacts", investor: "investors", team: "team" };
 
+// Routes: #/network · #/network/cold · #/network/review · #/network/<id>
+// where <id> is a row id (contact/<key>, aion-net/…, team/<INI>). The old
+// #/contacts links arrive here through the redirect in 99-boot.js.
+function netRoute() {
+  const rest = location.hash.replace(/^#\/network\/?/, "");
+  netLens = rest === "cold" ? "cold" : netLens === "nearby" ? "nearby" : "";
+  if (rest === "review") netReviewOpen = true;
+  if (rest && rest !== "cold" && rest !== "review") {
+    let id = rest;
+    try { id = decodeURIComponent(rest); } catch (e) {}
+    netSel = id;
+    netSetViewMode("list");
+  }
+}
+
 async function showNetwork() {
   const host = document.getElementById("networkView");
-  if (!netCache) {
-    host.innerHTML = "";
-    host.append(emptyRow("loading…"));
-  }
+  netRoute();
+  if (netCache) { netPaint(); netRefresh(false); return; }
+  host.innerHTML = "";
+  host.append(emptyRow("loading…"));
   try {
     const r = await fetch("/api/network");
     if (!r.ok) throw new Error((await r.text()) || "HTTP " + r.status);
     netCache = await r.json();
   } catch (e) {
     host.innerHTML = "";
-    host.append(emptyRow("couldn't load the network — " + String(e.message || e).slice(0, 120)));
+    host.append(emptyRow("couldn't load people — " + String(e.message || e).slice(0, 120)));
     return;
   }
   netPaint();
+  netLoadReviews();
+}
+
+// netRefresh re-reads the people and repaints the LIST only — never the page,
+// where you may be typing. quiet keeps the review queues as they are.
+async function netRefresh(quiet) {
+  try {
+    const r = await fetch("/api/network");
+    if (r.ok) netCache = await r.json();
+  } catch (e) { return; }
+  netPaintList();
+  netPaintLensCounts();
+  if (!quiet) netLoadReviews();
+}
+cpRefresh = (quiet) => netRefresh(!!quiet);
+
+function netLoadReviews() {
+  if (!document.getElementById("netReview")) return;
+  cpLoadReviews().then(netPaintLensCounts);
+}
+
+// the row a route or a click names — by id, or a contact by its key; a
+// contact key no row carries (an org, a new note) still gets its page
+function netPerson(id) {
+  if (!id || !netCache) return null;
+  const people = netCache.people || [];
+  const hit = people.find((p) => p.id === id);
+  if (hit) return hit;
+  if (id.startsWith("contact/")) {
+    const key = id.slice(8).toLowerCase();
+    return people.find((p) => (p.contactKey || "").toLowerCase() === key) ||
+      { id, name: id.slice(8), contactKey: id.slice(8), sources: ["contact"], stub: true };
+  }
+  return null;
+}
+
+// netGo selects a person without a route round-trip (the hash follows)
+function netGo(id) {
+  netSel = id;
+  try { history.replaceState(null, "", "#/network/" + encodeURIComponent(id)); } catch (e) {}
+  document.querySelectorAll(".net-row.sel").forEach((x) => x.classList.remove("sel"));
+  const row = document.querySelector('.net-row[data-id="' + CSS.escape(id) + '"]');
+  if (row) row.classList.add("sel");
+  netPaintPage();
 }
 
 function netTagKey(t) { return String(t || "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, ""); }
 
 function netVisible() {
   const q = netQuery.trim().toLowerCase();
-  return (netCache.people || []).filter((p) => {
+  const rows = (netCache.people || []).filter((p) => {
     if (p.archived) return false;
+    if (netLens === "cold" && !p.cold) return false;
     if (netKind && p.kind !== netKind) return false;
     if (netSource && !(p.sources || []).includes(netSource)) return false;
     if (netTag && !(p.tags || []).some((t) => netTagKey(t) === netTag)) return false;
     if (!q) return true;
-    return [p.name, p.org, p.title, p.role, (p.tags || []).join(" "), (p.firms || []).join(" ")]
+    return [p.name, p.org, p.title, p.role, p.location, (p.tags || []).join(" "), (p.firms || []).join(" ")]
       .join(" ").toLowerCase().includes(q);
   });
+  // going cold reads most-overdue first, as the Contacts lens did
+  if (netLens === "cold") rows.sort((a, b) => (b.daysSince || 0) - (a.daysSince || 0));
+  return rows;
 }
 
-// the newer of the owner's date and the calendar's, with which one it is
+// the newest of your own date, the calendar's and the notes', and which it is
 function netRecency(p) {
-  const own = p.lastContact || "", met = p.lastMet || "";
-  if (!own && !met) return null;
-  return own >= met ? { date: own, how: "touched" } : { date: met, how: "met" };
+  const all = [[p.lastContact, "touched"], [p.lastMet, "met"], [p.lastMentioned, "mentioned"]].filter(([d]) => d);
+  if (!all.length) return null;
+  all.sort((a, b) => b[0].localeCompare(a[0]));
+  return { date: all[0][0], how: all[0][1] };
 }
 
 function netShortDate(d) {
@@ -92,10 +160,24 @@ function netPaint() {
 
   const head = el("div", "agent-head");
   head.append(el("span", "agent-title", "NETWORK"));
+  const lenses = el("div", "net-lenses");
+  const cold = el("button", "filter-chip net-cold-chip" + (netLens === "cold" ? " on" : ""), "going cold");
+  cold.title = "people you usually see who are overdue — most overdue first";
+  cold.onclick = () => { netLens = netLens === "cold" ? "" : "cold"; try { history.replaceState(null, "", netLens ? "#/network/cold" : "#/network"); } catch (e) {} netPaint(); };
+  const near = el("button", "filter-chip" + (netLens === "nearby" ? " on" : ""), "nearby");
+  near.title = "people near a city or place";
+  near.onclick = () => { netLens = netLens === "nearby" ? "" : "nearby"; netPaint(); };
+  const review = el("button", "filter-chip net-review-chip" + (netReviewOpen ? " on" : ""), "review");
+  review.title = "names in your notes, calendar emails and pipeline people waiting for a decision";
+  review.onclick = () => { netReviewOpen = !netReviewOpen; netPaint(); netLoadReviews(); };
+  const add = el("button", "filter-chip", "+ person");
+  add.title = "add a person — existing names are checked first";
+  add.onclick = () => { netSetViewMode("list"); if (netLens === "nearby") { netLens = ""; netPaint(); } openCreatePanel(document.getElementById("netList")); };
+  lenses.append(cold, near, review, add);
   const acts = el("div", "agent-actions");
   const search = el("input", "contact-search net-search");
   search.type = "search";
-  search.placeholder = "search people, orgs, tags, notes…";
+  search.placeholder = "search people, orgs, places, tags…";
   search.value = netQuery;
   search.oninput = () => { netQuery = search.value; if (netViewMode() === "graph") netDimGraph(); else netPaintList(); };
   acts.append(search);
@@ -108,7 +190,7 @@ function netPaint() {
     b.onclick = () => { if (mode !== k) { netSetViewMode(k); netPaint(); } };
     toggle.append(b);
   });
-  acts.append(toggle);
+  acts.append(lenses, toggle);
   const sweeps = el("a", "rec-linkish net-sweeps", "people from sweeps →");
   sweeps.href = "#/aion/recruiting/people";
   sweeps.title = "everyone your recruiting sweeps named, ranked — keep the ones worth knowing";
@@ -118,6 +200,18 @@ function netPaint() {
 
   host.append(netFacets());
   if (netTag) host.append(netLeverage());
+
+  // the review queues (the old Contacts strips), one chip away
+  const reviewBox = el("div", "net-review");
+  reviewBox.id = "netReview";
+  reviewBox.hidden = !netReviewOpen;
+  ["triage", "email", "people"].forEach((k) => {
+    const h = el("div", "contact-triage");
+    h.hidden = true;
+    cpHosts[k] = h;
+    reviewBox.append(h);
+  });
+  host.append(reviewBox);
 
   // THE GRAPH is the same people laid out by who ties to whom — the
   // Recruiting renderer through the Network lens (97-rec-graph.js). The list's
@@ -132,15 +226,42 @@ function netPaint() {
     return;
   }
 
-  const split = el("div", "aion-backlog net-split");
-  const list = el("div", "aion-list net-list");
+  const split = el("div", "net-split");
+  const left = el("div", "net-left");
+  if (netLens === "nearby") {
+    const panel = el("div", "contact-nearby");
+    left.append(panel);
+    cpNearby.panel = panel;
+  }
+  const list = el("div", "net-list");
   list.id = "netList";
-  const insp = el("aside", "aion-inspector net-insp");
-  insp.id = "netInsp";
-  split.append(list, insp);
+  left.append(list);
+  const page = el("section", "net-page");
+  page.id = "netPage";
+  split.append(left, page);
   host.append(split);
-  netPaintList();
-  netPaintInspector();
+  netPaintLensCounts();
+  _nearbyMode = netLens === "nearby";
+  if (_nearbyMode) {
+    cpNearby.list = list;
+    cpNearby.open = (key) => netGo("contact/" + key);
+    renderNearbyPanel();
+  } else netPaintList();
+  netPaintPage();
+}
+
+// the counts on the lens chips, updated in place
+function netPaintLensCounts() {
+  const cold = document.querySelector(".net-cold-chip");
+  if (cold && netCache) {
+    const n = (netCache.people || []).filter((p) => p.cold && !p.archived).length;
+    cold.textContent = "going cold" + (n ? " " + n : "");
+  }
+  const review = document.querySelector(".net-review-chip");
+  if (review) {
+    const n = cpCounts.triage + cpCounts.email + cpCounts.people;
+    review.textContent = "review" + (n ? " " + n : "");
+  }
 }
 
 function netFacets() {
@@ -182,12 +303,12 @@ function netFacets() {
 
 function netPaintList() {
   const list = document.getElementById("netList");
-  if (!list) return;
+  if (!list || netLens === "nearby") return;
   list.innerHTML = "";
   const rows = netVisible();
   if (!rows.length) {
-    list.append(emptyRow((netCache.people || []).length
-      ? "nobody matches — clear a filter"
+    list.append(emptyRow(netLens === "cold" ? "nobody is going cold"
+      : (netCache.people || []).length ? "nobody matches — clear a filter"
       : "no one here yet — keep someone from a recruiting sweep, or tag a contact"));
     return;
   }
@@ -202,12 +323,17 @@ function netPaintList() {
 }
 
 function netRow(p) {
-  const row = el("div", "net-row" + (netSel === p.id ? " sel" : ""));
+  const row = el("div", "net-row" + (netSel === p.id ? " sel" : "") + (p.cold ? " cold" : ""));
   row.tabIndex = 0;
+  row.dataset.id = p.id;
   const main = el("div", "net-main");
+  if (p.cold) main.append(el("span", "contact-cold", "● going cold"));
   const top = el("div", "net-top");
   top.append(el("span", "net-name", p.name));
   if (p.kind) top.append(el("span", "net-kind k-" + p.kind, NET_KIND_WORD[p.kind] || p.kind));
+  if (p.location) top.append(el("span", "contact-location", p.location));
+  if (p.contactKey && p.hasNote === false) top.append(el("span", "contact-dot", "○"));
+  if (p.openLoops > 0) top.append(el("span", "contact-loops", p.openLoops + " open"));
   main.append(top);
   const sub = [];
   if (p.title) sub.push(p.title);
@@ -222,18 +348,17 @@ function netRow(p) {
   }
   row.append(main);
   const side = el("div", "net-side");
+  if (p.upcoming) side.append(el("span", "contact-upcoming", "↑ " + netShortDate(p.upcoming)));
   const rec = netRecency(p);
-  side.append(el("span", "net-when" + (rec ? "" : " none"), rec ? rec.how + " " + netShortDate(rec.date) : "—"));
+  if (p.cold && p.daysSince >= 0) {
+    side.append(el("span", "net-when", (p.neglectBasis === "meetings" ? "met " : "mentioned ") + p.daysSince + "d ago" +
+      (p.medianGap ? " · usually every " + p.medianGap + "d" : "")));
+  } else side.append(el("span", "net-when" + (rec ? "" : " none"), rec ? rec.how + " " + netShortDate(rec.date) : "—"));
   const srcs = (p.sources || []).filter((s) => s !== "contact");
   if (srcs.length) side.append(el("span", "net-src", srcs.map((s) => NET_SOURCE_WORD[s] || s).join(" · ")));
   if ((p.sameName || []).length) side.append(el("span", "net-src net-same", "same name ×" + (p.sameName.length + 1)));
   row.append(side);
-  const pick = () => {
-    netSel = p.id;
-    document.querySelectorAll(".net-row.sel").forEach((x) => x.classList.remove("sel"));
-    row.classList.add("sel");
-    netPaintInspector();
-  };
+  const pick = () => netGo(p.id);
   row.onclick = pick;
   row.onkeydown = (e) => { if (e.key === "Enter") pick(); };
   return row;
@@ -266,30 +391,71 @@ async function netSave(p, set) {
   }
 }
 
-function netPaintInspector() {
-  const insp = document.getElementById("netInsp");
+// THE PERSON PAGE: what they are to you first (the fields you build the
+// network with), then what the vault and calendar know (61-person.js).
+function netPaintPage() {
+  const insp = document.getElementById("netPage");
   if (!insp) return;
   insp.innerHTML = "";
-  const p = (netCache.people || []).find((x) => x.id === netSel);
+  const p = netPerson(netSel);
   if (!p) {
-    insp.append(el("div", "aion-insp-empty", "select someone — say what they are to you, tag what they know, date the last touch"));
+    cpPageHost = null;
+    insp.append(el("div", "aion-insp-empty", "select someone — their page opens here: what they are to you, what they know, and everything the vault and calendar have on them"));
     return;
   }
-  const head = el("div", "aion-insp-head");
-  head.append(el("span", "aion-insp-label", "Person"));
+  const head = el("div", "net-page-head");
+  head.append(el("h1", "net-page-name", p.name));
   const x = el("button", "aion-insp-x", "✕");
   x.setAttribute("aria-label", "close");
-  x.onclick = () => { netSel = null; netPaintList(); netPaintInspector(); };
+  x.onclick = () => { netSel = null; try { history.replaceState(null, "", "#/network"); } catch (e) {} netPaintList(); netPaintPage(); };
   head.append(x);
   insp.append(head);
-  insp.append(el("div", "net-insp-name", p.name));
   const sub = [p.title, p.org, p.role].filter(Boolean).join(" · ");
   if (sub) insp.append(el("div", "net-sub", sub));
-  if (!p.editable) {
-    insp.append(el("div", "net-insp-hint",
-      "from your " + (p.sources || []).map((s) => NET_SOURCE_WORD[s] || s).join(" + ") +
-      " — editing here keeps a network record linked to them; their note is never touched"));
+  const building = el("div", "net-build");
+  insp.append(building);
+  netPaintBuild(p, building);
+
+  if (p.contactKey) {
+    const cp = el("div", "contact-page net-contact-page");
+    insp.append(cp);
+    cpPageHost = cp;
+    cpPageBare = true;
+    showContactPage(p.contactKey);
+  } else {
+    cpPageHost = null;
+    netPaintKept(p, insp);
   }
+}
+
+// netPaintKept is the page of someone with no contact note yet: where they
+// came from, and the one explicit way to make them a contact.
+function netPaintKept(p, host) {
+  const sec = el("div", "cp-section");
+  sec.append(el("div", "cp-section-head", "Not a contact yet"));
+  if (p.source && p.source !== "owner") sec.append(el("div", "net-insp-hint", "kept from " + p.source + (p.sourceRef ? " · " + p.sourceRef : "")));
+  if ((p.suggest || []).length) sec.append(el("div", "net-insp-hint", "the source says: " + p.suggest.join(" · ")));
+  const make = el("button", "pill", "make a contact note");
+  make.title = "creates " + p.name + ".md with categories: [people] and links this row to it";
+  make.onclick = async () => {
+    make.disabled = true;
+    try {
+      const np = await postJSONOk("/api/contacts/note", { key: p.name.toLowerCase(), display: p.name, body: "" });
+      const key = np.key || p.name.toLowerCase();
+      if (p.editable || p.team) await netSave(p, { ref: key });
+      showToast(p.name + " is a contact");
+      netCache = null;
+      location.hash = personHref(key);
+    } catch (e) { showToast("couldn't create the note — " + String(e.message || e).slice(0, 120), null, "error"); make.disabled = false; }
+  };
+  sec.append(make);
+  host.append(sec);
+}
+
+// netPaintBuild: kind, tags, last contact — the building fields — plus the
+// same-name links. Saves repaint the list only (focus stays where you are).
+function netPaintBuild(p, insp) {
+  if (netCache.editable === false || p.stub) return;
 
   const field = (label, node) => {
     const f = el("div", "aion-insp-field net-field");
@@ -363,7 +529,6 @@ function netPaintInspector() {
   };
   lc.append(date, today);
   field("last contact", lc);
-  if (p.lastMet) insp.append(el("div", "net-insp-hint", "calendar: last met " + netShortDate(p.lastMet)));
 
   // on the team: a fact the roster states, shown — not a second picker
   if (p.team) insp.append(el("div", "net-insp-hint", "AION team · " + [p.role, p.team].filter(Boolean).join(" · ")));
@@ -404,7 +569,6 @@ function netPaintInspector() {
     if (!internal) { a.target = "_blank"; a.rel = "noopener"; }
     links.append(a);
   };
-  if (p.notePath) link("contact note →", "#/note/" + encodeURIComponent(p.notePath), true);
   if (p.orcid) link("orcid ↗", p.orcid);
   if (p.github) link("github ↗", p.github);
   if (p.linkedin) link("linkedin ↗", p.linkedin);
@@ -432,11 +596,13 @@ function netHas(id) { return !!netCache && (netCache.people || []).some((p) => p
 // netOpen is "edit in the list": the graph hands a person back to the row
 // where kind, tags, note and last contact are edited.
 function netOpen(id) {
-  netSel = id;
   netQuery = "";
   netKind = netSource = netTag = "";
+  netLens = "";
   netSetViewMode("list");
+  netSel = id;
   netPaint();
+  netGo(id);
   const row = document.querySelector("#netList .net-row.sel");
   if (row) row.scrollIntoView({ block: "center" });
 }
@@ -490,7 +656,7 @@ function netLeverage() {
         (lp.tieCount ? " · " + lp.tieCount + (lp.tieCount === 1 ? " tie" : " ties") : ""));
       b.title = "leverage " + lp.leverage + " = knowledge " + lp.knowledge + " × connectivity " + lp.connectivity;
       b.onclick = () => {
-        if (netHas(lp.id)) { netSel = lp.id; netPaintList(); netPaintInspector(); }
+        if (netHas(lp.id)) netGo(lp.id);
         else if (String(lp.id).startsWith("cand/")) location.hash = "#/aion/recruiting/candidate/" + encodeURIComponent(lp.id);
         else showToast(lp.name + " isn't in your network yet — keep them from a sweep");
       };

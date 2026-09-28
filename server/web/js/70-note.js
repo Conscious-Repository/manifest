@@ -59,7 +59,7 @@ async function resolveWikilink(target) {
   let r;
   try { r = await (await fetch("/api/note/resolve?target=" + encodeURIComponent(target))).json(); }
   catch (e) { return; }
-  if (r.kind === "contact") location.hash = "#/contacts/" + encodeURIComponent(r.key);
+  if (r.kind === "contact") location.hash = personHref(r.key);
   else if (r.kind === "note") openNoteByPath(r.path);
   else els.noteSaved.textContent = "no note for [[" + target + "]]";
 }
@@ -99,7 +99,7 @@ if (els.noteSaveBtn) els.noteSaveBtn.addEventListener("click", async () => {
   } catch (e) { if (_note === doc) els.noteSaved.textContent = "save failed — " + e.message; }
   finally { doc.saving = false; }
 });
-if (els.noteBackBtn) els.noteBackBtn.addEventListener("click", () => { location.hash = _noteReturn || "#/contacts"; });
+if (els.noteBackBtn) els.noteBackBtn.addEventListener("click", () => { location.hash = _noteReturn || "#/network"; });
 
 // ---- ARTIFACT READER — a full-page reader for agent artifacts (research
 // briefs) and run reports. Reuses the note view's reading surface (.note-view

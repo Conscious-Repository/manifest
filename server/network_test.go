@@ -298,3 +298,18 @@ func TestNetworkSuggestsSourceTopicsNotYetTagged(t *testing.T) {
 		t.Fatalf("accepting a tag must not rewrite what the source said: %+v", row.Topics)
 	}
 }
+
+// Contacts merged into Network: a contact row carries what Contacts computes
+// (has-note, and the rest of the neglect lens), and the list answers even
+// with the recruiting store unwired — contacts are not a recruiting feature.
+func TestNetworkListsContactsWithTheirSignalsWithoutRecruiting(t *testing.T) {
+	s, _ := networkTestServer(t)
+	if carol := networkGet(t, s)["Carol Tu"]; !carol.HasNote || carol.NotePath == "" {
+		t.Fatalf("contact signals missing: %+v", carol)
+	}
+	s.recruiting = nil
+	got := networkGet(t, s)
+	if carol := got["Carol Tu"]; carol.ID != "contact/carol tu" || carol.Editable {
+		t.Fatalf("without recruiting, contacts still list read-only: %+v", carol)
+	}
+}

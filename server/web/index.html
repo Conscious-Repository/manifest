@@ -36,8 +36,8 @@
   <link rel="stylesheet" href="css/72-activity.css" />
   <link rel="stylesheet" href="css/73-terminal.css?v=7" />
   <link rel="stylesheet" href="css/55-approvals.css?v=20260927-receipts" />
-  <link rel="stylesheet" href="css/60-contacts.css?v=20260925-touches2" />
-  <link rel="stylesheet" href="css/62-network.css?v=4" />
+  <link rel="stylesheet" href="css/61-person.css?v=1" />
+  <link rel="stylesheet" href="css/62-network.css?v=5" />
   <link rel="stylesheet" href="css/65-reading.css" />
   <link rel="stylesheet" href="css/70-note.css?v=20260913-wl-viewport" />
   <link rel="stylesheet" href="css/71-write.css" />
@@ -350,35 +350,6 @@
   <!-- NETWORK — the people around AION: hires, advisors, experts, connectors (62-network.js) -->
   <section class="network-view" id="networkView" hidden></section>
 
-  <!-- CONTACTS — the people layer over the vault index -->
-  <section class="contacts-view" id="contactsView" hidden>
-    <!-- list -->
-    <div id="contactsListPane">
-      <div class="agent-head">
-        <span class="agent-title">CONTACTS</span>
-        <div class="agent-actions">
-          <input id="contactSearch" class="contact-search" type="search" placeholder="Search contacts…" />
-          <button id="contactColdToggle" class="pill light" title="Show only contacts going cold (neglect lens)">◆ Cold</button>
-          <button id="contactNearbyToggle" class="pill light" title="Find contacts near a city or place">◎ Nearby</button>
-          <button id="contactAddBtn" class="pill" title="Add a contact (binds to existing links first)">+ contact</button>
-        </div>
-      </div>
-      <div id="contactNearby" class="contact-nearby" hidden></div>
-      <div id="contactTriage" class="contact-triage" hidden></div>
-      <div id="contactEmailReview" class="contact-triage" hidden></div>
-      <div id="contactPeopleReview" class="contact-triage" hidden></div>
-      <div id="contactList" class="contact-list"></div>
-    </div>
-
-    <!-- page -->
-    <div id="contactPagePane" hidden>
-      <div class="agent-head">
-        <button id="contactBackBtn" class="pill light">‹ Contacts</button>
-        <span id="contactPageSaved" class="save-state"></span>
-      </div>
-      <div id="contactPage" class="contact-page"></div>
-    </div>
-  </section>
 
   <!-- READING — the book shelf over the extrinsic zone -->
   <section class="reading-view" id="readingView" hidden>
@@ -560,7 +531,7 @@
 
   <!-- Userland modules (§11): one file per tab over a shared core, loaded in
        order into one scope — no framework, no build step. -->
-  <script src="js/00-core.js?v=20260925-touches"></script>
+  <script src="js/00-core.js?v=20260927-people"></script>
   <script src="js/05-components.js?v=20260912-file-feed-fixes"></script>
   <script src="js/10-day.js"></script>
   <script src="js/20-goals.js?v=4"></script>
@@ -585,10 +556,10 @@
   <script src="js/50-chat-tiles.js?v=20260927-focus"></script>
   <script src="js/55-approvals.js?v=20260927-netgraph"></script>
   <script src="js/60-settings.js?v=20260913-legacy-engine-labels"></script>
-  <script src="js/60-contacts.js?v=20260925-touches"></script>
-  <script src="js/62-network.js?v=6"></script>
-  <script src="js/65-reading.js?v=20260912-app-responsive"></script>
-  <script src="js/70-note.js?v=20260926-codex-md"></script>
+  <script src="js/61-person.js?v=1"></script>
+  <script src="js/62-network.js?v=7"></script>
+  <script src="js/65-reading.js?v=20260927-people"></script>
+  <script src="js/70-note.js?v=20260927-people"></script>
   <script src="vendor/writing-editor.js"></script>
   <script src="js/71-write.js?v=20260912-app-responsive"></script>
   <script src="vendor/xterm.js"></script>
@@ -596,7 +567,7 @@
   <script src="js/72-activity.js"></script>
   <script src="js/73-terminal.js?v=20260912-app-responsive"></script>
   <script src="js/74-files.js?v=20260912-app-responsive"></script>
-  <script src="js/75-bars.js?v=2"></script>
+  <script src="js/75-bars.js?v=20260927-people"></script>
   <script src="js/77-re-screening.js?v=3"></script>
   <script src="js/78-floating.js"></script>
   <script src="js/79-mic.js?v=20260911-composer"></script>
@@ -612,12 +583,12 @@
   <script src="js/93-todo-panel.js?v=20260927-receipts"></script>
   <script src="js/91-parcels.js"></script>
   <script src="js/92-aion.js?v=4"></script>
-  <script src="js/94-aion-fundraising.js?v=20260925-touches"></script>
+  <script src="js/94-aion-fundraising.js?v=20260927-people"></script>
   <script src="js/96-aion-recruiting.js?v=20260927-reject"></script>
   <script src="js/97-rec-graph.js?v=20260927-ranked"></script>
   <script src="js/98-mobile.js?v=20260921-chat-fast"></script>
   <script src="js/98-jarvis-hud.js?v=20260927-mk1"></script>
-  <script src="js/99-boot.js?v=20260927-network"></script>
+  <script src="js/99-boot.js?v=20260927-people"></script>
   <script>
     if ("serviceWorker" in navigator) {
       navigator.serviceWorker.register("sw.js?v=4").catch(function () {});

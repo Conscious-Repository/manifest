@@ -1,205 +1,50 @@
-// ---- router ----
-// ---- CONTACTS (people layer over the vault index) ----
+// ---- PERSON — the people layer's page, review queues and lookups ----
+//
+// Moved out of the retired Contacts tab (2026-09-27) when Contacts merged into
+// Network: 62-network.js owns the list and the building fields (kind, tags,
+// last contact); this file renders what the vault and calendar know about a
+// contact — their page, the three review queues, Nearby, add-a-person —
+// into hosts Network hands it. Every endpoint is the Contacts API, unchanged.
 
-// ⚠ THE DEPLOY-WINDOW 502. Every push restarts the service (24 restarts in
-// one evening of three sessions shipping), and the tailnet proxy stays up
-// while manifest is down underneath it — so a save pressed in that window
-// answered 502 and the button read as broken. A 502/503 from the proxy means
-// the request NEVER REACHED manifest, which is what makes a retry safe for
-// every endpoint, the non-idempotent ones included. Anything else — a 4xx, a
-// 500 manifest itself produced, a network failure that might have delivered —
-// still fails immediately, and after ~6s of retrying the real error surfaces.
-async function fetchJSONRetry(method, url, body) {
-  for (let attempt = 0; ; attempt++) {
-    const res = await fetch(url, { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
-    if ((res.status === 502 || res.status === 503) && attempt < 3) {
-      await new Promise((r) => setTimeout(r, 1000 + attempt * 1000));
-      continue;
-    }
-    return res;
-  }
+// personHref is where a contact key lives now.
+function personHref(key) { return "#/network/" + encodeURIComponent("contact/" + key); }
+
+// The hosts Network provides, and the hook it refreshes itself with after a
+// write here (quiet = keep what is open, e.g. an expanded review strip).
+const cpHosts = { triage: null, email: null, people: null };
+const cpCounts = { triage: 0, email: 0, people: 0 };
+let cpRefresh = () => {};
+let cpPageHost = null;   // where the person page renders
+let cpPageKey = "";      // the contact it is showing (a late answer for another is dropped)
+let cpPageBare = false;  // Network draws the name itself
+
+function cpLoadReviews() {
+  return Promise.all([loadContactTriage(), loadContactEmailReview(), loadContactPeopleReview()]);
 }
 
-async function postJSON(url, body) {
-  const res = await fetchJSONRetry("POST", url, body);
-  try { return await res.json(); } catch (e) { return {}; }
-}
-
-// postJSONOk throws on a non-2xx response so callers can signal real failures
-// (postJSON swallows them, which hid write errors behind an optimistic UI).
-async function postJSONOk(url, body) {
-  const res = await fetchJSONRetry("POST", url, body);
-  if (!res.ok) throw new Error((await res.text().catch(() => "")).trim() || ("HTTP " + res.status));
-  return res.json().catch(() => ({}));
-}
-
-async function putJSONOk(url, body) {
-  const res = await fetchJSONRetry("PUT", url, body);
-  if (!res.ok) throw new Error((await res.text().catch(() => "")).trim() || ("HTTP " + res.status));
-  return res.json().catch(() => ({}));
-}
-
-function showContacts() {
-  const rest = location.hash.replace(/^#\/contacts\/?/, "");
-  if (rest === "cold") { _coldOnly = true; showContactList(); } // neglect view (deep-linkable)
-  else if (rest) { _coldOnly = false; showContactPage(decodeURIComponent(rest)); }
-  else { _coldOnly = false; showContactList(); }
-}
-
-function showContactList() {
-  contactPageVersion++;
-  els.contactsListPane.hidden = false;
-  els.contactPagePane.hidden = true;
-  loadContactList();
-  loadContactTriage();
-  loadContactEmailReview();
-  loadContactPeopleReview();
-}
-
-async function loadContactList() {
-  let d = { contacts: [] };
-  try { d = await (await fetch("/api/contacts")).json(); } catch (e) {}
-  window._contacts = d.contacts || [];
-  if (!_nearbyMode) renderContactList(window._contacts, els.contactSearch.value);
-}
-
-let _coldOnly = false;
-let _nearbyMode = false;
-let _nearbyPlace = null;
-let _nearbyRadius = 50;
-
-function renderContactList(list, query) {
-  const host = els.contactList; host.innerHTML = "";
-  const q = (query || "").trim().toLowerCase();
-  let rows = q ? list.filter((c) => c.display.toLowerCase().includes(q)) : list.slice();
-  const coldCount = list.filter((c) => c.cold).length;
-  if (els.contactColdToggle) {
-    els.contactColdToggle.textContent = "◆ Cold" + (coldCount ? " " + coldCount : "");
-    els.contactColdToggle.classList.toggle("on", _coldOnly);
-  }
-  if (_coldOnly) {
-    rows = rows.filter((c) => c.cold).sort((a, b) => b.daysSince - a.daysSince); // most overdue first
-  }
-  if (!rows.length) { host.appendChild(emptyRow(_coldOnly ? "No contacts going cold." : q ? "No contacts match." : "No contacts yet.")); return; }
-  rows.forEach((c) => host.appendChild(contactRow(c)));
-}
-
-function contactRow(c) {
-  const row = el("div", "contact-row" + (c.cold ? " cold" : ""));
-  row.onclick = () => { location.hash = "#/contacts/" + encodeURIComponent(c.key); };
-  const left = el("div", "contact-row-left");
-  if (c.cold) left.append(el("span", "contact-cold", "● going cold")); // §13: ink, never amber
-  const ident = el("span", "contact-ident");
-  ident.append(el("span", "contact-name", c.display));
-  if (c.location) ident.append(el("span", "contact-location", c.location));
-  left.append(ident);
-  if (!c.hasNote) left.append(el("span", "contact-dot", "○")); // quiet no-note indicator
-  if (c.openLoops > 0) left.append(el("span", "contact-loops", c.openLoops + " open"));
-  const right = el("div", "contact-row-right");
-  if (c.upcoming) right.append(el("span", "contact-upcoming", "↑ " + c.upcoming));
-  // "met" = calendar-verified (email-matched); "mentioned" = note-based. Distinct
-  // signals: met is headlined when present; the going-cold line names its basis.
-  if (c.cold && c.daysSince >= 0) {
-    const verb = c.neglectBasis === "meetings" ? "met" : "mentioned";
-    right.append(el("span", "contact-meta", verb + " " + c.daysSince + "d ago (usually every " + c.medianGap + "d)"));
-  } else if (c.lastMet) {
-    right.append(el("span", "contact-meta", "met " + c.lastMet));
-    if (c.lastMentioned && c.lastMentioned !== c.lastMet) right.append(el("span", "contact-submeta", "mentioned " + c.lastMentioned));
-  } else if (c.lastMentioned) {
-    right.append(el("span", "contact-meta muted", "mentioned " + c.lastMentioned));
-  }
-  row.append(left, right);
-  return row;
-}
-
-function setNearbyMode(on) {
-  _nearbyMode = !!on;
-  if (_nearbyMode) _coldOnly = false;
-  els.contactNearby.hidden = !_nearbyMode;
-  els.contactNearbyToggle.classList.toggle("on", _nearbyMode);
-  els.contactNearbyToggle.textContent = _nearbyMode ? "◎ Nearby on" : "◎ Nearby";
-  els.contactTriage.hidden = _nearbyMode;
-  els.contactEmailReview.hidden = _nearbyMode;
-  if (els.contactPeopleReview) els.contactPeopleReview.hidden = _nearbyMode;
-  if (_nearbyMode) renderNearbyPanel();
-  else {
-    renderContactList(window._contacts || [], els.contactSearch.value);
-    loadContactTriage(); loadContactEmailReview(); loadContactPeopleReview();
-  }
-}
-
-function renderNearbyPanel() {
-  const panel = els.contactNearby; panel.innerHTML = "";
-  const form = el("div", "nearby-form");
-  const placeInput = el("input", "contact-search"); placeInput.type = "search";
-  placeInput.placeholder = "City or place, e.g. Chicago";
-  if (_nearbyPlace) placeInput.value = _nearbyPlace.label;
-  const radiusInput = el("input", "nearby-radius"); radiusInput.type = "number";
-  radiusInput.min = "1"; radiusInput.max = "500"; radiusInput.value = String(_nearbyRadius);
-  const candidates = el("div", "nearby-candidates");
-  const status = el("div", "nearby-status");
-  const find = pill("Find place", async () => {
-    const q = placeInput.value.trim(); if (!q) return;
-    find.disabled = true; status.textContent = "finding place…"; candidates.innerHTML = "";
-    try {
-      const res = await fetch("/api/contacts/places?q=" + encodeURIComponent(q));
-      if (!res.ok) throw new Error((await res.text()).trim() || "place lookup failed");
-      const d = await res.json();
-      status.textContent = (d.places || []).length ? "Choose the intended place" : "No city or place found.";
-      (d.places || []).forEach((p) => {
-        const b = pillLight(p.label, () => {
-          _nearbyPlace = p; placeInput.value = p.label;
-          candidates.innerHTML = ""; status.textContent = "";
-          runNearbySearch();
-        });
-        candidates.append(b);
-      });
-      if ((d.places || []).length) candidates.append(el("a", "nearby-attribution", "Place data © OpenStreetMap contributors"));
-      const a = candidates.querySelector("a"); if (a) { a.href = "https://www.openstreetmap.org/copyright"; a.target = "_blank"; a.rel = "noopener"; }
-    } catch (e) { status.textContent = "✕ " + errMsg(e); }
-    finally { find.disabled = false; }
-  });
-  const run = pillLight("Search radius", () => runNearbySearch());
-  const radiusWrap = el("label", "nearby-radius-wrap", "within "); radiusWrap.append(radiusInput, document.createTextNode(" miles"));
-  radiusInput.addEventListener("change", () => { _nearbyRadius = Number(radiusInput.value) || 50; });
-  placeInput.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); find.click(); } });
-  form.append(placeInput, find, radiusWrap, run);
-  panel.append(form, candidates, status);
-  if (_nearbyPlace) runNearbySearch();
-  else els.contactList.innerHTML = "", els.contactList.append(emptyRow("Choose a destination to find contacts nearby."));
-}
-
-let nearbySearchVersion=0;
-async function runNearbySearch() {
-  const version=++nearbySearchVersion;
-  const place=_nearbyPlace;
-  const current=()=>version===nearbySearchVersion&&_nearbyMode&&!els.contactsListPane.hidden;
-  if (!_nearbyPlace) return;
-  const radiusInput = els.contactNearby.querySelector(".nearby-radius");
-  _nearbyRadius = Math.max(1, Math.min(500, Number(radiusInput && radiusInput.value) || 50));
-  const host = els.contactList; host.innerHTML = ""; host.append(emptyRow("Finding nearby contacts…"));
+let contactPageVersion=0;
+async function showContactPage(key) {
+  const version=++contactPageVersion;
+  const host=cpPageHost;
+  if (!host) return;
+  cpPageKey=key;
+  if (!host.firstChild) host.textContent = "Loading…";
+  let p;
   try {
-    const qs = new URLSearchParams({ lat: _nearbyPlace.lat, lng: _nearbyPlace.lng, radiusMiles: _nearbyRadius });
-    const res = await fetch("/api/contacts/nearby?" + qs.toString());
-    if (!res.ok) throw new Error((await res.text()).trim() || "nearby search failed");
-    const d = await res.json();if(!current())return;host.innerHTML = "";
-    if (!(d.contacts || []).length) host.append(emptyRow("No contacts found within " + _nearbyRadius + " miles of " + place.label + "."));
-    (d.contacts || []).forEach((c) => host.append(nearbyContactRow(c)));
-    const status = els.contactNearby.querySelector(".nearby-status");
-    status.textContent = (d.contacts || []).length + " contact" + ((d.contacts || []).length === 1 ? "" : "s") + " near " + place.label +
-      (d.unresolvedCount ? " · " + d.unresolvedCount + " location" + (d.unresolvedCount === 1 ? " is" : "s are") + " still resolving" : "") +
-      " · distances use city centers";
-  } catch (e) { if(!current())return;host.innerHTML = ""; host.append(emptyRow("Could not search nearby: " + errMsg(e))); }
+    const res = await fetch("/api/contacts/page?key=" + encodeURIComponent(key));
+    if (!res.ok) { if(version===contactPageVersion)host.textContent = "No such contact."; return; }
+    p = await res.json();
+  } catch (e) { if(version===contactPageVersion)host.textContent = "Error loading contact."; return; }
+  if(version!==contactPageVersion)return;
+  cpPageKey=p.key||key;
+  renderContactPage(p);
 }
 
-function nearbyContactRow(c) {
-  const row = el("div", "contact-row nearby-result");
-  row.onclick = () => { location.hash = "#/contacts/" + encodeURIComponent(c.key); };
-  const ident = el("span", "contact-ident");
-  ident.append(el("span", "contact-name", c.display), el("span", "contact-location", c.location));
-  row.append(ident, el("span", "nearby-distance", "≈ " + Number(c.distanceMiles).toFixed(1) + " mi"));
-  return row;
+function showFlash(node, msg, isError) {
+  node.textContent = msg; node.hidden = false;
+  node.classList.toggle("error", !!isError);
 }
+function errMsg(e) { return (e && e.message) ? e.message : "failed"; }
 
 async function loadContactTriage() {
   let d = { triage: [] };
@@ -208,9 +53,9 @@ async function loadContactTriage() {
 }
 
 function renderTriage(items) {
-  const host = els.contactTriage; host.innerHTML = "";
-  if (_nearbyMode) { host.hidden = true; return; }
-  if (!items.length) { host.hidden = true; return; }
+  cpCounts.triage = items.length;
+  const host = cpHosts.triage; if (!host) return; host.innerHTML = "";
+    if (!items.length) { host.hidden = true; return; }
   host.hidden = false;
   window._triage = items;
   // Quiet by default (§4): a one-line summary that expands to a review batch,
@@ -221,7 +66,7 @@ function renderTriage(items) {
   const bulk = pillLight("Dismiss all " + items.length, async () => {
     if (!confirm("Dismiss all " + items.length + " queued names? (remembered — they won't return)")) return;
     await postJSON("/api/contacts/dismiss-bulk", { keys: items.map((t) => t.key) });
-    showContactList();
+    cpRefresh();
   });
   bulk.hidden = true;
   const toggle = pillLight("Review ▾", () => {
@@ -238,9 +83,9 @@ function renderTriage(items) {
     r.append(nm, el("span", "triage-refs", t.refCount + " ref" + (t.refCount === 1 ? "" : "s")));
     const act = el("span", "triage-actions");
     act.append(
-      pill("Person", async () => { await postJSON("/api/contacts/confirm", { key: t.key, display: t.display }); showContactList(); }),
-      pillLight("Org", async () => { await postJSON("/api/contacts/org", { key: t.key }); showContactList(); }),
-      pillLight("Dismiss", async () => { await postJSON("/api/contacts/dismiss", { key: t.key }); showContactList(); }),
+      pill("Person", async () => { await postJSON("/api/contacts/confirm", { key: t.key, display: t.display }); cpRefresh(); }),
+      pillLight("Org", async () => { await postJSON("/api/contacts/org", { key: t.key }); cpRefresh(); }),
+      pillLight("Dismiss", async () => { await postJSON("/api/contacts/dismiss", { key: t.key }); cpRefresh(); }),
     );
     r.append(act);
     rows.append(r);
@@ -255,15 +100,16 @@ function renderTriage(items) {
 // create the note with a full name (email and location optional).
 let _peopleReviewOpen = false;
 async function loadContactPeopleReview() {
-  if (!els.contactPeopleReview) return;
+  if (!cpHosts.people) return;
   let d = { pending: [] };
   try { d = await (await fetch("/api/contacts/people-review")).json(); } catch (e) {}
   renderPeopleReview(d.pending || []);
 }
 
 function renderPeopleReview(items) {
-  const host = els.contactPeopleReview; host.innerHTML = "";
-  if (_nearbyMode || !items.length) { host.hidden = true; return; }
+  cpCounts.people = items.length;
+  const host = cpHosts.people; if (!host) return; host.innerHTML = "";
+  if (!items.length) { host.hidden = true; return; }
   host.hidden = false;
   const head = el("div", "triage-head");
   const sheet = items.filter((p) => p.origin === "sheet").length;
@@ -293,7 +139,7 @@ function peopleReviewRow(p) {
   r.append(form);
   const act = el("span", "triage-actions");
   const opp = (p.opportunities || [])[0] || {};
-  const done = (msg) => { r.classList.add("er-done"); showFlash(r, msg, false); setTimeout(() => { loadContactPeopleReview(); loadContactList(); }, 400); };
+  const done = (msg) => { r.classList.add("er-done"); showFlash(r, msg, false); setTimeout(() => cpRefresh(), 400); };
   act.append(
     pill("Create", async () => {
       const full = name.value.trim();
@@ -350,10 +196,10 @@ async function loadContactEmailReview() {
 let _emailReviewOpen = false; // preserve expand/collapse across in-place updates
 
 function renderEmailReview(items) {
-  const host = els.contactEmailReview; if (!host) return;
+  cpCounts.email = items.length;
+  const host = cpHosts.email; if (!host) return;
   host.innerHTML = "";
-  if (_nearbyMode) { host.hidden = true; return; }
-  if (!items.length) { host.hidden = true; return; }
+    if (!items.length) { host.hidden = true; return; }
   host.hidden = false;
   const head = el("div", "triage-head");
   const label = el("span", "triage-label", "");
@@ -401,7 +247,7 @@ function emailReviewRow(c, ctx) {
     catch (e) { link.disabled = false; showFlash(flash, "✕ " + errMsg(e), true); return; }
     showFlash(flash, "✓ linked " + email + " → " + display, false);
     r.classList.add("er-done");
-    loadContactList(); // the contact's list row now shows a calendar "met" date
+    cpRefresh(true); // the list row now shows a calendar "met" date; the open strip stays
     setTimeout(() => ctx.remove(r), 1000);
   }
   act.append(link, pillLight("Different contact", () => openEmailReassign(r, c, doLink)), dismiss);
@@ -409,11 +255,6 @@ function emailReviewRow(c, ctx) {
   return r;
 }
 
-function showFlash(node, msg, isError) {
-  node.textContent = msg; node.hidden = false;
-  node.classList.toggle("error", !!isError);
-}
-function errMsg(e) { return (e && e.message) ? e.message : "failed"; }
 
 // openEmailReassign lets the user link this email to a DIFFERENT contact than the
 // suggested one (inline search — same shape as the create-contact search).
@@ -446,22 +287,6 @@ function openEmailReassign(row, c, doLink) {
   });
 }
 
-let contactPageVersion=0;
-async function showContactPage(key) {
-  const version=++contactPageVersion;
-  els.contactsListPane.hidden = true;
-  els.contactPagePane.hidden = false;
-  els.contactPageSaved.textContent = "";
-  els.contactPage.textContent = "Loading…";
-  let p;
-  try {
-    const res = await fetch("/api/contacts/page?key=" + encodeURIComponent(key));
-    if (!res.ok) { if(version===contactPageVersion)els.contactPage.textContent = "No such contact."; return; }
-    p = await res.json();
-  } catch (e) { if(version===contactPageVersion)els.contactPage.textContent = "Error loading contact."; return; }
-  if(version!==contactPageVersion)return;
-  renderContactPage(p);
-}
 
 // One touch on a contact page's fundraising row: which side, its kind as a
 // micro-label, and the date.
@@ -481,12 +306,13 @@ function cpSection(title, count) {
 }
 
 function renderContactPage(p) {
-  const host = els.contactPage; host.innerHTML = "";
+  const host = cpPageHost; if (!host || cpPageKey !== p.key) return;
+  host.innerHTML = "";
 
   // 1. header — name, aliases, linked firms
   const header = el("div", "cp-header");
   const nameRow = el("div", "cp-name-row");
-  nameRow.append(el("h1", "cp-name", p.display));
+  if (!cpPageBare) nameRow.append(el("h1", "cp-name", p.display));
   if (p.role) nameRow.append(el("span", "cp-role", p.role.toUpperCase())); // §13: neutral role chip from the note's role:
   if (!p.hasNote) nameRow.append(el("span", "cp-nonote", "no note yet"));
   header.append(nameRow);
@@ -496,7 +322,7 @@ function renderContactPage(p) {
     const f = el("div", "cp-firms");
     p.firms.forEach((fr) => {
       const chip = el("span", "cp-firm", fr.display);
-      chip.onclick = () => { location.hash = "#/contacts/" + encodeURIComponent(fr.key); };
+      chip.onclick = () => { location.hash = personHref(fr.key); };
       f.append(chip);
     });
     header.append(f);
@@ -555,7 +381,7 @@ function renderContactPage(p) {
       const gh = el("div", "cp-loop-group");
       const head = el("div", "cp-loop-src");
       head.append(el("span", "cp-date", g.date), el("span", "cp-loop-note", g.name));
-      head.onclick = () => { _noteReturn = "#/contacts/" + encodeURIComponent(p.key); openNoteByPath(g.path); };
+      head.onclick = () => { _noteReturn = personHref(p.key); openNoteByPath(g.path); };
       gh.append(head);
       g.loops.forEach((it) => {
         const row = el("label", "cp-loop-row");
@@ -611,7 +437,7 @@ function renderContactPage(p) {
     host.append(sec);
   }
 
-  const openItem = (path) => { _noteReturn = "#/contacts/" + encodeURIComponent(p.key); openNoteByPath(path); };
+  const openItem = (path) => { _noteReturn = personHref(p.key); openNoteByPath(path); };
 
   // 3. ONE timeline (§13): meetings + notes + transcripts merged newest-first.
   // The CALENDAR badge (accent on accent-soft) marks calendar-verified rows
@@ -690,10 +516,12 @@ function renderContactPage(p) {
   note.append(ta);
   const actions = el("div", "cp-note-actions");
   const saveBtn = pill(p.hasNote ? "Save note" : "Create note", async () => {
-    els.contactPageSaved.textContent = "saving…";
+    saveBtn.disabled = true; saveBtn.textContent = "saving…";
     const np = await postJSON("/api/contacts/note", { key: p.key, display: p.display, body: ta.value });
-    els.contactPageSaved.textContent = "saved";
+    showToast("note saved");
+    const created = !p.hasNote;
     renderContactPage(np);
+    if (created) cpRefresh(true);
   });
   actions.append(saveBtn);
   if (!p.hasNote) actions.append(el("span", "cp-note-hint", "first save creates " + p.display + ".md with categories: [people]"));
@@ -713,7 +541,7 @@ function renderContactLocation(p) {
   if (p.location && p.location.label) actions.append(pillLight("Clear", async () => {
     if (!confirm("Clear this contact’s location and address?")) return;
     const res = await fetch("/api/contacts/location?key=" + encodeURIComponent(p.key), { method: "DELETE" });
-    if (!res.ok) { alert((await res.text()).trim() || "Could not clear location"); return; }
+    if (!res.ok) { showToast((await res.text()).trim() || "Could not clear location", null, "error"); return; }
     renderContactPage(await res.json());
   }));
   current.append(actions); sec.append(current);
@@ -762,8 +590,9 @@ function renderContactLocation(p) {
   return sec;
 }
 
+
 // create flow — bind to existing links before making a new contact (§5)
-function openCreatePanel() {
+function openCreatePanel(anchor) {
   if (document.querySelector(".contact-create")) return;
   const box = el("div", "contact-create");
   const head = el("div", "contact-create-head", "Add a contact — existing links are checked first");
@@ -771,7 +600,7 @@ function openCreatePanel() {
   const input = el("input", "contact-create-input"); input.type = "text"; input.placeholder = "Type a name…";
   const results = el("div", "contact-create-results");
   box.append(head, input, results);
-  els.contactList.before(box);
+  anchor.before(box);
   input.focus();
   let timer;
   input.addEventListener("input", () => { clearTimeout(timer); results._searchVersion=(results._searchVersion||0)+1;results.replaceChildren();timer = setTimeout(() => runCreateSearch(input.value.trim(), results), 200); });
@@ -790,8 +619,8 @@ async function runCreateSearch(q, host) {
     row.append(el("span", "cc-name", r.display), el("span", "cc-refs", r.refCount + " ref" + (r.refCount === 1 ? "" : "s") + (r.hasNote ? " · has note" : "")));
     const act = el("span", "cc-actions");
     act.append(
-      pillLight("Open", () => { location.hash = "#/contacts/" + encodeURIComponent(r.key); }),
-      pill("Bind “" + q + "”", async () => { await postJSON("/api/contacts/bind", { variant: q, canonical: r.key, display: q }); location.hash = "#/contacts/" + encodeURIComponent(r.key); }),
+      pillLight("Open", () => { location.hash = personHref(r.key); }),
+      pill("Bind “" + q + "”", async () => { await postJSON("/api/contacts/bind", { variant: q, canonical: r.key, display: q }); location.hash = personHref(r.key); }),
     );
     row.append(act);
     host.append(row);
@@ -799,13 +628,97 @@ async function runCreateSearch(q, host) {
   const create = el("div", "cc-create");
   create.append(pill("Create new contact “" + q + "”", async () => {
     const p = await postJSON("/api/contacts/note", { key: q.toLowerCase(), display: q, body: "" });
-    location.hash = "#/contacts/" + encodeURIComponent(p.key || q.toLowerCase());
+    location.hash = personHref(p.key || q.toLowerCase());
   }));
   host.append(create);
 }
 
-if (els.contactSearch) els.contactSearch.addEventListener("input", () => renderContactList(window._contacts || [], els.contactSearch.value));
-if (els.contactColdToggle) els.contactColdToggle.addEventListener("click", () => { if (_nearbyMode) setNearbyMode(false); location.hash = _coldOnly ? "#/contacts" : "#/contacts/cold"; });
-if (els.contactNearbyToggle) els.contactNearbyToggle.addEventListener("click", () => setNearbyMode(!_nearbyMode));
-if (els.contactAddBtn) els.contactAddBtn.addEventListener("click", openCreatePanel);
-if (els.contactBackBtn) els.contactBackBtn.addEventListener("click", () => { location.hash = "#/contacts"; });
+
+// ---- NEARBY: contacts near a place (the Contacts lens, now a Network one).
+// Network gives a panel for the form and the list host for the results.
+let _nearbyMode = false;
+let _nearbyPlace = null;
+let _nearbyRadius = 50;
+const cpNearby = { panel: null, list: null, open: () => {} };
+
+function renderNearbyPanel() {
+  const panel = cpNearby.panel; if (!panel) return;
+  panel.innerHTML = "";
+  const form = el("div", "nearby-form");
+  const placeInput = el("input", "contact-search"); placeInput.type = "search";
+  placeInput.placeholder = "City or place, e.g. Chicago";
+  if (_nearbyPlace) placeInput.value = _nearbyPlace.label;
+  const radiusInput = el("input", "nearby-radius"); radiusInput.type = "number";
+  radiusInput.min = "1"; radiusInput.max = "500"; radiusInput.value = String(_nearbyRadius);
+  const candidates = el("div", "nearby-candidates");
+  const status = el("div", "nearby-status");
+  const find = pill("Find place", async () => {
+    const q = placeInput.value.trim(); if (!q) return;
+    find.disabled = true; status.textContent = "finding place…"; candidates.innerHTML = "";
+    try {
+      const res = await fetch("/api/contacts/places?q=" + encodeURIComponent(q));
+      if (!res.ok) throw new Error((await res.text()).trim() || "place lookup failed");
+      const d = await res.json();
+      status.textContent = (d.places || []).length ? "Choose the intended place" : "No city or place found.";
+      (d.places || []).forEach((p) => {
+        candidates.append(pillLight(p.label, () => {
+          _nearbyPlace = p; placeInput.value = p.label;
+          candidates.innerHTML = ""; status.textContent = "";
+          runNearbySearch();
+        }));
+      });
+      if ((d.places || []).length) {
+        const a = el("a", "nearby-attribution", "Place data © OpenStreetMap contributors");
+        a.href = "https://www.openstreetmap.org/copyright"; a.target = "_blank"; a.rel = "noopener";
+        candidates.append(a);
+      }
+    } catch (e) { status.textContent = "✕ " + errMsg(e); }
+    finally { find.disabled = false; }
+  });
+  const run = pillLight("Search radius", () => runNearbySearch());
+  const radiusWrap = el("label", "nearby-radius-wrap", "within "); radiusWrap.append(radiusInput, document.createTextNode(" miles"));
+  radiusInput.addEventListener("change", () => { _nearbyRadius = Number(radiusInput.value) || 50; });
+  placeInput.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); find.click(); } });
+  form.append(placeInput, find, radiusWrap, run);
+  panel.append(form, candidates, status);
+  if (_nearbyPlace) runNearbySearch();
+  else if (cpNearby.list) { cpNearby.list.innerHTML = ""; cpNearby.list.append(emptyRow("Choose a place to find people nearby.")); }
+}
+
+let nearbySearchVersion=0;
+async function runNearbySearch() {
+  const version=++nearbySearchVersion;
+  const place=_nearbyPlace, host=cpNearby.list, panel=cpNearby.panel;
+  const current=()=>version===nearbySearchVersion&&_nearbyMode&&host&&host.isConnected;
+  if (!_nearbyPlace || !host) return;
+  const radiusInput = panel && panel.querySelector(".nearby-radius");
+  _nearbyRadius = Math.max(1, Math.min(500, Number(radiusInput && radiusInput.value) || 50));
+  host.innerHTML = ""; host.append(emptyRow("Finding people nearby…"));
+  try {
+    const qs = new URLSearchParams({ lat: _nearbyPlace.lat, lng: _nearbyPlace.lng, radiusMiles: _nearbyRadius });
+    const res = await fetch("/api/contacts/nearby?" + qs.toString());
+    if (!res.ok) throw new Error((await res.text()).trim() || "nearby search failed");
+    const d = await res.json();if(!current())return;host.innerHTML = "";
+    if (!(d.contacts || []).length) host.append(emptyRow("No one found within " + _nearbyRadius + " miles of " + place.label + "."));
+    (d.contacts || []).forEach((c) => host.append(nearbyContactRow(c)));
+    const status = panel && panel.querySelector(".nearby-status");
+    if (status) status.textContent = (d.contacts || []).length + " " + ((d.contacts || []).length === 1 ? "person" : "people") + " near " + place.label +
+      (d.unresolvedCount ? " · " + d.unresolvedCount + " location" + (d.unresolvedCount === 1 ? " is" : "s are") + " still resolving" : "") +
+      " · distances use city centers";
+  } catch (e) { if(!current())return;host.innerHTML = ""; host.append(emptyRow("Could not search nearby: " + errMsg(e))); }
+}
+
+function nearbyContactRow(c) {
+  const row = el("div", "net-row nearby-result");
+  row.tabIndex = 0;
+  row.onclick = () => cpNearby.open(c.key);
+  const main = el("div", "net-main");
+  const top = el("div", "net-top");
+  top.append(el("span", "net-name", c.display));
+  main.append(top, el("div", "net-sub", c.location || ""));
+  const side = el("div", "net-side");
+  side.append(el("span", "net-when", "≈ " + Number(c.distanceMiles).toFixed(1) + " mi"));
+  row.append(main, side);
+  return row;
+}
+

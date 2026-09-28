@@ -43,20 +43,30 @@ type NetPerson struct {
 	Note        string   `json:"note,omitempty"`
 	LastContact string   `json:"lastContact,omitempty"` // the owner's own date
 	LastMet     string   `json:"lastMet,omitempty"`     // the calendar's, when a contact is linked
-	Sources     []string `json:"sources"`               // kept · contact · investor · team
-	Firms       []string `json:"firms,omitempty"`       // fundraising opportunities they sit on
-	Role        string   `json:"role,omitempty"`        // their AION team role
-	Editable    bool     `json:"editable"`              // a kept row exists
-	ContactKey  string   `json:"contactKey,omitempty"`
-	NotePath    string   `json:"notePath,omitempty"`
-	TeamLink    string   `json:"team,omitempty"`
-	Consent     string   `json:"consent,omitempty"` // "owner" = someone you'd ask (an intro origin)
-	Source      string   `json:"source,omitempty"`  // where a kept row came from
-	SourceRef   string   `json:"sourceRef,omitempty"`
-	GitHub      string   `json:"github,omitempty"`
-	LinkedIn    string   `json:"linkedin,omitempty"`
-	ORCID       string   `json:"orcid,omitempty"`
-	Archived    string   `json:"archived,omitempty"`
+	// the Contacts signals (contacts.Contact), copied on read for linked contacts
+	LastMentioned string   `json:"lastMentioned,omitempty"`
+	HasNote       bool     `json:"hasNote,omitempty"`
+	Location      string   `json:"location,omitempty"`
+	Upcoming      string   `json:"upcoming,omitempty"`
+	OpenLoops     int      `json:"openLoops,omitempty"`
+	Cold          bool     `json:"cold,omitempty"`
+	DaysSince     int      `json:"daysSince,omitempty"`
+	MedianGap     int      `json:"medianGap,omitempty"`
+	NeglectBasis  string   `json:"neglectBasis,omitempty"`
+	Sources       []string `json:"sources"`         // kept · contact · investor · team
+	Firms         []string `json:"firms,omitempty"` // fundraising opportunities they sit on
+	Role          string   `json:"role,omitempty"`  // their AION team role
+	Editable      bool     `json:"editable"`        // a kept row exists
+	ContactKey    string   `json:"contactKey,omitempty"`
+	NotePath      string   `json:"notePath,omitempty"`
+	TeamLink      string   `json:"team,omitempty"`
+	Consent       string   `json:"consent,omitempty"` // "owner" = someone you'd ask (an intro origin)
+	Source        string   `json:"source,omitempty"`  // where a kept row came from
+	SourceRef     string   `json:"sourceRef,omitempty"`
+	GitHub        string   `json:"github,omitempty"`
+	LinkedIn      string   `json:"linkedin,omitempty"`
+	ORCID         string   `json:"orcid,omitempty"`
+	Archived      string   `json:"archived,omitempty"`
 	// SameName are the OTHER rows with exactly this name that an explicit
 	// link could join — offered for the owner to confirm, never merged
 	// (§9: a wrong merge writes one person's history onto another).
@@ -85,7 +95,11 @@ func (s *Server) networkPeople(now time.Time) []*NetPerson {
 	byTeam := map[string]*NetPerson{}    // uppercased initials → row
 
 	// 1 — kept rows: the editable tier, and the owner of every explicit link
-	for _, p := range s.recruiting.Connectors() {
+	var kept []recruiting.NetworkPerson
+	if s.recruiting != nil {
+		kept = s.recruiting.Connectors()
+	}
+	for _, p := range kept {
 		np := &NetPerson{
 			ID: p.ID, Name: p.Name, Kind: p.Type, Org: p.Org, Title: p.Title,
 			Tags: p.Tags, Suggest: untagged(p.Topics, p.Tags), Note: p.Note, LastContact: p.LastContact, Editable: true,
@@ -118,6 +132,10 @@ func (s *Server) networkPeople(now time.Time) []*NetPerson {
 				}
 				addSource(np, "contact")
 				np.ContactKey, np.NotePath, np.LastMet = c.Key, c.NotePath, c.LastMet
+				// the Contacts signals, as Contacts computes them (read-only)
+				np.LastMentioned, np.HasNote, np.Location = c.LastMentioned, c.HasNote, c.Location
+				np.Upcoming, np.OpenLoops, np.Cold = c.Upcoming, c.OpenLoops, c.Cold
+				np.DaysSince, np.MedianGap, np.NeglectBasis = c.DaysSince, c.MedianGap, c.NeglectBasis
 			}
 		}
 	}
@@ -170,10 +188,13 @@ func (s *Server) networkPeople(now time.Time) []*NetPerson {
 	// recency first: whichever date is newer, the owner's or the calendar's;
 	// an undated person sorts last rather than pretending to be old
 	last := func(p *NetPerson) string {
-		if p.LastContact > p.LastMet {
-			return p.LastContact
+		out := p.LastMet
+		for _, d := range []string{p.LastContact, p.LastMentioned} {
+			if d > out {
+				out = d
+			}
 		}
-		return p.LastMet
+		return out
 	}
 	sort.SliceStable(out, func(i, j int) bool {
 		a, b := last(out[i]), last(out[j])
@@ -251,9 +272,6 @@ func appendUnique(xs []string, s string) []string {
 
 // GET /api/network — every resolved person, the kinds, and the tags in use.
 func (s *Server) handleNetwork(w http.ResponseWriter, _ *http.Request) {
-	if !s.recruitingReady(w) {
-		return
-	}
 	people := s.networkPeople(time.Now())
 	tagCount := map[string]int{}
 	tagText := map[string]string{}
@@ -284,7 +302,7 @@ func (s *Server) handleNetwork(w http.ResponseWriter, _ *http.Request) {
 		return tags[i].Tag < tags[j].Tag
 	})
 	writeJSON(w, map[string]any{
-		"people": people, "kinds": recruiting.PersonTypes, "tags": tags,
+		"people": people, "kinds": recruiting.PersonTypes, "tags": tags, "editable": s.recruiting != nil,
 		"vocabulary": s.networkVocabulary(people, tagText),
 		"contacts":   s.contacts != nil, "fundraising": s.fundraising != nil, "team": s.aion != nil,
 	})

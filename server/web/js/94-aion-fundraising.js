@@ -105,7 +105,7 @@ function frRow(op, paint) {
   if (op.website) { const site = el("a", "fr-website-link", "↗"); site.href = op.website; site.target = "_blank"; site.rel = "noopener"; site.title = "open website"; site.setAttribute("aria-label", "Open " + op.firm + " website"); site.onclick = (e) => e.stopPropagation(); firm.append(site); }
   if (op.importReview) firm.append(el("span", "micro-label fr-review", "REVIEW"));
   const people = el("div", "fr-people");
-  (op.people || []).forEach((p) => { const b = el("button", "fr-person-name fr-person", p.display); b.onclick = (e) => { e.stopPropagation(); location.hash = "#/contacts/" + encodeURIComponent(p.key); }; people.append(b); });
+  (op.people || []).forEach((p) => { const b = el("button", "fr-person-name fr-person", p.display); b.onclick = (e) => { e.stopPropagation(); location.hash = personHref(p.key); }; people.append(b); });
   (op.unlinkedPeople || []).forEach((name) => people.append(frPendingPerson(name)));
   if (!people.children.length) people.append(el("span", "fr-person-empty", "—"));
   const touch = el("div", "fr-stack");
@@ -132,11 +132,11 @@ function frTouchLine(t) {
 }
 
 // A name typed into the Sheet waits for the owner: it reads as a person but
-// is not one yet, and the Contacts page holds the review.
+// is not one yet, and Network's review queue holds the decision.
 function frPendingPerson(name) {
   const b = el("button", "fr-person-name fr-person-pending", name);
-  b.title = "waiting for your review on Contacts";
-  b.onclick = (e) => { e.stopPropagation(); location.hash = "#/contacts"; };
+  b.title = "waiting for your review in Network";
+  b.onclick = (e) => { e.stopPropagation(); location.hash = "#/network/review"; };
   return b;
 }
 
@@ -260,7 +260,7 @@ function renderFundraisingInspector(host, op) {
   const amount = el("input", "pp-in fr-in"); amount.type = "number"; amount.min = "0"; amount.step = "1000"; amount.value = op.amount || ""; amount.onblur = () => patch({ amount: amount.value }); field("amount", amount);
 
   const people = el("div", "fr-insp-people");
-  (op.people || []).forEach((p) => { const chip = el("span", "fr-person-chip linked"); const open = el("button", "fr-person-name fr-person", p.display); open.onclick = () => { location.hash = "#/contacts/" + encodeURIComponent(p.key); }; const rm = el("button", "fr-person-rm", "×"); rm.title = "unlink from this opportunity"; rm.onclick = () => frPost("/api/aion/fundraising/person-remove/" + op.id, { key: p.key }); chip.append(open, rm); people.append(chip); });
+  (op.people || []).forEach((p) => { const chip = el("span", "fr-person-chip linked"); const open = el("button", "fr-person-name fr-person", p.display); open.onclick = () => { location.hash = personHref(p.key); }; const rm = el("button", "fr-person-rm", "×"); rm.title = "unlink from this opportunity"; rm.onclick = () => frPost("/api/aion/fundraising/person-remove/" + op.id, { key: p.key }); chip.append(open, rm); people.append(chip); });
   (op.unlinkedPeople || []).forEach((name) => {
     const chip = el("span", "fr-person-chip plain"); chip.append(frPendingPerson(name));
     const rm = el("button", "fr-person-rm", "×"); rm.title = "remove this pending name"; rm.onclick = () => patch({ unlinkedPeople: (op.unlinkedPeople || []).filter((x) => x !== name) });
@@ -287,7 +287,7 @@ function renderFundraisingInspector(host, op) {
     const p = op.source.contact;
     const chip = el("span", "fr-person-chip linked");
     const open = el("button", "fr-person-name fr-person", p.display || p.key);
-    open.onclick = () => { location.hash = "#/contacts/" + encodeURIComponent(p.key); };
+    open.onclick = () => { location.hash = personHref(p.key); };
     const rm = el("button", "fr-person-rm", "×"); rm.title = "clear source"; rm.onclick = () => frSetSourceText(op, "");
     chip.append(open, rm); source.append(chip);
   } else if (op.source && op.source.text) {

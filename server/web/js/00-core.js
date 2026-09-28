@@ -31,22 +31,6 @@ const els = {
   crumbPath: document.getElementById("crumbPath"),
   crumbMeta: document.getElementById("crumbMeta"),
   contentScroll: document.getElementById("contentScroll"),
-  // contacts (people layer over the vault index)
-  contactsView: document.getElementById("contactsView"),
-  contactsListPane: document.getElementById("contactsListPane"),
-  contactPagePane: document.getElementById("contactPagePane"),
-  contactList: document.getElementById("contactList"),
-  contactTriage: document.getElementById("contactTriage"),
-  contactEmailReview: document.getElementById("contactEmailReview"),
-  contactPeopleReview: document.getElementById("contactPeopleReview"),
-  contactSearch: document.getElementById("contactSearch"),
-  contactColdToggle: document.getElementById("contactColdToggle"),
-  contactNearbyToggle: document.getElementById("contactNearbyToggle"),
-  contactNearby: document.getElementById("contactNearby"),
-  contactAddBtn: document.getElementById("contactAddBtn"),
-  contactBackBtn: document.getElementById("contactBackBtn"),
-  contactPage: document.getElementById("contactPage"),
-  contactPageSaved: document.getElementById("contactPageSaved"),
   // reading (book shelf over the extrinsic zone)
   readingView: document.getElementById("readingView"),
   readingStrip: document.getElementById("readingStrip"),
@@ -249,3 +233,42 @@ const cmdRegistry = {
   providers: [],
   register(fn) { this.providers.push(fn); },
 };
+
+// ---- JSON writes (moved from the retired 60-contacts.js, 2026-09-27) ----
+// ⚠ THE DEPLOY-WINDOW 502. Every push restarts the service (24 restarts in
+// one evening of three sessions shipping), and the tailnet proxy stays up
+// while manifest is down underneath it — so a save pressed in that window
+// answered 502 and the button read as broken. A 502/503 from the proxy means
+// the request NEVER REACHED manifest, which is what makes a retry safe for
+// every endpoint, the non-idempotent ones included. Anything else — a 4xx, a
+// 500 manifest itself produced, a network failure that might have delivered —
+// still fails immediately, and after ~6s of retrying the real error surfaces.
+async function fetchJSONRetry(method, url, body) {
+  for (let attempt = 0; ; attempt++) {
+    const res = await fetch(url, { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+    if ((res.status === 502 || res.status === 503) && attempt < 3) {
+      await new Promise((r) => setTimeout(r, 1000 + attempt * 1000));
+      continue;
+    }
+    return res;
+  }
+}
+
+async function postJSON(url, body) {
+  const res = await fetchJSONRetry("POST", url, body);
+  try { return await res.json(); } catch (e) { return {}; }
+}
+
+// postJSONOk throws on a non-2xx response so callers can signal real failures
+// (postJSON swallows them, which hid write errors behind an optimistic UI).
+async function postJSONOk(url, body) {
+  const res = await fetchJSONRetry("POST", url, body);
+  if (!res.ok) throw new Error((await res.text().catch(() => "")).trim() || ("HTTP " + res.status));
+  return res.json().catch(() => ({}));
+}
+
+async function putJSONOk(url, body) {
+  const res = await fetchJSONRetry("PUT", url, body);
+  if (!res.ok) throw new Error((await res.text().catch(() => "")).trim() || ("HTTP " + res.status));
+  return res.json().catch(() => ({}));
+}

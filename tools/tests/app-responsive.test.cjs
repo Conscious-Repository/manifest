@@ -10,13 +10,13 @@ test('Files discards out-of-order results and stale failures while preserving th
  pending[1]({ok:true,json:async()=>({path:'/new',entries:[{name:'new'}]})});await second;assert.equal(c.fsListedPath,'/new');assert.equal(body.inert,false);
  c.fsPath='/a';const a=c.fsLoad();c.fsPath='/b';const b=c.fsLoad();pending[3]({ok:true,json:async()=>({path:'/b',entries:[]})});await b;pending[2]({ok:true,json:async()=>({path:'/a',entries:[]})});await a;assert.equal(c.fsListedPath,'/b');
 });
-test('Contacts keeps the most recently opened person when responses arrive backwards',async()=>{
- const pending=[],painted=[];const c={els:{contactsListPane:{},contactPagePane:{},contactPageSaved:{},contactPage:{}},fetch:()=>new Promise(r=>pending.push(r)),renderContactPage:p=>painted.push(p)};vm.createContext(c);vm.runInContext(section(read('60-contacts'),'let contactPageVersion','function cpSection'),c);
+test('A person page keeps the most recently opened person when responses arrive backwards',async()=>{
+ const pending=[],painted=[];const c={cpPageHost:{firstChild:null,textContent:''},cpPageKey:'',fetch:()=>new Promise(r=>pending.push(r)),renderContactPage:p=>painted.push(p)};vm.createContext(c);vm.runInContext(section(read('61-person'),'let contactPageVersion','function showFlash'),c);
  const a=c.showContactPage('a'),b=c.showContactPage('b');pending[1]({ok:true,json:async()=>({key:'b'})});await b;pending[0]({ok:true,json:async()=>({key:'a'})});await a;assert.deepEqual(painted,[{key:'b'}]);
 });
-test('Nearby contacts does not overwrite the ordinary list after leaving nearby mode',async()=>{
- let finish;const host={innerHTML:'',append(){}},c={_nearbyPlace:{lat:1,lng:2,label:'City'},_nearbyMode:true,_nearbyRadius:50,URLSearchParams,els:{contactNearby:{querySelector:()=>({value:50})},contactList:host,contactsListPane:{hidden:false}},emptyRow:x=>x,fetch:()=>new Promise(r=>finish=r),nearbyContactRow:x=>x};
- vm.createContext(c);vm.runInContext(section(read('60-contacts'),'let nearbySearchVersion','function nearbyContactRow'),c);const request=c.runNearbySearch();c._nearbyMode=false;host.innerHTML='Ordinary contacts';finish({ok:true,json:async()=>({contacts:[]})});await request;assert.equal(host.innerHTML,'Ordinary contacts');
+test('Nearby people does not overwrite the ordinary list after leaving nearby mode',async()=>{
+ let finish;const host={innerHTML:'',isConnected:true,append(){}},c={_nearbyPlace:{lat:1,lng:2,label:'City'},_nearbyMode:true,_nearbyRadius:50,URLSearchParams,cpNearby:{panel:{querySelector:()=>({value:50})},list:host},emptyRow:x=>x,fetch:()=>new Promise(r=>finish=r),nearbyContactRow:x=>x};
+ vm.createContext(c);vm.runInContext(section(read('61-person'),'let nearbySearchVersion','function nearbyContactRow'),c);const request=c.runNearbySearch();c._nearbyMode=false;host.innerHTML='Ordinary contacts';finish({ok:true,json:async()=>({contacts:[]})});await request;assert.equal(host.innerHTML,'Ordinary contacts');
 });
 test('Agents polling neither overlaps nor writes a late result after leaving the screen',async()=>{
  let calls=0,finish,open=true;
