@@ -88,7 +88,7 @@ cpRefresh = (quiet) => netRefresh(!!quiet);
 
 function netLoadReviews() {
   if (!document.getElementById("netReview")) return;
-  cpLoadReviews().then(netPaintLensCounts);
+  cpLoadReviews(netPaintLensCounts);
 }
 
 // the row a route or a click names — by id, or a contact by its key; a

@@ -18,8 +18,10 @@ let cpPageHost = null;   // where the person page renders
 let cpPageKey = "";      // the contact it is showing (a late answer for another is dropped)
 let cpPageBare = false;  // Network draws the name itself
 
-function cpLoadReviews() {
-  return Promise.all([loadContactTriage(), loadContactEmailReview(), loadContactPeopleReview()]);
+// each queue reports as it lands (the email one reads the calendar and is slow)
+function cpLoadReviews(each) {
+  return Promise.all([loadContactTriage(), loadContactEmailReview(), loadContactPeopleReview()]
+    .map((p) => each ? p.then(each) : p));
 }
 
 let contactPageVersion=0;
@@ -316,7 +318,7 @@ function renderContactPage(p) {
   if (p.role) nameRow.append(el("span", "cp-role", p.role.toUpperCase())); // §13: neutral role chip from the note's role:
   if (!p.hasNote) nameRow.append(el("span", "cp-nonote", "no note yet"));
   header.append(nameRow);
-  if (p.location && p.location.label) header.append(el("div", "cp-location-current", p.location.label));
+  if (!cpPageBare && p.location && p.location.label) header.append(el("div", "cp-location-current", p.location.label));
   if (p.aliases && p.aliases.length) header.append(el("div", "cp-aliases", "aka " + p.aliases.join(" · ")));
   if (p.firms && p.firms.length) {
     const f = el("div", "cp-firms");
