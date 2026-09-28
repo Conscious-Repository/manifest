@@ -462,7 +462,7 @@ func TestCreateFlowSearchAndBind(t *testing.T) {
 		t.Fatal(err)
 	}
 	raw, _ := os.ReadFile(filepath.Join(root, "shoumik dabir.md"))
-	if !containsAll(string(raw), "alias:", "Shoumik") {
+	if !containsAll(string(raw), "aliases:", "Shoumik") {
 		t.Fatalf("bind should record the variant as an alias:\n%s", raw)
 	}
 }

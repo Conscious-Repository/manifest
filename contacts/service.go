@@ -652,7 +652,7 @@ func (s *Service) Search(query string) ([]Ref, error) {
 }
 
 // Bind records that variant is another spelling of canonical (§5): it stores the
-// binding and, when the canonical has a note, adds the variant as an alias:
+// binding and, when the canonical has a note, adds the variant to aliases:
 // (an explicit user write). It never rewrites old notes.
 func (s *Service) Bind(variant, canonical, variantDisplay string) error {
 	if err := s.store.Bind(variant, canonical); err != nil {
@@ -663,7 +663,7 @@ func (s *Service) Bind(variant, canonical, variantDisplay string) error {
 		if disp == "" {
 			disp = variant
 		}
-		if err := s.vw.AddFrontmatterValue(e.NotePath, "alias", disp); err != nil {
+		if err := s.vw.AddFrontmatterValue(e.NotePath, "aliases", disp); err != nil {
 			return err
 		}
 		_ = s.ix.ReindexPaths([]string{e.NotePath})

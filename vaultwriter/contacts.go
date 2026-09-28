@@ -40,10 +40,13 @@ func (w *Writer) CreatePersonNote(name string, aliases []string, body string) (s
 	if _, err := os.Stat(full); err == nil {
 		return rel, nil // write-once — keep the user's existing note
 	}
-	fm := (&mdfm.Writer{}).SetList("categories", []string{"people"})
+	// the vault's own shape: `aliases:` (Obsidian's key, used by every person
+	// note that has one) above `categories: [people]`
+	fm := &mdfm.Writer{}
 	if clean := dedupeAliases(aliases); len(clean) > 0 {
-		fm.SetList("alias", clean)
+		fm.SetList("aliases", clean)
 	}
+	fm.SetList("categories", []string{"people"})
 	if err := w.commit(full, "contact-create", []byte(fm.String(strings.TrimSpace(body)))); err != nil {
 		return "", err
 	}
