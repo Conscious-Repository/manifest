@@ -361,3 +361,36 @@ func TestClaudeAliasesSayWhatTheyLastRanAs(t *testing.T) {
 		}
 	}
 }
+
+// ⚠ THE NEW-CHAT DEFAULT is what your latest chat with the agent ran with:
+// its launch model (unless the transcript shows a /model switch) and the
+// latest effort the CLI recorded — an /effort change mid-chat carries over.
+// Board work orders, remote sessions and never-launched drafts don't count.
+func TestCodingLastUsedIsYourLatestChatWithEffortCarriedOver(t *testing.T) {
+	projects := t.TempDir()
+	wd := t.TempDir()
+	s := &Server{terminal: &termCfg{regPath: filepath.Join(t.TempDir(), "terminals.json"), defaultWd: wd, claudeProjects: projects}}
+	id := "11111111-2222-3333-4444-555555555555"
+	s.terminal.save([]termSession{
+		{ID: "old", Kind: "claude", Cwd: wd, Model: "sonnet", Effort: "low", LastUsed: "2026-09-20T10:00:00Z", Started: true},
+		{ID: "mine", Kind: "claude", Cwd: wd, Model: "fable", Effort: "medium", LastUsed: "2026-09-26T10:00:00Z", Started: true, ResumeID: id},
+		{ID: "board", Kind: "claude", Cwd: wd, Model: "opus", LastUsed: "2026-09-27T10:00:00Z", Started: true, BoardBrief: "task"},
+		{ID: "draft", Kind: "claude", Cwd: wd, Model: "haiku", LastUsed: "2026-09-27T11:00:00Z", LaunchPhase: "draft", Backend: "herdr"},
+	})
+	dir := filepath.Join(projects, claudeProjectDir(wd))
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	tr := `{"type":"assistant","timestamp":"2026-09-26T10:00:01Z","effort":"medium","message":{"role":"assistant","model":"claude-fable-5-1","stop_reason":"end_turn","content":[{"type":"text","text":"a"}]}}` + "\n" +
+		`{"type":"assistant","timestamp":"2026-09-26T10:05:00Z","effort":"xhigh","message":{"role":"assistant","model":"claude-fable-5-1","stop_reason":"end_turn","content":[{"type":"text","text":"b"}]}}` + "\n"
+	if err := os.WriteFile(filepath.Join(dir, id+".jsonl"), []byte(tr), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	last := s.codingLastUsed("claude")
+	if last == nil || last.Model != "fable" || last.Effort != "xhigh" || last.At != "2026-09-26T10:00:00Z" {
+		t.Fatalf("last used: %+v", last)
+	}
+	if s.codingLastUsed("codex") != nil {
+		t.Fatal("no codex chat means no last-used default")
+	}
+}

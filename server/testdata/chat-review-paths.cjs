@@ -12,13 +12,11 @@ assert.equal(await page.locator('.working-untracked').evaluate(e=>e.open),false)
 assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);
 await page.evaluate(()=>{document.querySelector('main').replaceChildren(artifactWorkingChangesView('Working folder: /fixture\nNo tracked changes against HEAD.\n'));});await page.getByText('No tracked changes',{exact:true}).waitFor();assert.equal(await page.getByRole('combobox').count(),0);
 const chat=fs.readFileSync(path.join(root,'js/48-chat.js'),'utf8');
-const start=source.indexOf('function reviewDialog('),end=source.indexOf('return dialog;',start)+ 'return dialog;'.length;
-await page.addScriptTag({content:source.slice(start,end)+'\n}'});
-await page.addScriptTag({content:chat.slice(chat.indexOf('function chatChooseTerminalRecipient('),chat.indexOf('function chatChooseRecipient('))});
-await page.evaluate(()=>{Object.assign(window,{chatRecipients:new Map(),chatRouteVersion:1,chatRoster:[],chatTermEnabled:true,chatTermKinds:{codex:'Codex'},chatAgentLabel:x=>x,shortModel:x=>x});chatChooseTerminalRecipient({se:{kind:'codex',id:'fixture',model:'test',cwd:'/fixture'}});});
-await page.getByRole('button',{name:'Use agent',exact:true}).waitFor();assert.equal(await page.getByRole('button',{name:'Start related chat',exact:true}).count(),0);
-await page.getByRole('combobox',{name:'Next message recipient'}).selectOption('native');await page.getByRole('textbox',{name:'Continuation working folder'}).waitFor();
-assert.equal(await page.evaluate(()=>document.querySelector('dialog').getBoundingClientRect().right>innerWidth),false);
-await page.getByRole('button',{name:'Cancel',exact:true}).click();assert.equal(await page.getByRole('dialog').count(),0);
-console.log('PASS: per-file review, literal diff text, expandable untracked files, honest empty state and phone bounds.');
+// "Choose agent" is retired (2026-09-27): a leftover hand-off in a private
+// thread's draft is dropped; a shared thread still chooses.
+await page.addScriptTag({content:chat.slice(chat.indexOf('function chatUsableRecipient('),chat.indexOf('function chatSharedRecipientItems('))});
+assert.equal(chat.includes('function chatChooseRecipient('),false);assert.equal(chat.includes('function chatChooseTerminalRecipient('),false);
+assert.deepEqual(await page.evaluate(()=>{window.chatRecipients=new Map([['codex/a',{backend:'hermes',agent:'alfred'}],['alfred/b',{agent:'alfred',effort:'high'}],['alfred/c',{backend:'terminal',agent:'codex',id:'x'}]]);
+ return [chatUsableRecipient('codex/a',false),chatRecipients.has('codex/a'),chatUsableRecipient('alfred/b',false)?.effort,chatUsableRecipient('alfred/c',true)?.id];}),[null,false,'high','x']);
+console.log('PASS: per-file review, literal diff text, expandable untracked files, honest empty state, phone bounds, retired hand-off dropped.');
 }finally{await browser.close();}})().catch(e=>{console.error(e);process.exit(1)});

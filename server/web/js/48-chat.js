@@ -2331,21 +2331,10 @@ function chatHead(s) {
   if (s.model) head.title = shortModel(s.model);
   else if (portal) sub.push(s.domain === "ooda" ? "ooda portal" : "aion portal");
   if (portal && s.busy) sub.push("✦ running");
-  if(s.shared && (s.continuations||[]).length){
-    const pick=document.createElement("select"); pick.className="pp-in chat-head-sub"; pick.setAttribute("aria-label","Next message recipient");
-    const choices=[{value:"",label:"Choose agent…"},{value:"team",label:chatAgentLabel(agent)+" · team agent"},...(s.continuations||[]).map(v=>({value:v.id,label:chatAgentLabel(v.agent)+(v.model?" · "+shortModel(v.model):"")+" · "+v.id.slice(-6)}))];
-    choices.forEach(c=>{const option=document.createElement("option");option.value=c.value;option.textContent=c.label;pick.append(option);});
-    const key=agent+"/"+s.id, recipient=chatRecipients.get(key);
-    pick.value=recipient?(recipient.backend==="terminal"?recipient.id:"team"):"";
-    pick.onchange=()=>{const native=(s.continuations||[]).find(v=>v.id===pick.value);if(native)chatRecipients.set(key,{backend:"terminal",agent:native.agent,id:native.id,model:native.model});else if(pick.value==="team")chatRecipients.set(key,{agent});else chatRecipients.delete(key);chatCaptureSyncedDraft(key);renderChatComposer(s);};
-    head.append(pick);
-  }else if(chatRosterEntry(agent)?.durableSend){
-    const recipient=chatRecipients.get(agent+"/"+s.id)||{agent,model:s.model||""};
-    const model=recipient.model||chatRosterEntry(recipient.agent)?.model||"";
-    const to=el("button","sprt-quiet chat-head-sub","Agent: "+chatAgentLabel(recipient.agent));
-    to.title="Choose agent and model"+(model?" · "+shortModel(model):"");to.onclick=()=>chatChooseRecipient(s);head.append(to);
-    if(recipient.backend==="terminal"){const native=(s.continuations||[]).find(v=>v.id===recipient.id);if(native){head.append(terminalStateDot(native));if(native.cwd)head.append(chatChangesButton(native));}}
-  }else head.append(el("span", "sprt-sub chat-head-sub", sub.filter(Boolean).join(" · ")));
+  // Who answers is the thread's agent (2026-09-27: handing the next message
+  // to another agent is retired). A shared thread with coding continuations
+  // still chooses, on the composer's chip (chatSharedRecipientItems).
+  head.append(el("span", "sprt-sub chat-head-sub", sub.filter(Boolean).join(" · ")));
   if(["kairos-private","zeck-private"].includes(agent)){
     const share=el("button","sprt-quiet",s.sharing?"Recover sharing":"Share…");
     share.onclick=()=>CHAT_SHARE.open({agent,id:s.id,title:s.title,onShared:conversation=>{location.hash=conversation.route;}});
@@ -2370,7 +2359,7 @@ function chatHead(s) {
   ren.onclick = () => chatRename(title, s, agent);
   acts.append(ren);
   if(chatRosterEntry(agent)?.durableSend){
-    const related=el("button","sprt-quiet","Start related chat");related.onclick=()=>chatStartRelated(s);acts.append(related);
+    const related=el("button","sprt-quiet","New chat with this context");related.onclick=()=>chatStartRelated(s);acts.append(related);
   }
   for(const item of s.related||[]){const link=el("a","sprt-quiet",(item.relation==="origin"?"From: ":item.relation==="continuation"?"Coding session: ":"Related: ")+item.title);link.href=item.route;acts.append(link);}
   // the task this conversation became (§3.4f) — into its conversation, here
@@ -3062,8 +3051,8 @@ function renderChatComposer(session) {
     const initialText = !sendSession&&!chatIsPortal() ? chatProjectInitialText(sendProject,messageText) : messageText;
     const payload = chatIsPortal() ? { text:messageText, files:sendFiles, ritual: chatRitual } : { text:initialText, files:sendFiles };
     const selected=chatArtifactSelections.get("chat:"+draftKey);
-    const chosenRecipient=chatRecipients.get(draftKey);
-    if(session?.shared && (session.continuations||[]).length && !chosenRecipient){showToast("Choose the agent for this message above the conversation.");echo.settle();chatSending=false;renderChatComposer(chatCurSession);return;}
+    const chosenRecipient=chatUsableRecipient(draftKey,!!session?.shared||!!(chatIsTerm()&&chatTermOpen?.sharedConversation));
+    if(session?.shared && (session.continuations||[]).length && !chosenRecipient){showToast("Choose who answers on the chip beside the message box.");echo.settle();chatSending=false;renderChatComposer(chatCurSession);return;}
     if(chatIsTerm()&&chosenRecipient?.backend==="hermes"){
       try{
         const target=chosenRecipient;
@@ -3093,7 +3082,8 @@ function renderChatComposer(session) {
       return;
     }
     if(durable){
-      payload.recipient=chatRecipients.get(draftKey)||{agent:sendAgent,model:session?.model||""};
+      // a new chat starts with what your last chat with this agent used
+      payload.recipient=chosenRecipient||(sendSession?chatSessionRecipient(session):chatLastRecipient(sendAgent))||{agent:sendAgent,model:session?.model||""};
       payload.task=selected?.task||chatConversationTasks.get("chat:"+draftKey)||session?.task||"";
       if(selected)Object.assign(payload,chatArtifactPayload(selected));
     }
@@ -3842,15 +3832,6 @@ function chatTermHead(o) {
   badge.title=execution.label+' · run status; task acceptance is separate';
   head.append(badge);
   if(o.sharedConversation){const shared=el("a","sprt-quiet",o.sharedConversation.scope==="team:ooda"?"OODA team conversation":"AION team conversation");shared.href=o.sharedConversation.route;shared.title="This session's history and future messages are shared with the team.";head.append(shared);}
-  if(se.backend==="herdr"&&se.origin?.mode!=="continue"&&(chatTermEnabled||chatRoster.some(a=>a.enabled&&a.durableSend))){
-    const recipient=chatRecipients.get(se.kind+"/"+se.id);
-    const to=el("button","sprt-quiet chat-head-sub","Agent: "+chatAgentLabel(recipient?.agent||se.kind));
-    to.onclick=()=>chatChooseTerminalRecipient(o);head.append(to);
-    const planning=(o.planningRecipients||[]).find(p=>p.id===recipient?.id&&p.agent===recipient?.agent);
-    if(planning?.status==="thinking")head.append(el("span","chat-head-sub",chatAgentLabel(planning.agent)+" is working"));
-    const coding=(o.codingRecipients||[]).find(p=>p.id===recipient?.id&&p.agent===recipient?.agent);
-    if(coding)head.append(el("span","chat-head-sub",chatAgentLabel(coding.agent)+" · "+(coding.agentState||coding.process||"unknown")));
-  }
   const meta = [fmtWhen(se.lastUsed)];
   if (o.cost) meta.push("$" + o.cost.toFixed(2));
   const details = el("details", "chat-details");
@@ -3864,7 +3845,7 @@ function chatTermHead(o) {
   }
   for(const warning of o.conversation?.warnings||[])details.append(el("div","chat-head-meta",warning));
   if(chatRoster.some(a=>a.enabled&&a.durableSend)) {
-    const related=el("button","sprt-quiet","Start related chat");
+    const related=el("button","sprt-quiet","New chat with this context");
     related.onclick=()=>chatStartRelated({backend:"terminal",agent:se.kind,id:se.id,title:se.name||se.kind,task:taskLinks.length===1?taskLinks[0].id:"",
       handoffExcerpt:o.turns.slice(-2).map(t=>t.who+":\n"+(t.text||(t.blocks||[]).filter(b=>b.t==="say").map(b=>b.text||"").join("\n")).slice(0,2000)).join("\n\n")});
     details.append(related);
@@ -4384,7 +4365,9 @@ async function chatTermSend(text,context={}) {
     const wasDraft = chatTermFind(id)?.launchPhase === "draft";
     if (!id) {
       const cwd = chatRecall("manifest.chatTermCwd." + agent);
-      const se = await postJSONOk("/api/terminal/session", { kind: agent, cwd, model:chatRecall("manifest.chatTermModel."+agent), effort:chatRecall("manifest.chatTermEffort."+agent), permission:chatRecall("manifest.chatTermPermission."+agent), draft: true });
+      await chatLoadModelCatalog().catch(()=>{});
+      const launch=chatLandingLaunch(agent);
+      const se = await postJSONOk("/api/terminal/session", { kind: agent, cwd, model:launch.model, effort:launch.effort, permission:launch.permission, draft: true });
       chatTermSessions.unshift(Object.assign({ live: false }, se));
       id = se.id;
       await chatAssignNewProject(agent,id,true,project);
@@ -5015,151 +4998,137 @@ function chatAddSharedTerminal(session,agent){
   });
 }
 
-function chatStartRelated(source,targetAgent){
+// NEW CHAT WITH THIS CONTEXT — the one hand-off (owner, 2026-09-27: the
+// "Choose agent" switch is retired; a different agent or model is a new
+// chat). A panel over the composer in the model picker's own shape: agent,
+// folder, model · effort, title and the handoff draft. It creates a separate
+// linked chat; you review the handoff there before sending, and this chat
+// keeps running. The model and effort start from what your last chat with
+// that agent ran with.
+let chatHandoffEl=null;
+function chatCloseHandoff(){if(!chatHandoffEl)return;const back=chatHandoffEl._return;chatHandoffEl.remove();chatHandoffEl=null;(back&&back.isConnected?back:document.querySelector("#chatComposer textarea"))?.focus({preventScroll:true});}
+function chatHandoffFromHere(){
+  if(chatIsTerm()&&chatTermOpen&&chatTermOpen.se.id===chatOpenId){
+    const o=chatTermOpen,se=o.se,tasks=(o.conversation?.links||[]).filter(l=>l.kind==="task");
+    return chatStartRelated({backend:"terminal",agent:se.kind,id:se.id,title:se.name||se.kind,cwd:se.cwd||"",task:tasks.length===1?tasks[0].id:"",
+      handoffExcerpt:(o.turns||[]).slice(-2).map(t=>t.who+":\n"+(t.text||(t.blocks||[]).filter(b=>b.t==="say").map(b=>b.text||"").join("\n")).slice(0,2000)).join("\n\n")});
+  }
+  if(chatCurSession&&chatCurSession.id===chatOpenId)return chatStartRelated({...chatCurSession,agent:chatCurSession.agent||chatAgent});
+}
+async function chatStartRelated(source,targetAgent){
   const originAgent=source.agent,originID=source.id;
   const storageKey="manifest.relatedDraft.v1."+(source.backend?source.backend+"/":"")+originAgent+"/"+originID;
   let remembered=null;try{remembered=JSON.parse(localStorage.getItem(storageKey)||"null");}catch(e){}
   const selected=chatArtifactSelections.get("chat:"+originAgent+"/"+originID);
   const excerpt=source.handoffExcerpt??parseChatTurns(source.handoffBody||"").slice(-2).map(t=>t.who+":\n"+t.text.slice(0,2000)+(t.text.length>2000?"\n[excerpt shortened]":"")).join("\n\n");
-  reviewDialog("Start related chat",({body,actions,close})=>{
-    const agents=chatRoster.filter(a=>a.enabled&&a.durableSend);
-    if(chatTermEnabled)Object.entries(chatTermKinds).forEach(([name,label])=>agents.push({name:"terminal:"+name,label}));
-    const pick=document.createElement("select");pick.className="pp-in";
-    agents.forEach(a=>{const o=document.createElement("option");o.value=a.name;o.textContent=a.label;pick.append(o);});
-    const desired=remembered?.agent?(remembered.backend==="terminal"?"terminal:":"")+remembered.agent:targetAgent||originAgent;
-    pick.value=agents.some(a=>a.name===desired)?desired:agents[0]?.name||"";pick.setAttribute("aria-label","Agent for related chat");
-    const title=document.createElement("input");title.className="pp-in";title.value=remembered?.title||(source.title||"Related chat").slice(0,240);title.setAttribute("aria-label","Related chat title");
-    const prompt=document.createElement("textarea");prompt.className="pp-in";prompt.setAttribute("aria-label","Handoff draft");
-    prompt.value=remembered?.prompt??("Continue work related to “"+source.title+"”.\n\nRecent excerpt from "+chatAgentLabel(originAgent)+" (not the full history):\n\n"+excerpt);
-    const field=(name,input)=>{const label=el("label","",name);label.append(input);return label;};
-    body.append(el("p","","This creates a separate linked chat. Review the handoff there before sending; current work keeps running."),field("Agent",pick),field("Title",title),field("Handoff draft",prompt));
-    const cwd=document.createElement("input");cwd.className="pp-in";cwd.setAttribute("aria-label","Coding working folder");cwd.placeholder="Default home folder";
-    cwd.value=remembered?.cwd||"";
-    const model=document.createElement("input");model.className="pp-in";model.setAttribute("aria-label","Coding model");model.placeholder="Installed default";model.value=remembered?.model||"";
-    const codingFields=el("div","");codingFields.append(field("Working folder on metis",cwd),field("Model",model));body.append(codingFields);
-    const syncCoding=()=>{codingFields.hidden=!pick.value.startsWith("terminal:");if(!codingFields.hidden&&!cwd.value)cwd.value=chatRecall("manifest.chatTermCwd."+pick.value.slice(9))||"";};pick.onchange=syncCoding;syncCoding();
-    const ref=remembered?.artifacts?{items:remembered.artifacts,explicitArtifacts:remembered.explicitArtifacts}:selected;
-    const include=document.createElement('input');include.type='checkbox';include.setAttribute('aria-label','Include selected artifact in related chat');include.checked=!!(remembered?.artifacts?.length||(ref&&!ref.explicitArtifacts));
-    if(chatSelectedArtifacts(ref).length){const handoff=el('label','chat-artifact-handoff');handoff.append(include,el('span','','Include selected context versions\n'+chatArtifactSelectionLabel(ref)));body.append(handoff);}
-    const status=el("p","");status.setAttribute("role","status");body.append(status);
-    const cancel=el("button","sprt-quiet","Cancel"),create=el("button","sprt-quiet","Create related chat");cancel.onclick=close;
-    create.onclick=async()=>{
-      const coding=pick.value.startsWith("terminal:");
-      const payload={agent:coding?pick.value.slice(9):pick.value,title:title.value,prompt:prompt.value,task:remembered?.task||selected?.task||source.task||"",...chatArtifactPayload(include.checked?ref:null),...(coding?{backend:"terminal",cwd:cwd.value,model:model.value}:{})};
-      const signature=JSON.stringify(payload);
-      const requestId=remembered?.signature===signature?remembered.requestId:crypto.randomUUID();
-      remembered={...payload,signature,requestId};
-      try{
-        localStorage.setItem(storageKey,JSON.stringify(remembered));create.disabled=true;
-        const endpoint=source.backend==="terminal"?"/api/terminal/"+encodeURIComponent(originAgent)+"/session/"+encodeURIComponent(originID)+"/related":chatBaseFor(originAgent)+"/"+encodeURIComponent(originID)+"/related";
-        const result=await postJSONOk(endpoint,{...payload,requestId});
-        if(!result.id)throw new Error("Creation was not confirmed. Retry to check the same request.");
-        localStorage.removeItem(storageKey);close();
-        location.hash=result.conversation?.route||"#/chat/a/"+encodeURIComponent(result.agent)+"/"+encodeURIComponent(result.id);
-      }catch(e){status.textContent=e.message||"Could not create the related chat. Retry safely.";}
-      finally{create.disabled=false;}
-    };
-    actions.append(cancel,create);
-  });
+  if(typeof chatCloseModelPicker==="function")chatCloseModelPicker();
+  if(typeof chatCloseChipMenu==="function")chatCloseChipMenu(false);
+  chatCloseHandoff();
+  const composer=document.getElementById("chatComposer");if(!composer)return;
+  const box=el("div","chat-model-picker chat-handoff");box.setAttribute("role","dialog");box.setAttribute("aria-label","New chat with this context");
+  box._return=document.activeElement;chatHandoffEl=box;
+  box.append(el("p","chat-model-loading","Loading…"));composer.append(box);
+  let catalog={},folders=null;
+  try{catalog=await chatLoadModelCatalog();}catch(e){}
+  if(chatHandoffEl!==box)return;
+  const agents=chatRoster.filter(a=>a.enabled&&a.durableSend).map(a=>({value:a.name,label:a.label,coding:false}));
+  if(chatTermEnabled)Object.entries(chatTermKinds).forEach(([name,label])=>agents.push({value:"terminal:"+name,label,coding:true}));
+  const desired=remembered?.agent?(remembered.backend==="terminal"?"terminal:":"")+remembered.agent:targetAgent?targetAgent:(source.backend==="terminal"?"terminal:":"")+originAgent;
+  const choice={agent:agents.some(a=>a.value===desired)?desired:agents[0]?.value||"",cwd:remembered?.cwd??"",model:remembered?.model??null,effort:remembered?.effort??null};
+  const kindOf=()=>choice.agent.startsWith("terminal:")?choice.agent.slice(9):choice.agent,coding=()=>choice.agent.startsWith("terminal:");
+  const defaults=()=>{const k=kindOf();if(coding()){const l=chatLandingLaunch(k);return {model:l.model||"",effort:l.effort||""};}const r=chatLastRecipient(k);return {model:r?.model||chatRosterEntry(k)?.model||"",effort:""};};
+  const resetChoice=()=>{const d=defaults();choice.model=d.model;choice.effort=d.effort;if(coding()&&!choice.cwd)choice.cwd=source.backend==="terminal"&&source.agent===kindOf()?source.cwd||"":chatRecall("manifest.chatTermCwd."+kindOf())||source.cwd||"";};
+  if(choice.model===null)resetChoice();
+  box.replaceChildren();
+  const head=el("div","chat-handoff-head");head.append(el("span","chat-model-section","New chat with this context"),el("span","chat-model-meta","A separate linked chat · review the handoff there before sending · this one keeps running"));
+  const agentRow=el("div","chat-model-efforts");agentRow.setAttribute("role","radiogroup");agentRow.setAttribute("aria-label","Agent");
+  const folderList=el("div","chat-model-list chat-handoff-folders");folderList.setAttribute("role","listbox");folderList.setAttribute("aria-label","Working folder");
+  const modelList=el("div","chat-model-list");modelList.setAttribute("role","listbox");modelList.setAttribute("aria-label","Model");
+  const effortRow=el("div","chat-model-efforts");effortRow.setAttribute("role","radiogroup");effortRow.setAttribute("aria-label","Effort");
+  const title=el("input","chat-model-search");title.value=remembered?.title||(source.title||"Related chat").slice(0,240);title.setAttribute("aria-label","Title of the new chat");
+  const draft=el("textarea","chat-handoff-draft");draft.setAttribute("aria-label","Handoff draft");
+  draft.value=remembered?.prompt??("Continue work related to “"+source.title+"”.\n\nRecent excerpt from "+chatAgentLabel(originAgent)+" (not the full history):\n\n"+excerpt);
+  const ref=remembered?.artifacts?{items:remembered.artifacts,explicitArtifacts:remembered.explicitArtifacts}:selected;
+  const include=el("label","chat-model-confirm");const includeBox=document.createElement("input");includeBox.type="checkbox";includeBox.checked=!!(remembered?.artifacts?.length||(ref&&!ref.explicitArtifacts));include.append(includeBox,el("span","","Include selected context versions · "+(chatSelectedArtifacts(ref).length?chatArtifactSelectionLabel(ref):"")));include.hidden=!chatSelectedArtifacts(ref).length;
+  const status=el("p","chat-model-status");status.setAttribute("role","status");
+  const seg=(label,on,run,title)=>{const b=el("button","chat-model-seg",label);b.type="button";b.setAttribute("role","radio");b.setAttribute("aria-checked",String(!!on));if(title)b.title=title;b.onclick=run;return b;};
+  const rowOf=(label,meta,on,run)=>{const r=el("div","chat-model-row");r.setAttribute("role","option");r.setAttribute("aria-selected",String(!!on));r.append(el("span","chat-model-name",label),el("span","chat-model-meta",meta||""));r.onmousedown=e=>e.preventDefault();r.onclick=run;return r;};
+  const paint=async()=>{
+    agentRow.replaceChildren(el("span","chat-model-section","Agent"),...agents.map(a=>seg(a.label,a.value===choice.agent,()=>{if(choice.agent===a.value)return;choice.agent=a.value;choice.cwd="";resetChoice();paint();},a.coding?"coding session in a folder":"")));
+    // folder (coding): recent folders and the repositories under ~/src
+    folderList.hidden=!coding();folderList.replaceChildren(el("span","chat-model-section","Folder"));
+    if(coding()){
+      if(!folders){try{folders=await chatLoadFolders();}catch(e){folders={recent:[],repos:[]};}}
+      if(chatHandoffEl!==box)return;
+      const paths=[...new Set([choice.cwd,...(folders.recent||[]),...(folders.repos||[])].filter(Boolean))].slice(0,12);
+      folderList.append(rowOf("Home folder",folders.home||"~",!choice.cwd,()=>{choice.cwd="";paint();}));
+      for(const p of paths)folderList.append(rowOf(p.split("/").filter(Boolean).at(-1)||p,p,choice.cwd===p,()=>{choice.cwd=p;paint();}));
+    }
+    // model · effort, from the catalog; the default is your last chat's
+    const cat=catalog[kindOf()];modelList.replaceChildren(el("span","chat-model-section","Model"));effortRow.replaceChildren();
+    if(!cat){modelList.append(el("span","chat-model-meta","The agent's configured default."));}
+    else{
+      modelList.append(rowOf("Default model",cat.default||"",!choice.model,()=>{choice.model="";paint();}));
+      // a hand-off names a model, not a provider: a native agent offers its
+      // default provider's models
+      const offered=(cat.models||[]).filter(m=>cat.backend!=="hermes"||!m.provider||!cat.defaultProvider||m.provider===cat.defaultProvider);
+      if(choice.model&&!offered.some(m=>m.id===choice.model))choice.model="";
+      for(const m of offered)modelList.append(rowOf(m.label||m.id,[m.id!==m.label&&m.label?m.id:"",cat.last?.model===m.id?"your last":""].filter(Boolean).join(" · "),choice.model===m.id,()=>{choice.model=m.id;paint();}));
+      const efforts=coding()?((cat.models||[]).find(m=>m.id===choice.model)?.efforts?.length?(cat.models||[]).find(m=>m.id===choice.model).efforts:cat.efforts||[]):[];
+      if(efforts.length)effortRow.append(el("span","chat-model-section","Effort"),seg("default",!choice.effort,()=>{choice.effort="";paint();}),...efforts.map(e=>seg(e.id,choice.effort===e.id,()=>{choice.effort=e.id;paint();},e.description)));
+    }
+    effortRow.hidden=!effortRow.childElementCount;
+  };
+  const actions=el("div","chat-model-actions");
+  const cancel=el("button","sprt-quiet","Cancel");cancel.type="button";cancel.onclick=chatCloseHandoff;
+  const create=el("button","sprt-quiet chat-dialog-primary chat-model-apply","Create chat");create.type="button";
+  create.onclick=async()=>{
+    const isCoding=coding(),agent=kindOf();
+    const payload={agent,title:title.value,prompt:draft.value,task:remembered?.task||selected?.task||source.task||"",model:choice.model||"",...chatArtifactPayload(includeBox.checked?ref:null),...(isCoding?{backend:"terminal",cwd:choice.cwd}:{})};
+    const signature=JSON.stringify(payload);
+    const requestId=remembered?.signature===signature?remembered.requestId:crypto.randomUUID();
+    remembered={...payload,effort:choice.effort,signature,requestId};
+    try{
+      localStorage.setItem(storageKey,JSON.stringify(remembered));create.disabled=true;status.textContent="Creating…";
+      const endpoint=source.backend==="terminal"?"/api/terminal/"+encodeURIComponent(originAgent)+"/session/"+encodeURIComponent(originID)+"/related":chatBaseFor(originAgent)+"/"+encodeURIComponent(originID)+"/related";
+      const result=await postJSONOk(endpoint,{...payload,requestId});
+      if(!result.id)throw new Error("Creation was not confirmed. Retry to check the same request.");
+      // a coding chat is created unlaunched: its effort is a launch setting
+      if(isCoding&&choice.effort){const r=await fetch(chatTermBase(result.id),{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify({effort:choice.effort})});if(!r.ok)showToast("The chat was created; its effort stays at the default.");}
+      localStorage.removeItem(storageKey);chatCloseHandoff();
+      location.hash=result.conversation?.route||"#/chat/a/"+encodeURIComponent(result.agent)+"/"+encodeURIComponent(result.id);
+    }catch(e){status.textContent=e.message||"Could not create the chat. Retry safely.";}
+    finally{create.disabled=false;}
+  };
+  actions.append(cancel,create);
+  box.append(head,agentRow,folderList,modelList,effortRow,title,draft,include,status,actions);
+  box.addEventListener("keydown",e=>{if(e.key==="Escape"){e.preventDefault();e.stopPropagation();chatCloseHandoff();}});
+  const outside=e=>{if(chatHandoffEl!==box){document.removeEventListener("pointerdown",outside,true);return;}if(!box.contains(e.target))chatCloseHandoff();};
+  document.addEventListener("pointerdown",outside,true);
+  await paint();
+  if(typeof chatPlaceModelPicker==="function")chatPlaceModelPicker(box,composer,null);
+  draft.focus({preventScroll:true});
 }
 
-function chatChooseTerminalRecipient(source){
-  const se=source.se,key=se.kind+"/"+se.id,route=chatRouteVersion,current=chatRecipients.get(key);
-  const tasks=(source.conversation?.links||[]).filter(l=>l.kind==="task"),task=tasks.length===1?tasks[0].id:"";
-  reviewDialog("Choose agent",({body,actions,close})=>{
-    body.closest("dialog").classList.add("chat-agent-dialog");
-    const pick=document.createElement("select");pick.className="pp-in";pick.setAttribute("aria-label","Next message recipient");
-    const native=document.createElement("option");native.value="native";native.textContent=chatAgentLabel(se.kind);pick.append(native);
-    chatRoster.filter(a=>a.enabled&&a.durableSend).forEach(a=>{const option=document.createElement("option");option.value=a.name;option.textContent=a.label+(a.model?" · "+shortModel(a.model):"");pick.append(option);});
-    if(chatTermEnabled)Object.entries(chatTermKinds).filter(([kind])=>kind!==se.kind).forEach(([kind,label])=>{const option=document.createElement("option");option.value="terminal:"+kind;option.textContent=label;pick.append(option);});
-    pick.value=current?.backend==="terminal"?(current.agent===se.kind?"native":"terminal:"+current.agent):current?.backend==="hermes"?current.agent:"native";
-    body.append(el("p","","Choose who receives your next message. Current work keeps running."),pick);
-    const cwd=document.createElement("input");cwd.className="pp-in";cwd.setAttribute("aria-label","Continuation working folder");
-    const model=document.createElement("select");model.className="pp-in";model.setAttribute("aria-label","Continuation coding model");model.placeholder="Installed default";
-    const fields=el("div","");const folderLabel=el("label","","Working folder on metis"),modelLabel=el("label","","Model");folderLabel.append(cwd);modelLabel.append(model);fields.append(modelLabel,folderLabel);body.append(fields);
-    const sync=()=>{const kind=pick.value==='native'?se.kind:pick.value.slice(9);fields.hidden=pick.value!=='native'&&!pick.value.startsWith('terminal:');const prior=(source.codingRecipients||[]).filter(p=>p.agent===kind).at(-1);cwd.value=pick.value==='native'?(current?.backend==='terminal'?(source.codingRecipients||[]).find(p=>p.id===current.id)?.cwd||se.cwd||'':se.cwd||''):prior?.cwd||se.cwd||'';if(typeof chatPopulateModelSelect==='function')chatPopulateModelSelect(model,kind,pick.value==='native'?(current?.model||se.model||''):(prior?.model||''));};pick.onchange=sync;sync();
-    const status=el("p","");status.setAttribute("role","status");body.append(status);
-    const here=el("button","sprt-quiet chat-agent-confirm chat-dialog-primary","Use agent"),cancel=el("button","sprt-quiet","Cancel");
-    cancel.onclick=close;
-    here.onclick=async()=>{
-      here.disabled=true;
-      try{
-        let recipient=null;
-        const choice=pick.value==='native'&&((model.value&&model.value!==(se.model||model.dataset.default||''))||cwd.value.trim()!==(se.cwd||''))?'terminal:'+se.kind:pick.value;
-        if(choice!=="native"){
-          const coding=choice.startsWith("terminal:"),agent=coding?choice.slice(9):choice,entry=chatRosterEntry(agent);
-          let child=coding?(source.codingRecipients||[]).find(p=>p.agent===agent&&p.cwd===cwd.value.trim()&&(!model.value.trim()||p.model===model.value.trim())):(source.planningRecipients||[]).find(p=>p.agent===agent);
-          if(!child){
-            const payload={agent,model:coding?model.value.trim():entry?.model||"",mode:"continue",title:se.name||se.kind,task,...(coding?{backend:"terminal",cwd:cwd.value.trim()}:{})};
-            const storageKey="manifest.nativeContinue.v1."+key,signature=JSON.stringify(payload);
-            let saved;try{saved=JSON.parse(localStorage.getItem(storageKey)||"null");}catch(e){}
-            const requestId=saved?.signature===signature?saved.requestId:crypto.randomUUID();
-            localStorage.setItem(storageKey,JSON.stringify({signature,requestId}));
-            child=await postJSONOk("/api/terminal/"+encodeURIComponent(se.kind)+"/session/"+encodeURIComponent(se.id)+"/related",{...payload,requestId});
-            if(!coding)child.model=payload.model;localStorage.removeItem(storageKey);
-          }
-          recipient={backend:coding?"terminal":"hermes",agent,id:child.id,model:child.model||entry?.model||""};
-        }
-        if(recipient)chatRecipients.set(key,recipient);else chatRecipients.delete(key);
-        if(route===chatRouteVersion&&chatDraftKey===key){chatCaptureSyncedDraft(key);close();await chatTermRequestFinalTail(source);chatTermRepaintHead();renderChatComposer(chatTermComposerSession());}
-        else{const state=chatSyncedDrafts.get(key);if(state)state.set({...state.value,recipient});close();}
-      }catch(e){status.textContent=e.message||"Could not choose this agent.";}
-      finally{here.disabled=false;}
-    };
-    actions.append(cancel,here);
-  });
+// chatUsableRecipient — who the next message goes to, when it is not the
+// thread's own agent. Retired 2026-09-27 outside shared threads: a draft that
+// still names another agent (from before) is dropped, so a chat always
+// answers as the agent it was started with.
+function chatUsableRecipient(key,shared){
+  const rec=chatRecipients.get(key);if(!rec)return null;
+  if(shared)return rec;
+  const own=key.slice(0,key.indexOf("/"));
+  if(!rec.backend&&rec.agent===own)return rec;
+  chatRecipients.delete(key);return null;
 }
-// chatRecipientChoiceCount — how many recipients chatChooseRecipient offers:
-// the durable agents on the roster, and each coding agent while the terminal
-// is on. One means the thread's own agent is the only possible recipient.
-function chatRecipientChoiceCount(){
-  return chatRoster.filter(a=>a.enabled&&a.durableSend).length+(chatTermEnabled?Object.keys(chatTermKinds).length:0);
-}
-function chatChooseRecipient(source){
-  const key=source.agent+"/"+source.id;
-  const current=chatRecipients.get(key)||{agent:source.agent,model:source.model||""};
-  const route=chatRouteVersion;
-  reviewDialog("Choose agent",({body,actions,close})=>{
-    body.closest("dialog").classList.add("chat-agent-dialog");
-    const pick=document.createElement("select");pick.className="pp-in";pick.setAttribute("aria-label","Next message recipient");
-    chatRoster.filter(a=>a.enabled&&a.durableSend).forEach(a=>{const o=document.createElement("option");o.value=a.name;o.textContent=a.label+(a.model?" · "+shortModel(a.model):"");pick.append(o);});
-    if(chatTermEnabled)Object.entries(chatTermKinds).forEach(([kind,label])=>{const o=document.createElement("option");o.value="terminal:"+kind;o.textContent=label;pick.append(o);});
-    pick.value=(current.backend==="terminal"?"terminal:":"")+current.agent;
-    body.append(el("p","","Choose who receives your next message. Current work keeps running."),pick,
-      el("p","","The next message includes recent history and selected files."));
-    const cwd=document.createElement("input");cwd.className="pp-in";cwd.setAttribute("aria-label","Continuation working folder");cwd.placeholder="Default home folder";
-    const model=document.createElement("select");model.className="pp-in";model.setAttribute("aria-label","Continuation coding model");model.placeholder="Installed default";
-    const fields=el("div","");const folderLabel=el("label","","Working folder on metis"),modelLabel=el("label","","Model");folderLabel.append(cwd);modelLabel.append(model);fields.append(modelLabel,folderLabel);body.append(fields);
-    const sync=()=>{fields.hidden=!pick.value.startsWith("terminal:");const existing=(source.continuations||[]).filter(v=>v.agent===pick.value.slice(9)).at(-1);cwd.value=existing?.cwd||"";if(typeof chatPopulateModelSelect==='function')chatPopulateModelSelect(model,pick.value.slice(9),existing?.model||'');};pick.onchange=sync;sync();
-    const status=el("p","");status.setAttribute("role","status");body.append(status);
-    const cancel=el("button","sprt-quiet","Cancel"),here=el("button","sprt-quiet chat-agent-confirm chat-dialog-primary","Use agent");
-    cancel.onclick=close;
-    here.onclick=async()=>{
-      here.disabled=true;
-      try{
-        const chosen=pick.value;let recipient;
-        if(chosen.startsWith("terminal:")){
-          const kind=chosen.slice(9);
-          let existing=(source.continuations||[]).filter(v=>v.agent===kind&&(!model.value||v.model===model.value)&&(!cwd.value||v.cwd===cwd.value)).at(-1);
-          if(!existing){
-            const payload={backend:"terminal",mode:"continue",agent:kind,title:source.title,model:model.value,cwd:cwd.value,task:source.task||""};
-            const storageKey="manifest.continueDraft.v1."+key,signature=JSON.stringify(payload);
-            let saved=null;try{saved=JSON.parse(localStorage.getItem(storageKey)||"null");}catch(e){}
-            const requestId=saved?.signature===signature?saved.requestId:crypto.randomUUID();
-            localStorage.setItem(storageKey,JSON.stringify({signature,requestId}));
-            existing=await postJSONOk(chatBaseFor(source.agent)+"/"+encodeURIComponent(source.id)+"/related",{...payload,requestId});
-            localStorage.removeItem(storageKey);
-          }
-          recipient={backend:"terminal",agent:kind,id:existing.id,model:existing.model};
-        }else{const entry=chatRosterEntry(chosen);recipient={agent:chosen,model:chosen===current.agent?current.model:(entry?.model||"")};}
-        chatRecipients.set(key,recipient);
-        if(route===chatRouteVersion&&chatDraftKey===key){chatCaptureSyncedDraft(key);close();chatRepaintHead();await refetchChatSession(source.id);}
-        else {const state=chatSyncedDrafts.get(key);if(state)state.set({...state.value,recipient});close();}
-      }catch(e){status.textContent=e.message||"Could not select this recipient.";}
-      finally{here.disabled=false;}
-    };
-    actions.append(cancel,here);
-  });
+
+// chatSharedRecipientItems — a shared thread with coding continuations
+// chooses who answers the next message: the team agent or one continuation.
+function chatSharedRecipientItems(s){
+  const agent=s.agent||chatAgent,key=agent+"/"+s.id,current=chatRecipients.get(key);
+  const set=rec=>{if(rec)chatRecipients.set(key,rec);else chatRecipients.delete(key);chatCaptureSyncedDraft(key);renderChatComposer(s);};
+  return [{label:chatAgentLabel(agent),sub:"team agent",selected:!!current&&!current.backend,run:()=>set({agent})},
+    ...(s.continuations||[]).map(v=>({label:chatAgentLabel(v.agent),sub:[v.model?shortModel(v.model):"",v.cwd||"","coding · "+v.id.slice(-6)].filter(Boolean).join(" · "),selected:current?.backend==="terminal"&&current.id===v.id,run:()=>set({backend:"terminal",agent:v.agent,id:v.id,model:v.model})}))];
 }
 
 // Local layout preference only; resizing never changes a conversation or file.

@@ -59,6 +59,18 @@ type chatAgentModels struct {
 	LiveModel      string `json:"liveModel"`
 	LiveEffort     string `json:"liveEffort"`
 	LivePermission string `json:"livePermission,omitempty"`
+	// Last is what your most recent chat with this agent ran with — the
+	// new-chat default (owner, 2026-09-27: the model is chosen when a chat
+	// starts, a change there becomes the default, and an effort change in a
+	// running chat carries over). Derived from the sessions, never stored.
+	Last *chatLastUsed `json:"last,omitempty"`
+}
+
+type chatLastUsed struct {
+	Model    string `json:"model,omitempty"`
+	Provider string `json:"provider,omitempty"`
+	Effort   string `json:"effort,omitempty"`
+	At       string `json:"at"`
 }
 
 var claudeEfforts = []chatModelEffort{{"low", "Fastest; light reasoning"}, {"medium", "Balanced"}, {"high", "Deeper reasoning"}, {"xhigh", "Extended reasoning"}, {"max", "Most thorough; slowest"}}
@@ -162,7 +174,7 @@ func (s *Server) hermesModelCatalog(defaultModel string) chatAgentModels {
 
 func codexCatalog(cache []byte) chatAgentModels {
 	policy := codingModels["codex"]
-	out := chatAgentModels{Backend: "terminal", Default: policy.best, Permissions: codexPermissions, DefaultPermission: "full", LiveModel: "native-picker", LiveEffort: "native-picker", LivePermission: "native-picker"}
+	out := chatAgentModels{Backend: "terminal", Default: policy.best, Permissions: codexPermissions, DefaultPermission: "full", LiveModel: "native-picker", LiveEffort: "command", LivePermission: "native-picker"}
 	var cached struct {
 		Models []codexCacheModel `json:"models"`
 	}
@@ -390,10 +402,17 @@ func (s *Server) handleChatModels(w http.ResponseWriter, r *http.Request) {
 			claude.Models[i].LastRan = ran[claude.Models[i].ID]
 		}
 		agents["claude"] = claude
+		for _, kind := range []string{"codex", "claude"} {
+			cat := agents[kind]
+			cat.Last = s.codingLastUsed(kind)
+			agents[kind] = cat
+		}
 	}
 	if s.agentChat != nil {
 		for _, a := range s.agentChatRoster(r.Context()) {
-			agents[a.Name] = s.hermesModelCatalog(a.Model)
+			cat := s.hermesModelCatalog(a.Model)
+			cat.Last = s.hermesLastUsed(a.Name)
+			agents[a.Name] = cat
 		}
 	}
 	writeJSON(w, map[string]any{"agents": agents})
@@ -420,4 +439,56 @@ func (s *Server) claudeLastRan() map[string]string {
 		out[se.Model], at[se.Model] = tr.Settings.First, tr.Settings.FirstAt
 	}
 	return out
+}
+
+// codingLastUsed reads the newest started session of one coding agent. The
+// model is what it launched with unless the transcript shows a /model
+// switch; the effort is the latest one the CLI recorded (an /effort change
+// mid-chat carries over), else what it launched with.
+func (s *Server) codingLastUsed(kind string) *chatLastUsed {
+	var newest *termSession
+	for _, se := range s.terminal.load() {
+		se := se
+		// chats you started — not board work orders (they pin their own
+		// model), remote fleet sessions, or drafts that never launched
+		if se.Kind != kind || se.LaunchPhase == "draft" || se.BoardBrief != "" || se.Device != "" {
+			continue
+		}
+		if newest == nil || se.LastUsed > newest.LastUsed {
+			newest = &se
+		}
+	}
+	if newest == nil {
+		return nil
+	}
+	out := &chatLastUsed{Model: newest.Model, Effort: newest.Effort, At: newest.LastUsed}
+	if path := s.terminal.transcriptPath(*newest); path != "" {
+		if tr, ok := readTranscript(kind, path, 0); ok && tr.Settings != nil {
+			st := tr.Settings
+			if st.Model != "" && st.First != "" && st.Model != st.First {
+				out.Model = st.Model
+			}
+			if st.Effort != "" {
+				out.Effort = st.Effort
+			}
+		}
+	}
+	return out
+}
+
+// hermesLastUsed is the owner's explicit choice on the latest message to
+// this agent (an empty model means the profile's own).
+func (s *Server) hermesLastUsed(agent string) *chatLastUsed {
+	for _, sess := range s.agentChat.store.List(agent) {
+		for i := len(sess.Deliveries) - 1; i >= 0; i-- {
+			d := sess.Deliveries[i]
+			if d.Context == nil || d.Context.Recipient == nil || d.Context.Recipient.Agent != agent {
+				continue
+			}
+			r := d.Context.Recipient
+			return &chatLastUsed{Model: r.RequestedModel, Provider: r.Provider, Effort: r.Effort, At: d.Accepted}
+		}
+		return &chatLastUsed{Model: sess.Model, At: sess.Updated}
+	}
+	return nil
 }

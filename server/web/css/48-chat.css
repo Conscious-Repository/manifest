@@ -1212,3 +1212,14 @@ label.chat-artifact-handoff{display:flex;flex-direction:row;align-items:flex-sta
 .chat-show-break { flex-basis: 100%; height: 0; }
 .chat-term-cmd:not(.is-collapsed) > .chat-show-more { order: 99; margin: 6px 0 0 auto; }
 .chat-term-cmd:not(.is-collapsed) > .chat-show-break { order: 98; }
+
+/* a running chat's model, shown as it runs (2026-09-27: the model is chosen
+   when a chat starts; only effort changes inside it) */
+.chat-model-fixed { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--sp-2) var(--sp-3); padding-bottom: var(--sp-3); border-bottom: 1px solid var(--line); }
+.chat-model-fixed .chat-model-native { margin-left: auto; }
+
+/* NEW CHAT WITH THIS CONTEXT — the model picker's shape, several short lists */
+.chat-model-picker.chat-handoff { overflow-y: auto; max-height: min(78vh, 720px); }
+.chat-handoff .chat-model-list { flex: none; min-height: 0; max-height: 9.5em; }
+.chat-handoff-head { display: flex; flex-direction: column; gap: 2px; }
+.chat-handoff-draft { flex: none; min-height: 7em; max-height: 30vh; resize: vertical; padding: var(--sp-3) var(--sp-4); border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface-field); color: var(--text); font: var(--fs-sm)/1.5 var(--sans); }
