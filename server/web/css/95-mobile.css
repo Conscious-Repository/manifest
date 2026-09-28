@@ -973,9 +973,54 @@
 
 /* An embedded conversation is a workspace pane, not the phone navigation shell. */
 .chat-embedded .mf-chat-back { display:none!important; }
-.chat-embedded .chat-main .chat-composer { padding:var(--sp-5); border-radius:var(--radius-message); gap:var(--sp-4); }
-.chat-embedded .chat-main .chat-composer:not(.has-ritual) > textarea.chat-input { flex:1 0 100%; width:100%; min-height:56px; max-height:none; order:0; padding:var(--sp-2); overflow:auto; }
-.chat-embedded .chat-main .chat-composer > .chat-attach { order:1; }
+/* Its composer is the desktop one at any tile width (2026-09-28, the owner's
+   tiles screenshot): a tile is a narrow frame, so the phone band applied and
+   stacked field · + mic send · chips into 190–350px, with send stranded beside
+   the mic. Now: the field, then one toolbar — + · chips on the left (they
+   give way with an ellipsis, the row never wraps), mic · send at the row's
+   end; a run-state note reads whole on its own line under it (Claude, ChatGPT, Codex all end the row with
+   send) — at the desktop control size; 44px targets stay on touch screens.
+   Specificity matches the phone rules it replaces; this block comes later. */
+.chat-embedded .chat-main .chat-composer { padding:var(--sp-3) var(--sp-4); border-radius:var(--radius-message); gap:var(--sp-2) var(--sp-3); align-items:center; }
+.chat-embedded .chat-main .chat-composer::after { display:none; }
+.chat-embedded .chat-main .chat-composer:not(.has-ritual) > textarea.chat-input { flex:1 0 100%; width:100%; min-height:40px; max-height:40vh; order:0; padding:var(--sp-2) var(--sp-1); overflow:auto; font:var(--fs-xl)/1.5 var(--sans); }
+.chat-embedded .chat-main .chat-composer > .chat-attach { order:1; margin-right:0; }
+.chat-embedded .chat-main .chat-composer > :is(.chat-composer-recipient, .chat-landing-chip) { order:2; flex:0 1 auto; min-width:0; max-width:40%; margin-left:0; min-height:var(--control-height); padding:0 var(--sp-3); font:var(--fs-sm)/1 var(--sans); }
+.chat-embedded .chat-main .chat-composer > :is(.chat-composer-model, .chat-composer-permission) { order:3; flex:0 1 auto; min-width:3em; max-width:none; margin-left:0; min-height:var(--control-height); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font:var(--fs-sm)/1 var(--sans); }
+/* a wrapping row wraps before it shrinks: each chip is capped at its share of
+   what + · mic · send leave, so the toolbar stays one row in a 200px tile */
+.chat-embedded .chat-main .chat-composer { --tile-chips: calc(100% - 3 * var(--control-height) - 5 * var(--sp-3) - 2px); }
+.chat-embedded .chat-main .chat-composer > :is(.chat-composer-model, .chat-composer-permission, .chat-composer-recipient, .chat-landing-chip) { max-width:var(--tile-chips); }
+.chat-embedded .chat-main .chat-composer:has(> .chat-composer-permission) > :is(.chat-composer-model, .chat-composer-permission) { max-width:calc(var(--tile-chips) / 2); }
+/* a new chat's setup chips (agent, project, folder, model, access) are more
+   than a tile's row holds: they take their own rows under the field and the
+   toolbar ends the box whole (+ · mic · send), never mic · send alone */
+.chat-embedded .chat-main .chat-composer:has(> .chat-landing-chip) > :is(.chat-landing-chip, .chat-composer-model, .chat-composer-permission) { order:1; max-width:100%; }
+.chat-embedded .chat-main .chat-composer:has(> .chat-landing-chip)::after { display:block; content:""; order:2; flex:1 0 100%; height:0; margin:0; }
+.chat-embedded .chat-main .chat-composer:has(> .chat-landing-chip) > .chat-attach { order:3; }
+/* a new chat in a short tile: centred content taller than the tile spilled
+   above its top, out of reach (the field sat 80px under the tile header);
+   safe centring starts it at the top and the pane scrolls */
+.chat-embedded .chat-main.landing, .chat-embedded .chat-main.landing:has(.chat-landing-below) { justify-content:safe center; overflow-y:auto; }
+/* a tile too narrow for readable chips beside + · mic · send (a 1440px
+   screen split four ways leaves ~200px): the chips take their own row whole,
+   as a new chat's do, instead of shrinking to "g…" */
+.chat-embedded .chat-main { container: chat-tile / inline-size; }
+@container chat-tile (max-width: 340px) {
+  .chat-embedded .chat-main .chat-composer:has(> .chat-composer-model) > :is(.chat-composer-recipient, .chat-composer-model, .chat-composer-permission) { order:1; max-width:100%; }
+  .chat-embedded .chat-main .chat-composer:has(> .chat-composer-model)::after { display:block; content:""; order:2; flex:1 0 100%; height:0; margin:0; }
+  .chat-embedded .chat-main .chat-composer:has(> .chat-composer-model) > .chat-attach { order:3; }
+}
+.chat-embedded .chat-main .chat-composer > .chat-composer-status { order:7; flex:1 0 100%; min-width:0; margin:calc(-1 * var(--sp-1)) 0 0; padding:0 var(--sp-1); font:var(--fs-xs)/1.4 var(--mono); }
+.chat-embedded .chat-main .chat-composer > .mic-btn { order:5; margin-left:auto; }
+.chat-embedded .chat-main .chat-composer > .chat-send { order:6; margin-left:0; }
+.chat-embedded .chat-main .chat-composer > :is(.chat-attach, .mic-btn, .chat-send) { width:var(--control-height); height:var(--control-height); min-width:var(--control-height); min-height:0; }
+.chat-embedded .chat-main .chat-composer > .chat-send { border:0; border-radius:var(--radius-lg); background-color:var(--accent); color:var(--on-accent); font-size:var(--fs-lg); }
+@media (hover: none) {
+  .chat-embedded .chat-main .chat-composer > :is(.chat-attach, .mic-btn, .chat-send) { width:var(--control-touch); height:var(--control-touch); min-width:var(--control-touch); }
+  .chat-embedded .chat-main .chat-composer > .chat-send { border:6px solid transparent; background-clip:padding-box; }
+  .chat-embedded .chat-main .chat-composer > :is(.chat-composer-recipient, .chat-landing-chip, .chat-composer-model, .chat-composer-permission) { min-height:var(--control-touch); }
+}
 
 /* ================= CHAT — phone pass 3 (2026-09-27) =================
    Measured on the stub at 320/390/412 (before → after in

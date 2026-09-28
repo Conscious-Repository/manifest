@@ -334,6 +334,11 @@ func TestFixtureChatTilesPanes(t *testing.T) {
 	runFixture(t, "chat-tiles-panes.cjs", true, false)
 }
 
+// Tile composers: field, one toolbar ending in mic · send, chips whole (chat-tiles-composer.cjs).
+func TestFixtureChatTilesComposer(t *testing.T) {
+	runFixture(t, "chat-tiles-composer.cjs", true, false)
+}
+
 // One composer-first new chat: chips for agent, model, project and folder,
 // the draft carried across an agent switch, starters, Ctrl+Alt+N, phone
 // (chat-new-flow.cjs).
