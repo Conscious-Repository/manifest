@@ -3085,7 +3085,10 @@ function renderChatComposer(session) {
     }
     if(durable){
       // a new chat starts with what your last chat with this agent used
-      payload.recipient=chosenRecipient||(sendSession?chatSessionRecipient(session):chatLastRecipient(sendAgent))||{agent:sendAgent,model:session?.model||""};
+      // the open chat as loaded now: the composer is built once, so its `session`
+      // can predate the thread's receipts
+      const cur=chatCurSession?.id===sendSession?chatCurSession:session;
+      payload.recipient=chosenRecipient||(sendSession?chatSessionRecipient(cur,sendAgent):chatLastRecipient(sendAgent))||{agent:sendAgent,model:cur?.model||""};
       payload.task=selected?.task||chatConversationTasks.get("chat:"+draftKey)||session?.task||"";
       if(selected)Object.assign(payload,chatArtifactPayload(selected));
     }

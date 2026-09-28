@@ -46,17 +46,23 @@ function chatModelContext() {
   if (rec && (rec.agent !== chatAgent || rec.backend)) return null;
   // a new chat starts from what your last chat with this agent ran with; an
   // open one runs with what its messages have been sent with
-  const last = chatOpenId ? chatSessionRecipient(chatCurSession?.id === chatOpenId ? chatCurSession : null) : chatLastRecipient(chatAgent);
+  const last = chatOpenId ? chatSessionRecipient(chatCurSession?.id === chatOpenId ? chatCurSession : null, chatAgent) : chatLastRecipient(chatAgent);
   return {kind: "hermes", agent: chatAgent, key, fresh: !chatOpenId, current: {model: rec ? rec.model || "" : last?.model || chatCurSession?.model || entry.model || "", provider: rec ? rec.provider || "" : last?.provider || "", effort: rec ? rec.effort || "" : last?.effort || ""}};
 }
 
 // chatSessionRecipient — the model, provider and effort this native chat's
-// latest message was sent with (its delivery receipt): what the chat runs
-// with, and what its next message keeps.
-function chatSessionRecipient(session) {
-  const d = (session?.deliveries || []).slice().reverse().find(x => x.context?.recipient);
+// latest message to its own agent was sent with (its delivery receipt): what
+// the chat runs with, and what its next message keeps. A model the catalog
+// no longer lists is dropped (the server refuses it, and the chat's model
+// cannot be changed), so the chat falls back to the agent's own.
+function chatSessionRecipient(session, agent) {
+  const d = (session?.deliveries || []).slice().reverse().find(x => x.context?.recipient?.agent === agent);
   const r = d?.context?.recipient;
-  return r ? {agent: r.agent, model: r.requestedModel ?? r.model ?? "", provider: r.provider || "", effort: r.effort || ""} : null;
+  if (!r) return null;
+  const rec = {agent, model: r.requestedModel ?? r.model ?? "", provider: r.provider || "", effort: r.effort || ""};
+  const cat = chatModelCatalog?.[agent];
+  if (rec.provider && cat && !(cat.models || []).some(m => m.id === rec.model && (!m.provider || m.provider === rec.provider))) return null;
+  return rec;
 }
 
 // chatModelFixed — a running chat keeps the model it started with.
@@ -189,7 +195,9 @@ async function chatOpenModelPicker(focus = "model", preset = {}) {
   const perms = el("div", "chat-model-perms"); perms.setAttribute("role", "radiogroup"); perms.setAttribute("aria-label", "Permissions");
   const live = ctx.kind === "live", codexLive = live && ctx.agent === "codex", claudeLive = live && ctx.agent === "claude";
   const fixed = chatModelFixed(ctx);
-  const modelEditable = !fixed, effortEditable = true, permEditable = !live && !!cat.permissions?.length;
+  // Codex (0.154) has no /effort: it rejects the command and leaves it in its
+  // input, so a running Codex chat changes effort in its own /model picker.
+  const modelEditable = !fixed, effortEditable = !codexLive, permEditable = !live && !!cat.permissions?.length;
   let active = -1, rows = [];
   const modelOf = () => cat.models.find(m => m.id === chosen.model && (!chosen.provider || !m.provider || m.provider === chosen.provider)) || cat.models.find(m => m.id === chosen.model);
   const paintList = () => {
@@ -272,7 +280,7 @@ async function chatOpenModelPicker(focus = "model", preset = {}) {
       hermes: "Applies to your next message in this chat.",
       landing: "Applies when this new coding session launches.",
       draft: "Applies when your first message launches this session.",
-      live: "Sends " + (claudeLive ? "Claude Code" : "Codex") + "'s own /effort. The chip confirms once it records the change, and your next new chat starts with it.",
+      live: claudeLive ? "Sends Claude Code's own /effort. The chip confirms once it records the change, and your next new chat starts with it." : "Codex changes effort in its own /model picker, shown below the conversation. Keep the model there; a different model is a new chat.",
     };
     status.textContent = ctx.kind === "hermes" ? (ctx.fresh ? "Applies to this new chat, and becomes your default for " + chatAgentLabel(ctx.agent) + "." : "Applies to your next message, and carries over to your next new chat.") : ctx.kind === "landing" ? "Applies when this new chat launches, and becomes your default for " + (chatTermKinds[ctx.agent] || ctx.agent) + "." : words[ctx.kind];
     const danger = needsConfirm();
@@ -284,7 +292,7 @@ async function chatOpenModelPicker(focus = "model", preset = {}) {
   };
   const actions = el("div", "chat-model-actions");
   const cancel = el("button", "sprt-quiet", "Cancel"); cancel.type = "button"; cancel.onclick = chatCloseModelPicker;
-  const apply = el("button", "sprt-quiet chat-dialog-primary chat-model-apply", "Apply"); apply.type = "button";
+  const apply = el("button", "sprt-quiet chat-dialog-primary chat-model-apply", codexLive ? "Open Codex /model" : "Apply"); apply.type = "button";
   apply.onclick = async () => {
     if (needsConfirm() && !confirmBox.checked) { confirmBox.focus(); return; }
     apply.disabled = true;
@@ -293,7 +301,7 @@ async function chatOpenModelPicker(focus = "model", preset = {}) {
     finally { if (apply.isConnected) paintStatus(); }
   };
   actions.append(cancel, apply);
-  const hint = el("p", "chat-model-hint", fixed ? "←→ effort · Enter apply · Esc close" : "↑↓ model · ←→ effort · Enter apply · Esc close");
+  const hint = el("p", "chat-model-hint", codexLive ? "Enter opens Codex /model · Esc close" : fixed ? "←→ effort · Enter apply · Esc close" : "↑↓ model · ←→ effort · Enter apply · Esc close");
   // a running chat shows the model it runs with — changing it is a new chat
   const fixedRow = el("div", "chat-model-fixed");
   if (fixed) {
@@ -379,9 +387,11 @@ async function chatApplyModelChoice(ctx, cat, before, chosen) {
     chatModelChipsRefresh();
     return true;
   }
-  // A running coding chat: effort only, through the CLI's own /effort (Claude
-  // Code, and Codex 0.117+). Recorded as requested until the transcript
-  // shows the agent running with it.
+  // A running Codex chat: Codex has no /effort, so its own /model picker
+  // (model and effort) opens in the terminal pane.
+  if (ctx.agent === "codex") return await chatModelNative("/model");
+  // A running Claude Code chat: effort only, through its own /effort.
+  // Recorded as requested until the transcript shows it running with it.
   const sends = [];
   if (chosen.effort && chosen.effort !== before.effort) sends.push("/effort " + chosen.effort);
   if (!sends.length) return true;
@@ -415,6 +425,9 @@ async function chatSurfaceCommand(text, clear) {
     showToast("This chat keeps the model it started with. To use " + arg + ", start a new chat with this context (/model shows the option).");
     return true;
   }
+  // Codex rejects /effort and keeps it in its input, where the next message
+  // would join it: point to its own picker instead of sending it.
+  if (ctx.kind === "live" && ctx.agent === "codex" && verb === "effort") { clear(); chatOpenModelPicker("model"); return true; }
   if (ctx.kind === "live") return false; // the agent's own command, verbatim
   const catalog = await chatLoadModelCatalog().catch(() => null), cat = catalog?.[ctx.agent];
   if (!cat) { showToast("Model list unavailable; nothing changed."); return true; }

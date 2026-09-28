@@ -174,7 +174,7 @@ func (s *Server) hermesModelCatalog(defaultModel string) chatAgentModels {
 
 func codexCatalog(cache []byte) chatAgentModels {
 	policy := codingModels["codex"]
-	out := chatAgentModels{Backend: "terminal", Default: policy.best, Permissions: codexPermissions, DefaultPermission: "full", LiveModel: "native-picker", LiveEffort: "command", LivePermission: "native-picker"}
+	out := chatAgentModels{Backend: "terminal", Default: policy.best, Permissions: codexPermissions, DefaultPermission: "full", LiveModel: "native-picker", LiveEffort: "native-picker", LivePermission: "native-picker"}
 	var cached struct {
 		Models []codexCacheModel `json:"models"`
 	}

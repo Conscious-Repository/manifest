@@ -138,6 +138,14 @@ func TestFixtureChatLatestBrowser(t *testing.T) {
 // "New chat with this context": the composer hand-off panel (chat-handoff.cjs).
 func TestFixtureChatHandoff(t *testing.T) { runFixture(t, "chat-handoff.cjs", true, false) }
 
+// A running Codex chat changes effort in its own /model picker; /effort is never sent (chat-codex-effort.cjs).
+func TestFixtureChatCodexEffort(t *testing.T) { runFixture(t, "chat-codex-effort.cjs", true, false) }
+
+// An open native chat sends with its own receipted model; a retired one falls back (chat-session-recipient.cjs).
+func TestFixtureChatSessionRecipient(t *testing.T) {
+	runFixture(t, "chat-session-recipient.cjs", true, false)
+}
+
 // The side-chat model list reads the chips' catalog, last chat as default (chat-model-picker.cjs).
 func TestFixtureChatModelPicker(t *testing.T) { runFixture(t, "chat-model-picker.cjs", true, false) }
 

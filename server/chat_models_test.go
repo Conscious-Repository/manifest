@@ -36,7 +36,7 @@ func TestChatModelCatalogPerAgent(t *testing.T) {
 	if got := strings.Join(effortIDs(codex.Efforts), ","); got != "low,medium,high,xhigh,minimal" {
 		t.Fatalf("codex effort union: %s", got)
 	}
-	if codex.DefaultPermission != "full" || codex.LiveModel != "native-picker" {
+	if codex.DefaultPermission != "full" || codex.LiveModel != "native-picker" || codex.LiveEffort != "native-picker" {
 		t.Fatalf("codex must default to the access it always launched with and say changes go through its own picker: %+v", codex)
 	}
 	claude := claudeCatalog()
