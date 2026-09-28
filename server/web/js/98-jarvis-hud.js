@@ -5,29 +5,19 @@
 // (a boot sequence once per browser session) and on changing section (the
 // title decodes, the page assembles). Reduced motion turns both off.
 //
-// Rollback: Settings › Display › jarvis style › classic (this browser), or
-// remove this file and css/98-jarvis-hud.css with their two tags.
+// Rollback: Settings › Display › manifest.theme › jarvis-og (this browser),
+// or remove this file and css/98-jarvis-hud.css with their two tags.
 (function () {
   const root = document.documentElement;
   const embedded = window.parent !== window; // tiles and side chats: no boot, no readout
   const reduced = () => window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
-  function jarvisStyle() {
-    try { return localStorage.getItem("manifest.jarvisStyle") === "classic" ? "classic" : "cinematic"; } catch (e) { return "cinematic"; }
-  }
+  // The theme owns the attribute (99-boot setTheme: jarvis-cinematic sets
+  // data-hud); this layer follows it.
   function hudOn() { return root.getAttribute("data-hud") === "cinematic"; }
-  function hudSync() {
-    const on = root.getAttribute("data-theme") === "jarvis" && jarvisStyle() !== "classic";
-    if (on !== hudOn()) { if (on) root.setAttribute("data-hud", "cinematic"); else root.removeAttribute("data-hud"); }
-    readoutSync();
-  }
-  window.setJarvisStyle = function (style) {
-    try { if (style === "classic") localStorage.setItem("manifest.jarvisStyle", "classic"); else localStorage.removeItem("manifest.jarvisStyle"); } catch (e) {}
-    hudSync();
-    if (hudOn()) assemble(true);
-  };
-  window.jarvisStylePref = jarvisStyle;
-  new MutationObserver(hudSync).observe(root, {attributes: true, attributeFilter: ["data-theme"]});
+  let wasOn = hudOn();
+  function hudSync() { readoutSync(); const on = hudOn(); if (on && !wasOn) assemble(true); wasOn = on; }
+  new MutationObserver(hudSync).observe(root, {attributes: true, attributeFilter: ["data-hud"]});
 
   // ── text decode: short labels only; the real text stays the accessible name
   const glyphs = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789/<>[]#";

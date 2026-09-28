@@ -16,7 +16,7 @@
   <!-- theme (manifest.theme, this browser's preference): set data-theme on <html>
        BEFORE the stylesheets parse so the JARVIS override block applies on the
        first paint — 99-boot's setTheme() owns it from there. Default = no attr. -->
-  <script>try { var t = localStorage.getItem("manifest.theme"); if (t && t !== "default") document.documentElement.setAttribute("data-theme", t); if (t === "jarvis" && localStorage.getItem("manifest.jarvisStyle") !== "classic") document.documentElement.setAttribute("data-hud", "cinematic"); } catch (e) {}</script>
+  <script>try { var t = localStorage.getItem("manifest.theme"); if (t && t !== "default") document.documentElement.setAttribute("data-theme", "jarvis"); if (t === "jarvis-cinematic" || (t === "jarvis" && localStorage.getItem("manifest.jarvisStyle") !== "classic")) document.documentElement.setAttribute("data-hud", "cinematic"); } catch (e) {}</script>
   <!-- Styles (§11): core tokens first, then the shared primitives, then one
        file per tab — cascade order matters, keep it aligned with js/. -->
   <link rel="stylesheet" href="css/00-core.css?v=20260911-workbench-release" />

@@ -319,19 +319,35 @@ function railPref() { return localStorage.getItem("manifest.rail.collapsed") ===
 // (the data-theme override block in 00-core.css). An inline head script in
 // index.html applies the stored value before first paint; this pair owns it
 // after — Settings › Display is the sanctioned control.
-const THEMES = ["default", "jarvis"];
+// Three choices, one setting: default · jarvis-og (the jarvis token set as it
+// was) · jarvis-cinematic (the same tokens plus the Stark HUD layer,
+// css/98-jarvis-hud.css, keyed on data-hud). Both jarvis variants carry
+// data-theme="jarvis". A legacy stored "jarvis" reads as cinematic, or as og
+// when the retired manifest.jarvisStyle said "classic".
+const THEMES = ["default", "jarvis-og", "jarvis-cinematic"];
+function themeNormalize(name) {
+  if (name === "jarvis") {
+    let classic = false;
+    try { classic = localStorage.getItem("manifest.jarvisStyle") === "classic"; } catch (e) {}
+    return classic ? "jarvis-og" : "jarvis-cinematic";
+  }
+  return THEMES.includes(name) ? name : "default";
+}
 function setTheme(name, persist) {
-  const t = THEMES.includes(name) ? name : "default";
-  if (t === "default") document.documentElement.removeAttribute("data-theme");
-  else document.documentElement.setAttribute("data-theme", t);
+  const t = themeNormalize(name), root = document.documentElement;
+  if (t === "default") root.removeAttribute("data-theme"); else root.setAttribute("data-theme", "jarvis");
+  if (t === "jarvis-cinematic") root.setAttribute("data-hud", "cinematic"); else root.removeAttribute("data-hud");
   if (persist) {
-    try { if (t === "default") localStorage.removeItem("manifest.theme"); else localStorage.setItem("manifest.theme", t); } catch (e) {}
+    try {
+      if (t === "default") localStorage.removeItem("manifest.theme"); else localStorage.setItem("manifest.theme", t);
+      localStorage.removeItem("manifest.jarvisStyle");
+    } catch (e) {}
   }
 }
 function themePref() {
   let t = "";
   try { t = localStorage.getItem("manifest.theme") || ""; } catch (e) {}
-  return THEMES.includes(t) ? t : "default";
+  return themeNormalize(t);
 }
 function applyRailWidth() {
   // Phone band (Rev 4): the drawer CSS in 95-mobile.css owns the rail — the

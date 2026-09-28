@@ -13,10 +13,18 @@
        rulers, micro-readouts; glow on STROKES only, never on body text
      · one signature motion per view, on state change only; nothing loops
        (Nelson's "one alpha event"; Territory's bank-of-screens lesson)
-   ROLLBACK: every rule here is scoped to html[data-hud="cinematic"], which
-   is set only for the jarvis theme and only while Settings › Display ›
-   "jarvis style" is Cinematic. Classic removes the attribute and the theme
-   renders exactly as before this file existed. Deleting this file and
+   ROLLBACK: every rule here is scoped to html[data-hud="cinematic"], set
+   only by the jarvis-cinematic theme (Settings › Display › manifest.theme).
+   jarvis-og drops the attribute and jarvis renders exactly as before this
+   file existed.
+   PASS 2 (owner: "80% there"; research on sci-fi UI in shipped products —
+   Linear's calmer refresh, Noessel on the Iron Man HUD, the Cyberpunk 2077
+   critique, Destiny/Death Stranding selection, Butterick on caps tracking):
+   decoration marks STATE or IMPORTANCE, never every container. Brackets
+   lock on to what is hovered, selected or focal; tick rulers only where a
+   scale means something; caps tracking scales with size; per-item actions
+   read as quiet sentence case; content text is soft off-white on a plane
+   the grid fades behind. Deleting this file and
    98-jarvis-hud.js (and their two <link>/<script> tags) removes it entirely.
    Contrast (WCAG, against the surfaces below): ink 17.3 · body 14.3 ·
    base-60 9.3 · base-50 7.2 · base-40 ≥4.6 on every surface incl. the
@@ -77,20 +85,29 @@
     linear-gradient(var(--hud-frame) 0 0) bottom left / 1px 12px no-repeat,
     linear-gradient(var(--hud-frame) 0 0) bottom right / 12px 1px no-repeat,
     linear-gradient(var(--hud-frame) 0 0) bottom right / 1px 12px no-repeat;
-  /* a tick ruler: 1px ticks every 8px, taller every 40px */
+  /* the same frame as parts, so it can LOCK ON: images and positions stay,
+     only background-size moves (0 at rest, 12px arms when engaged) */
+  --hud-lock-img: linear-gradient(var(--hud-frame) 0 0), linear-gradient(var(--hud-frame) 0 0), linear-gradient(var(--hud-frame) 0 0), linear-gradient(var(--hud-frame) 0 0), linear-gradient(var(--hud-frame) 0 0), linear-gradient(var(--hud-frame) 0 0), linear-gradient(var(--hud-frame) 0 0), linear-gradient(var(--hud-frame) 0 0);
+  --hud-lock-pos: top left, top left, top right, top right, bottom left, bottom left, bottom right, bottom right;
+  --hud-lock-off: 0 1px, 1px 0, 0 1px, 1px 0, 0 1px, 1px 0, 0 1px, 1px 0;
+  --hud-lock-on: 12px 1px, 1px 12px, 12px 1px, 1px 12px, 12px 1px, 1px 12px, 12px 1px, 1px 12px;
+  /* a short scale under the page title only: 1px ticks every 8px over 96px,
+     a longer one every 32px — a readout mark, not a border */
   --hud-ruler:
-    repeating-linear-gradient(90deg, rgba(0, 216, 255, 0.55) 0 1px, transparent 1px 40px) bottom left / 100% 6px no-repeat,
-    repeating-linear-gradient(90deg, rgba(0, 216, 255, 0.28) 0 1px, transparent 1px 8px) bottom left / 100% 3px no-repeat;
+    repeating-linear-gradient(90deg, rgba(0, 216, 255, 0.6) 0 1px, transparent 1px 32px) bottom left / 97px 6px no-repeat,
+    repeating-linear-gradient(90deg, rgba(0, 216, 255, 0.32) 0 1px, transparent 1px 8px) bottom left / 97px 3px no-repeat;
+  --hud-read: #D8E6F1;   /* reading text: off-white, no halation */
 }
 
 /* ── ground: void, arc-reactor bloom, vignette, fine grid, static scanlines ─ */
 :root[data-hud="cinematic"] body {
   background:
     radial-gradient(1200px 520px at 58% -8%, rgba(0, 216, 255, 0.10), transparent 70%),
-    radial-gradient(900px 900px at 50% 50%, transparent 55%, rgba(0, 0, 0, 0.45) 100%),
-    repeating-linear-gradient(0deg, rgba(255, 255, 255, 0.018) 0 1px, transparent 1px 3px),
-    repeating-linear-gradient(0deg, rgba(0, 216, 255, 0.035) 0 1px, transparent 1px 40px),
-    repeating-linear-gradient(90deg, rgba(0, 216, 255, 0.035) 0 1px, transparent 1px 40px),
+    radial-gradient(900px 900px at 50% 50%, transparent 55%, rgba(0, 0, 0, 0.38) 100%),
+    radial-gradient(ellipse 46% 58% at 56% 52%, rgba(8, 17, 28, 0.62), transparent 100%),
+    repeating-linear-gradient(0deg, rgba(255, 255, 255, 0.014) 0 1px, transparent 1px 4px),
+    repeating-linear-gradient(0deg, rgba(0, 216, 255, 0.03) 0 1px, transparent 1px 48px),
+    repeating-linear-gradient(90deg, rgba(0, 216, 255, 0.03) 0 1px, transparent 1px 48px),
     linear-gradient(180deg, #0A1624 0%, #060C14 100%);
   background-color: #08111C;
   background-attachment: fixed;
@@ -109,10 +126,10 @@
 
 /* ── rail: a HUD side dock ──────────────────────────────────────────────── */
 :root[data-hud="cinematic"] .rail { background: linear-gradient(180deg, rgba(11, 22, 36, 0.96), rgba(7, 14, 24, 0.96)); border-right: 1px solid transparent; border-image: linear-gradient(180deg, rgba(0, 216, 255, 0.45), rgba(0, 216, 255, 0.08) 40%, rgba(0, 216, 255, 0.22)) 1; }
-:root[data-hud="cinematic"] .rail-brand-name { font-family: var(--hud-display); font-weight: 700; letter-spacing: 0.32em; font-size: 12px; color: var(--base-100); }
+:root[data-hud="cinematic"] .rail-brand-name { font-family: var(--hud-display); font-weight: 700; letter-spacing: 0.26em; font-size: 12px; color: var(--base-100); }
 :root[data-hud="cinematic"] .rail-glyph-box { width: 22px; height: 22px; border-radius: 50%; background: radial-gradient(circle, #EAF6FF 0 18%, #7FE9FF 19% 30%, transparent 31% 44%, rgba(0, 216, 255, 0.9) 45% 52%, transparent 53%), #061019; box-shadow: 0 0 10px rgba(0, 216, 255, 0.6), inset 0 0 6px rgba(0, 216, 255, 0.5); color: transparent; font-size: 0; }
 :root[data-hud="cinematic"] .rail-brand:hover .rail-glyph-box, :root[data-hud="cinematic"] .rail-brand.brand-active .rail-glyph-box { background: radial-gradient(circle, #FFFFFF 0 20%, #7FE9FF 21% 32%, transparent 33% 44%, #00D8FF 45% 54%, transparent 55%), #061019; box-shadow: 0 0 16px rgba(0, 216, 255, 0.85), inset 0 0 8px rgba(0, 216, 255, 0.6); }
-:root[data-hud="cinematic"] .rail-group-label { font-family: var(--hud-display); font-weight: 600; font-size: 10.5px; letter-spacing: 0.24em; text-transform: uppercase; color: var(--base-40); padding-bottom: 6px; background: repeating-linear-gradient(90deg, rgba(0, 216, 255, 0.35) 0 1px, transparent 1px 6px) bottom left / 42px 3px no-repeat; }
+:root[data-hud="cinematic"] .rail-group-label { font-family: var(--hud-display); font-weight: 600; font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--base-40); }
 :root[data-hud="cinematic"] .rail-item { position: relative; border-radius: 0; }
 :root[data-hud="cinematic"] .rail-item:hover { background: linear-gradient(90deg, rgba(0, 216, 255, 0.10), transparent 85%); }
 :root[data-hud="cinematic"] .rail-item.active { background: linear-gradient(90deg, rgba(0, 216, 255, 0.18), rgba(0, 216, 255, 0.02) 90%); color: var(--base-100); text-shadow: none; box-shadow: inset 2px 0 0 var(--accent), inset 0 1px 0 rgba(0, 216, 255, 0.18), inset 0 -1px 0 rgba(0, 216, 255, 0.18); }
@@ -122,29 +139,43 @@
 :root[data-hud="cinematic"] .rail-foot { border-top: 1px solid var(--hud-hair); flex-wrap: wrap; row-gap: 6px; }
 :root[data-hud="cinematic"] .rail-foot > .hud-readout { flex: 1 0 100%; order: -1; }
 /* the crumb bar carries Day's title: the same display caps as a page head */
-:root[data-hud="cinematic"] #crumbPath { font-family: var(--hud-display); font-weight: 700; letter-spacing: 0.22em; text-transform: uppercase; color: var(--base-100); }
+:root[data-hud="cinematic"] #crumbPath { font-family: var(--hud-display); font-weight: 700; letter-spacing: 0.16em; text-transform: uppercase; color: var(--base-100); }
 :root[data-hud="cinematic"] .crumb-bar { background-image: linear-gradient(90deg, rgba(0, 216, 255, 0.45), rgba(0, 216, 255, 0.05) 40%, transparent); background-size: 100% 1px; background-position: bottom left; background-repeat: no-repeat; }
 :root[data-hud="cinematic"] .save-state { font-family: var(--mono); letter-spacing: 0.06em; }
 
 /* ── page heads: caps display title, micro-readout, tick ruler ───────────── */
-:root[data-hud="cinematic"] .agent-head { border-bottom: 0; background: var(--hud-ruler), linear-gradient(90deg, rgba(0, 216, 255, 0.6), rgba(0, 216, 255, 0.12) 35%, rgba(0, 216, 255, 0.06)) bottom left / 100% 1px no-repeat; padding-bottom: calc(var(--sp-5) + 6px); }
-:root[data-hud="cinematic"] .agent-title { font-family: var(--hud-display); font-weight: 700; font-size: 17px; letter-spacing: 0.22em; text-transform: uppercase; color: var(--base-100); display: inline-flex; align-items: center; gap: 10px; }
+:root[data-hud="cinematic"] .agent-head { border-bottom: 0; background: var(--hud-ruler), linear-gradient(90deg, rgba(0, 216, 255, 0.5), rgba(0, 216, 255, 0.1) 30%, rgba(120, 190, 230, 0.08)) bottom left / 100% 1px no-repeat; padding-bottom: calc(var(--sp-5) + 6px); }
+:root[data-hud="cinematic"] .agent-title { font-family: var(--hud-display); font-weight: 700; font-size: 17px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--base-100); display: inline-flex; align-items: center; gap: 10px; }
 :root[data-hud="cinematic"] .agent-title::before { content: ""; width: 8px; height: 8px; flex: none; border: 1px solid var(--accent); transform: rotate(45deg); box-shadow: 0 0 8px rgba(0, 216, 255, 0.7); }
-:root[data-hud="cinematic"] .micro-label, :root[data-hud="cinematic"] .panel-title, :root[data-hud="cinematic"] .tdo-sec-title, :root[data-hud="cinematic"] .tdo-sec-label { font-family: var(--hud-display); font-weight: 600; letter-spacing: 0.2em; text-transform: uppercase; color: var(--base-70); }
+:root[data-hud="cinematic"] .micro-label, :root[data-hud="cinematic"] .panel-title, :root[data-hud="cinematic"] .tdo-sec-title, :root[data-hud="cinematic"] .tdo-sec-label { font-family: var(--hud-display); font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase; color: var(--base-70); }
+/* hints are advice, not labels: they stay quiet and lowercase */
+:root[data-hud="cinematic"] .tdo-sec-hint { font-family: var(--mono); text-transform: none; letter-spacing: 0.02em; color: var(--base-40); }
+/* a person's handle keeps its own case: caps are for the app's labels */
+:root[data-hud="cinematic"] .feed-card .micro-label { text-transform: none; letter-spacing: 0.04em; }
 :root[data-hud="cinematic"] .panel-head { border-bottom: 1px solid var(--hud-hair); }
 :root[data-hud="cinematic"] .panel-meta { font-family: var(--mono); color: var(--base-50); letter-spacing: 0.06em; }
 
 /* ── tabs: a segmented HUD strip ────────────────────────────────────────── */
-:root[data-hud="cinematic"] .view-tab { font-family: var(--hud-display); font-weight: 600; letter-spacing: 0.16em; text-transform: uppercase; text-decoration: none; border-radius: 0; }
+:root[data-hud="cinematic"] .view-tab { font-family: var(--hud-display); font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase; text-decoration: none; border-radius: 0; }
 :root[data-hud="cinematic"] .view-tab.active, :root[data-hud="cinematic"] .view-tab[aria-selected="true"], :root[data-hud="cinematic"] .view-tab.on { color: var(--accent); text-shadow: 0 0 8px rgba(0, 216, 255, 0.45); }
 
 /* ── pills and chips: square, caps, bracketed when on ─────────────────────── */
-:root[data-hud="cinematic"] .pill, :root[data-hud="cinematic"] .filter-chip { border-radius: 2px; font-family: var(--hud-display); font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase; }
+:root[data-hud="cinematic"] .pill, :root[data-hud="cinematic"] .filter-chip { border-radius: 2px; font-family: var(--hud-display); font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; }
+/* per-item actions (a card's read / curate / dismiss, a signal's done) are
+   verbs on content, not chrome: quiet sentence case, lit on hover */
+:root[data-hud="cinematic"] :is(.feed-actions, .signal-actions, .tdo-card-acts, .errand-actions) :is(.pill, button) { font-family: var(--sans); font-weight: 500; letter-spacing: 0; text-transform: none; color: var(--base-50); }
+:root[data-hud="cinematic"] :is(.feed-actions, .signal-actions, .tdo-card-acts, .errand-actions) :is(.pill, button):hover { color: var(--accent); }
 :root[data-hud="cinematic"] .pill.on, :root[data-hud="cinematic"] .filter-chip.on { background: rgba(0, 216, 255, 0.12); border-color: var(--accent); color: var(--base-100); box-shadow: var(--hud-glow-soft); }
 :root[data-hud="cinematic"] .pill.armed { background: linear-gradient(135deg, #FFC247, #FF7A2E); border-color: #FFB547; color: #140A02; box-shadow: 0 0 0 1px rgba(255, 181, 71, 0.8), 0 0 16px -2px rgba(255, 150, 50, 0.6); }
 
 /* ── panels & cards: glass + corner brackets ─────────────────────────────── */
-:root[data-hud="cinematic"] :is(.modal-card, .review-dialog, .feed-card, .tdo-card, .schedule-rows, .ro-rows, .task-table, .artifact-workspace) { background: var(--hud-brackets), rgba(10, 21, 34, 0.82); border-color: var(--hud-hair); border-radius: 2px; }
+:root[data-hud="cinematic"] :is(.modal-card, .review-dialog, .schedule-rows, .artifact-workspace, .feed-card.pinned) { background: var(--hud-brackets), rgba(10, 21, 34, 0.82); border-color: var(--hud-hair); border-radius: 2px; }
+:root[data-hud="cinematic"] :is(.ro-rows, .task-table) { background: rgba(10, 21, 34, 0.82); border-color: var(--hud-hair); border-radius: 2px; }
+/* list cards rest quiet; the frame LOCKS ON to the one under the pointer or
+   holding focus (one bracketed thing at a time — the bank-of-screens rule) */
+:root[data-hud="cinematic"] :is(.feed-card:not(.pinned), .tdo-card) { border-radius: 2px; background-color: transparent; background-image: var(--hud-lock-img); background-position: var(--hud-lock-pos); background-repeat: no-repeat; background-size: var(--hud-lock-off); transition: background-size 150ms var(--hud-ease); }
+:root[data-hud="cinematic"] :is(.feed-card:not(.pinned), .tdo-card):is(:hover, :focus-within) { background-size: var(--hud-lock-on); }
+:root[data-hud="cinematic"] :is(.feed-card, .feed-body, .tdo-text) { color: var(--hud-read); }
 :root[data-hud="cinematic"] :is(.modal-card, .review-dialog) { backdrop-filter: blur(10px) saturate(120%); box-shadow: 0 24px 60px rgba(0, 0, 0, 0.6), var(--hud-glow-soft); }
 :root[data-hud="cinematic"] dialog::backdrop { background: rgba(2, 6, 12, 0.72); }
 :root[data-hud="cinematic"] .toast { border-radius: 2px; background: var(--hud-brackets), rgba(11, 23, 38, 0.96); font-family: var(--sans); }
@@ -164,16 +195,16 @@
 /* ── chat: calm reading, framed chrome ───────────────────────────────────── */
 :root[data-hud="cinematic"] .chat-main .chat-composer { border-radius: 3px; border-color: rgba(0, 216, 255, 0.4); background: var(--hud-brackets), linear-gradient(180deg, rgba(14, 30, 48, 0.94), rgba(9, 19, 32, 0.94)); box-shadow: 0 0 0 1px rgba(0, 216, 255, 0.12), 0 12px 32px rgba(0, 0, 0, 0.45); }
 :root[data-hud="cinematic"] .chat-main .chat-composer textarea.chat-input { background: transparent; border-color: transparent; box-shadow: none; }
-:root[data-hud="cinematic"] .chat-main .chat-composer:focus-within { border-color: var(--accent); box-shadow: var(--hud-glow), 0 12px 32px rgba(0, 0, 0, 0.45); }
+:root[data-hud="cinematic"] .chat-main .chat-composer:focus-within { border-color: rgba(0, 216, 255, 0.75); box-shadow: 0 0 0 1px rgba(0, 216, 255, 0.18), 0 0 16px -4px rgba(0, 216, 255, 0.35), 0 12px 32px rgba(0, 0, 0, 0.45); }
 :root[data-hud="cinematic"] :is(.chat-term-cmd, .chat-user) { border-radius: 3px; background: var(--hud-brackets), rgba(20, 48, 74, 0.55); border: 1px solid var(--hud-hair); }
-:root[data-hud="cinematic"] :is(.chat-say, .chat-term-say) { font-family: var(--sans); letter-spacing: 0; }
+:root[data-hud="cinematic"] :is(.chat-say, .chat-term-say) { font-family: var(--sans); letter-spacing: 0; color: var(--hud-read); }
 :root[data-hud="cinematic"] :is(.chat-say, .chat-term-say) :is(h1, h2, h3, .md-h) { font-family: var(--hud-display); font-weight: 700; letter-spacing: 0.08em; }
 :root[data-hud="cinematic"] :is(.chat-say, .chat-term-say) strong { color: var(--base-100); font-weight: 600; }
 :root[data-hud="cinematic"] :is(.chat-say, .chat-term-say) .md-code-block { border-radius: 2px; background: var(--hud-brackets), #06101A; }
-:root[data-hud="cinematic"] .chat-head-title { font-family: var(--hud-display); font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; }
-:root[data-hud="cinematic"] .chat-term-activity > summary, :root[data-hud="cinematic"] .chat-status-verb { font-family: var(--hud-display); font-weight: 600; letter-spacing: 0.14em; text-transform: uppercase; }
+:root[data-hud="cinematic"] .chat-head-title { font-family: var(--hud-display); font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; }
+:root[data-hud="cinematic"] .chat-term-activity > summary, :root[data-hud="cinematic"] .chat-status-verb { font-family: var(--hud-display); font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; }
 :root[data-hud="cinematic"] .chat-status-dot { border-radius: 0; transform: rotate(45deg); width: 7px; height: 7px; box-shadow: 0 0 8px rgba(0, 216, 255, 0.9); }
-:root[data-hud="cinematic"] .chat-list-new { border-radius: 2px; font-family: var(--hud-display); font-weight: 600; letter-spacing: 0.16em; text-transform: uppercase; font-size: 12px; background: var(--hud-brackets), rgba(0, 216, 255, 0.06); border-color: rgba(0, 216, 255, 0.35); }
+:root[data-hud="cinematic"] .chat-list-new { border-radius: 2px; font-family: var(--hud-display); font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; font-size: 12px; background: var(--hud-brackets), rgba(0, 216, 255, 0.06); border-color: rgba(0, 216, 255, 0.35); }
 :root[data-hud="cinematic"] .chat-list-new:hover { box-shadow: var(--hud-glow-soft); }
 :root[data-hud="cinematic"] .chat-native-rows > :last-child { animation: hud-rise 220ms var(--hud-ease) both; }
 
@@ -214,6 +245,7 @@
 /* ── accessibility: honor the user's settings over the look ──────────────── */
 @media (prefers-reduced-motion: reduce) {
   :root[data-hud="cinematic"] .hud-assemble *, :root[data-hud="cinematic"] .chat-native-rows > :last-child { animation: none !important; }
+  :root[data-hud="cinematic"] :is(.feed-card, .tdo-card) { transition: none; }
   .hud-boot { display: none; }
 }
 @media (prefers-contrast: more) {
@@ -227,5 +259,6 @@
   /* the phone top bar names the page (95-mobile.css): the layer must not
      bring the in-page title back */
   :root[data-hud="cinematic"] .agent-head > .agent-title { display: none; }
-  :root[data-hud="cinematic"] body { background-attachment: scroll; }
+  /* phone: no scanlines or vignette under dense thumb-scrolled text */
+  :root[data-hud="cinematic"] body { background: radial-gradient(700px 360px at 50% -10%, rgba(0, 216, 255, 0.09), transparent 70%), repeating-linear-gradient(0deg, rgba(0, 216, 255, 0.025) 0 1px, transparent 1px 48px), repeating-linear-gradient(90deg, rgba(0, 216, 255, 0.025) 0 1px, transparent 1px 48px), linear-gradient(180deg, #0A1624, #060C14); background-color: #08111C; background-attachment: scroll; }
 }
