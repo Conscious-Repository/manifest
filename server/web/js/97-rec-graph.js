@@ -76,7 +76,7 @@ const RG_LENSES = {
   },
   network: {
     endpoint: "/api/network/graph", storage: "manifest.netgraph",
-    statuses: [["team", "team"], ["investor", "investors"], ["known", "contacts"], ["saved", "saved from recruiting"],
+    statuses: [["team", "team"], ["investor", "investors"], ["known", "contacts"], ["saved", "not contacts yet"],
       ["pursuing", "applicants"], ["bridge", "swept, not saved"], ["stranger", "strangers"]],
     defaults: Object.assign({}, RG_DEFAULTS, {
       mode: "whole", sources: false,

@@ -114,7 +114,7 @@
 /* experience a SOURCE named (a paper, a lab) — shown beside your own tags,
    dashed so it never reads as something you said */
 .net-tag.from-source { background: transparent; border: 1px dashed var(--base-30); color: var(--base-60); }
-.net-saved-chip { margin-left: var(--sp-4); }
+.net-graduate { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-3); padding: var(--sp-3) 0; border-bottom: 1px solid var(--line-soft); }
 
 /* the graph's groups (Network lens) */
 .rg-canvas .rg-node.rg-saved .rg-dot { fill: var(--warn); }

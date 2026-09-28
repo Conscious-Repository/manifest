@@ -155,6 +155,10 @@ type Contact struct {
 	Display       string `json:"display"`
 	NotePath      string `json:"notePath"`
 	HasNote       bool   `json:"hasNote"`
+	// Origin says where a note-less contact came from: "fundraising" (the CRM
+	// registry) or "notes" (a name linked from meeting notes, or confirmed).
+	// "" for anyone with a person note.
+	Origin string `json:"origin,omitempty"`
 	Location      string `json:"location,omitempty"`
 	LastMet       string `json:"lastMet"`       // calendar-verified (email-matched); "" if no email / no meeting
 	LastMentioned string `json:"lastMentioned"` // newest dated NOTE that links them; "" if none
@@ -197,7 +201,11 @@ func (s *Service) List(now time.Time) ([]Contact, error) {
 	}
 	if s.directory != nil {
 		for _, p := range s.directory.People() {
-			add(Contact{Key: p.Key, Display: p.Display, NotePath: p.NotePath, HasNote: p.NotePath != ""})
+			c := Contact{Key: p.Key, Display: p.Display, NotePath: p.NotePath, HasNote: p.NotePath != ""}
+			if !c.HasNote {
+				c.Origin = "fundraising"
+			}
+			add(c)
 		}
 	}
 	for _, t := range targets {
@@ -207,7 +215,7 @@ func (s *Service) List(now time.Time) ([]Contact, error) {
 		if !t.InMeetingContext && !s.store.IsConfirmed(t.Key) {
 			continue // triage-only — not a contact yet
 		}
-		add(Contact{Key: t.Key, Display: t.Display, RefCount: t.RefCount})
+		add(Contact{Key: t.Key, Display: t.Display, RefCount: t.RefCount, Origin: "notes"})
 	}
 
 	// confirmed-email upcoming matches, open-loop counts, and interaction-date

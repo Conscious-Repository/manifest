@@ -43,9 +43,13 @@ type NetPerson struct {
 	// Topics are what a SOURCE said the person knows (kept from a sweep) —
 	// shown as their experience, marked as the source's, beside your tags.
 	Topics []string `json:"topics,omitempty"`
-	// Saved: kept from a recruiting sweep and not yet one of your contacts.
-	// They sit apart from your people until you make them a contact.
-	Saved bool `json:"saved,omitempty"`
+	// Pending says the person is NOT one of your people yet, and where they
+	// came from: "recruiting" (saved from a sweep), "fundraising" (an
+	// investor or registry name), "notes" (a name from meeting notes). ONE
+	// rule decides it: your people have a contact note, or are on the team.
+	// "make them a contact" (the note) is the only way in. "" = your people.
+	Pending string `json:"pending,omitempty"`
+	origin  string // the contacts layer's origin for a note-less contact
 	Note        string   `json:"note,omitempty"`
 	LastContact string   `json:"lastContact,omitempty"` // the owner's own date
 	LastMet     string   `json:"lastMet,omitempty"`     // the calendar's, when a contact is linked
@@ -142,6 +146,7 @@ func (s *Server) networkPeople(now time.Time) []*NetPerson {
 				np.LastMentioned, np.HasNote, np.Location = c.LastMentioned, c.HasNote, c.Location
 				np.Upcoming, np.OpenLoops, np.Cold = c.Upcoming, c.OpenLoops, c.Cold
 				np.DaysSince, np.MedianGap, np.NeglectBasis = c.DaysSince, c.MedianGap, c.NeglectBasis
+				np.origin = c.Origin
 			}
 		}
 	}
@@ -158,7 +163,7 @@ func (s *Server) networkPeople(now time.Time) []*NetPerson {
 					np, ok := byContact[k]
 					if !ok {
 						np = &NetPerson{ID: "contact/" + pr.Key, Name: pr.Display, ContactKey: pr.Key,
-							NotePath: pr.NotePath, Sources: []string{}}
+							NotePath: pr.NotePath, HasNote: pr.NotePath != "", Sources: []string{}}
 						byContact[k] = np
 						out = append(out, np)
 					}
@@ -191,7 +196,7 @@ func (s *Server) networkPeople(now time.Time) []*NetPerson {
 
 	sameNameSuggestions(out)
 	for _, p := range out {
-		p.Saved = p.Source != "" && p.Source != "owner" && p.ContactKey == ""
+		p.Pending = pendingOf(p)
 	}
 
 	// recency first: whichever date is newer, the owner's or the calendar's;
@@ -486,7 +491,7 @@ func (s *Server) networkLens(now time.Time) *networkLens {
 		switch {
 		case p.TeamLink != "":
 			k = "team"
-		case p.Saved:
+		case p.Pending != "":
 			k = "saved"
 		}
 		l.kind[p.ID] = k
@@ -577,6 +582,25 @@ func (s *Server) handleRecruitingSourcePeople(w http.ResponseWriter, r *http.Req
 		people = []recruiting.MergedPerson{}
 	}
 	writeJSON(w, map[string]any{"people": people, "total": total, "formula": recruiting.RankFormula})
+}
+
+// pendingOf is the one rule: a contact note, or the team, makes someone one
+// of your people. Everyone else says where they came from.
+func pendingOf(p *NetPerson) string {
+	if p.HasNote || p.TeamLink != "" {
+		return ""
+	}
+	switch {
+	case p.Source != "" && p.Source != "owner":
+		return "recruiting"
+	case len(p.Firms) > 0 || p.origin == "fundraising":
+		return "fundraising"
+	case p.origin == "notes":
+		return "notes"
+	case p.ContactKey != "":
+		return "notes"
+	}
+	return ""
 }
 
 // sameNameSuggestions pairs rows whose names fold to the same letters when a

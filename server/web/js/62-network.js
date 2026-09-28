@@ -20,7 +20,12 @@
 
 let netCache = null;            // {people, kinds, tags, contacts, fundraising, team}
 let netQuery = "";
-let netSaved = false;           // the "saved from recruiting" view instead of your people
+let netPending = "";            // "" = your people · recruiting | fundraising | notes = not contacts yet, from there
+
+// ONE RULE (server pendingOf): your people have a contact note or are on the
+// team. Everyone else waits here, grouped by where they came from, until
+// "make them a contact" writes their note.
+const NET_PENDING_WORD = { recruiting: "from recruiting", fundraising: "from fundraising", notes: "from your notes" };
 let netSource = "";             // "" | contact | investor | team
 let netTag = "";                // a tag's TopicID-ish lowercase text
 let netSel = null;              // selected person id
@@ -141,7 +146,7 @@ function netVisible() {
     if (netLens === "cold" && !p.cold) return false;
     // your people and the people you saved from recruiting are two views:
     // a saved person joins your people when you make them a contact
-    if (!!p.saved !== netSaved) return false;
+    if ((p.pending || "") !== netPending) return false;
     if (netSource && !netFrom(p).includes(netSource)) return false;
     if (netTag && ![...(p.tags || []), ...(p.topics || [])].some((t) => netTagKey(t) === netTag)) return false;
     if (!q) return true;
@@ -272,7 +277,7 @@ function netPaint() {
 function netPaintLensCounts() {
   const cold = document.querySelector(".net-cold-chip");
   if (cold && netCache) {
-    const n = (netCache.people || []).filter((p) => p.cold && !p.archived).length;
+    const n = (netCache.people || []).filter((p) => p.cold && !p.archived && (p.pending || "") === netPending).length;
     cold.textContent = "going cold" + (n ? " " + n : "");
   }
   const review = document.querySelector(".net-review-chip");
@@ -291,19 +296,26 @@ function netFacets() {
     return b;
   };
   // the groups come from where people already are — nothing to fill in
-  const mine = people.filter((p) => !p.saved), saved = people.filter((p) => p.saved);
+  const mine = people.filter((p) => !p.pending);
   const srcs = el("div", "net-facet-row");
-  srcs.append(chip("your people", !netSaved && !netSource, () => { netSaved = false; netSource = ""; netPaint(); }, mine.length));
-  ["contact", "investor", "team"].forEach((s) => {
+  srcs.append(chip("your people", !netPending && !netSource, () => { netPending = ""; netSource = ""; netPaint(); }, mine.length));
+  ["investor", "team"].forEach((s) => {
     const n = mine.filter((p) => netFrom(p).includes(s)).length;
     if (!n) return;
-    srcs.append(chip(NET_SOURCE_WORD[s], !netSaved && netSource === s, () => { netSaved = false; netSource = netSource === s ? "" : s; netPaint(); }, n));
+    srcs.append(chip(NET_SOURCE_WORD[s], !netPending && netSource === s, () => { netPending = ""; netSource = netSource === s ? "" : s; netPaint(); }, n));
   });
-  const sv = chip("saved from recruiting", netSaved, () => { netSaved = !netSaved; netSource = ""; netPaint(); }, saved.length);
-  sv.classList.add("net-saved-chip");
-  sv.title = "people you saved from labs, papers and sweeps — they join your people when you make them a contact";
-  srcs.append(sv);
   box.append(srcs);
+
+  const wait = el("div", "net-facet-row");
+  wait.append(el("span", "net-facet-label", "not contacts yet"));
+  ["recruiting", "fundraising", "notes"].forEach((k) => {
+    const n = people.filter((p) => p.pending === k).length;
+    if (!n && k !== "recruiting") return;
+    const b = chip(NET_PENDING_WORD[k], netPending === k, () => { netPending = netPending === k ? "" : k; netSource = ""; netPaint(); }, n);
+    b.title = "no contact note yet — they join your people when you make them a contact";
+    wait.append(b);
+  });
+  box.append(wait);
 
   if ((netCache.tags || []).length) {
     const tags = el("div", "net-facet-row");
@@ -433,6 +445,7 @@ function netPaintPage() {
   insp.append(head);
   const sub = [p.title, p.org, p.role].filter(Boolean).join(" · ");
   if (sub) insp.append(el("div", "net-sub", sub));
+  if (p.pending && p.contactKey) insp.append(netGraduate(p));
   const building = el("div", "net-build");
   insp.append(building);
   netPaintBuild(p, building);
@@ -449,11 +462,33 @@ function netPaintPage() {
   }
 }
 
+// netGraduate: a note-less contact (an investor, a name from your notes)
+// becomes one of your people the one way anyone does — a contact note.
+function netGraduate(p) {
+  const box = el("div", "net-graduate");
+  box.append(el("span", "net-insp-hint", "not one of your contacts yet · " + (NET_PENDING_WORD[p.pending] || "") +
+    ((p.firms || []).length ? " (" + p.firms.join(", ") + ")" : "")));
+  const make = el("button", "pill", "make them a contact");
+  make.title = "creates their contact note (categories: [people]) — nothing else changes";
+  make.onclick = async () => {
+    make.disabled = true;
+    try {
+      await postJSONOk("/api/contacts/note", { key: p.contactKey, display: p.name, body: "" });
+      showToast(p.name + " is one of your people");
+      netPending = "";
+      await netRefresh(true);
+      netGo(p.id);
+    } catch (e) { showToast("couldn't create the note — " + String(e.message || e).slice(0, 120), null, "error"); make.disabled = false; }
+  };
+  box.append(make);
+  return box;
+}
+
 // netPaintKept is the page of someone with no contact note yet: where they
 // came from, and the one explicit way to make them a contact.
 function netPaintKept(p, host) {
   const sec = el("div", "cp-section");
-  sec.append(el("div", "cp-section-head", p.saved ? "Saved from recruiting" : "Not a contact yet"));
+  sec.append(el("div", "cp-section-head", p.pending === "recruiting" ? "Saved from recruiting" : "Not a contact yet"));
   if (p.source && p.source !== "owner") sec.append(el("div", "net-insp-hint", "saved from " + p.source + (p.sourceRef ? " · " + p.sourceRef : "")));
   sec.append(el("div", "net-insp-hint", "they join your people when you make them a contact — that creates their contact note"));
   const make = el("button", "pill", "make them a contact");
@@ -615,7 +650,7 @@ function netHas(id) { return !!netCache && (netCache.people || []).some((p) => p
 function netOpen(id) {
   netQuery = "";
   netSource = netTag = "";
-  netSaved = !!(netPerson(id) || {}).saved;
+  netPending = (netPerson(id) || {}).pending || "";
   netLens = "";
   netSetViewMode("list");
   netSel = id;
@@ -628,7 +663,7 @@ function netOpen(id) {
 // netDimmed answers, for the graph, whether the list's filters leave a person
 // out. Nobody is dimmed while no filter is set.
 function netDimmed(id) {
-  if (!netCache || !(netQuery.trim() || netSource || netTag || netSaved)) return false;
+  if (!netCache || !(netQuery.trim() || netSource || netTag || netPending)) return false;
   if (!netHas(id)) return true;
   return !netVisible().some((p) => p.id === id);
 }
@@ -637,7 +672,7 @@ function netDimGraph() {
   const st = typeof rgState !== "undefined" && rgState;
   if (!st || !st.sim || rgLens !== "network") return;
   const keep = new Set(netVisible().map((p) => p.id));
-  const on = !!(netQuery.trim() || netSource || netTag || netSaved);
+  const on = !!(netQuery.trim() || netSource || netTag || netPending);
   st.sim.nodes.forEach((n) => n.el.classList.toggle("rg-dim", on && !keep.has(n.id)));
   const count = document.querySelector(".net-count");
   if (count) {

@@ -348,7 +348,7 @@ func TestNetworkSavedPeopleSitApartUntilTheyBecomeContacts(t *testing.T) {
 		t.Fatal(err)
 	}
 	ada := networkGet(t, s)["Ada Coil"]
-	if !ada.Saved || strings.Join(ada.Topics, ",") != "RF coils" {
+	if ada.Pending != "recruiting" || strings.Join(ada.Topics, ",") != "RF coils" {
 		t.Fatalf("saved: %+v", ada)
 	}
 	var kind string
@@ -368,7 +368,35 @@ func TestNetworkSavedPeopleSitApartUntilTheyBecomeContacts(t *testing.T) {
 	if w := recruitingPost(t, s, s.handleNetworkPerson, "/api/network/person/x", ada.ID, `{"set":{"ref":"carol tu"}}`); w.Code != http.StatusOK {
 		t.Fatal(w.Body.String())
 	}
-	if got := networkGet(t, s); got["Ada Coil"].Saved {
+	if got := networkGet(t, s); got["Ada Coil"].Pending != "" {
 		t.Fatal("a contact link should graduate a saved person")
+	}
+}
+
+// ⚠ ONE RULE: your people have a contact note or are on the team. An
+// investor with no note (a fundraising registry name) waits apart, marked
+// "fundraising", exactly like someone saved from recruiting — and a note
+// is what brings them in.
+func TestNetworkInvestorsWithoutANoteWaitApart(t *testing.T) {
+	s, _ := networkTestServer(t)
+	fr := testFundraisingStore(t)
+	s.fundraising = fr
+	op, err := fr.Create("Acme Ventures")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := fr.Update(op.ID, map[string]any{"people": []map[string]string{
+		{"key": "Alice Ray", "display": "Alice Ray"}, {"key": "dana noteless", "display": "Dana Noteless"}}}); err != nil {
+		t.Fatal(err)
+	}
+	got := networkGet(t, s)
+	if a := got["Alice Ray"]; a.Pending != "" {
+		t.Fatalf("an investor WITH a note is one of your people: %+v", a)
+	}
+	if d := got["Dana Noteless"]; d.Pending != "fundraising" {
+		t.Fatalf("an investor without a note should wait apart as fundraising: %+v", d)
+	}
+	if b := got["Benjamin Anderson"]; b.Pending != "" {
+		t.Fatalf("the team is always your people: %+v", b)
 	}
 }
