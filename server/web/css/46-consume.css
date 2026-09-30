@@ -346,7 +346,15 @@
 
 /* ---- narrow: the sidebar becomes a strip of views above the list ---- */
 @media (max-width: 999px) {
-  .rdr-shell { flex-direction: column; gap: var(--sp-5); }
+  /* a column sized to the screen: flex-start sized each child to its content,
+     so one long line (an approval's diff, a hash, a row's actions) widened
+     the whole feed to 780px on a 390px phone and the page panned sideways
+     (owner's phone, 2026-09-30) */
+  .rdr-shell { flex-direction: column; align-items: stretch; gap: var(--sp-5); }
+  .rdr-shell > .feed-split { width: 100%; }
+  /* a long unbroken word (michaelringfamilyagriculture.substack.com, a
+     Gmail thread id) breaks where it must instead of widening its row */
+  .rdr-shell { overflow-wrap: anywhere; }
   .rdr-side {
     position: static; width: 100%; max-height: none; flex-direction: row;
     overflow-x: auto; overflow-y: hidden; gap: var(--sp-5); padding: 0 0 var(--sp-3);
