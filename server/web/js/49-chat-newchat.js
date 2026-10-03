@@ -2,8 +2,8 @@
 // Ctrl+Alt+N open the agent's landing; everything a new conversation needs is
 // a chip in the composer: agent, model · effort (49-chat-models.js), project,
 // and for a coding agent the folder it starts in (recent folders and the
-// repos under ~/src, never free text). Recent chats and a few starters sit
-// under the composer. Nothing is created until the first message is sent;
+// repos under ~/src, never free text). Recent chats sit under the
+// composer. Nothing is created until the first message is sent;
 // the landing's draft slot and the project assignment are the ones the
 // landing always used (chatPrepareLandingDraft, chatPendingProject).
 
@@ -192,29 +192,18 @@ function chatLandingRefreshChips() {
   if (host) { chatLandingChips(host); if (typeof chatModelChips === "function") chatModelChips(host); }
 }
 
-// ---- under the composer: recent chats and starters ----
-const chatStarters = {
-  coding: ["Explain how this repository is laid out", "Run the tests and fix what fails", "Review the uncommitted changes"],
-  agent: ["What is waiting on me today?", "Summarize what changed this week", "Draft a plan for "],
-};
+// ---- under the composer: recent chats ----
 function chatLandingBelow() {
   const main = document.querySelector(".chat-main"), composer = document.getElementById("chatComposer");
   let below = document.getElementById("chatLandingBelow");
   if (!main || !composer || !chatOnLanding() || chatIsPortal() || !chatAgent) { below?.remove(); return; }
   if (!below) { below = el("div", "chat-landing-below"); below.id = "chatLandingBelow"; }
   if (below.previousElementSibling !== composer) composer.after(below);
-  // built once per landing: a composer repaint never replaces a starter or a
-  // recent row under the pointer
+  // built once per landing: a composer repaint never replaces a recent row
+  // under the pointer
   if (below.dataset.route === location.hash && below.childElementCount) return;
   below.dataset.route = location.hash;
   below.replaceChildren();
-  const starters = el("div", "chat-landing-starters"); starters.setAttribute("aria-label", "Starters");
-  for (const text of chatStarters[chatIsTerm() ? "coding" : "agent"]) {
-    const b = el("button", "chat-landing-starter", text.trim()); b.type = "button";
-    b.onclick = () => { const ta = document.querySelector("#chatComposer textarea"); if (!ta) return; ta.value = text; ta.dispatchEvent(new Event("input", {bubbles: true})); ta.focus(); ta.setSelectionRange(text.length, text.length); };
-    starters.append(b);
-  }
-  below.append(starters);
   const recent = (typeof chatInboxEntries === "function" ? chatInboxEntries() : []).filter(e => !e.taskThread && (e.agent === chatAgent)).slice(0, 5);
   if (recent.length) {
     const list = el("nav", "chat-landing-recent"); list.setAttribute("aria-label", "Recent chats");

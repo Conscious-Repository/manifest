@@ -363,6 +363,10 @@ func TestFixtureChatTilesAttention(t *testing.T) {
 // The live +N −M chip on a coding session's header (chat-changes-chip.cjs).
 func TestFixtureChatChangesChip(t *testing.T) { runFixture(t, "chat-changes-chip.cjs", true, false) }
 
+// The phone compression rules (docs/ui-conventions.md) on chat: head, status
+// line, one-row composer with folds in ＋, ··· as an action list (chat-phone-compression.cjs).
+func TestFixtureChatPhoneCompression(t *testing.T) { runFixture(t, "chat-phone-compression.cjs", true, false) }
+
 // The single-chat UI pass: clean load, legible meta and menu, 44px phone
 // targets, a whole run-state hint, a shell that fills its column
 // (chat-single-view-pass.cjs).

@@ -110,10 +110,15 @@ const {makeStub}=require('./chat-stub-api.cjs');
   for(const theme of ['default','jarvis'])for(const width of [1440,390]){
    await page.setViewportSize({width,height:844});await page.evaluate(t=>document.documentElement.dataset.theme=t,theme);await page.waitForTimeout(80);
    assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false,theme+' overflow at '+width);
-   const r=await chip.evaluate(e=>{const a=e.getBoundingClientRect(),t=document.querySelector('#chatComposer textarea').getBoundingClientRect(),c=document.getElementById('chatComposer').getBoundingClientRect();return {h:a.height,below:a.top>=t.bottom-1,inside:a.right<=c.right+1&&a.left>=c.left-1};});
-   assert.ok(r.inside,'chip escapes the composer at '+width);
-   if(width===390){assert.ok(r.h>=44,'chip target too small on phone');assert.ok(r.below,'chip should wrap under the message on phone');}
-   await chip.click();await picker.waitFor();
+   if(width===390){
+    // in a conversation a phone folds the chip into ＋ (docs/ui-conventions.md, phone rule 4)
+    assert.equal(await chip.evaluate(e=>e.getClientRects().length),0,'the model chip folds into ＋ on a phone');
+    await page.locator('#chatComposer .chat-attach').click();await page.getByRole('option',{name:/Model and effort/}).click();await picker.waitFor();
+   }else{
+    const r=await chip.evaluate(e=>{const a=e.getBoundingClientRect(),c=document.getElementById('chatComposer').getBoundingClientRect();return {inside:a.right<=c.right+1&&a.left>=c.left-1};});
+    assert.ok(r.inside,'chip escapes the composer at '+width);
+    await chip.click();await picker.waitFor();
+   }
    const box=await picker.evaluate(e=>{const b=e.getBoundingClientRect();return {l:b.left,r:b.right,t:b.top,iw:innerWidth};});
    assert.ok(box.l>=0&&box.r<=box.iw&&box.t>=0,'picker leaves the viewport at '+width);
    if(process.env.MANIFEST_FIXTURE_SHOTS)await page.screenshot({path:path.join(process.env.MANIFEST_FIXTURE_SHOTS,'model-picker-'+theme+'-'+width+'.png')});

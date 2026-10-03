@@ -59,14 +59,35 @@ function chatWorkspaceHeader(head){
   if(child.textContent==='Changes'&&more)more.append(child);
   if(child.matches('.chat-terminal-view')){child.setAttribute('aria-label','Terminal');child.title='Toggle terminal';child.replaceChildren(chatWorkspaceIcon('terminal'));child.classList.add('chat-icon-button');}
  }
- const summary=more?.querySelector(':scope > summary');if(summary){summary.textContent='···';summary.setAttribute('aria-label','Conversation options');summary.title='Conversation options';more.classList.add('chat-options-compact');}
+ const summary=more?.querySelector(':scope > summary');if(summary){summary.replaceChildren(el('span','chat-options-dots','···'),el('span','chat-options-title',head.querySelector('.chat-head-title')?.textContent||'Conversation'));summary.setAttribute('aria-label','Conversation options');summary.title='Conversation options';more.classList.add('chat-options-compact');}
  const button=el('button','sprt-quiet chat-workspace-toggle chat-icon-button');button.append(chatWorkspaceIcon('panel'));
  button.setAttribute('aria-label','Toggle workspace');button.setAttribute('aria-expanded',String(!!chatWorkspaceTabs&&!chatWorkspaceTabs.pane.hidden));
  button.title='Plans, files and side chats · Ctrl+Alt+I';button.setAttribute('aria-keyshortcuts','Control+Alt+i');
  button.onclick=()=>{if(chatWorkspaceTabs)chatWorkspaceTabs.show(chatWorkspaceTabs.pane.hidden);else chatEnsureWorkspace();};head.append(button);
+ // A phone's ··· is a list of actions (docs/ui-conventions.md, phone rule 6):
+ // actions first, then the destructive ones (Stop, then Rename · Archive ·
+ // Delete with Delete last), then the facts.
+ if(more&&window.mf?.phone?.()){
+  const facts=[...more.children].filter(c=>c.matches('.chat-conversation-info,.chat-head-sub,.chat-head-meta'));
+  const stop=more.querySelector(':scope > .chat-stop-agent'),acts=more.querySelector(':scope > .chat-head-acts');
+  if(stop)more.append(stop);if(acts)more.append(acts);facts.forEach(n=>more.append(n));
+ }
  // Phones keep the opener out of the primary head: the same action sits in the
  // ··· menu (95-mobile.css shows one or the other; show() updates both).
- if(more){const entry=el('button','sprt-quiet chat-workspace-toggle mf-chat-ws-more','Workspace');entry.title='Plans, files and side chats';entry.setAttribute('aria-expanded',button.getAttribute('aria-expanded'));entry.onclick=button.onclick;more.insertBefore(entry,more.querySelector(':scope > .chat-head-acts'));}
+ if(more){const entry=el('button','sprt-quiet chat-workspace-toggle mf-chat-ws-more','Workspace');entry.title='Plans, files and side chats';entry.setAttribute('aria-expanded',button.getAttribute('aria-expanded'));entry.onclick=button.onclick;more.insertBefore(entry,(window.mf?.phone?.()&&more.querySelector(':scope > .chat-stop-agent'))||more.querySelector(':scope > .chat-head-acts'));}
+}
+// chatComposerAddMenu — a phone conversation's ＋ (phone rules 1 and 4): files,
+// and the model · effort and permissions the folded chips held. Each row
+// opens what the chip opened.
+function chatComposerAddMenu(attach,pick){
+ const host=document.getElementById('chatComposer');if(!host)return;
+ const now=c=>c.textContent.replace(/\s*⌄\s*$/,'').trim();
+ const open=kind=>()=>{chatCloseChipMenu(false);return chatOpenModelPicker(kind);};
+ const items=[{label:'Attach files',sub:'Up to eight, 20 MB each',run:pick}];
+ const model=host.querySelector('.chat-composer-model'),perm=host.querySelector('.chat-composer-permission');
+ if(model)items.push({label:'Model and effort',sub:now(model),run:open('model')});
+ if(perm)items.push({label:'Permissions',sub:now(perm),run:open('permission')});
+ chatChipMenu(attach,'Add to message',items);
 }
 // A tab label keeps the tail of a long name — a screenshot's time and
 // extension, a plan's suffix — by shortening the middle; the full name stays
@@ -267,13 +288,16 @@ function chatPolishComposer(host){
  // Model, effort and permissions have their own chips (49-chat-models.js);
  // the recipient chip then names only the agent the message goes to.
  const chips=typeof chatModelChips==='function'&&chatModelChips(host);
+ // in a conversation the settings chips fold into ＋ on a phone (phone rules
+ // 4–5; 95-mobile.css); a new chat's landing keeps them in view
+ host.classList.toggle('chips-folded',!!chips&&!!chatOpenId);
  if(typeof chatGoalBar==='function')chatGoalBar(host);
  // a new chat's agent, project and folder chips, and what sits under it
  if(typeof chatLandingChips==='function'){chatLandingChips(host);chatLandingBelow();chatLandingTakeCarry();}
  main?.classList.toggle('has-composer-recipient',!!picker);
  const input=host.querySelector('textarea'),send=host.querySelector('.chat-send');
  if(send&&send.textContent!=='…'){send.setAttribute('aria-label','Send message');send.title=window.matchMedia('(max-width: 860px)').matches?'Send message · Enter adds a new line':'Send message · Enter (Shift+Enter for a new line)';}
- host.querySelector('.chat-attach')?.setAttribute('aria-label','Attach files');
+ host.querySelector('.chat-attach')?.setAttribute('aria-label',host.classList.contains('chips-folded')&&window.mf?.phone?.()?'Attach files, model and permissions':'Attach files');
  let status=host.querySelector('.chat-composer-status');
  if(chatIsTerm()&&input){
   const raw=chatTermPlaceholder();

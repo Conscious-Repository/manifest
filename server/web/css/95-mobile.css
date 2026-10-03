@@ -27,6 +27,7 @@
 /* the conversation head's back-to-chats and the ··· menu's Workspace entry
    (48-chat.js chatBackToChats, 49-chat-workspace.js chatWorkspaceHeader) */
 .mf-chat-back, .mf-chat-new { display: none; }
+.chat-status-changes, .chat-options-title { display: none; }
 .chat-details[open] > .mf-chat-ws-more { display: none; }
 
 @keyframes sheetUp {
@@ -885,6 +886,34 @@
   }
   .mf-chat-new:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   .chat-thread-header .chat-head > .chat-workspace-toggle { display: none; }
+  /* Phone compression (docs/ui-conventions.md, 2026-10-03). The head is
+     way back · title · ＋ · ··· (rule 2). At 390 the owner's coding head gave
+     the title one letter and stacked Stop a letter per line. Run state and
+     +N −M are said on the status line above the composer, beside its Stop
+     (rule 3; 49-chat-status.js). Terminal and Stop (end the process) sit in
+     ··· (rule 1; 48-chat.js chatTermHead). */
+  .chat-thread-header .chat-head > :is(.chat-terminal-view, .chat-changes-chip) { display: none; }
+  .chat-thread-header .chat-head > .chat-execution-state[data-state="running"] { display: none; }
+  .chat-thread-header .chat-head > .chat-stop-agent { max-width: none; white-space: nowrap; flex: none; }
+  .chat-status-changes { display: inline-flex; }
+  .chat-status-changes .chat-changes-chip { min-height: var(--touch); padding: 0 var(--sp-3); }
+  .chat-status-changes .chat-changes-new { display: none; }
+  /* ··· is a list of actions (rule 6): its first row names the conversation,
+     destructive actions come last in --danger, facts after them
+     (49-chat-workspace.js orders the rows) */
+  .chat-options-compact[open] > summary { display: flex; align-items: center; justify-content: flex-start; width: 100%; padding: 0 var(--sp-4); color: var(--base-60); font: var(--fs-md)/1.3 var(--sans); }
+  .chat-options-compact[open] > summary > .chat-options-dots { display: none; }
+  .chat-options-compact[open] > summary > .chat-options-title { display: block; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .chat-details[open] > .chat-stop-agent:not(:disabled), .chat-details[open] .chat-head-acts > .chat-delete-action:not(:disabled) { color: var(--danger); }
+  .chat-thread-header .chat-details > .chat-changes-chip { display: none; }
+  .chat-details[open] > .chat-head-acts { padding: 0; margin: 0; }
+  /* the composer at rest is one row: ＋ · field · mic · send (rule 8). In a
+     conversation, model · effort and a safe permission fold into ＋ (rule 4;
+     chatComposerAddMenu). A risky permission and a per-message recipient stay
+     (rule 5). */
+  .chat-main .chat-composer.chips-folded > .chat-composer-model,
+  .chat-main .chat-composer.chips-folded > .chat-composer-permission:not(.is-danger) { display: none; }
+  .chat-main .chat-composer.chips-folded:not(:has(> .chat-composer-permission.is-danger, > .chat-composer-recipient))::after { display: none; }
   .chat-details[open] > .mf-chat-ws-more { display: block; }
   /* the open workspace's own way back (× Hide workspace) is a full touch target */
   .chat-workspace-bar > button { min-width: var(--touch); }

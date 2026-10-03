@@ -175,6 +175,47 @@ One authoritative phone band: `css/95-mobile.css` (`@media (max-width: 860px)` /
 deliberately untouched. Keep breakpoint logic centralized there; a tab's own file
 holds only the rare component-local grid tweak.
 
+### Phone compression: if/then rules (owner, 2026-10-03)
+
+A phone gets the same app in compressed form, not a cut-down fork. Desktop shows
+the full set. A phone shows what the current moment needs, and everything else
+folds to a fixed place your hand learns once. Nothing is lost, so nothing ties
+work to the desktop. The fewer things on screen, the more of it is the work
+itself. Apply these rules in order. Each one names what it gives up and where
+that goes.
+
+1. **If it fits only at desktop width, it folds and is never dropped.** Every
+   desktop action stays one tap from a fixed home. The screen's `···` holds
+   actions on the thing in view. The composer's `＋` holds what goes into the
+   next message: files, and settings it runs with.
+2. **If it is a screen head, it holds four things at most:** way back · title ·
+   one primary action · `···`. The title takes the free width (≥120px at 390).
+   Anything else folds by rule 1 or moves by rule 3.
+3. **If a state is already said on screen, say it once, where you act on
+   it.** A conversation's run state, elapsed time, context and working-tree
+   changes live on the status line above the composer, beside its Stop. The
+   head does not repeat them.
+4. **If a choice is being made, show it. Once it is made, fold it.** The
+   new-chat landing keeps its agent, model and folder chips in view. Inside a
+   conversation, model · effort and permissions fold into `＋`.
+5. **If a value is risky, it stays visible.** A permission that runs
+   everything (Full access, Bypass) keeps its chip in the conversation even
+   though safe values fold. A choice made per message, like the shared-thread
+   recipient, stays visible too.
+6. **If it is a menu, it is a list of actions.** Its first row names what it
+   acts on. Then comes one action per touch-height row. Destructive actions
+   come last, in `--danger`. Read-only facts (paths, run status, details) go
+   after them.
+7. **If a word repeats a glyph or a line next to it, keep the glyph and move
+   the word** to the tooltip and the accessible name. A glyph with no word
+   nearby keeps its label.
+8. **If the composer is at rest, it is one row:** `＋` · field · mic · send.
+
+Mechanics: express a fold in `95-mobile.css` under `max-width: 860px`, or in JS
+behind `mf.phone()`. Desktop renders unchanged. Every fold gets a browser
+fixture that measures it at 320 and 390 and checks that the folded action
+still works from its home. First applied to chat (`chat-phone-compression.cjs`).
+
 ---
 
 ## Patterns promoted from the recruiting redesign (2026-09-04)

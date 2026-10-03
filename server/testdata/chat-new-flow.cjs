@@ -6,7 +6,7 @@
 //   - switching agent keeps what was typed (moved to the new landing's draft,
 //     not left behind as a duplicate);
 //   - the folder chip offers recent folders and the repos under ~/src;
-//   - starters fill the composer without sending; recent chats open;
+//   - no starter prompts (owner, 2026-10-03); recent chats open;
 //   - on a phone the field keeps its row and the menu is a sheet on screen.
 const {chromium}=require('playwright'),assert=require('node:assert/strict');
 const {makeStub}=require('./chat-stub-api.cjs');
@@ -26,11 +26,8 @@ const {makeStub}=require('./chat-stub-api.cjs');
   assert.equal(await page.locator('#chatComposer .chat-composer-model').count(),1,'the model is a chip');
   assert.equal(await page.locator('#chatView select:not(.chat-layout-select):not(.chat-inbox-filter)').evaluateAll(s=>s.filter(x=>x.closest('.chat-main')).length),0,'no selects on the landing');
   assert.deepEqual(await page.locator('#chatLandingBelow .chat-landing-recent-title').allTextContents(),['Long research thread','Second thread']);
-  // 2. a starter fills the composer, it does not send
-  const before=posts();
-  await page.locator('#chatLandingBelow .chat-landing-starter').first().click();
-  assert.equal(await page.locator('#chatComposer textarea').inputValue(),'What is waiting on me today?');
-  assert.equal(posts(),before,'a starter must not send');
+  // 2. no starter prompts under the composer (owner, 2026-10-03)
+  assert.equal(await page.locator('#chatLandingBelow .chat-landing-starter').count(),0,'no starters');
   // 3. switching agent keeps what was typed, and moves it
   await page.locator('#chatComposer textarea').fill('hello there');
   await agentChip.click();const agents=page.getByRole('dialog',{name:'Agent'});await agents.waitFor();
@@ -64,7 +61,7 @@ const {makeStub}=require('./chat-stub-api.cjs');
   assert.ok(sheet,'the agent menu stays on screen');
   await page.keyboard.press('Escape');
   assert.deepEqual(errors,[]);
-  console.log('PASS: one composer-first new chat — chips for agent/model/project/folder, carried draft, folder choices, starters, Ctrl+Alt+N, phone.');
+  console.log('PASS: one composer-first new chat — chips for agent/model/project/folder, carried draft, folder choices, no starters, Ctrl+Alt+N, phone.');
   await ctx.close();
  }finally{await browser.close();stub.server.close();}
 })().catch(e=>{console.error(e);process.exitCode=1;});

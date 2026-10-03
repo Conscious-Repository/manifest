@@ -2,7 +2,9 @@
 // Codex thread, makeStub({codex:true})) at phone widths, pinning the
 // 2026-09-27 mobile UI/UX pass. Each number was measured on the rendered
 // surface before the change (in parentheses):
-//   1. one row of chips: the model and the permission share the row under
+//   1. (since 2026-10-03 a phone conversation folds model · effort and a safe
+//      permission into ＋, docs/ui-conventions.md; what stays in view keeps
+//      these rules) one row of chips: the model and the permission share the row under
 //      the message; the first row is only + · field · mic · send, so the
 //      field keeps ≥45% of the composer at 320 (Alfred 26%, the recipient
 //      chip sat in row one) and every chip is a 44px target; a private thread
@@ -35,13 +37,13 @@ const {makeStub}=require('./chat-stub-api.cjs');
   // 1–3. geometry at every phone width, both thread kinds
   for(const w of [320,390,412])for(const route of ['/#/chat/a/alfred/b','/#/chat/a/codex/cx1']){
    const ctx=await browser.newContext(phone(w));const page=await ctx.newPage();const errors=[];page.on('pageerror',e=>errors.push(e.message));
-   await page.goto(base+route);await page.locator('#chatComposer .chat-composer-model').waitFor();await page.locator('#chatComposer .mic-btn').waitFor();
+   await page.goto(base+route);await page.locator('#chatComposer .chat-composer-model').waitFor({state:'attached'});await page.locator('#chatComposer .mic-btn').waitFor();
    const at=route.split('/')[4]+' at '+w;
    const g=await page.evaluate(()=>{
     const R=e=>e.getBoundingClientRect(),c=document.getElementById('chatComposer'),f=c.querySelector('textarea');
     const kids=[...c.children].filter(e=>e.offsetParent&&R(e).height>0&&!e.matches('.chat-composer-status'));
     const rowOf=e=>Math.round(R(e).top+R(e).height/2);
-    const chips=kids.filter(e=>e.matches('.chat-composer-recipient,.chat-composer-model,.chat-composer-permission'));
+    const chips=kids.filter(e=>e.matches('.chat-composer-recipient,.chat-composer-model,.chat-composer-permission')); // what a phone keeps in view (folds: phone rule 4)
     const first=kids.filter(e=>rowOf(e)===rowOf(f)).map(e=>e.matches('textarea')?'field':e.matches('.chat-attach')?'attach':e.matches('.mic-btn')?'mic':e.matches('.chat-send')?'send':e.className);
     const head=document.querySelector('#chatThreadHeader .chat-head');
     return {ratio:R(f).width/R(c).width,first,chipRows:[...new Set(chips.map(rowOf))].length,chipsBelow:chips.every(e=>R(e).top>=R(f).bottom-1),chipMinH:Math.min(...chips.map(e=>R(e).height)),
@@ -51,7 +53,7 @@ const {makeStub}=require('./chat-stub-api.cjs');
    });
    assert.ok(g.ratio>=0.45,at+': the message field is squeezed: '+g.ratio.toFixed(2));
    assert.deepEqual(g.first.sort(),['attach','field','mic','send'],at+': the first row holds only + · field · mic · send');
-   assert.equal(g.chipRows,1,at+': the chips share one row');
+   assert.ok(g.chipRows<=1,at+': the chips share one row');
    assert.ok(g.chipsBelow,at+': the chips sit under the message');
    assert.ok(g.chipMinH>=44,at+': a chip is under 44px');
    assert.equal(g.overflow,false,at+': horizontal overflow');

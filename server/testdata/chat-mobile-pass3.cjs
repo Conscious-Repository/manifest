@@ -16,6 +16,8 @@
 //      its text (19px, more than the gap to the next turn);
 //   5. the composer after a send (a long run-state hint gives the field its
 //      own row): the chips join the controls row, two rows, ≤100px at 390
+//      (a phone conversation folds model · effort into ＋ since 2026-10-03;
+//      what stays visible still shares the row)
 //      (three rows, 148px), every target 44px;
 //   6. one primary per region: send with text is the accent (ink #171717),
 //      ＋ New chat in the head is not a second filled button (accent fill);
@@ -89,7 +91,7 @@ const phone=w=>({viewport:{width:w,height:844},isMobile:true,hasTouch:true});
     const R=e=>e.getBoundingClientRect(),host=document.getElementById('chatComposer'),mid=e=>Math.round(R(e).top+R(e).height/2);
     const kids=[...host.children].filter(e=>e.offsetParent&&R(e).height>0&&!e.matches('.chat-composer-status'));
     const send=host.querySelector('.chat-send');
-    return {h:R(host).height,rows:new Set(kids.map(mid)).size,chipsWithSend:[...host.querySelectorAll('.chat-composer-recipient,.chat-composer-model')].every(e=>Math.abs(mid(e)-mid(send))<=2),
+    return {h:R(host).height,rows:new Set(kids.map(mid)).size,chipsWithSend:[...host.querySelectorAll('.chat-composer-recipient,.chat-composer-model')].filter(e=>e.offsetParent).every(e=>Math.abs(mid(e)-mid(send))<=2),
      small:kids.filter(e=>e.matches('button')&&(R(e).width<44||R(e).height<44)).map(e=>e.className),overflow:document.documentElement.scrollWidth>innerWidth};
    });
    assert.equal(c.rows,2,'the composer holds '+c.rows+' rows'+at);

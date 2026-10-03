@@ -1110,9 +1110,6 @@ label.chat-artifact-handoff{display:flex;flex-direction:row;align-items:flex-sta
 .chat-chip-status:empty { display: none; }
 .chat-chip-foot { align-self: flex-start; }
 .chat-landing-below { display: flex; flex-direction: column; gap: var(--sp-6); width: 100%; box-sizing: border-box; margin: var(--sp-6) 0 0; padding: 0 var(--sp-4); }
-.chat-landing-starters { display: flex; flex-wrap: wrap; gap: var(--sp-3); }
-.chat-landing-starter { min-height: var(--control-height); padding: 0 var(--sp-5); border: 1px solid var(--line); border-radius: 999px; background: transparent; color: var(--base-70); font: var(--fs-sm) var(--sans); cursor: pointer; }
-.chat-landing-starter:hover, .chat-landing-starter:focus-visible { border-color: var(--base-40); color: var(--base-100); }
 .chat-landing-recent { display: flex; flex-direction: column; }
 .chat-landing-recent-row { display: flex; align-items: baseline; gap: var(--sp-5); min-height: var(--control-height); padding: var(--sp-2) var(--sp-3); border-radius: var(--radius); color: var(--base-80); text-decoration: none; }
 .chat-landing-recent-row:hover, .chat-landing-recent-row:focus-visible { background: var(--hover); color: var(--base-100); }
@@ -1123,7 +1120,7 @@ label.chat-artifact-handoff{display:flex;flex-direction:row;align-items:flex-sta
   /* among the landing chips the model chip takes its own width, not the row */
   .chat-main .chat-composer:has(> .chat-landing-chip) > .chat-composer-model { flex: 0 1 auto; }
   .chat-chip-menu { position: fixed; left: var(--sp-4); right: var(--sp-4); width: auto; bottom: calc(var(--sp-4) + env(safe-area-inset-bottom, 0px)); max-height: 70dvh; }
-  .chat-chip-row, .chat-landing-starter, .chat-landing-recent-row { min-height: var(--control-touch); }
+  .chat-chip-row, .chat-landing-recent-row { min-height: var(--control-touch); }
   .chat-landing-below { padding: 0 var(--sp-4); box-sizing: border-box; }
 }
 /* the landing reads as one group: greeting, composer, starters, centred;

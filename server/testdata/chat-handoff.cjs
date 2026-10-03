@@ -19,9 +19,10 @@ const {makeStub}=require('./chat-stub-api.cjs');
   for(const width of [1440,390]){
    const ctx=await browser.newContext({viewport:{width,height:900}});const page=await ctx.newPage();const errors=[];page.on('pageerror',e=>errors.push(e.message));
    await page.goto(base+'/#/chat/a/alfred/b');
-   const chip=page.locator('#chatComposer .chat-composer-model');await chip.waitFor();
+   const chip=page.locator('#chatComposer .chat-composer-model');await chip.waitFor({state:'attached'});
    assert.equal(await page.locator('#chatThreadHeader .chat-recipient-control, #chatComposer .chat-composer-recipient').count(),0,'no "Choose agent" hand-off control');
-   await chip.click();
+   // a phone folds the chip into ＋ (docs/ui-conventions.md, phone rule 4)
+   if(width===390){await page.locator('#chatComposer .chat-attach').click();await page.getByRole('option',{name:/Model and effort/}).click();}else await chip.click();
    const picker=page.getByRole('dialog',{name:'Model, effort and permissions'});await picker.waitFor();
    await picker.getByRole('button',{name:/New chat with this context/}).click();
    const panel=page.getByRole('dialog',{name:'New chat with this context'});await panel.waitFor();

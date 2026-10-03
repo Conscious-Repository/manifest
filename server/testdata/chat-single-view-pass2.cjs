@@ -7,7 +7,8 @@
 //      ＋ New chat and ···, each a 44px target; the shell refits to the
 //      viewport (the two rows took 113px); the Chats list brings the bar back;
 //   2. 390: the owner's sent words are the replies' body size (were 13px);
-//   3. 390: the model chip's target is the chip (was a 350px row), ≥44px;
+//   3. 390: the model chip folds into ＋ (2026-10-03; it was a 350px row, then
+//      a ≥44px chip), ＋ is ≥44px;
 //   4. 390, after a send: the queued state is stated once — the run-state line
 //      "Queued · accepted, not started" — not five times; the cancel is a
 //      44×44 target named for what it cancels; while another turn runs the
@@ -70,10 +71,12 @@ const census=()=>{const out=[];for(const e of document.querySelectorAll('button,
    // 2. sent words at the body size
    const fs=await page.evaluate(()=>({user:getComputedStyle(document.querySelector('#chatTranscript .chat-user')).fontSize,say:getComputedStyle(document.querySelector('#chatTranscript .chat-say')).fontSize,field:getComputedStyle(document.querySelector('#chatComposer textarea')).fontSize}));
    assert.deepEqual(fs,{user:'16px',say:'16px',field:'16px'},'sent, reply and composer text sizes');
-   // 3. the model chip's target is the chip
-   const chip=await page.locator('#chatComposer .chat-composer-model').evaluate(e=>{const r=e.getBoundingClientRect(),g=document.createRange();g.selectNodeContents(e);return {w:r.width,h:r.height,text:g.getBoundingClientRect().width};});
-   assert.ok(chip.h>=44&&chip.w>=44,'model chip '+chip.w+'×'+chip.h);
-   assert.ok(chip.w<=chip.text+40,'model chip spans '+chip.w+'px for '+Math.round(chip.text)+'px of text (was 350)');
+   // 3. the model chip's target was the chip (a 350px row before); since
+   // 2026-10-03 a phone conversation folds it into ＋ (docs/ui-conventions.md,
+   // phone rule 4), and ＋ is the 44px target
+   assert.equal(await page.locator('#chatComposer .chat-composer-model').evaluate(e=>e.getClientRects().length),0,'the model chip folds into ＋');
+   const plus=await page.locator('#chatComposer .chat-attach').evaluate(e=>{const r=e.getBoundingClientRect();return {w:r.width,h:r.height};});
+   assert.ok(plus.w>=44&&plus.h>=44,'＋ is '+plus.w+'×'+plus.h);
    // 5. the hand-off is retired (2026-09-27): a private thread answers as its
    // own agent, so no recipient chip even with coding agents on
    assert.equal(await page.locator('#chatComposer .chat-composer-recipient').count(),0,'no recipient chip in a private thread');

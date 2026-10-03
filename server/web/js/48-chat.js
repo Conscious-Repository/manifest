@@ -1010,7 +1010,7 @@ function chatLifecycleActions(entry){
   if(status!=="active")action("Restore to chats","active");
   if(status==="active")action("Archive","archived");
   if(status!=="deleted"){
-    const b=el("button","sprt-quiet","Delete chat…");
+    const b=el("button","sprt-quiet chat-delete-action","Delete chat…");
     b.onclick=e=>{e.stopPropagation();reviewDialog("Delete chat?",({body,actions,close})=>{
       body.append(el("p","","Move this conversation to Trash. Private chat uploads are permanently removed; restoring the chat will not restore those files. Running agents continue. Shared artifacts, task and provider history are retained."));
       const cancel=el("button","sprt-quiet","Cancel"),confirm=el("button","sprt-quiet","Move to Trash");cancel.onclick=close;
@@ -2968,7 +2968,7 @@ function renderChatComposer(session) {
   const attach = el("button", "chat-attach", "+");
   attach.title = "Attach files";
   attach.setAttribute("aria-label","Attach files");
-  attach.onclick = () => fi.click();
+  attach.onclick = () => { if (window.mf?.phone?.() && host.classList.contains("chips-folded") && typeof chatComposerAddMenu === "function") chatComposerAddMenu(attach, () => fi.click()); else fi.click(); };
   ta.addEventListener("paste",e=>{const files=[...(e.clipboardData?.files||[])];if(files.length){e.preventDefault();upload(files);}});
   host.ondragover=e=>{if([...e.dataTransfer.types].includes('Files')){e.preventDefault();host.classList.add('chat-drop-active');}};
   host.ondragleave=e=>{if(!host.contains(e.relatedTarget))host.classList.remove('chat-drop-active');};
@@ -3877,8 +3877,10 @@ function chatTermHead(o) {
   if(!se.device&&reviewRuntime.cwd){
     head.append(chatChangesButton(reviewRuntime));
   }
+  // a phone keeps Stop (end the process) in ···: the run-state line under the
+  // transcript already carries Stop (interrupt) while it works (2026-10-03)
   const kill = chatTermEndIsKill(se);
-  if (kill) { const stop=armedDelete("Stop", "Confirm stop", () => chatTermEnd(se));stop.classList.add("chat-stop-agent");stop.title="Stop "+(se.name||se.kind)+" · Ctrl+Alt+X";stop.setAttribute("aria-keyshortcuts","Control+Alt+x");(se.agentState==="working"?head:details).append(stop); }
+  if (kill) { const stop=armedDelete("Stop", "Confirm stop", () => chatTermEnd(se));stop.classList.add("chat-stop-agent");stop.title="Stop "+(se.name||se.kind)+" · Ctrl+Alt+X";stop.setAttribute("aria-keyshortcuts","Control+Alt+x");(se.agentState==="working"&&!(window.mf&&window.mf.phone())?head:details).append(stop); }
   acts.append(chatLifecycleActions({terminal:true,agent:se.kind,session:se}));
   details.append(acts);
   head.append(details);

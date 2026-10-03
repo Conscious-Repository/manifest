@@ -61,7 +61,7 @@ function chatStatusEl() {
   const meter = el("span", "chat-status-context"), bar = el("span", "chat-status-meter"), fill = el("span", "");
   bar.setAttribute("aria-hidden", "true"); bar.append(fill);
   meter.append(bar, el("span", "chat-status-context-text"));
-  line.append(dot, el("span", "chat-status-verb"), el("span", "chat-status-time"), step, stop, meter);
+  line.append(dot, el("span", "chat-status-verb"), el("span", "chat-status-time"), step, stop, el("span", "chat-status-changes"), meter);
   main.insertBefore(line, document.getElementById("chatTermStrip") || comp);
   return line;
 }
@@ -70,7 +70,15 @@ function chatStatusPaint() {
   if (!line) return;
   const m = chatStatusModel();
   clearTimeout(chatStatusTimer);
-  if (!m || (!m.working && !m.blocked && !m.context?.used)) { line.hidden = true; line.dataset.state = ""; return; }
+  // a phone says the working tree's +N −M here, beside Stop, not in the head
+  // (docs/ui-conventions.md, phone rule 3; 95-mobile.css shows the slot)
+  const phone = !!window.mf?.phone?.(), se = m?.kind === "terminal" ? chatTermOpen?.se : null;
+  const tree = phone && se && !se.device && se.cwd && typeof chatChangesButton === "function" ? se : null;
+  const slot = line.querySelector(".chat-status-changes");
+  slot.hidden = !tree;
+  if (!tree) slot.replaceChildren();
+  else if (slot.firstChild?.dataset.runtime !== tree.id) slot.replaceChildren(chatChangesButton(tree));
+  if (!m || (!m.working && !m.blocked && !m.context?.used && !tree)) { line.hidden = true; line.dataset.state = ""; return; }
   line.hidden = false;
   const state = m.working ? "working" : m.blocked ? "blocked" : "idle";
   if (line.dataset.state !== state) { line.dataset.state = state; line.setAttribute("aria-label", state === "working" ? "Agent working" : state === "blocked" ? "Agent needs your input" : "Context"); }
@@ -89,9 +97,10 @@ function chatStatusPaint() {
   meter.hidden = !c?.used;
   if (c?.used) {
     const pct = c.window ? Math.round(c.used / c.window * 100) : 0;
-    const text = c.window ? "Context " + chatTokens(c.used) + " of " + chatTokens(c.window) + " · " + pct + "%" : chatTokens(c.used) + " tokens in context";
+    const text = phone ? (c.window ? pct + "% context" : chatTokens(c.used) + " context")
+      : c.window ? "Context " + chatTokens(c.used) + " of " + chatTokens(c.window) + " · " + pct + "%" : chatTokens(c.used) + " tokens in context";
     if (q(".chat-status-context-text").textContent !== text) q(".chat-status-context-text").textContent = text;
-    meter.title = c.window ? "Tokens in the model's context on its last call, as the agent recorded them" : "Tokens in the model's context on its last call. The agent does not record its window size, so no percentage is shown.";
+    meter.title = c.window ? "Context " + chatTokens(c.used) + " of " + chatTokens(c.window) + " tokens on the model's last call, as the agent recorded them" : "Tokens in the model's context on its last call. The agent does not record its window size, so no percentage is shown.";
     meter.dataset.level = pct >= 85 ? "high" : "";
     q(".chat-status-meter").hidden = !c.window;
     q(".chat-status-meter > span").style.width = Math.min(100, pct) + "%";
