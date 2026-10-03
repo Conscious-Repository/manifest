@@ -123,6 +123,11 @@ type meetingIndex struct {
 	// asking "who else was in the room" costs no extra calendar call.
 	parties []MeetingParty
 	builtAt time.Time
+	// pulledAt is when the calendar last returned meetings; remembered says
+	// this index stands on the meeting memory because the latest pull was
+	// empty (meeting_memory.go). An empty pull is retried sooner.
+	pulledAt   time.Time
+	remembered bool
 }
 
 // MeetingParty is one past meeting and who was on it — the shape a
@@ -151,14 +156,14 @@ func (s *Service) UseCRMDirectory(d CRMDirectory) { s.directory = d }
 // by the contact's email) is kept DISTINCT from "last mentioned" (newest dated
 // note that links them) — writing [[them]] in a planning note is not a meeting.
 type Contact struct {
-	Key           string `json:"key"`
-	Display       string `json:"display"`
-	NotePath      string `json:"notePath"`
-	HasNote       bool   `json:"hasNote"`
+	Key      string `json:"key"`
+	Display  string `json:"display"`
+	NotePath string `json:"notePath"`
+	HasNote  bool   `json:"hasNote"`
 	// Origin says where a note-less contact came from: "fundraising" (the CRM
 	// registry) or "notes" (a name linked from meeting notes, or confirmed).
 	// "" for anyone with a person note.
-	Origin string `json:"origin,omitempty"`
+	Origin        string `json:"origin,omitempty"`
 	Location      string `json:"location,omitempty"`
 	LastMet       string `json:"lastMet"`       // calendar-verified (email-matched); "" if no email / no meeting
 	LastMentioned string `json:"lastMentioned"` // newest dated NOTE that links them; "" if none
@@ -1258,39 +1263,52 @@ func (s *Service) meetingsByEmail(now time.Time) map[string][]meetingRef {
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if m := s.meetings; m != nil && !now.Before(m.builtAt) && now.Sub(m.builtAt) < meetingCacheTTL {
-		return m.byEmail
+	if m := s.meetings; m != nil && !now.Before(m.builtAt) {
+		ttl := meetingCacheTTL
+		if m.remembered {
+			ttl = meetingRetryTTL
+		}
+		if now.Sub(m.builtAt) < ttl {
+			return m.byEmail
+		}
 	}
-	byEmail := map[string][]meetingRef{}
-	var parties []MeetingParty
-	seen := map[string]map[string]bool{} // email → date → already recorded
+	var fresh []MeetingParty
 	for _, ev := range s.cal.PastMeetings(now, pastMeetingWindowDays) {
-		date := ev.Start.Format("2006-01-02")
-		party := MeetingParty{Date: date, Title: ev.Title}
+		party := MeetingParty{Date: ev.Start.Format("2006-01-02"), Title: ev.Title}
 		for _, a := range ev.Attendees {
 			if em := strings.ToLower(strings.TrimSpace(a.Email)); em != "" {
 				party.Emails = append(party.Emails, em)
 			}
 		}
 		if len(party.Emails) > 0 {
-			parties = append(parties, party)
+			fresh = append(fresh, party)
 		}
-		for _, a := range ev.Attendees {
-			em := strings.ToLower(strings.TrimSpace(a.Email))
-			if em == "" {
-				continue
-			}
+	}
+	// the record of who you met outlives a calendar sign-in: merge every pull
+	// into the memory, and stand on the memory when a pull comes back empty
+	mem := s.loadMeetingMemory()
+	oldest := now.AddDate(0, 0, -pastMeetingWindowDays).Format("2006-01-02")
+	parties := mergeParties(fresh, mem.Parties, oldest)
+	remembered := len(fresh) == 0
+	if !remembered {
+		mem = meetingMemory{Parties: parties, PulledAt: now}
+		s.saveMeetingMemory(mem)
+	}
+	byEmail := map[string][]meetingRef{}
+	seen := map[string]map[string]bool{} // email → date → already recorded
+	for _, p := range parties {
+		for _, em := range p.Emails {
 			if seen[em] == nil {
 				seen[em] = map[string]bool{}
 			}
-			if seen[em][date] {
+			if seen[em][p.Date] {
 				continue // one meeting per email per day
 			}
-			seen[em][date] = true
-			byEmail[em] = append(byEmail[em], meetingRef{Date: date, Title: ev.Title})
+			seen[em][p.Date] = true
+			byEmail[em] = append(byEmail[em], meetingRef{Date: p.Date, Title: p.Title})
 		}
 	}
-	s.meetings = &meetingIndex{byEmail: byEmail, parties: parties, builtAt: now}
+	s.meetings = &meetingIndex{byEmail: byEmail, parties: parties, builtAt: now, pulledAt: mem.PulledAt, remembered: remembered}
 	return byEmail
 }
 

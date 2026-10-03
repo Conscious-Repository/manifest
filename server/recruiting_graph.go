@@ -410,17 +410,25 @@ func (s *Server) peopleGraph(w http.ResponseWriter, r *http.Request, net *networ
 	writeJSON(w, reply)
 }
 
-// calendarTiesMissing names the reason the meeting ties are absent, when they
-// are: the calendar sign-in has expired (the OAuth app's 7-day tokens, the
-// recurring cause), so PastMeetings returns nothing and every same_meeting
-// edge is gone. "" when the calendar is fine or not configured at all.
+// calendarTiesMissing names what an expired calendar sign-in costs: since
+// 2026-10-03 only the meetings after it expired (earlier ones are remembered,
+// and your meeting notes tie you to people on their own). "" when the
+// calendar is fine or not configured at all.
 func (s *Server) calendarTiesMissing() string {
 	if s.cal == nil || !s.cal.Enabled() {
 		return ""
 	}
 	for _, st := range s.cal.AccountStatuses(time.Now()) {
 		if st.NeedsReauth {
-			return "your calendar sign-in expired (" + st.Email + ") — reconnect it in Settings; the ties from meetings are missing until you do"
+			// meetings are remembered across a dead sign-in (contacts meeting
+			// memory) and your ties also come from your meeting notes, so an
+			// expired calendar costs only the meetings since it expired
+			if s.contacts != nil {
+				if at, _ := s.contacts.MeetingsAsOf(); !at.IsZero() {
+					return "your calendar sign-in expired (" + st.Email + ") — meetings are remembered up to " + at.Format("Jan 2") + "; reconnect it in Settings for newer ones"
+				}
+			}
+			return "your calendar sign-in expired (" + st.Email + ") — reconnect it in Settings to add ties from meetings"
 		}
 	}
 	return ""

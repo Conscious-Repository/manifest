@@ -535,3 +535,54 @@ func (ix *Index) CoMentions(maxPeople int) ([]CoMention, error) {
 	}
 	return out, rows.Err()
 }
+
+// MeetingNotePerson is one person a meeting note links, with that note.
+type MeetingNotePerson struct {
+	Key          string // person entity key
+	Path, Name   string // the meeting note
+	Date         string
+	PeopleOnNote int
+}
+
+// MeetingNotePeople lists the people each meeting note under log/ links
+// (owner-written, non-AI), newest note first, skipping notes that link more
+// than maxPeople people (a list of names is not a meeting). Unlike CoMentions
+// it includes a note that names ONE person — a 1:1 is the most common
+// meeting there is. The owner wrote every one of these notes, which is what
+// lets the caller draw a tie from the owner to each person without asking a
+// calendar.
+func (ix *Index) MeetingNotePeople(maxPeople int) ([]MeetingNotePerson, error) {
+	if maxPeople < 1 {
+		maxPeople = 1
+	}
+	rows, err := ix.db.Query(`
+		WITH people_links AS (
+		  SELECT DISTINCT l.src_path, l.target_key
+		  FROM links l
+		  JOIN entities e ON e.key = l.target_key AND e.is_person = 1
+		  JOIN notes n ON n.path = l.src_path
+		  WHERE `+knowledgeSrcSQL+` AND n.path LIKE 'log/%'
+		),
+		counted AS (
+		  SELECT src_path, COUNT(*) AS n FROM people_links GROUP BY src_path
+		)
+		SELECT p.target_key, n.path, n.name, n.date, c.n
+		FROM people_links p
+		JOIN counted c ON c.src_path = p.src_path
+		JOIN notes n ON n.path = p.src_path
+		WHERE c.n <= ?
+		ORDER BY (n.date = '') ASC, n.date DESC, n.path ASC`, maxPeople)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []MeetingNotePerson
+	for rows.Next() {
+		var m MeetingNotePerson
+		if err := rows.Scan(&m.Key, &m.Path, &m.Name, &m.Date, &m.PeopleOnNote); err != nil {
+			return nil, err
+		}
+		out = append(out, m)
+	}
+	return out, rows.Err()
+}

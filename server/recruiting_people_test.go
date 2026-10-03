@@ -193,8 +193,11 @@ func TestCoMentionEdgesOnlyFromMeetingLogs(t *testing.T) {
 	s.contacts = contacts.New(ix, cs, vw, recruitingMeetingCalendar{}, nil)
 	s.wireRecruitingDerivedEdges()
 	edges := s.recruiting.NetworkEdges()
-	if len(edges) != 4 {
-		t.Fatalf("want one transcript and three calendar edges (including owner): %+v", edges)
+	// one transcript pair, three calendar edges (including owner), and — since
+	// 2026-10-03 — you to each person the meeting note names (no calendar
+	// needed for your own ties)
+	if len(edges) != 6 {
+		t.Fatalf("want one transcript pair, three calendar edges (including owner) and two owner meeting-note ties: %+v", edges)
 	}
 	for _, e := range edges {
 		if !e.Inferred || !e.Derived {
@@ -202,6 +205,12 @@ func TestCoMentionEdgesOnlyFromMeetingLogs(t *testing.T) {
 		}
 		switch e.Kind {
 		case "co_mentioned":
+			if e.From == "aion-net/ben-anderson" {
+				if (e.To != "contact/alice" && e.To != "contact/bob") || e.Source != "log" || e.Evidence != "log/2026-08-07 weekly.md" || !strings.Contains(e.Basis, "is named in your meeting note “2026-08-07 weekly”") {
+					t.Fatalf("incorrect owner meeting-note tie: %+v", e)
+				}
+				continue
+			}
 			if e.From != "contact/alice" || e.To != "contact/bob" {
 				t.Fatalf("unexpected transcript pair: %+v", e)
 			}

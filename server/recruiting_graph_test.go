@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"manifest/recruiting"
+	"manifest/vaultindex"
 )
 
 // A graph with a centre, a ring of people the owner knows, and a ring of
@@ -375,5 +376,68 @@ func TestGraphWholeModeIsTheLensNotEverything(t *testing.T) {
 	}
 	if prof.Kind != "bridge" || prof.Run != run.ID || prof.Draft != "d1" || len(prof.Sources) != 1 || prof.Sources[0].Label != run.Subject {
 		t.Fatalf("profile: %+v", prof)
+	}
+}
+
+// ⚠ YOUR TIES DO NOT NEED A CALENDAR (2026-10-03). The owner's ego graph took
+// its first ring from calendar co-attendance alone, so an expired sign-in
+// (or no calendar at all) drew "nobody here is within reach of the centre"
+// over 241 meeting notes naming 72 people. Your meeting notes under log/ are
+// your own record of who you met: each person one names is one hop from you,
+// with no calendar configured. A 1:1 counts; a note that lists a crowd does
+// not; a name in a journal entry is not a meeting.
+func TestOwnerTiesComeFromMeetingNotesWithoutACalendar(t *testing.T) {
+	s, _, vault, _ := testRecruitingServer(t)
+	write := func(rel, body string) {
+		p := filepath.Join(vault, filepath.FromSlash(rel))
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	person := func(name string) { write(name+".md", "---\ncategories: [people]\n---\n") }
+	crowd := []string{"ann one", "bo two", "cy three", "di four", "ed five", "flo six", "gus seven", "hal eight"}
+	for _, n := range append([]string{"dana fox", "alfred loomis"}, crowd...) {
+		person(n)
+	}
+	write("log/2026-09-21 dana fox.md", "---\ncategories: [sync]\n---\n[[dana fox]] on the roadmap\n")
+	write("intrinsic/2026-09-22.md", "<!-- manifest:start -->\nread about [[alfred loomis]]\n")
+	all := ""
+	for _, n := range crowd {
+		all += "[[" + n + "]] "
+	}
+	write("log/2026-09-23 all hands.md", "---\ncategories: [sync]\n---\n"+all+"\n")
+	ix, err := vaultindex.Open(vaultindex.Config{VaultRoot: vault})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { ix.Close() })
+	if _, err := ix.Rebuild(); err != nil {
+		t.Fatal(err)
+	}
+	s.index = ix
+	s.wireRecruitingDerivedEdges()
+
+	g := graphGet(t, s.Handler(), "?degree=1")
+	labels := strings.Join(graphLabels(g), " | ")
+	if !strings.Contains(labels, "dana fox") {
+		t.Fatalf("a 1:1 meeting note puts that person one hop from you, with no calendar: %q (missing %q)", labels, g.Missing)
+	}
+	if strings.Contains(labels, "alfred loomis") {
+		t.Fatalf("a name in a journal entry is not someone you met: %q", labels)
+	}
+	if strings.Contains(labels, "ann one") {
+		t.Fatalf("a note listing eight people is a list, not a meeting: %q", labels)
+	}
+	var tie *recruiting.Edge
+	for i, e := range g.Edges {
+		if e.To == "contact/dana fox" || e.From == "contact/dana fox" {
+			tie = &g.Edges[i]
+		}
+	}
+	if tie == nil || tie.Source != "log" || !tie.Inferred || tie.Observed != "2026-09-21" || !strings.Contains(tie.Basis, "2026-09-21 dana fox") {
+		t.Fatalf("the tie names the note it stands on, inferred: %+v", tie)
 	}
 }

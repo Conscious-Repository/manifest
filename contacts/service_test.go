@@ -639,3 +639,50 @@ func hasRef(rs []Ref, k string) bool {
 	}
 	return false
 }
+
+// TestMeetingsOutliveACalendarSignIn: who you met is a fact about the past.
+// A pull that returns meetings is remembered under DataDir; a later pull that
+// comes back empty (an expired sign-in, an outage) is answered from the
+// memory — "last met" survives it, and so does a restart — and the empty
+// answer is retried sooner than a good one.
+func TestMeetingsOutliveACalendarSignIn(t *testing.T) {
+	cal := fakeCal{past: []Event{{Start: time.Date(2026, 7, 2, 8, 0, 0, 0, time.UTC), Title: "Benjamin <> Shoumik",
+		Attendees: []Attendee{{Name: "Shoumik Dabir", Email: "dabir@anfavc.com"}}}}}
+	svc, ix, _ := harnessCal(t, cal)
+	if err := svc.ConfirmEmail("shoumik dabir", "shoumik dabir", "dabir@anfavc.com"); err != nil {
+		t.Fatal(err)
+	}
+	if p, _ := svc.Page("shoumik dabir", now); p.LastMet != "2026-07-02" {
+		t.Fatalf("live pull: last met = %q", p.LastMet)
+	}
+	if at, remembered := svc.MeetingsAsOf(); at.IsZero() || remembered {
+		t.Fatalf("a good pull is current: at=%v remembered=%v", at, remembered)
+	}
+
+	// the sign-in expires: every pull is empty from now on
+	svc.cal = fakeCal{}
+	svc.invalidateMeetings()
+	if p, _ := svc.Page("shoumik dabir", now); p.LastMet != "2026-07-02" {
+		t.Fatalf("after an empty pull the meeting must be remembered, last met = %q", p.LastMet)
+	}
+	if at, remembered := svc.MeetingsAsOf(); at.IsZero() || !remembered {
+		t.Fatalf("an empty pull stands on the memory: at=%v remembered=%v", at, remembered)
+	}
+	if parties := svc.PastMeetingParties(now); len(parties) != 1 || parties[0].Date != "2026-07-02" {
+		t.Fatalf("meeting parties (the graph's co-attendance input) must be remembered too: %+v", parties)
+	}
+	// an empty answer is retried within meetingRetryTTL, not held for meetingCacheTTL
+	svc.cal = cal
+	if p, _ := svc.Page("shoumik dabir", now.Add(meetingRetryTTL+time.Second)); p.LastMet != "2026-07-02" {
+		t.Fatalf("retry: last met = %q", p.LastMet)
+	}
+	if _, remembered := svc.MeetingsAsOf(); remembered {
+		t.Fatal("the calendar is back: the next pull after meetingRetryTTL must be live")
+	}
+
+	// a restart with the calendar still dead: the memory is on disk
+	restarted := New(ix, svc.store, svc.vw, fakeCal{}, nil)
+	if p, _ := restarted.Page("shoumik dabir", now); p.LastMet != "2026-07-02" {
+		t.Fatalf("after a restart with no calendar, last met = %q", p.LastMet)
+	}
+}

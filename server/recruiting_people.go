@@ -185,7 +185,7 @@ func (s *Server) wireRecruitingDerivedEdges() {
 		return
 	}
 	s.recruiting.UseDerivedEdges(func() []recruiting.Edge {
-		return append(s.coAttendanceEdges(), s.coMentionEdges()...)
+		return append(append(s.coAttendanceEdges(), s.coMentionEdges()...), s.ownerMeetingNoteEdges()...)
 	})
 }
 
@@ -378,6 +378,49 @@ func (s *Server) coMentionEdges() []recruiting.Edge {
 		out = append(out, recruiting.Edge{
 			From: a, To: b, Kind: string(sources.EdgeCoMentioned),
 			Basis:      idx.display(a) + " and " + idx.display(b) + " are in the same meeting transcript “" + m.Path + "”",
+			Confidence: recruiting.FormatConfidence(coMentionConfidence),
+			Inferred:   true, Source: "log", Evidence: m.Path, Observed: m.Date,
+		})
+	}
+	return out
+}
+
+// ownerMeetingNoteEdges ties YOU to each person your meeting notes name
+// (2026-10-03). The owner's ties used to come from the calendar alone, so an
+// expired sign-in left the Network graph with nothing "within reach of the
+// centre" although 241 meeting notes under log/ name 72 people. You wrote each
+// of those notes, so they are your record of who you met — no sign-in
+// required. Still inferred and labelled co_mentioned: a note can name someone
+// who was discussed rather than present. One edge per person, on their
+// newest note.
+func (s *Server) ownerMeetingNoteEdges() []recruiting.Edge {
+	if s.index == nil || s.recruiting == nil {
+		return nil
+	}
+	idx := s.personIndex()
+	me := idx.ownerNode(s.recruiting)
+	if me == "" {
+		return nil
+	}
+	notes, err := s.index.MeetingNotePeople(coMentionCap)
+	if err != nil {
+		return nil
+	}
+	var out []recruiting.Edge
+	seen := map[string]bool{}
+	for _, m := range notes { // newest note first
+		id := idx.byKey[m.Key]
+		if id == "" || id == me || seen[id] {
+			continue
+		}
+		seen[id] = true
+		where := m.Name
+		if where == "" {
+			where = m.Path
+		}
+		out = append(out, recruiting.Edge{
+			From: me, To: id, Kind: string(sources.EdgeCoMentioned),
+			Basis:      idx.display(id) + " is named in your meeting note “" + where + "”",
 			Confidence: recruiting.FormatConfidence(coMentionConfidence),
 			Inferred:   true, Source: "log", Evidence: m.Path, Observed: m.Date,
 		})
