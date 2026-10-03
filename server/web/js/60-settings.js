@@ -924,8 +924,9 @@ function buildPortalActions(p, acts, wrap) {
       return;
     }
     acts.append(pillLight("test", () => portalAction("/api/portals/" + p.id + "/test", wrap)));
-    // engine-managed portals (heypocket) are polled by the excalibur ritual, not manifest
-    if (!p.engine) acts.append(pillLight("poll", () => portalAction("/api/portals/" + p.id + "/poll", wrap)));
+    // engine-managed portals (heypocket) are polled by the excalibur ritual, not
+    // manifest; a credential-only portal (TypeSafe) holds a key and never polls
+    if (!p.engine && !p.credential) acts.append(pillLight("poll", () => portalAction("/api/portals/" + p.id + "/poll", wrap)));
     acts.append(
       pillLight("replace", () => togglePortalForm(p, wrap)),
       armedPill("disconnect", p.engine ? "remove key?" : "disconnect — cached items stay?",

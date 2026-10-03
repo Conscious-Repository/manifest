@@ -37,6 +37,7 @@ type panelRow struct {
 	Have         []string            `json:"have,omitempty"`         // keys currently set (names only)
 	Accounts     []string            `json:"accounts,omitempty"`     // oauth: connected identities
 	Engine       bool                `json:"engine,omitempty"`       // engine-managed apikey (heypocket): no manifest poll
+	Credential   bool                `json:"credential,omitempty"`   // held for another consumer: key form + test, no poll
 	// Env names the environment variable that currently supplies the
 	// credential (Settings › Connections renders the row read-only: "set via
 	// environment (VAR)"). Never the value.
@@ -337,7 +338,7 @@ func (s *Server) portalRowView(pr portals.Row) panelRow {
 	return panelRow{
 		ID: pr.ID, Name: pr.Name, Kind: string(pr.Kind), State: string(pr.State),
 		Err: pr.Err, Masked: pr.Masked, LastCrossing: pr.LastCrossing,
-		Fields: pr.Fields, Have: pr.Have,
+		Fields: pr.Fields, Have: pr.Have, Credential: pr.Credential,
 	}
 }
 

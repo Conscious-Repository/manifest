@@ -19,6 +19,7 @@ type Service struct {
 	hc     *http.Client
 	cuBase string // test override
 	bnBase string
+	tsBase string
 
 	mu     sync.Mutex
 	caches map[string]*Cache
@@ -76,7 +77,7 @@ func (svc *Service) Rows() []Row {
 
 func (svc *Service) row(d Def) Row {
 	r := Row{Def: d}
-	if !d.Polled { // registered, dormant — nothing polls, no key form
+	if !d.Polled && !d.Credential { // registered, dormant — nothing polls, no key form
 		r.State = StateDormant
 		return r
 	}
@@ -104,7 +105,7 @@ func (svc *Service) row(d Def) Row {
 // SetCreds writes the credentials, auto-tests, and (on success) kicks a poll.
 func (svc *Service) SetCreds(ctx context.Context, id string, fields map[string]string) (Row, error) {
 	d, ok := defByID(id)
-	if !ok || !d.Polled {
+	if !ok || !(d.Polled || d.Credential) {
 		return Row{}, errUnknownPortal
 	}
 	if err := svc.store.SetCreds(id, d, fields); err != nil {
@@ -112,11 +113,21 @@ func (svc *Service) SetCreds(ctx context.Context, id string, fields map[string]s
 	}
 	if svc.store.HasCreds(id, d) {
 		svc.test(ctx, d)
-		if _, err := svc.cache(id).Status(); err == "" {
+		if _, err := svc.cache(id).Status(); err == "" && d.Polled {
 			go svc.pollOne(context.Background(), d)
 		}
 	}
 	return svc.row(d), nil
+}
+
+// Credential returns one stored field of a portal ("" when unset) — the read
+// a consumer of a credential-only portal makes (the TypeSafe key, say).
+func (svc *Service) Credential(id, key string) string {
+	d, ok := defByID(id)
+	if !ok {
+		return ""
+	}
+	return svc.store.Creds(id, d)[key]
 }
 
 // Disconnect clears the credential file and the degraded/cursor state so the row
@@ -135,7 +146,7 @@ func (svc *Service) Disconnect(id string) (Row, error) {
 // Test runs the portal's cheapest authenticated read and records the result.
 func (svc *Service) Test(ctx context.Context, id string) (Row, error) {
 	d, ok := defByID(id)
-	if !ok || !d.Polled {
+	if !ok || !(d.Polled || d.Credential) {
 		return Row{}, errUnknownPortal
 	}
 	svc.test(ctx, d)
@@ -143,6 +154,11 @@ func (svc *Service) Test(ctx context.Context, id string) (Row, error) {
 }
 
 func (svc *Service) test(ctx context.Context, d Def) {
+	if d.Credential {
+		err := svc.verify(ctx, d)
+		svc.cache(d.ID).Commit(svc.now(), err == nil, nil, nil, nil, errStr(err))
+		return
+	}
 	client, err := svc.client(d)
 	if err != nil {
 		svc.cache(d.ID).Commit(svc.now(), false, nil, nil, nil, err.Error())
@@ -182,6 +198,17 @@ func (svc *Service) client(d Def) (poller, error) {
 		return newBenchling(creds["apiKey"], creds["tenant"], svc.bnBase, svc.hc), nil
 	}
 	return nil, errUnknownPortal
+}
+
+// verify is the credential-only portals' "test": the cheapest authenticated
+// call that proves the key, recorded like a poll result.
+func (svc *Service) verify(ctx context.Context, d Def) error {
+	creds := svc.store.Creds(d.ID, d)
+	switch d.ID {
+	case "typesafe":
+		return verifyTypeSafe(ctx, svc.hc, svc.tsBase, creds["apiKey"])
+	}
+	return errUnknownPortal
 }
 
 // cursorKey is the cache cursor a portal advances (single high-water each).

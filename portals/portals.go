@@ -54,12 +54,16 @@ type CredField struct {
 // Def is a portal definition — pure data, so a new source portal registers
 // later without code. The registry below is the whole v1 source-portal set.
 type Def struct {
-	ID       string      `json:"id"`
-	Name     string      `json:"name"`
-	Kind     Kind        `json:"kind"`
-	Fields   []CredField `json:"fields"` // credential form (api-key portals)
-	Polled   bool        `json:"polled"` // a poller crosses it on a schedule
-	Interval time.Duration
+	ID     string      `json:"id"`
+	Name   string      `json:"name"`
+	Kind   Kind        `json:"kind"`
+	Fields []CredField `json:"fields"` // credential form (api-key portals)
+	Polled bool        `json:"polled"` // a poller crosses it on a schedule
+	// Credential marks a portal manifest only HOLDS a key for (another consumer
+	// — a skill, a script, a later integration — reads it): the key form, test
+	// and disconnect apply; nothing polls and nothing lands in the FEED.
+	Credential bool `json:"credential,omitempty"`
+	Interval   time.Duration
 }
 
 // primarySecret returns the field whose last 4 chars mask the row (the key).
@@ -86,6 +90,15 @@ var Registry = []Def{
 		Fields: []CredField{
 			{Key: "tenant", Label: "Tenant subdomain", Secret: false, Hint: "e.g. specialt  (from specialt.benchling.com)"},
 			{Key: "apiKey", Label: "API key", Secret: true, Hint: "sk_…  (Benchling → Account → API keys)"},
+		},
+	},
+	{
+		// TypeSafe's Jev (System One) model — typed judgments over state. The
+		// key is held here for the TypeSafe skill and any manifest integration
+		// that follows; "test" makes one tiny Noul call to prove the key.
+		ID: "typesafe", Name: "TypeSafe · Jev", Kind: KindAPIKey, Credential: true,
+		Fields: []CredField{
+			{Key: "apiKey", Label: "API key", Secret: true, Hint: "apikey_…  (console.typesafe.ai)"},
 		},
 	},
 }
