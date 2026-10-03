@@ -10,7 +10,9 @@
 //   rule 1  every fold still works from its home: ＋ opens files, model and
 //           permissions, and the model row opens the picker;
 //   rule 6  ··· names the conversation first, Delete last in --danger, the
-//           facts after it.
+//           facts after it;
+//   and ‹ Chats stays on screen: a page pan left after the keyboard closes
+//           is undone.
 // Run: NODE_PATH=<node_modules with playwright> node server/testdata/chat-phone-compression.cjs
 const {chromium}=require('playwright'),assert=require('node:assert/strict');
 const {makeStub}=require('./chat-stub-api.cjs');
@@ -53,6 +55,21 @@ const {makeStub}=require('./chat-stub-api.cjs');
     assert.equal(m.first,'Fix the flaky test',at+': ··· names the conversation first');
     assert.equal(m.lastAct,'Delete chat…',at+': Delete is last');assert.equal(m.delColor,m.want,at+': Delete in --danger');
     assert.ok(m.stopAfterWorkspace,at+': Stop after the plain actions');assert.ok(m.factsAfter,at+': facts after the actions');assert.equal(m.changesInMenu,false,at+': +N −M said once');
+    // the head stays reachable: a page pan left behind (iOS after its keyboard
+    // closes) goes back to the top, so ‹ Chats is on screen (owner, 2026-10-03)
+    await page.keyboard.press('Escape');
+    const pan=await page.evaluate(async()=>{const tick=()=>new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));
+     const pad=document.createElement('div');pad.style.height='1600px';document.body.append(pad);
+     window.scrollTo(0,300);await tick();const plain=window.scrollY;
+     document.getElementById('appShell').classList.add('mf-keyboard');window.scrollTo(0,300);const held=window.scrollY;
+     visualViewport.dispatchEvent(new Event('resize'));await tick();await tick();
+     const back=document.querySelector('#chatThreadHeader .mf-chat-back').getBoundingClientRect();pad.remove();
+     return {plain,held,after:window.scrollY,backTop:back.top,keyboard:document.getElementById('appShell').classList.contains('mf-keyboard')};});
+    assert.equal(pan.plain,0,at+': a page pan in chat is undone');
+    assert.ok(pan.held>0,at+': while the keyboard is up the page may pan (the caret reveal owns it)');
+    assert.equal(pan.keyboard,false,at+': the keyboard state clears');
+    assert.equal(pan.after,0,at+': the pan is undone once the keyboard closes');
+    assert.ok(pan.backTop>=0,at+': ‹ Chats on screen');
     assert.deepEqual(errors,[],at);await ctx.close();}
    // a native conversation: no chip row at all
    {const {ctx,page,errors}=await open(w,'/#/chat/a/alfred/b');const at='alfred at '+w;

@@ -88,8 +88,20 @@
         shell.classList.remove("mf-keyboard");
         root.removeProperty("--mf-vv-top");
         root.removeProperty("--mf-vv-height");
+        // iOS can leave the page panned where its caret reveal put it once
+        // the keyboard is gone: the conversation head sat above the screen
+        // with dead space under the composer and no way back to Chats (owner,
+        // 2026-10-03). With the keyboard down there is no reveal to fight.
+        chatUnpan();
       }
     };
+    // a phone chat never keeps a page scroll: the shell is fitted to the
+    // visible window and its panes scroll inside it (48-chat.js chatFitShell)
+    const chatUnpan = () => {
+      if (!mqPhone.matches || shell.classList.contains("mf-keyboard") || document.getElementById("chatView")?.hidden !== false) return;
+      if (window.scrollY || window.scrollX) window.scrollTo(0, 0);
+    };
+    window.addEventListener("scroll", chatUnpan, { passive: true });
     const refit = () => {
       if (!mqPhone.matches || fitFrame) return;
       fitFrame = requestAnimationFrame(() => { fitFrame = 0; follow(); if (typeof chatFitShell === "function") chatFitShell(); });
