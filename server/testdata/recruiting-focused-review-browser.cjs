@@ -23,7 +23,20 @@ await page.getByRole('button',{name:'Next',exact:true}).click();assert.equal(awa
 assert.equal(await page.getByRole('button',{name:'Next',exact:true}).evaluate(e=>e===document.activeElement),true);
 await page.keyboard.press('Enter');assert.equal(await page.locator('.rec-focused-title').textContent(),'Cia Example');
 await page.getByRole('button',{name:'Previous',exact:true}).click();
-await page.getByRole('button',{name:'Later this session',exact:true}).click();assert.equal(await page.locator('.rec-focused-title').textContent(),'Cia Example');
+// the decision (2026-10-03): read, then decide — one primary, Network beside
+// it, pass set apart at the end, and what each way in means said once
+const bar=await page.locator('.rec-focused-candidate .rec-draft-actions').evaluate(a=>{const R=e=>e.getBoundingClientRect(),btns=[...a.querySelectorAll(':scope > button, :scope > .rec-keep > button')];
+ return {labels:btns.map(b=>b.textContent.trim()),primary:btns.filter(b=>getComputedStyle(b).backgroundColor===getComputedStyle(document.documentElement).getPropertyValue('--accent').trim()||b.matches('.rec-draft-accept')).map(b=>b.textContent.trim()),
+  passLast:R(a.querySelector('.rec-draft-reject')).right>=Math.max(...btns.map(b=>R(b).right))-1,hint:a.querySelector('.rec-draft-choice-hint')?.textContent||'',
+  belowSummary:R(a).top>R(document.querySelector('.rec-summary-text')).top,position:getComputedStyle(a).position};});
+assert.deepEqual(bar.labels,['Add as candidate','Save to Network','Enhance','Later','pass'],'the decision buttons, in order');
+assert.deepEqual(bar.primary,['Add as candidate'],'one primary');
+assert.ok(bar.passLast,'pass sits apart at the end of the row');
+assert.match(bar.hint,/Candidate: joins this search's pipeline.*Network: kept as someone around AION, not a candidate/);
+assert.ok(bar.belowSummary,'the decision comes after the evidence');
+assert.equal(bar.position,'sticky','the decision stays in reach');
+assert.match(await page.locator('.rec-focused-head').textContent(),/Bea Example\s*new/);
+await page.getByRole('button',{name:'Later',exact:true}).click();assert.equal(await page.locator('.rec-focused-title').textContent(),'Cia Example');
 await page.getByText('Enhanced research · experience, education & public work',{exact:true}).click();
 await page.getByText('Supporting quote · ada.example',{exact:true}).click();assert.equal(await page.locator('.rec-brief-citation[open] blockquote').first().textContent(),'earned a PhD at Example University');
 assert.equal(await page.getByRole('button',{name:'Enhance',exact:true}).count(),1);

@@ -137,8 +137,8 @@ async function loadRecruitingSources() {
 // category to pick: what they know comes from the source's topics.
 function recKeepControl(runId, draftId, name, after, also) {
   const wrap = el("span", "rec-keep");
-  const save = el("button", "pill light", "save to network");
-  save.title = "save " + name + " to Network — a network record, not a candidate; they join your contacts when you make them one";
+  const save = el("button", "pill light rec-keep-save", "Save to Network");
+  save.title = "Keep " + name + " in Network (advisors, experts, connectors around AION) without making them a candidate for this search. They count as one of your people once you make them a contact.";
   save.onclick = async (e) => {
     e.stopPropagation();
     save.disabled = true;
@@ -2646,10 +2646,11 @@ function recDraftPathLine(d, dr) {
   const net = (recCache || {}).network || {};
   const edges = (net.edges || []).filter((e) => keys.includes((e.from || "").trim()) || keys.includes((e.to || "").trim()));
   if (edges.length) {
-    const kinds = edges.map((e) => e.kind).filter((k, i, all) => k && all.indexOf(k) === i);
+    const words = { member_of: "a source you swept", coauthor: "coauthors", same_lab: "same lab", co_mentioned: "named together in notes", same_meeting: "same meeting", same_company: "same company", coworker: "coworkers", advisor: "advisor" };
+    const kinds = edges.map((e) => words[e.kind] || (e.kind || "").replace(/_/g, " ")).filter((k, i, all) => k && all.indexOf(k) === i);
     row.append(el("span", "rec-draft-path-text",
-      edges.length + " edge" + (edges.length === 1 ? " in the network names them" : "s in the network name them") +
-      (kinds.length ? " (" + kinds.join(", ") + ")" : "") + " · but no route from you reaches those edges yet"));
+      "Not connected to you yet · linked to " + edges.length + " other " + (edges.length === 1 ? "person or source" : "people or sources") +
+      (kinds.length ? " (" + kinds.join(", ") + ")" : "")));
     const go = el("button", "rec-linkish", "open network view →");
     go.onclick = () => { recNetQuery = dr.name || ""; recNav("network"); };
     row.append(go);
@@ -2668,7 +2669,7 @@ function recDraftPathLine(d, dr) {
 // blank: the source named none, which is not the same as having none.
 function recDraftTopics(run, d, dr, key) {
   const wrap = el("div", "rec-draft-topics");
-  wrap.append(el("span", "micro-label", "expertise"));
+  wrap.append(el("span", "micro-label", "expertise · inferred"));
   const topics = (dr.topics || []).map((t) => (t || "").trim()).filter(Boolean);
   if (!topics.length) {
     // NOTHING. An absence that appears on nearly every card teaches nothing
@@ -2686,7 +2687,6 @@ function recDraftTopics(run, d, dr, key) {
     const on = !!recDraftTopicOpen[tkey];
     const chip = el("button", "rec-topic-chip" + (on ? " on" : ""));
     chip.append(el("span", "rec-topic-name", t));
-    chip.append(el("span", "micro-label rec-topic-mark", "inferred"));
     chip.title = "named by " + run.source + " from this author's own works — open for the evidence and date";
     chip.setAttribute("aria-expanded", on ? "true" : "false");
     chip.onclick = () => { recDraftTopicOpen[tkey] = !on; if (recPaint) recPaint(); };
@@ -2992,8 +2992,8 @@ function recDraftCard(run, d) {
     // ⚠ a preview run accepts too (2026-09-04) — the checkbox never protected
     // anything, so the decision is no longer gated behind an identical re-run
     const acts = el("div", "rec-draft-actions");
-    const accept = el("button", "pill light rec-draft-accept", "Add to People");
-    accept.title = "add this one draft to the board for this search, citations and all — accepting is not confirming every inferred chip";
+    const accept = el("button", "pill light rec-draft-accept", "Add as candidate");
+    accept.title = "Add them to this search's candidates (Recruiting › People), citations and all — accepting is not confirming every inferred chip";
     accept.onclick = () => {
       accept.disabled = true; // one record per press: a double-click is not two accepts
       recSourcesPost("/api/aion/recruiting/sources/accept/" + run.id + "/" + d.id, {}, "candidate added from " + run.source);
@@ -3008,7 +3008,7 @@ function recDraftCard(run, d) {
       look.textContent = "DeepSeek → Kairos…";
       recDraftLookup(run, d);
     };
-    const laterBtn = el("button", "pill light", "Later this session");
+    const laterBtn = el("button", "pill light", "Later");
     laterBtn.title = "set aside for this sitting — stays new, comes back on reload";
     laterBtn.onclick = () => {
       recDraftLater[key] = true;
@@ -3019,7 +3019,10 @@ function recDraftCard(run, d) {
         recNav("sources");
       });
     };
-    acts.append(accept, keep, look, recDraftPass(run, d), laterBtn);
+    acts.append(accept, keep, look, laterBtn, recDraftPass(run, d));
+    // the two ways in, said once where they are chosen (2026-10-03: "the
+    // difference between save to people and save to network is unclear")
+    acts.append(el("p", "rec-draft-choice-hint", "Candidate: joins this search's pipeline (Recruiting › People). Network: kept as someone around AION, not a candidate."));
     card.append(acts);
   } else if (d.decidedAt) {
     // the reassurance ("this search only — nothing was deleted") is the
@@ -4737,7 +4740,11 @@ function paintFocusedSourceReview(main) {
   const {run, draft} = entry;
   const context = el("h2", "rec-focused-title", (draft.draft || {}).name || "Candidate");
   context.tabIndex = -1;
-  main.append(context, el("p", "micro-label", recRunLabel(run) + " · " + recRoleTitle((draft.draft || {}).role || (run.scope || {}).role)));
+  // the status rides the name (it floated on its own row under the decision)
+  const titleRow = el("div", "rec-focused-head");
+  titleRow.append(context, el("span", "micro-label rec-draft-status " + draft.status, recDraftStatusWord(draft.status)));
+  if (draft.lookedUpAt) titleRow.append(el("span", "micro-label rec-focused-flag", draft.enhancement?.brief ? "enhanced" : "enhancement attempted"));
+  main.append(titleRow, el("p", "micro-label", recRunLabel(run) + " · " + recRoleTitle((draft.draft || {}).role || (run.scope || {}).role)));
   // Full provenance is one disclosure away; do not reopen it on every repaint.
   const panel = el("article", "rec-focused-candidate");
   panel.append(recDraftCard(run, draft)); main.append(panel);

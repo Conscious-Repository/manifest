@@ -448,7 +448,12 @@ a.rec-seed-name:hover { text-decoration: underline; }
 .rec-draft-on:hover { text-decoration: underline; }
 .rec-draft-hint { padding-top: var(--sp-2); font-size: var(--fs-xs); color: var(--base-40); }
 .rec-draft-actions { display: flex; flex-wrap: wrap; gap: var(--sp-2); padding-top: var(--sp-3); }
-.rec-draft-accept { color: var(--accent); }
+/* one primary (become a candidate), Network beside it, the tools quiet, and
+   pass set apart at the row's end — it was one of five equal buttons */
+.rec-draft-actions > .rec-draft-accept { color: var(--on-accent); background: var(--accent); border-color: var(--accent); }
+.rec-draft-actions > .rec-draft-accept:hover:not(:disabled) { filter: brightness(1.08); }
+.rec-draft-actions > :is(.rec-draft-reject, .rec-draft-armed:first-of-type) { margin-left: auto; }
+.rec-draft-choice-hint { flex-basis: 100%; margin: var(--sp-1) 0 0; font-size: var(--fs-xs); color: var(--base-50); }
 .rec-draft-reject { color: var(--base-70); }
 .rec-draft-cites.none { cursor: default; color: var(--base-40); }
 /* arm-then-confirm for pass — ink, like .rec-quiet-btn.armed; never the red
@@ -711,7 +716,18 @@ a.rec-place-name:hover { text-decoration: underline; }
 .rec-focused-title { font-size: var(--fs-2xl); margin: var(--sp-7) 0; overflow-wrap: anywhere; }
 .rec-focused-candidate { min-width: 0; }
 .rec-focused-candidate .rec-draft { display: flex; flex-direction: column; }
-.rec-focused-candidate .rec-draft-actions { order: -1; flex-wrap: wrap; padding: var(--sp-6) 0; border-bottom: 1px solid var(--line); }
+/* Read, then decide (2026-10-03): the decision sits under the evidence it
+   rests on, pinned to the bottom of the screen so it is always one reach
+   away — it led the card, five equal buttons above anything to judge by. */
+.rec-focused-candidate .rec-draft-actions {
+  order: 99; position: sticky; bottom: 0; z-index: 2; flex-wrap: wrap; align-items: center;
+  padding: var(--sp-5) 0 calc(var(--sp-5) + env(safe-area-inset-bottom, 0px)); margin-top: var(--sp-7);
+  background: var(--bg); border-top: 1px solid var(--line);
+}
+.rec-focused-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--sp-4); margin: var(--sp-7) 0 var(--sp-2); }
+.rec-focused-head .rec-focused-title { margin: 0; }
+.rec-focused-flag { color: var(--base-50); }
+.rec-focused-candidate .rec-draft:not(.later) > .rec-draft-head { display: none; }
 .rec-enhanced-brief { border-top: 1px solid var(--line); padding-top: var(--sp-7); }
 .rec-brief-section { margin: var(--sp-7) 0; }
 .rec-brief-citation { margin: var(--sp-4) 0; overflow-wrap: anywhere; }
@@ -750,3 +766,7 @@ a.rec-place-name:hover { text-decoration: underline; }
 .rec-seen-before { color: var(--warn); }
 .rec-reject-preview { font-size: var(--fs-sm); display: flex; flex-direction: column; gap: var(--sp-2); padding: var(--sp-2) 0; }
 .rec-reject-preview > summary { font-family: var(--mono); font-size: var(--fs-2xs); color: var(--base-60); cursor: pointer; }
+/* the pinned decision bar needs a scrolling ancestor, not a clipping one:
+   overflow:hidden made .aion-list the bar's scroll container, so it never
+   pinned; clip draws the same edge without becoming one */
+.aion-list:has(.rec-focused-candidate) { overflow: clip; }
