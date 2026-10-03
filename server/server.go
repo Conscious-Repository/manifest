@@ -43,6 +43,7 @@ import (
 	"manifest/goals"
 	"manifest/graph"
 	"manifest/hermes"
+	"manifest/jev"
 	"manifest/ledger"
 	"manifest/manifestmcp"
 	"manifest/portals"
@@ -125,6 +126,9 @@ type Server struct {
 	reading           *reading.Service
 	bookLookup        *books.Service
 	extrinsicRootName string // where "+ book" creates records (default "extrinsic")
+	// jevJudge: an injected Jev judge (tests use a typesafe.Fake); nil →
+	// the live TypeSafe client, key resolved per request (jev.go).
+	jevJudge *jev.Judge
 	// Signals (app-derived FEED cards: cold contacts, stalled Rocks). Nilable.
 	signals *signals.Service
 	// Portals (external realms — ClickUp, Benchling — polled into the FEED). Nilable.
@@ -472,6 +476,15 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/agents/personas", s.handlePersonas)                     // persona records (persona plan Phase 1)
 	mux.HandleFunc("GET /api/harnesses", s.handleHarnesses)                          // harness settings
 	mux.HandleFunc("POST /api/harnesses/spirit/portal", s.handleHarnessSpiritPortal) // switch a spirit's conduit
+
+	// JEV — advisory TypeSafe judgments (jev.go). Read-only: nothing here
+	// writes the tier map, an approval, or a run.
+	mux.HandleFunc("GET /api/jev/status", s.handleJevStatus)
+	mux.HandleFunc("POST /api/aion/transcripts/tier/advise", s.handleAionTierAdvise) // {name?, text, source?}
+	mux.HandleFunc("POST /api/jev/clarify-gate", s.handleJevClarifyGate)             // {request, context?, proposedDefault?}
+	mux.HandleFunc("POST /api/jev/evidence-check", s.handleJevEvidenceCheck)         // {claim, evidence?, context?}
+	mux.HandleFunc("POST /api/jev/goal-state", s.handleJevGoalState)                 // {goal?, status, context?}
+	mux.HandleFunc("POST /api/jev/approval-risk", s.handleJevApprovalRisk)           // {action, context?}
 
 	// AION — program cockpit over the shared live AION projection.
 	if s.aion != nil {
