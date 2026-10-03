@@ -412,6 +412,10 @@ func (s *Server) spoolTaskWorkOrderAs(harness *Harness, agent, taskID, phase, ex
 			protocol = alfredTierProtocol
 		}
 		b.WriteString(protocol)
+		if protocol == alfredTierProtocol {
+			// advisory only: the agent turn still chooses the tier
+			b.WriteString(s.jevClarifyLine(extra, "TASK: "+text+"\n"+rec.Description+"\n"+rec.Plan+"\n"+s.threadTail(taskID, 6)))
+		}
 	}
 	b.WriteString("For this todo: [todo:: " + taskID + "] [phase:: " + phase + "]")
 	if hasPersona || (intent != "" && reply) {
@@ -536,6 +540,7 @@ func (s *Server) AgentLoopTicker() {
 		s.chatSweep()
 		s.chatQueuedFollowupSweep()
 		s.pollEmailReplies()
+		s.jevAutoSweepAsync() // card defaults ready before the owner looks (jev_auto.go)
 	}
 }
 

@@ -129,6 +129,12 @@ type Server struct {
 	// jevJudge: an injected Jev judge (tests use a typesafe.Fake); nil →
 	// the live TypeSafe client, key resolved per request (jev.go).
 	jevJudge *jev.Judge
+	// jevAdviceDir: where automatic Jev advice is cached (<dataDir>/jev,
+	// jev_auto.go); "" with no injected judge → automatic advice off.
+	jevAdviceDir string
+	jevAdvice    *jevAdviceCache
+	jevCacheOnce sync.Once
+	jevSweeping  atomic.Bool
 	// Signals (app-derived FEED cards: cold contacts, stalled Rocks). Nilable.
 	signals *signals.Service
 	// Portals (external realms — ClickUp, Benchling — polled into the FEED). Nilable.

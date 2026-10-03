@@ -9,9 +9,10 @@ import (
 )
 
 // Agent-workflow judgments: the clarification gate (ideas list #15), evidence
-// sufficiency, goal/run state, and approval risk. All four are advisory API
-// surfaces only — none is wired to suppress or force an agent question,
-// accept a run, or pass an approval. Existing gates stay authoritative.
+// sufficiency, goal/run state, and approval risk. All four are advisory: the
+// server attaches them as annotations (server/jev_auto.go) but none
+// suppresses or forces an agent question, accepts a run, or passes an
+// approval. Existing gates stay authoritative.
 
 // MaxAgentInput bounds the combined text of one agent-workflow judgment's
 // state (well inside Jev's 32k-token state budget).

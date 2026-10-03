@@ -83,6 +83,15 @@ assert.equal(ref2.value, 'internal');
 assert.match(known.wrap.children[0].textContent, /already tiered as internal/);
 assert.deepEqual(chipText(known.wrap), ['＋ open', 'internal · suggested', '＋ held']);
 
+// an untiered transcript Jev advised: its tier is pre-selected, the label
+// names the source, and nothing is recorded until Confirm
+const ref3 = { value: null, shown: () => false };
+const advised = context.buildVisibilityEditor({ suggested: 'internal', known: false, basis: 'jev', note: '2026-09-21 x.md', source: 'granola',
+  jev: { state: 'advised', tier: 'internal', applied: false } }, ['aion'], ref3);
+assert.equal(ref3.value, 'internal');
+assert.match(advised.wrap.children[0].textContent, /Jev's advice for this untiered Granola transcript — nothing is shared until you confirm/);
+assert.deepEqual(chipText(advised.wrap), ['＋ open', 'internal · suggested', '＋ held']);
+
 // Confirm carries the tier only when the row was offered
 context.spiritApprovalAct('g1', 'confirm', { attendees: ['jane'], title: 't', categories: ['aion'], visibility: 'open' });
 assert.equal(posted.length, 1);

@@ -24,8 +24,10 @@ import (
 // pre-filled, accept-by-confirm, overridable, never auto-applied elsewhere.
 //
 // The proposal is the DATA FILE's answer when the note is already tiered
-// (a re-proposed or re-synced transcript) and `held` otherwise: an unknown
-// transcript must never default to more exposure. The owner's answer is
+// (a re-proposed or re-synced transcript); otherwise Jev's advice after
+// jev.AdviseTier's conservative policy when Jev has answered (jev_auto.go),
+// and `held` in every other case (no key, pending, error, oversize). The
+// default is only a default: nothing is written until the owner confirms. The owner's answer is
 // written back into the data file in the coding checkout — the one tier
 // store — where a hand edit would go; it ships with the next build.
 
@@ -38,6 +40,14 @@ type aionVisibilitySuggestion struct {
 	Known     bool      `json:"known"`
 	Note      string    `json:"note"`
 	Source    string    `json:"source"` // granola | pocket | email
+	// Basis says where Suggested came from: "map" (the data file names the
+	// note), "jev" (Jev's advice after policy, for an unmapped aion
+	// transcript), or "default" (held — Jev off, pending, failed, oversize).
+	Basis string `json:"basis"`
+	// Jev is the audit of the automatic advice (nil when the map answers or
+	// the note is not an aion-tagged transcript). Advisory: the map is
+	// written only when the owner confirms the card.
+	Jev *jevTierView `json:"jev,omitempty"`
 }
 
 // transcriptSource names the connector a proposed note carries identity for,
@@ -115,7 +125,7 @@ func (s *Server) aionVisibilitySuggestion(p approvals.Proposal) *aionVisibilityS
 		return nil
 	}
 	name := tierMapNoteName(p.ApplyPath)
-	out := &aionVisibilitySuggestion{Suggested: aion.TierHeld, Note: name, Source: src}
+	out := &aionVisibilitySuggestion{Suggested: aion.TierHeld, Note: name, Source: src, Basis: "default"}
 	tm := s.aionTierMap()
 	if tm == nil {
 		var err error
@@ -124,7 +134,16 @@ func (s *Server) aionVisibilitySuggestion(p approvals.Proposal) *aionVisibilityS
 		}
 	}
 	if t, ok := tm.Tier(name); ok {
-		out.Suggested, out.Known = t, true
+		out.Suggested, out.Known, out.Basis = t, true, "map"
+		return out
+	}
+	// unmapped: Jev's policy tier becomes the card's default (jev_auto.go);
+	// held whenever Jev is off, pending, failing, or the note is oversize
+	if v := s.jevTierDefault(p, name); v != nil {
+		out.Jev = v
+		if v.State == jevStateAdvised {
+			out.Suggested, out.Basis = v.Tier, "jev"
+		}
 	}
 	return out
 }
@@ -160,7 +179,12 @@ func (s *Server) aionRecordVisibility(approved approvals.Proposal, tier string) 
 		return fmt.Errorf("visibility %s not recorded: coding checkout is not configured (boardRepo)", t)
 	}
 	name := tierMapNoteName(approved.ApplyPath)
+	reason := "owner · approvals inbox (" + src + ")"
+	// audit trail only: what the card's automatic default was, if Jev set it
+	if e, ok := s.jevLookup(jevKindTier, approved.ID, jevHash(tierAdviceText(approved))); ok && e.State == jevStateAdvised && e.Tier != nil {
+		reason += " · jev advised " + string(e.Tier.Tier)
+	}
 	return aion.WriteTierMapEntry(p, name, aion.TierEntry{
-		Tier: t, Reason: "owner · approvals inbox (" + src + ")", Bytes: len(approved.Proposed),
+		Tier: t, Reason: reason, Bytes: len(approved.Proposed),
 	})
 }

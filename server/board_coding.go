@@ -352,6 +352,10 @@ func (s *Server) codingResultSweep() {
 					}
 					if err := boardReport(h, r.ID, tm[1], pm[1], "", outcome, body, started); err == nil {
 						_ = os.Remove(filepath.Join(dir, "recovery.md"))
+						if s.jevAutoOn() { // advisory sidecar; the outcome above stands
+							task, _ := s.openTaskText(tm[1])
+							go s.jevRunAdvise(context.Background(), dir, task, result)
+						}
 					}
 					return true
 				}

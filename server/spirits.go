@@ -160,6 +160,9 @@ type approvalRow struct {
 	// The card shows it only while the note carries the aion category
 	// (aion_visibility.go).
 	VisibilitySuggestion *aionVisibilitySuggestion `json:"visibilitySuggestion,omitempty"`
+	// JevRisk is Jev's advisory risk category for a manifest-operation card
+	// (jev_auto.go); nil when Jev is off. The approval gate still decides.
+	JevRisk *jevRiskView `json:"jevRisk,omitempty"`
 }
 
 // approvalRows returns the enriched pending approvals, skipping any types in
@@ -202,6 +205,7 @@ func (s *Server) harnessApprovalRowsMatching(h Harness, exclude map[string]bool,
 		if p.ApplyPath != "" {
 			switch p.Type {
 			case approvals.TypeManifestOperation:
+				rr.JevRisk = s.jevApprovalRisk(p)
 				rr.Allowed = s.manifestOperations != nil
 				if s.manifestOperations != nil {
 					if out, err := s.manifestOperations.Operation(p.ApplyPath); err == nil {

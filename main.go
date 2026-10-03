@@ -543,6 +543,7 @@ func main() {
 	srv.UseMailSenders(gmailsend.NewRegistry(cfg.DataDir))
 	srv.UseTasks(tasksStore)
 	srv.UseSticky(filepath.Join(cfg.DataDir, "sticky.md")) // ⌘I floating post-it (scratch, never the vault)
+	srv.UseJevAdvice(filepath.Join(cfg.DataDir, "jev"))    // automatic Jev advice cache (needs TYPESAFE_API_KEY)
 	srv.UseCapture(capture.NewStore(cfg.DataDir))          // the tray (cmd-ctr Stage; dataDir until promoted)
 	srv.UseSTT(cfg.LabSttUrl, cfg.LabSttModel)             // mic dictation → lab granite-speech (P6)
 	// TERMINAL: in-app PTY over tmux. Socket dir under dataDir so it's writable

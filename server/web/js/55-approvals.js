@@ -401,7 +401,9 @@ function buildVisibilityEditor(sug, categories, ref) {
   wrap.append(el("div", "appr-attendees-label",
     "Visibility — suggested: " + ref.value + (known
       ? " (already tiered as " + ref.value + " in the tier map)"
-      : " (" + where + " transcript not yet tiered — the safe default)") +
+      : sug.basis === "jev"
+        ? " (Jev's advice for this untiered " + where + " transcript — nothing is shared until you confirm)"
+        : " (" + where + " transcript not yet tiered — the safe default)") +
     ". Accept by confirming, or pick another tier"));
   const chips = el("div", "attendee-chips");
   const renderChips = () => {

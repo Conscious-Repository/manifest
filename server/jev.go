@@ -27,8 +27,9 @@ import (
 //
 // Every answer is ADVISORY: these handlers read their request body and call
 // Jev; they write nothing — not the tier map, not an approval, not a run.
-// No UI consumes them yet; product wiring comes after the judgments have
-// been checked against real cases.
+// The same judgments also run automatically at the existing decision points
+// (transcript visibility card default, approval-risk rows, Alfred's work
+// order, coding-run sidecars) — see jev_auto.go; advisory there too.
 //
 // Key: TYPESAFE_API_KEY, else the key held in Settings › Portals › TypeSafe,
 // resolved on every request (so setting either takes effect without a
