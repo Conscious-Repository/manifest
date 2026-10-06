@@ -86,6 +86,21 @@ const FEED_TAIL_LANES = [ // after the empty-state check, like today
   { kind: "receipt", slice: (c) => c.receipts },
 ];
 
+// feedProbablyNot is the fold: a <details> that remembers whether you opened
+// it this session, so a repaint (the 3 s poll) does not snap it shut.
+let feedProbablyNotOpen = false;
+function feedProbablyNot(cards) {
+  const fold = el("details", "feed-probably-not");
+  fold.open = feedProbablyNotOpen;
+  fold.ontoggle = () => { feedProbablyNotOpen = fold.open; };
+  const sum = el("summary", "feed-probably-not-head");
+  sum.append(el("span", "micro-label", "probably not · " + cards.length),
+    el("span", "feed-probably-not-note", "duplicates and items you'd likely decline — still yours to approve or reject"));
+  fold.append(sum);
+  cards.forEach((c) => fold.appendChild(FEED_CARD.proposal(c)));
+  return fold;
+}
+
 function showFeed(h) {
   // The address decides the view: #/feed is the Inbox, #/feed/approvals the
   // approvals lane, anything else a reader view (46-consume.js).
@@ -217,7 +232,14 @@ function renderFeed() {
   // kept/discarded items and never touch the tune loop.
   FEED_LANES.forEach((lane) => {
     if (!laneVisible(lane.kind)) return;
-    lane.slice(feedCache).forEach((c) => host.appendChild(FEED_CARD[lane.kind](c)));
+    const cards = lane.slice(feedCache);
+    if (lane.kind !== "proposal") { cards.forEach((c) => host.appendChild(FEED_CARD[lane.kind](c))); return; }
+    // "Probably not" (2026-10-06): cards the screen folds go under ONE
+    // collapsed, counted section at the end of the approvals — never
+    // rejected, never hidden; each still carries its reason and full controls
+    const folded = cards.filter((c) => c.screen && c.screen.fold);
+    cards.filter((c) => !(c.screen && c.screen.fold)).forEach((c) => host.appendChild(FEED_CARD.proposal(c)));
+    if (folded.length) host.appendChild(feedProbablyNot(folded));
   });
   // one line pointing at the reading, which lives in its own views now; it
   // goes last, and never counts as something in the Inbox

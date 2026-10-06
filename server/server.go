@@ -135,6 +135,10 @@ type Server struct {
 	jevAdvice    *jevAdviceCache
 	jevCacheOnce sync.Once
 	jevSweeping  atomic.Bool
+	// screenEx caches the owner's recent decisions as Jev examples, per day
+	// (approval_screen.go).
+	screenMu sync.Mutex
+	screenEx *screenExampleSet
 	// Signals (app-derived FEED cards: cold contacts, stalled Rocks). Nilable.
 	signals *signals.Service
 	// Portals (external realms — ClickUp, Benchling — polled into the FEED). Nilable.

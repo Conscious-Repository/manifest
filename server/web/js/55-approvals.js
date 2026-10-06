@@ -134,6 +134,13 @@ function approvalCardEl(a) {
       date: a.created,
     });
   }
+  // why the "Probably not" screen folded this card (approval_screen.go) —
+  // said on the card itself, so a folded card never hides its reason
+  if (a.screen && a.screen.fold && (a.screen.reasons || []).length) {
+    const why = el("div", "appr-screen-why");
+    why.append(el("span", "micro-label", "probably not"), el("span", null, a.screen.reasons.join(" · ")));
+    card.append(why);
+  }
   // the goals card already rendered its evidence as the feed-style why line
   if (bodyText && bodyText.trim() && !isReContract && !isGoals) { const b = el("pre", "appr-body"); b.textContent = bodyText.trim(); card.append(b); }
   let blocked = false, blockMsg = "";
@@ -974,6 +981,17 @@ function buildAionEditor(a) {
     row(label, input);
     return input;
   };
+  // your past edits, offered back (2026-10-06): a one-tap chip, never applied
+  // by itself — "you changed BA → HZ on 3 standing waves tasks"
+  const hintChip = (field, labelOf) => {
+    const h = (a.editHints || []).find((x) => x.field === field && (p[field] || "") !== x.to);
+    if (!h) return;
+    const to = labelOf ? labelOf(h.to) : h.to;
+    const b = pillLight("→ " + (to || "none") + " · you changed " + h.count + " like this", () => { p[field] = h.to; rebuild(); });
+    b.classList.add("appr-edit-hint");
+    b.title = "You changed " + field + " from “" + (p[field] || "none") + "” to “" + (to || "none") + "” " + h.count + " of " + h.of + " times on cards from " + (h.scope === "any meeting" ? "any meeting" : "“" + h.scope + "” meetings") + ". Applies only if you tap it.";
+    row("", b);
+  };
   const rebuild = () => {
     form.innerHTML = "";
     // real estate has no heuristics file — the kind flip is task⇄decision only
@@ -1008,6 +1026,7 @@ function buildAionEditor(a) {
         onChange: (v) => { if (v !== ownerPicked) p.owner = v; sync(); },
       });
       row("owner", ownerTa.el);
+      hintChip("owner");
       // rock: BOTH kinds tether — a decision filed without one falls out of
       // every rock-scoped surface. Typeahead over THIS domain's ACTIVE rocks —
       // picking stores the rock ID (displays its title); free text commits
@@ -1059,6 +1078,7 @@ function buildAionEditor(a) {
         onChange: (v) => { if (v !== rockPickedText) p.rock = v; sync(); },
       });
       row("rock", rockTa.el);
+      hintChip("rock", (id) => { const r = ((isRe ? apprReReg : apprAionReg) || { rocks: [] }).rocks.find((x) => x.id === id); return r ? r.label : id; });
       if (p.kind === "task") {
         textRow("due", "due");
       } else {
@@ -1202,16 +1222,43 @@ function renderLineDiff(oldText, newText) {
   if (!changed) wrap.append(el("div", "diff-line diff-ctx", "(no textual change)"));
   return wrap;
 }
+// apprRejectReasons are the one-tap reasons, in the owner's words. The stored
+// text starts with the reason, so the screen can read it back.
+const APPR_REJECT_REASONS = ["Duplicate", "Already done", "Not worth tracking", "Logistics only"];
+function apprAskRejectReason(onReject) {
+  els.pickerTitle.textContent = "Reject — why?";
+  const body = els.pickerBody; body.innerHTML = "";
+  const chips = el("div", "appr-reject-reasons");
+  let done = false;
+  const finish = (reason) => { if (done) return; done = true; document.removeEventListener("keydown", onKey, true); closePicker(); onReject(reason); };
+  APPR_REJECT_REASONS.forEach((r, i) => {
+    const b = pill((i + 1) + " · " + r, () => finish(r));
+    b.classList.add("appr-reject-reason");
+    chips.append(b);
+  });
+  const ta = el("textarea", "asktext-area"); ta.placeholder = "Other reason (optional)"; ta.rows = 2;
+  const actions = el("div", "asktext-actions");
+  actions.append(el("span", "asktext-hint", "1–4 picks a reason · ⌘↵ rejects with the text"), pill("reject →", () => finish(ta.value.trim())));
+  body.append(chips, ta, actions);
+  const onKey = (e) => {
+    if (els.pickerModal.hidden) { document.removeEventListener("keydown", onKey, true); return; }
+    if (e.key === "Escape") { e.preventDefault(); done = true; document.removeEventListener("keydown", onKey, true); closePicker(); return; }
+    if (document.activeElement !== ta && /^[1-4]$/.test(e.key)) { e.preventDefault(); finish(APPR_REJECT_REASONS[+e.key - 1]); return; }
+    if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); finish(ta.value.trim()); }
+  };
+  document.addEventListener("keydown", onKey, true);
+  els.pickerModal.hidden = false;
+  chips.querySelector("button")?.focus();
+}
+
 function spiritApprovalAct(id, kind, edits) {
   if (kind === "reject") {
-    // inline reason box (no browser prompt); Escape cancels
-    askText("Reject — reason (optional)",
-      "recorded on the proposal; for warden findings this becomes an accepted exception",
-      // An empty box records NOTHING — the field is a deliberate-reason channel, not a
-      // click log. The old default ("rejected from dashboard") made up 334 of 399 reasons
-      // in the archive, which buried the 65 that actually said something. The rejection
-      // itself is still recorded (status + moved file); only the noise is gone.
-      (reason) => postApprovalDecision(id, "reject", { reason: reason.trim() }));
+    // one tap says why (2026-10-06): the reasons are the labels the "Probably
+    // not" screen learns from. A wrong owner or goal is NOT a reason — it is
+    // an edit, and edits are tracked on their own (approval_edits.go). An
+    // empty "other" box records nothing: the field is a deliberate-reason
+    // channel, not a click log (the old default buried the 65 real reasons).
+    apprAskRejectReason((reason) => postApprovalDecision(id, "reject", { reason }));
     return;
   }
   let body = {};

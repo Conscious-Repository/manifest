@@ -85,6 +85,7 @@ type jevCached struct {
 	At     time.Time         `json:"at"`
 	Tier   *jev.TierAdvice   `json:"tier,omitempty"`
 	Risk   *jev.ApprovalRisk `json:"risk,omitempty"`
+	Screen *float64          `json:"screen,omitempty"` // P(he would track it) — approval_screen.go
 }
 
 type jevAdviceCache struct {
@@ -386,6 +387,8 @@ func (s *Server) jevAutoSweep(ctx context.Context) {
 				if _, hit := s.jevLookup(jevKindTier, p.ID, jevHash(text)); !hit {
 					s.jevStore(s.computeTierAdvice(ctx, p, src, name, text))
 				}
+			case approvals.TypeAionBacklog:
+				s.approvalScreen(p, h.Approvals) // queues the Jev half when missing
 			case approvals.TypeManifestOperation:
 				text := approvalRiskText(p)
 				if _, hit := s.jevLookup(jevKindRisk, p.ID, jevHash(text)); !hit {

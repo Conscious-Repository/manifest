@@ -340,3 +340,8 @@
 .sched-status-detail { min-width: 0; flex: 1; }
 .sched-status-detail > summary { cursor: pointer; width: fit-content; padding: var(--sp-2) 0; }
 .sched-status-detail .sched-status-bits { display: block; padding: var(--sp-4) 0; }
+
+/* reject — one tap says why (2026-10-06): the reasons the screen learns from */
+.appr-reject-reasons { display: flex; flex-wrap: wrap; gap: var(--sp-3); margin-bottom: var(--sp-5); }
+.appr-reject-reason { min-height: var(--control-touch, 44px); }
+@media (hover: hover) { .appr-reject-reason { min-height: 32px; } }

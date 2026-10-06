@@ -167,3 +167,12 @@ a.portal-line-text:hover { color: var(--blue); text-decoration: underline; }
 .feed-view .signal-row { flex-wrap: wrap; }
 .feed-view .signal-label { flex: 1; min-width: 0; font-family: var(--sans); font-size: var(--fs-md); overflow-wrap: anywhere; }
 .feed-view .signal-actions { flex-wrap: wrap; }
+
+/* "Probably not" (2026-10-06): one collapsed, counted section after the
+   approvals — folded cards keep their reason and every control */
+.feed-probably-not { margin: var(--sp-6) 0; border-top: 1px dashed var(--line); }
+.feed-probably-not-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--sp-4); padding: var(--sp-5) 0; cursor: pointer; color: var(--muted); min-height: var(--control-touch, 44px); box-sizing: border-box; }
+@media (hover: hover) { .feed-probably-not-head { min-height: 0; } }
+.feed-probably-not-note { font-size: var(--fs-sm); color: var(--muted); }
+.appr-screen-why { display: flex; flex-wrap: wrap; gap: var(--sp-3); align-items: baseline; margin: var(--sp-2) 0 var(--sp-3); font-size: var(--fs-sm); color: var(--muted); overflow-wrap: anywhere; }
+.appr-edit-hint { justify-self: start; color: var(--accent); }

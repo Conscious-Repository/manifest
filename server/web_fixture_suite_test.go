@@ -254,6 +254,11 @@ func TestFixtureFeedReaderPhone(t *testing.T) {
 	runFixture(t, "feed-reader-phone.cjs", true, false)
 }
 
+// Reject asks why in one tap; the "Probably not" fold (approvals-screen.cjs).
+func TestFixtureApprovalsScreen(t *testing.T) {
+	runFixture(t, "approvals-screen.cjs", true, false)
+}
+
 // Add Excalibur retirement authority and observability (phase1-agents.cjs).
 func TestFixturePhase1Agents(t *testing.T) { runFixture(t, "phase1-agents.cjs", false, false) }
 

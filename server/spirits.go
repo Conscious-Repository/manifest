@@ -163,6 +163,11 @@ type approvalRow struct {
 	// JevRisk is Jev's advisory risk category for a manifest-operation card
 	// (jev_auto.go); nil when Jev is off. The approval gate still decides.
 	JevRisk *jevRiskView `json:"jevRisk,omitempty"`
+	// Screen folds an aion task card under "Probably not" (approval_screen.go).
+	Screen *screenView `json:"screen,omitempty"`
+	// EditHints: owner/goal changes you have made before on cards like this
+	// one, offered as one-tap chips (approval_edits.go).
+	EditHints []editHint `json:"editHints,omitempty"`
 }
 
 // approvalRows returns the enriched pending approvals, skipping any types in
@@ -234,6 +239,8 @@ func (s *Server) harnessApprovalRowsMatching(h Harness, exclude map[string]bool,
 				// payload + the exact line Confirm would append (or, for a
 				// resolve, the item line as it would read once flipped).
 				// Secret-masked.
+				rr.Screen = s.approvalScreen(p, store)
+				rr.EditHints = s.approvalEditHints(p)
 				rr.Allowed = ((p.Type == approvals.TypeAionBacklog || p.Type == approvals.TypeAionResolve) && approvals.AionBacklogPathAllowed(p.ApplyPath)) ||
 					(p.Type == approvals.TypeAionHeuristic && approvals.AionHeuristicPathAllowed(p.ApplyPath)) ||
 					((p.Type == approvals.TypeReBacklog || p.Type == approvals.TypeReResolve) && approvals.ReBacklogPathAllowed(p.ApplyPath))
@@ -478,9 +485,14 @@ func (s *Server) handleSpiritsApprovalAion(w http.ResponseWriter, r *http.Reques
 		httpError(w, err)
 		return
 	}
-	if err := s.approvalsFor(r.PathValue("id")).SetAionPayload(r.PathValue("id"), payload); err != nil {
+	store := s.approvalsFor(r.PathValue("id"))
+	before, loadErr := store.LoadPending(r.PathValue("id"))
+	if err := store.SetAionPayload(r.PathValue("id"), payload); err != nil {
 		httpError(w, err)
 		return
+	}
+	if loadErr == nil {
+		s.recordApprovalEdits(before, payload) // your edits are the owner/goal labels
 	}
 	writeJSON(w, map[string]bool{"ok": true})
 }
