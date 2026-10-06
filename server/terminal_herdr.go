@@ -270,6 +270,14 @@ func (h *herdrTerminalRuntime) launch(ctx context.Context, id terminalIdentity, 
 }
 
 func (h *herdrTerminalRuntime) Attach(ctx context.Context, id terminalIdentity) (*exec.Cmd, error) {
+	return h.attach(ctx, id, false)
+}
+
+func (h *herdrTerminalRuntime) AttachTakeover(ctx context.Context, id terminalIdentity) (*exec.Cmd, error) {
+	return h.attach(ctx, id, true)
+}
+
+func (h *herdrTerminalRuntime) attach(ctx context.Context, id terminalIdentity, takeover bool) (*exec.Cmd, error) {
 	if err := h.checked(ctx, id); err != nil {
 		return nil, err
 	}
@@ -279,7 +287,12 @@ func (h *herdrTerminalRuntime) Attach(ctx context.Context, id terminalIdentity) 
 	if err != nil {
 		return nil, err
 	}
-	return exec.CommandContext(ctx, binary, "--session", h.Session, "terminal", "attach", id.Occupant), nil
+	args := []string{"--session", h.Session, "terminal", "attach"}
+	if takeover {
+		args = append(args, "--takeover")
+	}
+	args = append(args, id.Occupant)
+	return exec.CommandContext(ctx, binary, args...), nil
 }
 
 // User services may omit ~/.local/bin even though the independently supervised

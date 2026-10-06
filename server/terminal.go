@@ -1249,7 +1249,21 @@ func (s *Server) handleTermWS(w http.ResponseWriter, r *http.Request) {
 			c.Write(ctx, websocket.MessageBinary, []byte("\r\n[manifest] "+e.Error()+"\r\n"))
 			return
 		}
-		cmd, err = rt.Attach(ctx, se.Runtime)
+		var takeover bool
+		if raw := r.URL.Query().Get("takeover"); raw == "1" || raw == "true" {
+			takeover = true
+		}
+		if takeover {
+			if attach, ok := rt.(interface {
+				AttachTakeover(context.Context, terminalIdentity) (*exec.Cmd, error)
+			}); ok {
+				cmd, err = attach.AttachTakeover(ctx, se.Runtime)
+			} else {
+				cmd, err = rt.Attach(ctx, se.Runtime)
+			}
+		} else {
+			cmd, err = rt.Attach(ctx, se.Runtime)
+		}
 		if err != nil {
 			c.Write(ctx, websocket.MessageBinary, []byte("\r\n[manifest] "+err.Error()+"\r\n"))
 			return

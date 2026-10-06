@@ -193,8 +193,9 @@ function termRuntimeKey(se) {
   const id = se.runtime || {};
   return [se.backend || "tmux", se.id, id.host, id.generation, id.session, id.workspace, id.pane, id.occupant, id.agentSession].join("|");
 }
-function termAttachQuery(se) {
-  return se.id.startsWith("live:") ? "handle=" + encodeURIComponent(se.handle) : "id=" + encodeURIComponent(se.id);
+function termAttachQuery(se, takeover) {
+  const base = se.id.startsWith("live:") ? "handle=" + encodeURIComponent(se.handle) : "id=" + encodeURIComponent(se.id);
+  return takeover ? base + "&takeover=1" : base;
 }
 async function termKill(se) {
   try {
@@ -407,7 +408,7 @@ function attachTerm(id, recovery) {
   }
 
   const proto = location.protocol === "https:" ? "wss:" : "ws:";
-  const ws = new WebSocket(proto + "//" + location.host + "/api/terminal/ws?" + termAttachQuery(session) + "&c=" + term.cols + "&r=" + term.rows);
+  const ws = new WebSocket(proto + "//" + location.host + "/api/terminal/ws?" + termAttachQuery(session, !!recovery) + "&c=" + term.cols + "&r=" + term.rows);
   ws.binaryType = "arraybuffer";
   termInst = { term, fit, ws, id, runtimeKey, retry: { state: "connecting", attempt, timer: null } };
 

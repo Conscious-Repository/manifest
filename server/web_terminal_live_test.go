@@ -13,7 +13,7 @@ func TestTerminalFrontendLiveSurfaceOnly(t *testing.T) {
 			t.Errorf("Terminal retains retired history/state machinery: %s", removed)
 		}
 	}
-	for _, required := range []string{"/api/terminal/live", "termAttachQuery(session)", "manifest-terminal-state", "showFilesStage()", "showActivityStage()", "body.keep = true", `"term-primary", "open"`} {
+	for _, required := range []string{"/api/terminal/live", "termAttachQuery(session", "takeover=1", "manifest-terminal-state", "showFilesStage()", "showActivityStage()", "body.keep = true", `"term-primary", "open"`} {
 		if !strings.Contains(src, required) {
 			t.Errorf("Terminal missing %s", required)
 		}
@@ -57,7 +57,9 @@ global.showToast=message=>{throw new Error(message);};
  const stable={id:'abcdef12',backend:'herdr',live:true,runtime:{pane:'p1',occupant:'t1',generation:'g1',agentSession:'c1'}};
  const orphan={id:'live:t2',backend:'herdr',live:true,handle:'herdr:exact+opaque/value',runtime:{pane:'p2',occupant:'t2',generation:'g1'}};
  assert.equal(termAttachQuery(stable),'id=abcdef12');
+ assert.equal(termAttachQuery(stable,true),'id=abcdef12&takeover=1');
  assert.equal(termAttachQuery(orphan),'handle='+encodeURIComponent(orphan.handle));
+ assert.equal(termAttachQuery(orphan,true),'handle='+encodeURIComponent(orphan.handle)+'&takeover=1');
  assert.notEqual(termRuntimeKey(stable),termRuntimeKey({...stable,runtime:{...stable.runtime,occupant:'replacement'}}));
  assert.notEqual(termRuntimeKey(stable),termRuntimeKey({...stable,runtime:{...stable.runtime,agentSession:'replacement'}}));
  let attached=[],detached=0,requests=[],inventory=[stable,orphan,{id:'dead',live:false}],createdBody;
