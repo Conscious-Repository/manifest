@@ -478,6 +478,11 @@ func ReadInput(vault, ritual string, documents []Document) (Input, error) {
 		}
 		i.Context[name] = string(b)
 	}
+	if ritual == "aion" {
+		if list := aionGoalsList(root); list != "" {
+			i.Context[AionGoalsContext] = list
+		}
+	}
 	if ritual != "aion" {
 		for _, dir := range []string{"system/realestate/properties", "system/realestate/contractors", "system/realestate/contracts"} {
 			err := fs.WalkDir(root.FS(), dir, func(name string, entry fs.DirEntry, err error) error {
