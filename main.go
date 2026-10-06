@@ -936,6 +936,7 @@ func main() {
 		if extractionRouter != nil && (cfg.DomainExtraction.Aion || cfg.DomainExtraction.RealEstate || cfg.DomainExtraction.OodaEmail) {
 			runner := hermes.NewRunner(hermes.Config{Enabled: cfg.Hermes.Enabled, Duties: cfg.Hermes.Duties})
 			extraction := domainextract.New(ctx, cfg.DataDir, cfg.VaultPath, cfg.ExcaliburPath, cfg.DomainExtraction, runner, hs[0].Approvals)
+			extraction.UseFallback(extractionFallback(cfg.ExtractionFallback, runner, srv))
 			extractionRouter.Attach(extraction)
 			srv.UseDomainExtraction(extractionRouter)
 			extraction.Start()

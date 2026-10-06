@@ -82,7 +82,30 @@ type Service struct {
 	ctx                 context.Context
 	mu                  sync.Mutex
 	wake                chan struct{}
+	fallback            *Fallback
 }
+
+// Fallback is what extraction does while the lab model is unreachable
+// (owner decision 2026-10-06; the Sparks down since about 2026-10-02).
+// Before it, every queued job ran into the dead endpoint and landed
+// "uncertain", each one a manual reconciliation. Now a job either runs on the
+// owner's stand-in model — only when Route clears every note to leave the
+// lab — or stays QUEUED with the reason it waits, and resumes by itself when
+// the lab answers again (the periodic sweep).
+type Fallback struct {
+	LabUp func(context.Context) bool // nil → the lab is assumed up
+	// Route says whether this job's notes may leave the lab, and why not.
+	Route func(Input) (ok bool, why string)
+	// Run executes one extraction turn on the stand-in model.
+	Run func(ctx context.Context, ritual, prompt string) (hermes.Result, error)
+}
+
+// UseFallback wires the lab-down behaviour. nil keeps the old behaviour.
+func (s *Service) UseFallback(f *Fallback) { s.fallback = f }
+
+// waitSweep re-checks queued jobs (a job waiting for the lab resumes without
+// a new submission).
+const waitSweep = 5 * time.Minute
 
 func New(ctx context.Context, dataDir, vault, harness string, cfg Config, r *hermes.Runner, ap *approvals.Store) *Service {
 	return &Service{dir: filepath.Join(dataDir, "domain-extraction"), vault: vault, harness: harness, cfg: cfg, runner: r, ap: ap, ctx: ctx, wake: make(chan struct{}, 1)}
@@ -186,11 +209,15 @@ func (s *Service) Submit(input Input) (string, error) {
 func (s *Service) Start() {
 	go func() {
 		s.sweep()
+		tick := time.NewTicker(waitSweep)
+		defer tick.Stop()
 		for {
 			select {
 			case <-s.ctx.Done():
 				return
 			case <-s.wake:
+				s.sweep()
+			case <-tick.C:
 				s.sweep()
 			}
 		}
@@ -286,6 +313,22 @@ func (s *Service) run(path string) {
 			finish("refused", e.Error())
 			return
 		}
+		standIn := false
+		if f := s.fallback; f != nil && f.LabUp != nil && !f.LabUp(s.ctx) {
+			ok, why := false, "no stand-in model is configured"
+			if f.Route != nil && f.Run != nil {
+				ok, why = f.Route(j.Input)
+			}
+			if !ok {
+				// not a failure: the job waits, queued, for the lab
+				if reason := "waiting for the lab model (unreachable): " + why; j.Reason != reason {
+					j.Reason = reason
+					_ = s.save(j)
+				}
+				return
+			}
+			standIn = true
+		}
 		j.State = "running"
 		j.Reason = "execution in progress; do not replay"
 		if s.save(j) != nil {
@@ -295,7 +338,12 @@ func (s *Service) run(path string) {
 			finish("refused", "run report unavailable")
 			return
 		}
-		res, e := s.runner.Run(s.ctx, hermes.Request{MigratedDuty: "extractor/" + j.Input.Ritual, Prompt: prompt})
+		var res hermes.Result
+		if standIn {
+			res, e = s.fallback.Run(s.ctx, j.Input.Ritual, prompt)
+		} else {
+			res, e = s.runner.Run(s.ctx, hermes.Request{MigratedDuty: "extractor/" + j.Input.Ritual, Prompt: prompt})
+		}
 		j.Execution = res.Extraction
 		j.Model = res.Model
 		if e != nil || !res.DutyVerified() {

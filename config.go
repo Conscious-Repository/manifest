@@ -80,6 +80,12 @@ type Config struct {
 	ReIntake         reintake.Config       `json:"reIntake"`
 	TranscriptSync   transcriptsync.Config `json:"transcriptSync"`
 	DomainExtraction domainextract.Config  `json:"domainExtraction"`
+	// ExtractionFallback: what extraction does while the lab model is down
+	// (owner decision 2026-10-06). Jobs always WAIT, queued, when the lab is
+	// unreachable (instead of failing to "uncertain"); with Enabled, a job
+	// whose notes the tier map (or Jev, for an unmapped note) clears to leave
+	// the lab runs on the Claude stand-in. See server/extraction_fallback.go.
+	ExtractionFallback ExtractionFallbackConfig `json:"extractionFallback"`
 	// SystemRoot is the vault-relative folder that holds the SYSTEM ZONE
 	// (system-root-plan §1): structured, app-managed markdown (agents, excalibur,
 	// CRMs, home board). Everything OUTSIDE it is the knowledge zone — 100% the
@@ -602,4 +608,15 @@ func hostsInfo(cfg Config) server.HostsInfo {
 	h.Fundraising.Enabled, h.Fundraising.SpreadsheetID = cfg.FundraisingSheets.Enabled, cfg.FundraisingSheets.SpreadsheetID
 	h.Fundraising.CredentialsPath, h.Fundraising.SyncIntervalMinutes = cfg.FundraisingSheets.CredentialsPath, cfg.FundraisingSheets.SyncIntervalMinutes
 	return h
+}
+
+// ExtractionFallbackConfig is the owner's recorded stand-in choice.
+type ExtractionFallbackConfig struct {
+	Enabled     bool     `json:"enabled"`
+	OwnerAction string   `json:"ownerAction"` // where the owner authorized it
+	Binary      string   `json:"binary"`      // claude CLI, absolute
+	Model       string   `json:"model"`       // e.g. "sonnet"
+	Rituals     []string `json:"rituals"`     // which extractors may use it (default aion)
+	Tiers       []string `json:"tiers"`       // which tiers may leave the lab (default open, internal; never held)
+	LabAddr     string   `json:"labAddr"`     // host:port probed for the lab model
 }
