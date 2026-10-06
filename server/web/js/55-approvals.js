@@ -1051,6 +1051,20 @@ function buildAionEditor(a) {
       });
       row("owner", ownerTa.el);
       hintChip("owner");
+      // the evidence the owner rests on (approval_owner.go): the line itself,
+      // and who the transcript says spoke it — diarized, so a hint, not a fact
+      const ev = a.ownerEvidence || {};
+      if (ev.quote) {
+        const said = el("div", "appr-owner-evidence");
+        said.append(el("span", "micro-label", ev.speaker ? "said by " + ev.speaker : "the line"), el("q", null, ev.quote));
+        row("", said);
+      }
+      if (ev.suggest && (p.owner || "") !== ev.suggest) {
+        const b = pillLight("→ " + ev.suggest + (ev.suggestName ? " · " + ev.suggestName : "") + " · from the excerpt", () => { p.owner = ev.suggest; rebuild(); });
+        b.classList.add("appr-edit-hint");
+        b.title = "Jev read the meeting excerpt and is " + Math.round((ev.suggestConf || 0) * 100) + "% sure " + (ev.suggestName || ev.suggest) + " took this on. Applies only if you tap it.";
+        row("", b);
+      }
       // rock: BOTH kinds tether — a decision filed without one falls out of
       // every rock-scoped surface. Typeahead over THIS domain's ACTIVE rocks —
       // picking stores the rock ID (displays its title); free text commits
@@ -1102,6 +1116,9 @@ function buildAionEditor(a) {
         onChange: (v) => { if (v !== rockPickedText) p.rock = v; sync(); },
       });
       row("rock", rockTa.el);
+      if ((a.ownerEvidence || {}).rockMissing && p.rock === ((a.aionPayload || {}).rock || "")) {
+        row("", el("div", "appr-rock-missing", "“" + p.rock + "” isn't one of your goals — pick one above, or clear it"));
+      }
       hintChip("rock", (id) => { const r = ((isRe ? apprReReg : apprAionReg) || { rocks: [] }).rocks.find((x) => x.id === id); return r ? r.label : id; });
       if (p.kind === "task") {
         textRow("due", "due");

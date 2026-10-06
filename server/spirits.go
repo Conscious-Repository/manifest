@@ -168,6 +168,9 @@ type approvalRow struct {
 	// EditHints: owner/goal changes you have made before on cards like this
 	// one, offered as one-tap chips (approval_edits.go).
 	EditHints []editHint `json:"editHints,omitempty"`
+	// Owner: the quote, its speaker, a confident owner pick, a missing goal
+	// (approval_owner.go).
+	OwnerEvidence *ownerView `json:"ownerEvidence,omitempty"`
 }
 
 // approvalRows returns the enriched pending approvals, skipping any types in
@@ -241,6 +244,7 @@ func (s *Server) harnessApprovalRowsMatching(h Harness, exclude map[string]bool,
 				// Secret-masked.
 				rr.Screen = s.approvalScreen(p, store)
 				rr.EditHints = s.approvalEditHints(p)
+				rr.OwnerEvidence = s.approvalOwner(p)
 				rr.Allowed = ((p.Type == approvals.TypeAionBacklog || p.Type == approvals.TypeAionResolve) && approvals.AionBacklogPathAllowed(p.ApplyPath)) ||
 					(p.Type == approvals.TypeAionHeuristic && approvals.AionHeuristicPathAllowed(p.ApplyPath)) ||
 					((p.Type == approvals.TypeReBacklog || p.Type == approvals.TypeReResolve) && approvals.ReBacklogPathAllowed(p.ApplyPath))

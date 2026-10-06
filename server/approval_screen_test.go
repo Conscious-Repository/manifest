@@ -17,6 +17,11 @@ import (
 // screenServer: a harness with an aion backlog, a tier map and a Jev fake
 // answering P(track) = worth for every card.
 func screenServer(t *testing.T, worth float64) (*Server, string, *typesafe.Fake) {
+	s, root, f, _ := screenServerVault(t, worth)
+	return s, root, f
+}
+
+func screenServerVault(t *testing.T, worth float64) (*Server, string, *typesafe.Fake, string) {
 	t.Helper()
 	t.Setenv(typesafe.EnvKey, "")
 	tm := aion.TierMap{
@@ -39,7 +44,7 @@ func screenServer(t *testing.T, worth float64) (*Server, string, *typesafe.Fake)
 	f := &typesafe.Fake{Answers: map[string]typesafe.Answer{"worth": typesafe.NoulAnswer(worth)}}
 	s.jevJudge = &jev.Judge{Eval: f}
 	s.jevAdviceDir = filepath.Join(t.TempDir(), "jev")
-	return s, root, f
+	return s, root, f, vault
 }
 
 func plantAionTask(t *testing.T, root, id, title, owner, rock, source string) {

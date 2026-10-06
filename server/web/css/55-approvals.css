@@ -211,3 +211,7 @@
 .attendee-unlinked-chip { border-style: dashed; color: var(--muted); cursor: pointer; padding: var(--sp-1) var(--sp-4); min-height: var(--control-touch, 44px); }
 @media (hover: hover) { .attendee-unlinked-chip { min-height: 0; } }
 .attendee-unlinked-chip:hover { color: var(--text); border-color: var(--text); }
+/* owner evidence (2026-10-06): the quote and its diarized speaker */
+.appr-owner-evidence { display: flex; flex-wrap: wrap; gap: var(--sp-3); align-items: baseline; font-size: var(--fs-sm); color: var(--muted); overflow-wrap: anywhere; }
+.appr-owner-evidence q { color: var(--text); font-style: italic; }
+.appr-rock-missing { font-size: var(--fs-sm); color: var(--warn, #b45309); }
