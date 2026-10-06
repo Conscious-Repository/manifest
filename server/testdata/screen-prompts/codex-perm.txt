@@ -1,0 +1,40 @@
+│                                                 │
+│ See full release notes:                         │
+│ https://github.com/openai/codex/releases/latest │
+╰─────────────────────────────────────────────────╯
+
+╭──────────────────────────────────────────────────────────╮
+│ >_ OpenAI Codex (v0.154.0)                               │
+│                                                          │
+│ model:     gpt-6-astra   /model to change                │
+│ directory: ~/.cache/manifest/term-tmp/…/scratchpad/probe │
+╰──────────────────────────────────────────────────────────╯
+
+  Tip: New Use /fast to enable our fastest inference with increased plan usage.
+
+⚠ 1 startup issue · ctrl + t for details
+
+• You have 2 usage limit resets available. Run /usage to use one.
+
+
+› Run this shell command: touch made.txt
+
+
+• I’ll run touch made.txt in the current directory.
+
+• Running touch made.txt
+
+
+  Would you like to run the following command?
+
+  Environment: local
+
+  Reason: May I create made.txt in the current directory? The filesystem sandbox is read-only.
+
+  $ touch made.txt
+
+› 1. Yes, proceed (y)
+  2. Yes, and don't ask again for commands that start with `touch made.txt` (p)
+  3. No, and tell Codex what to do differently (esc)
+
+  Press enter to confirm or esc to cancel

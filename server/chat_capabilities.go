@@ -21,7 +21,10 @@ package server
 //	                attempts; a handed-off turn is closed with a visible note, never
 //	                re-sent. Each re-dispatch is its own visible run.
 //	Resume          fresh-session-per-turn | exact-resume-id | tmux-relaunch | unsupported
-//	AnswerQuestions unsupported | async-codex | terminal-only
+//	AnswerQuestions unsupported | async-codex | screen-prompt | terminal-only
+//	                screen-prompt: the CLI's on-screen chooser (permission, AskUserQuestion,
+//	                approval) is parsed from the pane and answered with its own keys
+//	                (terminal_prompt.go); async-codex implies it too.
 //	Supervision     delivery-receipt | input-receipt+observation | observation-only | turn-marker
 //	SkillInventory  on-disk | not-reported          (on-disk = skill folders readable now via …/skills; never what a turn loaded)
 //	ImageInput      unknown                         (owner decision D2, 2026-09-27: no adapter or model declares
@@ -87,7 +90,7 @@ func nativeChatCapabilities() chatCapabilities {
 // terminalChatCapabilities describes a coding runtime row. herdr sessions
 // carry input receipts and a live observation; the chat outbox is their queue
 // and steer:true their deliberate mid-turn send. Only Codex exposes async
-// structured questions Manifest can answer; Claude prompts need Terminal.
+// structured questions; both answer their on-screen choosers from chat.
 // Legacy tmux rows have no receipts and no agent observation: keys and text
 // only, and supervision is observation-only (never idle-means-done).
 func terminalChatCapabilities(se termSession) chatCapabilities {
@@ -112,7 +115,7 @@ func terminalChatCapabilities(se termSession) chatCapabilities {
 	case "claude":
 		caps.Resume = "exact-resume-id"
 		caps.Adapter, caps.Queue, caps.CancelQueued, caps.Steer, caps.LiveSteering = adapterHerdrClaude, "durable", true, "explicit", true
-		caps.AnswerQuestions = "terminal-only"
+		caps.AnswerQuestions = "screen-prompt"
 		caps.SkillInventory = "on-disk"
 	}
 	return caps

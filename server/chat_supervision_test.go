@@ -490,7 +490,7 @@ func TestChatAdapterCapabilityMatrix(t *testing.T) {
 	if seen[adapterHermesOneshot].Resume != "fresh-session-per-turn" || seen[adapterHermesOneshot].Steer != "unsupported" || seen[adapterHermesOneshot].Stop != "request" {
 		t.Fatalf("%+v", seen[adapterHermesOneshot])
 	}
-	if seen[adapterHerdrClaude].AnswerQuestions != "terminal-only" || seen[adapterHerdrClaude].StructuredQuestions {
+	if seen[adapterHerdrClaude].AnswerQuestions != "screen-prompt" || seen[adapterHerdrClaude].StructuredQuestions {
 		t.Fatalf("%+v", seen[adapterHerdrClaude])
 	}
 	if seen[adapterTmuxLegacy].Supervision != "observation-only" || seen[adapterRemoteKeep].Stop != "unsupported" || seen[adapterRemoteKeep].Resume != "unsupported" {

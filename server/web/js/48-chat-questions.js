@@ -73,7 +73,8 @@ function chatQuestionPanel(o) {
   // Keep uncertain deliveries visible because they still need attention.
   // A stale question (its asking process is gone) stays visible so the owner
   // learns it cannot be answered, rather than the card silently vanishing.
-  const questions=(o.questions||[]).filter(q=>q.state==='pending'||q.state==='unconfirmed'||q.state==='stale');
+  // a synchronous question is the chooser on screen: the prompt card answers it
+  const questions=(o.questions||[]).filter(q=>(q.state==='pending'||q.state==='unconfirmed'||q.state==='stale')&&!(o.prompt&&!q.async&&q.state==='pending'));
   if(!questions.length){panel?.remove();return;}
   if(!panel){
     panel=el('section','chat-questions');panel.id='chatQuestions';panel.dataset.session=o.id;

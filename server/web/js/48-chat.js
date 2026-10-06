@@ -3767,6 +3767,7 @@ function chatPrefetchRecent() {
 // stop the tail, hide the strip.
 function chatTermLeave() {
   chatQuestionPanel(null);
+  chatPromptPaint(null);
   document.querySelector(".chat-main")?.classList.remove("terminal-focus");
   chatTermOpen = null;
   if (chatTermFast) { clearInterval(chatTermFast); chatTermFast = null; }
@@ -4143,6 +4144,7 @@ function chatTermPaintStrip() {
   const strip = chatTermStripEl();
   const o = chatTermOpen;
   if (!strip) return;
+  chatPromptPaint(o);
   if (!o || !o.live) { strip.hidden = true; document.querySelector(".chat-main")?.classList.remove("terminal-focus"); return; }
   strip.hidden = false;
   const screen = strip.querySelector(".chat-term-screen");
@@ -4161,6 +4163,7 @@ async function chatTermScreenFetch() {
   let d;
   try { d = await (await fetch(chatTermBase(o.id) + "/screen")).json(); } catch (e) { return; }
   if (chatTermOpen !== o || seq !== o.screenSeq) return;
+  if (JSON.stringify(o.prompt || null) !== JSON.stringify(d.prompt || null)) { o.prompt = d.prompt || null; chatPromptPaint(o); chatQuestionPanel(o); }
   const sig = JSON.stringify(d.lines || []);
   const flipped = o.se.backend !== "herdr" && !!d.live !== o.live;
   if (sig === o.screenSig && !flipped) return;
@@ -4208,7 +4211,8 @@ async function chatTermTick() {
   if (!o || !chatIsTerm() || chatOpenId !== o.id) { chatTermLeave(); return; }
   if (!els.chatView || els.chatView.hidden || document.hidden || (window.frameElement && !window.frameElement.getClientRects().length) || chatTermTailing) return; // file reconciliation also reads the final records after stop
   const active=o.se.agentState==='working'||o.turns.some(t=>t.pending);
-  const interval=active?750:10000;
+  // a prompt on screen is answered here or in Terminal: notice either soon
+  const interval=active?750:(o.se.agentState==='blocked'||o.prompt)?2000:10000;
   if(o.lastPollAt&&Date.now()-o.lastPollAt<interval)return;
   o.lastPollAt=Date.now();
   chatTermTailing = true;
@@ -4306,7 +4310,7 @@ async function chatTermTail(o) {
   if(fullRead&&!missingHistory){o.title=d.title||'';o.cost=d.cost||0;headDirty=true;}
   if (headDirty) chatTermRepaintHead();
   if (typeof chatStatusPaint === "function") chatStatusPaint();
-  if (o.live && (o.se.agentState==='blocked'||document.querySelector('.chat-terminal-workspace:not([hidden])'))) chatTermScreenFetch();
+  if (o.live && (o.se.agentState==='blocked'||o.prompt||document.querySelector('.chat-terminal-workspace:not([hidden])'))) chatTermScreenFetch();
 }
 
 // chatTermMerge — a tail's first assistant turn continues the last painted
@@ -4836,7 +4840,7 @@ async function chatStageOrSteer(scope,agent,url,payload,{queue,caps}={}){
 async function chatSteerStaged(item){
  const sending={...item,staged:false,stagedError:'',payload:{...item.payload,afterRun:false,steer:true}};await chatUpdateStaged(item,sending);
  try{await chatDeliverRemembered(sending);showToast('Steered into the current run.');}
- catch(e){if(e.notSent){sending.payload={...sending.payload,steer:false,afterRun:false};sending.staged=true;sending.waitingForAgent=true;sending.stagedError='Agent needs input. Answer its questions or open Terminal, then steer.';await chatSaveDeliveryRecovery(sending);const all=chatReadDeliveryOutbox().filter(x=>x.payload.requestId!==sending.payload.requestId);all.push(sending);chatWriteDeliveryOutbox(all);}else showToast(e.message||'Delivery is unconfirmed. Check status before sending again.');}
+ catch(e){if(e.notSent){sending.payload={...sending.payload,steer:false,afterRun:false};sending.staged=true;sending.waitingForAgent=true;sending.stagedError='Agent needs input. Answer its prompt above the composer, then steer.';await chatSaveDeliveryRecovery(sending);const all=chatReadDeliveryOutbox().filter(x=>x.payload.requestId!==sending.payload.requestId);all.push(sending);chatWriteDeliveryOutbox(all);}else showToast(e.message||'Delivery is unconfirmed. Check status before sending again.');}
 }
 // chatAgentWorking — is a turn running in the open conversation?
 function chatAgentWorking(){

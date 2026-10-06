@@ -825,6 +825,40 @@ button.chat-attach-chip { min-height: 44px; max-width: 100%; background: transpa
 .chat-question-stale .chat-question-title { color: var(--base-60); text-decoration: line-through; }
 .chat-main.terminal-focus .chat-questions { display: none; }
 .chat-question-history summary { font-family: var(--sans); font-size: var(--fs-md); color: var(--base-60); cursor: pointer; }
+/* On-screen prompts (48-chat-prompt.js): the CLI's chooser, answered from chat */
+.chat-prompt { flex: none; max-height: 52vh; overflow-y: auto; margin: 0 0 var(--sp-4); padding: var(--sp-5) var(--sp-6); border: 1px solid var(--line); border-left: 3px solid var(--warn); border-radius: var(--radius-lg); background: var(--surface-panel, var(--bg)); font-family: var(--sans); }
+.chat-prompt.is-busy { opacity: .7; }
+.chat-prompt-head { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-3) var(--sp-4); margin-bottom: var(--sp-3); }
+.chat-prompt-badge { font-size: var(--fs-xs); font-weight: 600; letter-spacing: .02em; color: var(--warn); text-transform: uppercase; }
+.chat-prompt-header { font-size: var(--fs-sm); color: var(--base-60); }
+.chat-prompt-tabs { display: flex; flex-wrap: wrap; gap: var(--sp-2); margin-left: auto; }
+.chat-prompt-tab { font-size: var(--fs-xs); color: var(--base-60); padding: 0 var(--sp-3); border: 1px solid var(--line); border-radius: 999px; }
+.chat-prompt-tab.is-done { color: var(--base-40); border-style: dashed; }
+.chat-prompt-title { font-size: var(--fs-lg); font-weight: 600; color: var(--text); line-height: 1.4; overflow-wrap: anywhere; }
+.chat-prompt-body { margin-top: var(--sp-3); display: grid; gap: var(--sp-2); }
+.chat-prompt-text { margin: 0; font-size: var(--fs-md); color: var(--base-70); line-height: 1.5; overflow-wrap: anywhere; }
+.chat-prompt-code { margin: 0; padding: var(--sp-3) var(--sp-4); font-family: var(--mono); font-size: var(--fs-sm); color: var(--text); background: var(--surface-field); border-radius: var(--radius); white-space: pre-wrap; overflow-wrap: anywhere; }
+.chat-prompt-options { margin-top: var(--sp-4); display: grid; gap: var(--sp-2); }
+.chat-prompt-option { display: flex; align-items: flex-start; gap: var(--sp-4); width: 100%; min-height: var(--control-height); padding: var(--sp-3) var(--sp-4); text-align: left; font: inherit; font-size: var(--fs-md); color: var(--text); background: transparent; border: 1px solid var(--line); border-radius: var(--radius); cursor: pointer; }
+.chat-prompt-option:hover, .chat-prompt-option:focus-visible { background: var(--hover); border-color: var(--accent); outline: none; }
+.chat-prompt-option.is-cursor { border-color: var(--base-50); }
+.chat-prompt-option.is-refuse .chat-prompt-label > span:first-child { color: var(--base-70); }
+.chat-prompt-option.is-submit { font-weight: 600; }
+.chat-prompt-option:disabled { cursor: progress; }
+.chat-prompt-check input { margin-top: .2em; accent-color: var(--accent); flex: none; }
+.chat-prompt-key { flex: none; min-width: 1.6em; padding: 0 var(--sp-2); text-align: center; font-family: var(--mono); font-size: var(--fs-xs); line-height: 1.6; color: var(--base-60); border: 1px solid var(--line); border-radius: var(--radius); }
+.chat-prompt-label { display: grid; gap: var(--sp-1); min-width: 0; overflow-wrap: anywhere; }
+.chat-prompt-detail { font-size: var(--fs-sm); color: var(--base-60); }
+.chat-prompt-extra { margin-top: var(--sp-3); display: grid; gap: var(--sp-3); }
+.chat-prompt-input { width: 100%; box-sizing: border-box; padding: var(--sp-3) var(--sp-4); font: inherit; font-size: var(--fs-md); color: var(--text); background: var(--surface-field); border: 1px solid var(--line); border-radius: var(--radius); resize: vertical; }
+.chat-prompt-input:focus { outline: none; border-color: var(--accent); }
+.chat-prompt-extra-actions { display: flex; gap: var(--sp-3); align-items: center; }
+.chat-prompt-foot { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-3) var(--sp-4); margin-top: var(--sp-4); }
+.chat-prompt-hint { margin-right: auto; font-size: var(--fs-xs); color: var(--base-50); }
+.chat-prompt-status { font-size: var(--fs-sm); color: var(--base-60); }
+.chat-prompt-status:empty { display: none; }
+.chat-prompt.is-error .chat-prompt-status { margin-top: var(--sp-3); color: var(--danger); }
+.chat-main.terminal-focus .chat-prompt { display: none; }
 /* Pending follow-ups: a compact row above the composer, with explicit dispatch. */
 .chat-pending-messages { grid-column: 1 / -1; width: 100%; min-width: 0; }
 .chat-pending-message { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-4); padding: var(--sp-4) var(--sp-6); border-bottom: 1px solid var(--line); }

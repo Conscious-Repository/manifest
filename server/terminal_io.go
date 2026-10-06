@@ -172,7 +172,12 @@ func (s *Server) terminalScreen(ctx context.Context, se termSession) (map[string
 				ob = terminalUnknown(se.Runtime)
 			}
 		}
-		return map[string]any{"live": ob.Process == "running", "lines": lines, "agentState": ob.AgentState, "connectivity": ob.Connectivity, "process": ob.Process}, nil
+		// the chooser on screen, when there is one, answered from chat (terminal_prompt.go)
+		var prompt *termPrompt
+		if se.Device == "" && ob.AgentState != "working" {
+			prompt = parseTermPrompt(lines)
+		}
+		return map[string]any{"live": ob.Process == "running", "lines": lines, "prompt": prompt, "agentState": ob.AgentState, "connectivity": ob.Connectivity, "process": ob.Process}, nil
 	}
 	lines, live := s.terminal.screenTail(se.ID)
 	return map[string]any{"live": live, "lines": lines}, nil
@@ -585,7 +590,7 @@ func (s *Server) handleTermInput(w http.ResponseWriter, r *http.Request) {
 						return
 					}
 				}
-				http.Error(w, "agent needs interactive input or is not ready; open Terminal; nothing sent", http.StatusConflict)
+				http.Error(w, "agent needs interactive input or is not ready; answer its prompt above the composer; nothing sent", http.StatusConflict)
 				return
 			}
 			if receipt != nil {
@@ -743,9 +748,9 @@ func termBlockingDialog(lines []string) string {
 	case strings.Contains(joined, "do you trust the files in this folder") ||
 		strings.Contains(joined, "yes, i trust this folder") ||
 		strings.Contains(joined, "do you trust the contents of this directory"):
-		return "Claude Code is asking whether this folder is trusted — open the session in TERMINAL once and answer it; nothing was sent"
+		return "Claude Code is asking whether this folder is trusted — answer it above the composer (or in Terminal); nothing was sent"
 	case strings.Contains(joined, "enter to confirm") && strings.Contains(joined, "esc to cancel"):
-		return "the session is waiting on a dialog — open it in TERMINAL and answer it; nothing was sent"
+		return "the session is waiting on a prompt — answer it above the composer (or in Terminal); nothing was sent"
 	}
 	return ""
 }

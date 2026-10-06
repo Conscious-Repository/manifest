@@ -1,0 +1,40 @@
+▎ Your voice can help guide AI
+▎ Take 15 min to share your experiences with Anthropic Interviewer. Start now
+
+❯ Run the shell command: echo hello > a.txt  (use the Bash tool, do not use Write)
+
+  Ran 1 shell command
+
+● I ran echo hello > a.txt with the Bash tool. The command finished without errors, so a.txt in the working directory
+  now contains hello.
+
+✻ Crunched for 6s · done 8:06 PM
+
+❯ Use the AskUserQuestion tool to ask me two questions at once: (1) favorite color with options red/green/blue, (2)
+  which pets I have, multiSelect, options cat/dog/fish. Then just repeat my answers.
+
+● User answered Claude's questions:
+  ⎿  · What is your favorite color? → Green
+     · Which pets do you have? → Cat, Fish
+
+● Your answers:
+  1. Favorite color: Green
+  2. Pets: Cat, Fish
+
+✻ Cogitated for 5s · done 8:07 PM
+
+❯ Use AskUserQuestion once more: one question "Pick a fruit" with options apple/pear.
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+ ☐ Fruit
+
+Pick a fruit
+
+  1. Apple
+     An apple
+  2. Pear
+     A pear
+❯ 3. mango please
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  4. Chat about this
+
+Enter to select · ↑/↓ to navigate · ctrl+g to edit in Vim · Esc to cancel
