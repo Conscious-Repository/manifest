@@ -205,3 +205,9 @@
 .feed-settled { margin-top:var(--sp-6); }
 .feed-settled > summary { cursor:pointer; min-height:var(--touch, 32px); display:flex; align-items:center; }
 .feed-settled > .feed-card, .feed-settled > .ro-row { margin-top:var(--sp-4); }
+/* everyone else on an email thread (2026-10-06): plain names, one tap links */
+.attendee-unlinked { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); flex-basis: 100%; margin-top: var(--sp-2); }
+.attendee-unlinked .appr-attendees-label { margin: 0 var(--sp-2) 0 0; }
+.attendee-unlinked-chip { border-style: dashed; color: var(--muted); cursor: pointer; padding: var(--sp-1) var(--sp-4); min-height: var(--control-touch, 44px); }
+@media (hover: hover) { .attendee-unlinked-chip { min-height: 0; } }
+.attendee-unlinked-chip:hover { color: var(--text); border-color: var(--text); }

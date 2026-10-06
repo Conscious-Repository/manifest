@@ -497,17 +497,42 @@ func replaceAttendeeLine(content string, names []string) string {
 	rest := body[anchor:]
 
 	var links []string
+	linked := map[string]bool{}
 	for _, n := range names {
 		n = strings.TrimSpace(n)
 		if n != "" {
 			links = append(links, "[["+n+"]]")
+			linked[strings.ToLower(n)] = true
 		}
 	}
-	if len(links) == 0 {
+	// the unlinked participants line survives the rewrite, minus anyone the
+	// owner just linked (personalemail participants, 2026-10-06)
+	var unlinked []string
+	for _, line := range strings.Split(body[:anchor], "\n") {
+		if rest := strings.TrimPrefix(strings.TrimSpace(line), UnlinkedPeoplePrefix); rest != strings.TrimSpace(line) {
+			for _, n := range strings.Split(rest, " · ") {
+				if n = strings.TrimSpace(n); n != "" && !linked[strings.ToLower(n)] {
+					unlinked = append(unlinked, n)
+				}
+			}
+		}
+	}
+	lines := ""
+	if len(links) > 0 {
+		lines = strings.Join(links, " ") + "\n"
+	}
+	if len(unlinked) > 0 {
+		lines += UnlinkedPeoplePrefix + strings.Join(unlinked, " · ") + "\n"
+	}
+	if lines == "" {
 		return head + "\n" + rest
 	}
-	return head + strings.Join(links, " ") + "\n\n" + rest
+	return head + lines + "\n" + rest
 }
+
+// UnlinkedPeoplePrefix starts the note line naming thread participants who
+// have no contact note — plain names, never guessed links.
+const UnlinkedPeoplePrefix = "Also on the thread (no contact note): "
 
 // replaceCategories rewrites the proposed note's frontmatter `categories:`
 // key to exactly cats — consuming EITHER existing shape (inline

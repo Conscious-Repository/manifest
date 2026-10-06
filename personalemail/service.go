@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/mail"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -519,23 +520,80 @@ func known(msgs []gmailsync.Msg, r gmailsync.Resolver, own string) bool {
 	}
 	return false
 }
+
+// participants names everyone on the thread (2026-10-06, owner: "names
+// added and accurately"). People with a contact note are [[links]]; everyone
+// else is listed by the name on the header, unlinked, on its own line marked
+// "no contact note" — never a guessed link. The card offers each one as a
+// one-tap link. Automated senders and the mailbox owner are not people.
 func participants(msgs []gmailsync.Msg, r gmailsync.Resolver, own string) string {
-	var links []string
+	var links, others []string
 	seen := map[string]bool{}
 	for _, m := range msgs {
 		for _, h := range []string{m.From, m.To, m.Cc} {
-			for _, a := range address.FindAllString(h, -1) {
-				if strings.EqualFold(a, own) {
+			for _, p := range headerPeople(h) {
+				if strings.EqualFold(p.email, own) || automatedAddress(p.email) {
 					continue
 				}
-				if n, ok := r.PersonByEmail(a); ok && !seen[n] {
-					seen[n] = true
-					links = append(links, "[["+n+"]]")
+				if n, ok := r.PersonByEmail(strings.ToLower(p.email)); ok {
+					if !seen["n:"+strings.ToLower(n)] {
+						seen["n:"+strings.ToLower(n)] = true
+						links = append(links, "[["+n+"]]")
+					}
+					continue
+				}
+				name := p.name
+				if name == "" {
+					name = p.email
+				}
+				if !seen["e:"+strings.ToLower(p.email)] && !seen["u:"+strings.ToLower(name)] {
+					seen["e:"+strings.ToLower(p.email)], seen["u:"+strings.ToLower(name)] = true, true
+					others = append(others, name)
 				}
 			}
 		}
 	}
-	return strings.Join(links, " ")
+	out := strings.Join(links, " ")
+	if len(others) > 0 {
+		if out != "" {
+			out += "\n"
+		}
+		out += approvals.UnlinkedPeoplePrefix + strings.Join(others, " · ")
+	}
+	return out
+}
+
+type headerPerson struct{ name, email string }
+
+// headerPeople parses a From/To/Cc value; a malformed header falls back to
+// its bare addresses.
+func headerPeople(h string) []headerPerson {
+	if strings.TrimSpace(h) == "" {
+		return nil
+	}
+	if list, err := mail.ParseAddressList(h); err == nil {
+		out := make([]headerPerson, 0, len(list))
+		for _, a := range list {
+			name := strings.Trim(strings.TrimSpace(a.Name), `"'`)
+			if strings.EqualFold(name, a.Address) {
+				name = ""
+			}
+			out = append(out, headerPerson{name, a.Address})
+		}
+		return out
+	}
+	var out []headerPerson
+	for _, a := range address.FindAllString(h, -1) {
+		out = append(out, headerPerson{"", a})
+	}
+	return out
+}
+
+var automatedLocal = regexp.MustCompile(`(?i)^(no-?reply|do-?not-?reply|notifications?|mailer-daemon|postmaster|calendar-notification|bounces?)([+._-].*)?$`)
+
+func automatedAddress(email string) bool {
+	at := strings.LastIndexByte(email, '@')
+	return at <= 0 || automatedLocal.MatchString(email[:at])
 }
 
 var rangeName = regexp.MustCompile(`^(\d{4}-\d{2}-\d{2})(?: - (\d{4}-\d{2}-\d{2}))? (.+)\.md$`)

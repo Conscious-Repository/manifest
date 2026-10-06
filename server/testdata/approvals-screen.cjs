@@ -41,6 +41,16 @@ const root=path.join(__dirname,'../web');
  assert.equal(await p.locator('.feed-probably-not .feed-card').count(),2,'every folded card is still there');
  await p.locator('.feed-probably-not-head').click();await p.waitForTimeout(50);await p.evaluate(()=>paint());
  assert.equal(await p.locator('details.feed-probably-not').evaluate(d=>d.open),true,'stays open across a repaint');
+ // 3. everyone on an email thread is named; a person without a note is one tap from a link
+ await p.addStyleTag({content:fs.readFileSync(path.join(root,'css/55-approvals.css'),'utf8')});
+ const people=await p.evaluate(()=>{window.attachWikilinkAutocomplete=()=>{};
+  const proposed='---\ncategories: [sync]\n---\n[[rj tevonian]]\nAlso on the thread (no contact note): Jon Chu · Raquel Colom\n\n## 2026-09-25 — Jon Chu\n\nhi\n';
+  window.att=parseAttendees(proposed);const w=buildAttendeeEditor(att,parseUnlinkedPeople(proposed));document.getElementById('feed').replaceChildren(w);
+  return {linked:att.slice(),offered:[...document.querySelectorAll('.attendee-unlinked-chip')].map(b=>b.textContent)};});
+ assert.deepEqual(people,{linked:['rj tevonian'],offered:['+ Jon Chu','+ Raquel Colom']},'unknown participants are offered, not linked');
+ await p.locator('.attendee-unlinked-chip',{hasText:'Jon Chu'}).click();
+ assert.deepEqual(await p.evaluate(()=>att),['rj tevonian','Jon Chu'],'one tap links');
+ assert.deepEqual(await p.locator('.attendee-unlinked-chip').allTextContents(),['+ Raquel Colom']);
  assert.deepEqual(errors,[]);
- console.log('PASS: reject asks why in one tap (no owner/goal reason), typed or cancelled; the fold is collapsed, counted, complete and stays open.');
+ console.log('PASS: reject asks why in one tap (no owner/goal reason), typed or cancelled; the fold is collapsed, counted, complete and stays open; unknown thread participants are offered as one-tap links.');
 }finally{await browser.close();}})().catch(e=>{console.error(e);process.exitCode=1;});

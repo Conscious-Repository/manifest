@@ -208,7 +208,7 @@ function approvalCardEl(a) {
     if (isNewNote) {
       card.append(buildTitleEditor(a.applyPath, titleRef));
       attendees = parseAttendees(a.proposed || "");
-      card.append(buildAttendeeEditor(attendees));
+      card.append(buildAttendeeEditor(attendees, parseUnlinkedPeople(a.proposed || "")));
       categories = parseCategories(a.proposed || "");
       // a synced transcript (granola / heypocket / email) also proposes its
       // visibility tier — shown only while the note carries `aion`, so the
@@ -482,7 +482,17 @@ function buildTitleEditor(applyPath, ref) {
 
 // buildAttendeeEditor renders the people-involved chips + an add box, mutating
 // the shared `attendees` array in place so Confirm sends the edited list.
-function buildAttendeeEditor(attendees) {
+// parseUnlinkedPeople reads the "Also on the thread (no contact note):" line
+// an email note carries for participants without a note (2026-10-06): plain
+// names, offered as one-tap links — never linked by guess.
+const UNLINKED_PEOPLE_PREFIX = "Also on the thread (no contact note): ";
+function parseUnlinkedPeople(proposed) {
+  const m = proposed.match(/^---\n[\s\S]*?\n---\n([\s\S]*?)^##\s/m);
+  const line = ((m ? m[1] : "").split("\n").find((l) => l.trim().startsWith(UNLINKED_PEOPLE_PREFIX)) || "").trim();
+  return line ? line.slice(UNLINKED_PEOPLE_PREFIX.length).split(" · ").map((n) => n.trim()).filter(Boolean) : [];
+}
+
+function buildAttendeeEditor(attendees, unlinked) {
   const wrap = el("div", "appr-attendees");
   wrap.append(el("div", "appr-attendees-label", "People involved — remove or add before confirming"));
   const chips = el("div", "attendee-chips");
@@ -498,6 +508,20 @@ function buildAttendeeEditor(attendees) {
       chips.append(c);
     });
     if (!attendees.length) chips.append(el("span", "attendee-empty", "none linked"));
+    // everyone else on the thread, by the name on the header: one tap links
+    // them (a new [[name]] becomes their note when you create it)
+    const rest = (unlinked || []).filter((n) => !attendees.some((x) => x.toLowerCase() === n.toLowerCase()));
+    if (rest.length) {
+      const row = el("div", "attendee-unlinked");
+      row.append(el("span", "appr-attendees-label", "Also on the thread · no contact note"));
+      rest.forEach((n) => {
+        const b = el("button", "attendee-chip attendee-unlinked-chip", "+ " + n);
+        b.title = "Link " + n + " in this note — they have no contact note yet";
+        b.onclick = () => { attendees.push(n); renderChips(); };
+        row.append(b);
+      });
+      chips.append(row);
+    }
   };
   const addRow = el("div", "attendee-add");
   const input = el("input", "attendee-input");
