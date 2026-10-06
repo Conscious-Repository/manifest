@@ -514,6 +514,12 @@ func ReadInput(vault, ritual string, documents []Document) (Input, error) {
 			if filepath.ToSlash(filepath.Clean(d.Name)) != d.Name || !strings.HasSuffix(d.Name, ".md") || strings.Contains(d.Name, "..") || strings.HasPrefix(d.Name, "system/") || strings.HasPrefix(d.Name, "extrinsic/") || filepath.IsAbs(d.Name) {
 				return i, fmt.Errorf("explicit transcript log path required")
 			}
+			// aion tasks come from meetings only (owner, 2026-10-06): the two
+			// non-meeting notes ever mined ("investor updates", the investor tab
+			// text audit) produced 71 proposals, every one rejected
+			if ritual == "aion" && !strings.HasPrefix(d.Name, "log/") {
+				return i, fmt.Errorf("aion extraction reads meeting notes under log/ only")
+			}
 			b, e := root.ReadFile(d.Name)
 			if e != nil {
 				return i, fmt.Errorf("source unavailable")

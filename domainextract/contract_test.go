@@ -184,7 +184,15 @@ func TestReadInputRejectsDisguisedExcludedSources(t *testing.T) {
 	input.Context["system/realestate/backlog.md"] = "Private real estate record"
 	input.Context["extrinsic/private.md"] = "Excluded source"
 	writeInput(t, vault, input)
-	for _, name := range []string{"./system/realestate/backlog.md", "./extrinsic/private.md", "log/../system/realestate/backlog.md"} {
+	// real notes outside log/: aion tasks come from meetings only
+	for _, n := range []string{"investor updates.md", "intrinsic/2026-09-09.md"} {
+		os.MkdirAll(filepath.Dir(filepath.Join(vault, n)), 0o755)
+		os.WriteFile(filepath.Join(vault, n), []byte("Send the deck to every investor."), 0o644)
+	}
+	if _, err := ReadInput(vault, "aion", []Document{{Name: "investor updates.md"}}); err == nil || !strings.Contains(err.Error(), "meeting notes under log/ only") {
+		t.Errorf("a non-meeting note must be refused as such: %v", err)
+	}
+	for _, name := range []string{"./system/realestate/backlog.md", "./extrinsic/private.md", "log/../system/realestate/backlog.md", "investor updates.md", "intrinsic/2026-09-09.md"} {
 		if got, err := ReadInput(vault, "aion", []Document{{Name: name}}); err == nil {
 			t.Errorf("excluded source accepted: %+v", got.Documents)
 		}
