@@ -20,7 +20,7 @@ func main() {
 	id := flag.String("job", "", "exact original job ID")
 	source := flag.String("source", "", "exact vault-relative source path")
 	auth := flag.String("owner-authorization", "", "owner instruction reference authorizing this attempt")
-	operation := flag.String("operation", "pre-provider", "pre-provider, post-runtime-fix or rebased")
+	operation := flag.String("operation", "pre-provider", "pre-provider, post-runtime-fix, rebased or lab-outage")
 	sourceHash := flag.String("source-sha256", "", "exact original source SHA256")
 	parent := flag.String("parent-attempt", "", "exact parent attempt ID")
 	prior := flag.String("prior-attempts", "", "comma-separated prior attempt IDs (rebased)")
@@ -69,6 +69,16 @@ func run(path, id, source, auth, operation, sourceHash, parent, runtime, prior s
 		job, err = svc.RetryPreProvider(id, source, auth)
 	case "post-runtime-fix":
 		job, err = svc.RetryPostRuntimeFix(id, source, sourceHash, parent, auth, runtime)
+	case "lab-outage":
+		// queues one attempt; the running server routes it (lab, or the
+		// owner's stand-in for notes cleared to leave the lab, else it waits)
+		if parent != "" || runtime != "" || prior != "" {
+			return fmt.Errorf("lab-outage takes the job, source, source hash and authorization only")
+		}
+		job, err = svc.RetryAfterOutage(id, source, sourceHash, auth)
+		if err == nil {
+			return json.NewEncoder(os.Stdout).Encode(struct{ ID, ParentID, State string }{job.ID, job.ParentID, job.State})
+		}
 	case "rebased":
 		var ids []string
 		for _, p := range strings.Split(prior, ",") {

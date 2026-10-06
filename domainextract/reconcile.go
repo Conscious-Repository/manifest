@@ -127,7 +127,7 @@ func (s *Service) validIdentity(j Job) bool {
 	if j.ParentID == "" {
 		return j.ID == j.Input.ID()
 	}
-	if s.validRebaseIdentity(j) {
+	if s.validRebaseIdentity(j) || s.validOutageIdentity(j) {
 		return true
 	}
 	if j.ParentID != j.Input.ID() || j.ID != retryID(j.ParentID) {
