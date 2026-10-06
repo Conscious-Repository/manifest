@@ -1,76 +1,42 @@
 package server
 
 import (
-	"io/fs"
 	"manifest/vaultwriter"
 	"manifest/writing"
 	"net/http"
 	"os"
-	"path/filepath"
-	"sort"
 	"strings"
 )
 
-// The writing browser is deliberately confined to the configured vault.
+// The writing browser is deliberately confined to the configured vault. The
+// listing comes from the text index, whose walk keeps the browser's filters.
 func (s *Server) handleWritingFiles(w http.ResponseWriter, r *http.Request) {
 	if s.vault == nil || !s.vault.Enabled() {
 		http.Error(w, "vault unavailable", 503)
 		return
 	}
 	type entry struct {
-		Path     string `json:"path"`
-		Name     string `json:"name"`
-		Modified int64  `json:"modified"`
-		ReadOnly bool   `json:"readOnly"`
+		Path     string   `json:"path"`
+		Name     string   `json:"name"`
+		Modified int64    `json:"modified"`
+		ReadOnly bool     `json:"readOnly"`
+		Excerpt  string   `json:"excerpt"`
+		Tags     []string `json:"tags"`
 	}
-	files := []entry{}
-	folders := []string{""}
-	root := s.vault.VaultRoot()
-	err := filepath.WalkDir(root, func(full string, d fs.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		if full == root {
-			return nil
-		}
-		if strings.HasPrefix(d.Name(), ".") || d.Type()&os.ModeSymlink != 0 {
-			if d.IsDir() {
-				return filepath.SkipDir
-			}
-			return nil
-		}
-		rel, _ := filepath.Rel(root, full)
-		rel = filepath.ToSlash(rel)
-		if s.writing != nil && (rel == s.writing.Root || strings.HasPrefix(rel, s.writing.Root+"/")) {
-			if d.IsDir() {
-				return filepath.SkipDir
-			}
-			return nil
-		}
-		if d.IsDir() {
-			if !s.vault.CanUserWrite(rel) {
-				return filepath.SkipDir
-			}
-			folders = append(folders, rel)
-			return nil
-		}
-		if !strings.HasSuffix(strings.ToLower(rel), ".md") {
-			return nil
-		}
-		fi, err := d.Info()
-		if err != nil {
-			return err
-		}
-		files = append(files, entry{rel, strings.TrimSuffix(d.Name(), filepath.Ext(d.Name())), fi.ModTime().Unix(), !s.vault.CanUserWrite(rel)})
-		return nil
-	})
+	view, err := s.writingTextIndex().refresh(s)
 	if err != nil {
 		http.Error(w, "could not read the vault file list", 500)
 		return
 	}
-	sort.Slice(files, func(i, j int) bool { return strings.ToLower(files[i].Path) < strings.ToLower(files[j].Path) })
-	sort.Strings(folders)
-	writeJSON(w, map[string]any{"files": files, "folders": folders, "vaultID": vaultwriter.Revision([]byte(root))})
+	files := make([]entry, 0, len(view.files))
+	for _, d := range view.files {
+		tags := make([]string, 0, len(d.tagKeys))
+		for _, k := range d.tagKeys {
+			tags = append(tags, view.tagName[k])
+		}
+		files = append(files, entry{d.Path, d.Name, d.Modified, d.ReadOnly, d.excerpt, tags})
+	}
+	writeJSON(w, map[string]any{"files": files, "folders": view.folders, "vaultID": vaultwriter.Revision([]byte(s.vault.VaultRoot()))})
 }
 func (s *Server) handleWritingCreate(w http.ResponseWriter, r *http.Request) {
 	r.Body = http.MaxBytesReader(w, r.Body, 5<<20)
@@ -84,6 +50,10 @@ func (s *Server) handleWritingCreate(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := decode(r, &b); err != nil {
 		httpError(w, err)
+		return
+	}
+	if err := s.writingNoteFolderExists(b.Path); err != nil {
+		http.Error(w, err.Error(), 400)
 		return
 	}
 	rev, err := s.vault.CreateNote(b.Path, b.Body)
@@ -137,6 +107,7 @@ func (s *Server) handleWritingMove(w http.ResponseWriter, r *http.Request) {
 	if s.index != nil {
 		_ = s.index.ReindexPaths([]string{b.Path, b.To})
 	}
+	s.carryWritingAuthorship(b.Path, b.To)
 	warning := ""
 	if err := s.relinkWritingTasks(b.Path, b.To); err != nil {
 		warning = "File moved; a task link could not be updated. Rebind it from the task panel."

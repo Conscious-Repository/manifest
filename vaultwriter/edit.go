@@ -213,6 +213,41 @@ func (w *Writer) CreateNote(rel, raw string) (string, error) {
 	return Revision([]byte(raw)), nil
 }
 
+// ErrNotWritable marks a path the write guard refuses to the owner.
+var ErrNotWritable = errors.New("that folder is not writable")
+
+// CreateFolder makes rel and any missing parents. Every level must pass the
+// raw-user guard, so the editor can never open a folder inside an engine-owned
+// tree. An existing folder is success; an existing file is os.ErrExist.
+func (w *Writer) CreateFolder(rel string) error {
+	editMu.Lock()
+	defer editMu.Unlock()
+	if !w.Enabled() {
+		return errors.New("no vault configured")
+	}
+	full, err := SafePath(w.vault, rel)
+	if err != nil {
+		return err
+	}
+	parts := strings.Split(filepath.ToSlash(filepath.Clean(rel)), "/")
+	for i := range parts {
+		if err := w.Guard(strings.Join(parts[:i+1], "/"), WriteRawUser); err != nil {
+			return fmt.Errorf("%w: %v", ErrNotWritable, err)
+		}
+	}
+	if fi, err := os.Stat(full); err == nil {
+		if fi.IsDir() {
+			return nil
+		}
+		return os.ErrExist
+	}
+	if err = os.MkdirAll(full, 0o755); err != nil {
+		return err
+	}
+	w.traced(w.audit(rel, "folder-create", string(ActorUserAction), 0))
+	return nil
+}
+
 // MoveNote uses an exclusive hard link then unlinks the old name. Destination
 // collisions cannot overwrite another note. Same-vault filesystems are required.
 func (w *Writer) MoveNote(from, to, expected string) error {

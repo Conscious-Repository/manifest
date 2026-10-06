@@ -4,6 +4,61 @@ Owner scope: 2026-09-07 updates to the vault's
 `system/workbench/plans/2026-09-06-writing-workspace-and-send.md`.
 This is an implementation record, not a second plan. Send is excluded.
 
+## iA Writer pass — 2026-10-06
+
+The owner asked for Writing to mirror iA Writer's UI/UX, keeping Manifest's own
+type (Hanken prose, the theme's mono for metadata) and theme. Decisions: Markdown
+syntax always visible but dimmed (source / live-preview switching is retired);
+every area in scope. Front end: `71-write.js` (core) plus `71-write-tools.js`
+(view menu, focus, stats, chrome fade, keyboard bar, link create),
+`71-write-library.js`, `71-write-search.js` (Quick Search, outline, commands),
+`71-write-editing.js` (Style Check, Syntax Highlight, Authorship) and
+`71-write-preview.js` (preview, templates, HTML/PDF/Word export). Modules hook in
+through `writeOnMount`, `writeOnEdit`, `writeOnSave` and `writeMenuHooks`.
+
+- **Editor** (`tools/writing-editor/editor.js`, GFM parser): heading marks hang in
+  the margin at desktop widths (a heading starts on the body's text edge); a list
+  item's wrapped lines start under its text; marks are mono at `--n × 0.604em`
+  (both themes' monos advance 0.60em). Wide accent caret. Focus (⌘D: sentence or
+  paragraph) and typewriter scrolling. Line length 64/72/80 characters, three text
+  sizes. Stats bubble (words, characters, sentences, reading time; the selection's
+  share when there is one). Toolbars fade while typing and return on pointer
+  movement. A missing `[[link]]` offers to create the note beside the linking one;
+  `[[` inserts the shortest unique name. ⌘B/⌘I/⇧⌘U/⌘K wrap the selection.
+- **Library**: one pane on desk and phone — Recents, All files, Favorites,
+  folders, smart folders (saved searches), #hashtags; a section lists name,
+  excerpt and date. Search runs on the server with iA's syntax
+  (`/api/writing/search`; words, "phrases", -exclude, #tag, -#, [ ] / [x], name:,
+  path:, OR/AND/NOT, NEAR). New folders; new files in the selected folder.
+  Favorites, smart folders and style rules live in the library document
+  (`/api/writing/library`, per vault, revisioned). Routes: `#/write` library,
+  `#/write/~list/<section>`, `#/write/<path>`; on a phone each is one screen.
+- **Quick Search** (⌘O): outline of the open document, files, vault text,
+  commands; ⇧⌘P or a leading `>` lists commands with shortcuts. Shared `.cmdbar`.
+- **Editing tools**: Style Check (fillers, redundancies, clichés, your rules and
+  exceptions, `/regex/`; case- and accent-insensitive; editor-only strike);
+  Syntax Highlight (compromise, lazy `vendor/writing-pos.js`; tokens
+  `--pos-*`); Authorship (a paste is marked "pasted", one of Alfred's replies
+  "Alfred", your own words copied in the editor stay yours; typing over a mark
+  makes it yours; stored beside the note in `<dataDir>/writing-authorship/`,
+  re-anchored by quote when the note changed elsewhere; never in the file).
+- **Preview and export**: side by side or full (full on phones), following the
+  editor's scroll; Modern (the theme's sans), Classic (serif), Manuscript (mono,
+  double-spaced) with centre/number headings, indented paragraphs, PDF title page.
+  markdown-it (lazy `vendor/writing-preview.js`) with footnotes, ==highlight==,
+  task lists, `[[wikilinks]]`, content blocks (`/path "caption"` alone on a line:
+  notes, images, CSV, text; `/api/writing/assets` + `/api/writing/asset`),
+  `{{TOC}}`, `+++` page breaks. Export HTML (images embedded), PDF (print), Word
+  (.docx built in the browser; read back with mammoth: headings, lists, tables,
+  links, footnotes), Markdown.
+- **Phone** (`95-mobile.css`): head ‹ Library · name · Aa · ▶ · ···; the app bar
+  folds; tabs hidden; Markdown keyboard bar while the text has focus.
+- Evidence: `server/testdata/writing-ia.cjs` (browser, stub API
+  `writing-stub-api.cjs`), `server/writing_index_test.go`,
+  `server/writing_asset_test.go`.
+- Not done: iA's publishing to blogs, Smart Tables, custom `.iatemplate` files,
+  per-author colours beyond Alfred/pasted, link rewriting after a move.
+
 ## Available locally
 
 WORK → Writing opens a task-optional writing surface. New Markdown files start

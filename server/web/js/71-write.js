@@ -1,6 +1,9 @@
 // Writing owns its editor instances. Route changes detach DOM, never discard a
 // buffer; network acknowledgements refer to the captured document and bytes.
 const writingUI = {documents:new Map(), files:[], folders:[], active:null, vaultID:'', view:null, request:0};
+// the tools, library and preview modules (71-write-*.js) follow a document as
+// it mounts and as it changes
+const writeOnMount = [], writeOnEdit = [], writeOnSave = [], writeMenuHooks = [];
 // A fresh page identity also distinguishes browser-duplicated tabs (which copy sessionStorage).
 const writingWindow = crypto.randomUUID();
 function writeEOL(raw) {
@@ -27,8 +30,8 @@ function writeStatus(d){
   writingUI.status.textContent=d.saving?'saving…':d.error||d.recoveryError||(d.readOnly?'read only':writeDirty(d)?'saving…':'saved');
   writingUI.save.disabled=d.saving||d.readOnly||!writeDirty(d);
   writingUI.title.textContent=d.path.replace(/^.*\//,'').replace(/\.md$/i,'');
-  writingUI.title.hidden=true;writingUI.path.textContent=d.path.replace(/\.md$/i,'').split('/').join(' / ');writingUI.path.title=d.path;writingUI.documentActions?.forEach(b=>b.hidden=false);writingUI.save.hidden=!writeDirty(d)||!d.error||d.saving;
-  const count=(d.editor.text().replace(/^---\n[\s\S]*?\n---(?:\n|$)/,'').match(/[\p{L}\p{N}]+(?:['’-][\p{L}\p{N}]+)*/gu)||[]).length;writingUI.count.textContent=count+' '+(count===1?'word':'words');writeTabs();
+  writingUI.title.hidden=true;const parts=d.path.replace(/\.md$/i,'').split('/'),name=parts.pop();writingUI.path.replaceChildren(el('span','write-path-folder',parts.length?parts.join(' / ')+' / ':''),el('span','write-path-name',name));writingUI.path.title=d.path;writingUI.view.dataset.doc='open';writingUI.documentActions?.forEach(b=>b.hidden=false);writingUI.save.hidden=!writeDirty(d)||!d.error||d.saving;
+  if(typeof writeStats==='function')writeStats(d);writeTabs();
 }
 function writeBuild(){
   if(writingUI.view)return;
@@ -37,11 +40,16 @@ function writeBuild(){
   const identity=el('div','write-identity');const title=el('h1','write-title','Writing');
   const path=el('span','write-path','');identity.append(title,path);
   const actions=el('div','write-actions write-toolbar');
-  const open=pillLight('open',()=>writeOpenPicker()),create=pillLight('new file',()=>writeCreate());
+  const tool=(label,name,run,key)=>{const b=pillLight(label,run);b.setAttribute('aria-label',name);b.title=name+(key?' · '+writeShortcut(key):'');return b};
+  const library=tool('☰','Library',()=>typeof writeToggleLibrary==='function'?writeToggleLibrary():writeOpenPicker(),'library');library.classList.add('write-library-toggle');
+  const quick=tool('⌕','Quick search',()=>typeof writeQuickSearch==='function'?writeQuickSearch():writeOpenPicker(),'quick');
+  const create=tool('＋','New file',()=>writeCreate());
   const comments=pillLight('comments',()=>writeToggleMargin());
   const save=pillLight('save',()=>writeSave(writingUI.active));
-  const more=pillLight('•••',()=>writeMenu());more.setAttribute('aria-label','Document actions');
-  actions.append(open,create,comments,save,more);head.append(identity,actions);
+  const aa=tool('Aa','View: focus, text, editing tools',()=>writeViewMenu(aa));aa.classList.add('write-aa');
+  const preview=tool('▶','Preview',()=>typeof writeTogglePreview==='function'&&writeTogglePreview(),'preview');preview.classList.add('write-preview-toggle');preview.hidden=typeof writeTogglePreview!=='function';
+  const more=pillLight('•••',()=>writeMenu(more));more.setAttribute('aria-label','Document actions');
+  head.prepend(library);actions.append(quick,create,comments,save,aa,preview,more);head.append(identity,actions);
   const tabs=el('div','write-tabs');tabs.setAttribute('role','tablist');tabs.setAttribute('aria-label','Open documents');
   const work=el('div','write-work');const canvas=el('div','write-canvas');
   const notice=el('div','write-notice');notice.hidden=true;
@@ -49,26 +57,32 @@ function writeBuild(){
   const margin=el('aside','write-margin');margin.hidden=true;margin.setAttribute('aria-label','Document conversations');
   canvas.append(notice,editorHost);work.append(canvas,margin);
   const foot=el('footer','write-foot');const status=el('span','write-status');status.setAttribute('role','status');
-  const count=el('span','write-count');foot.append(status,count);
+  const count=el('button','write-count');count.type='button';count.onclick=()=>writeNextStat();foot.append(status,count);
   const selection=el('div','write-selection');selection.hidden=true;
   selection.setAttribute('role','group');selection.setAttribute('aria-label','Selected text actions');
   for(const label of ['comment','ask']){const button=el('button','write-selection-action',label);button.type='button';button.onclick=()=>writeCompose(label);selection.append(button)}
   selection.onkeydown=e=>{if(e.key==='Escape'){e.preventDefault();selection.hidden=true;writingUI.active?.editor.focus()}};canvas.append(selection);
-  view.append(tabs,head,work,foot);
-  Object.assign(writingUI,{documentActions:[comments,save,more],count,title,path,save,status,tabs,canvas,notice,editorHost,margin,selection});
+  const main=el('div','write-main');main.append(tabs,head,work,foot);view.append(main);
+  Object.assign(writingUI,{documentActions:[comments,save,aa,more],count,title,path,save,status,tabs,canvas,notice,editorHost,margin,selection,head,foot,work,preview});
+  writeApplyPrefs();
 }
 async function showWriting(p){
   writeBuild();const request=++writingUI.request;
   writingUI.view.hidden=false;writingUI.selection.hidden=true;
+  // #/write is the library, #/write/~list/<section> a section's files, any
+  // other #/write/<path> a document; a phone shows one of them at a time,
+  // switched at once (the file list refreshes after)
+  const section=p.startsWith('~list/');
+  writingUI.view.dataset.screen=p&&!section?'doc':'library';
   try{const list=await writeFetch('/api/writing/files');if(request!==writingUI.request)return;writingUI.files=list.files;writingUI.folders=list.folders;writingUI.vaultID=list.vaultID}
   catch(e){writingUI.status.textContent=e.message}
-  if(p){await writeOpen(p);return}
+  if(typeof writeLibOpen==='function'&&(!p||section))writeLibOpen(section?p.slice(6):'');
+  else if(typeof writeLibRender==='function')writeLibRender();
+  if(p&&!section){await writeOpen(p);return}
   if(writingUI.active){writeMount(writingUI.active);return}
-  writingUI.documentActions.forEach(b=>b.hidden=true);writingUI.title.hidden=false;writingUI.count.textContent='';writingUI.title.textContent='Writing';writingUI.path.textContent='';writingUI.notice.hidden=true;writingUI.margin.hidden=true;writeTabs();writingUI.editorHost.replaceChildren();
-  const home=el('div','write-welcome');home.append(el('span','micro-label','YOUR VAULT'),el('h2','','A place to think in words.'),el('p','','Start a note, or pick up where you left off.'));
-  const actions=el('div','write-actions');actions.append(pillLight('new file',()=>writeCreate()),pillLight('open a file',()=>writeOpenPicker()));home.append(actions);
-  const recent=[...writingUI.files].sort((a,b)=>b.modified-a.modified).slice(0,8);
-  if(recent.length){home.append(el('div','micro-label','RECENTLY UPDATED'));recent.forEach(f=>{const b=pillLight(f.name,()=>writeNavigate(f.path));b.classList.add('write-recent');b.title=f.path;home.append(b)})}
+  delete writingUI.view.dataset.doc;writingUI.documentActions.forEach(b=>b.hidden=true);writingUI.title.hidden=false;writingUI.count.textContent='';writingUI.title.textContent='Writing';writingUI.path.textContent='';writingUI.notice.hidden=true;writingUI.margin.hidden=true;writeTabs();writingUI.editorHost.replaceChildren();
+  const home=el('div','write-welcome');home.append(el('h2','','A place to think in words.'),el('p','','Pick a file from the library, or start a new one.'));
+  const actions=el('div','write-actions');actions.append(pillLight('new file',()=>writeCreate()));if(!writePrefs.library)actions.append(pillLight('show library',()=>writeToggleLibrary()));home.append(actions);
   writingUI.editorHost.append(home);writingUI.status.textContent='';writingUI.save.disabled=true;
 }
 function writeNavigate(p){const hash='#/write/'+encodeURIComponent(p);if(location.hash===hash)writeOpen(p);else location.hash=hash}
@@ -77,16 +91,18 @@ async function writeOpen(p){
   const request=++writingUI.request;writingUI.status.textContent='opening…';
   try{
     const note=await writeFetch('/api/note?path='+encodeURIComponent(p));if(request!==writingUI.request)return;
-    const eol=writeEOL(note.raw),d={path:note.path,base:note.raw,revision:note.revision,eol:eol.eol,readOnly:note.readOnly||eol.mixed,source:false,comments:null,error:eol.mixed?'Mixed line endings: read only to preserve exact bytes.':'',pending:null};
+    const eol=writeEOL(note.raw),d={path:note.path,base:note.raw,revision:note.revision,eol:eol.eol,readOnly:note.readOnly||eol.mixed,comments:null,error:eol.mixed?'Mixed line endings: read only to preserve exact bytes.':'',pending:null};
     writingUI.vaultID=note.vaultID;
     const host=el('div','write-editor');
     d.recovering=true;
-    d.editor=ManifestEditor.create(host,{text:eol.text,readOnly:d.readOnly,files:()=>writingUI.files,openComment:id=>{d.expanded=id;writeRenderComments(d);writingUI.margin.hidden=false;if(window.innerWidth<=1100&&window.mfSheet)writeMarginSheet()},openLink:target=>{const p=target.split("#")[0];const found=writingUI.files.find(f=>f.path.replace(/\.md$/i,"").toLowerCase()===p.toLowerCase()||f.name.toLowerCase()===p.toLowerCase());if(found)writeNavigate(found.path);else showToast("Linked note not found",null,"info")},save:()=>writeSave(d),comment:()=>writeCompose(),change:()=>writeChanged(d),selection:range=>writeSelection(d,range)});
+    d.editor=ManifestEditor.create(host,{text:eol.text,readOnly:d.readOnly,files:()=>writingUI.files,tags:()=>writingUI.tags||[],blocks:()=>typeof writeBlockFiles==='function'?writeBlockFiles(d):writingUI.files,
+      keys:writeEditorKeys(d),typing:e=>writeTyping(e),pasteAuthor:text=>typeof writePasteAuthor==='function'?writePasteAuthor(d,text):null,
+      openComment:id=>{d.expanded=id;writeRenderComments(d);writingUI.margin.hidden=false;if(window.innerWidth<=1100&&window.mfSheet)writeMarginSheet()},openLink:target=>writeFollowLink(d,target),save:()=>writeSave(d),comment:()=>writeCompose(),change:()=>writeChanged(d),selection:range=>writeSelection(d,range)});
     d.host=host;writingUI.documents.set(p,d);
-    try{const pref=JSON.parse(localStorage.getItem(writePreferenceKey(d))||'null');if(pref){d.source=!!pref.source;d.editor.setSource(d.source);d.expanded=pref.expanded;if(pref.revision===d.revision){d.scroll=pref.scroll;d.editor.restore(pref.anchor||0,pref.head||0)}}}catch(e){}
+    try{const pref=JSON.parse(localStorage.getItem(writePreferenceKey(d))||'null');if(pref){d.expanded=pref.expanded;if(pref.revision===d.revision){d.scroll=pref.scroll;d.editor.restore(pref.anchor||0,pref.head||0)}}}catch(e){}
     d.editor.view.scrollDOM.addEventListener('scroll',()=>{if(writingUI.active===d)writingUI.selection.hidden=true});
     d.editor.view.scrollDOM.addEventListener('scroll',debounce(()=>writeRemember(d),150));
-    writeMount(d);writeLoadComments(d);
+    writeApplyEditor(d);writeMount(d);writeLoadComments(d);if(typeof writeLoadAuthors==='function')writeLoadAuthors(d);
     const recoveries=[];try{const prefix='manifest.writing.draft.'+writingUI.vaultID+'.'+encodeURIComponent(d.path)+'.';for(let i=0;i<localStorage.length;i++){const key=localStorage.key(i);if(key.startsWith(prefix)){const draft=JSON.parse(localStorage.getItem(key));if(draft.text!==eol.text)recoveries.push({key,...draft})}}}catch(e){d.recoveryError='Could not read local recovery data.';writeStatus(d)}
     if(recoveries.length&&!d.readOnly){
       const choice=await choosePath({title:'Recover unsaved writing?',items:recoveries.sort((a,b)=>b.at-a.at).map(x=>({label:'recover draft',detail:new Date(x.at).toLocaleString()+(x.window!==writingWindow?' · another tab':''),value:x})).concat([{label:'keep the saved version; retain recovery copies',value:null}])});
@@ -101,6 +117,7 @@ function writeMount(d){
   d.editor.view.requestMeasure();if(d.scroll!==undefined)d.editor.view.scrollDOM.scrollTop=d.scroll;
   writingUI.notice.hidden=!d.conflict; if(d.conflict)writeConflict(d);
   writingUI.selection.hidden=true;writeStatus(d);writeRenderComments(d);writeMark(d);
+  writeOnMount.forEach(f=>f(d));
   writeRefresh(d);
 }
 function writeTabs(){
@@ -130,7 +147,7 @@ async function writeSave(d){
   writeClearSaveTimers(d);
   const raw=writeBytes(d);d.saving=true;d.saveEpoch=(d.saveEpoch||0)+1;d.error='';writeRecover(d);writeStatus(d);
   d.savePromise=(async()=>{
-    try{const result=await writeFetch('/api/note',{path:d.path,body:raw,ifRevision:d.revision},'PUT');d.base=raw;d.revision=result.revision;d.retryDelay=0;d.conflict=null;if(writingUI.active===d)writingUI.notice.hidden=true;writeRecover(d);return true}
+    try{const result=await writeFetch('/api/note',{path:d.path,body:raw,ifRevision:d.revision},'PUT');d.base=raw;d.revision=result.revision;d.retryDelay=0;d.conflict=null;if(writingUI.active===d)writingUI.notice.hidden=true;writeRecover(d);writeOnSave.forEach(f=>f(d));return true}
     catch(e){d.error=e.status?e.message:'Could not save. Retrying…';if(e.status===409&&e.detail){
       // A lost acknowledgement is safe to accept when the server has exactly
       // the bytes we submitted. Never overwrite a different external version.
@@ -152,6 +169,7 @@ function writeFlush(d){if(!d||d.closed||d.conflict||d.recovering||d.moving||d.po
 function writeChanged(d){
   if(d.applying)return;
   d.editEpoch=(d.editEpoch||0)+1;if(!d.conflict)d.error='';writeRecover(d);writeStatus(d);writeQueueSave(d);
+  writeOnEdit.forEach(f=>f(d));
   queueMicrotask(()=>{if(!d.closed&&writingUI.documents.has(d.path))writeMark(d)});
 }
 function writeApplySaved(d,note){
@@ -194,16 +212,21 @@ function writeConflict(d){
 async function writeOpenPicker(){
   try{const data=await writeFetch('/api/writing/files');writingUI.files=data.files;writingUI.folders=data.folders;const choice=await choosePath({title:'Open a file',items:data.files.map(f=>({label:f.name,detail:f.path,value:f.path}))});if(choice)writeNavigate(choice.value)}catch(e){showToast(e.message,null,'error')}
 }
-async function writeCreate(){
-  const choice=await choosePath({title:'New file · vault root',placeholder:'name your note…',items:[],createLabel:'create'});if(!choice)return;
-  let p=choice.value;if(!/\.md$/i.test(p))p+='.md';
-  if(p.includes('/')||p.includes('\\')){showToast('Use a filename here; move it to a folder after creating it.',null,'error');return}
-  try{await writeFetch('/api/writing/note',{path:p,body:''});writeNavigate(p)}catch(e){showToast(e.message,null,'error')}
+async function writeCreate(folder=''){
+  const choice=await choosePath({title:'New file · '+(folder||'vault root'),placeholder:'name your note…',items:[],createLabel:'create'});if(!choice)return;
+  let name=choice.value.trim();if(!/\.md$/i.test(name))name+='.md';
+  if(name.includes('/')||name.includes('\\')){showToast('Use a filename here; pick the folder in the library first.',null,'error');return}
+  const p=(folder?folder+'/':'')+name;
+  try{await writeFetch('/api/writing/note',{path:p,body:''});writingUI.files=[...writingUI.files,{path:p,name:name.replace(/\.md$/i,''),modified:Date.now()/1000,tags:[]}];writeNavigate(p)}catch(e){showToast(e.message,null,'error')}
 }
-async function writeMenu(){
+async function writeMenu(trigger){
   const d=writingUI.active;if(!d)return;
-  const choice=await chooseActionMenu(document.activeElement,[{label:d.source?'live preview':'source mode',value:'source'},{label:'rename…',value:'rename'},{label:'move file to…',value:'move'},{label:'export Markdown',value:'export'},{label:'find in document',value:'find'}]);if(!choice)return;
-  if(choice.value==='source'){d.source=!d.source;d.editor.setSource(d.source);writeRemember(d);d.editor.focus();return}
+  const extra=typeof writeMenuExtras==='function'?writeMenuExtras(d):[];
+  const choice=await chooseActionMenu(trigger||document.activeElement,[{label:'find in document',value:'find'},{label:'rename…',value:'rename'},{label:'move file to…',value:'move'},...extra,{label:'export Markdown',value:'export'}]);if(!choice)return;
+  return writeMenuChoice(d,choice);
+}
+async function writeMenuChoice(d,choice){
+  if(choice.run){choice.run();return}
   if(choice.value==='export'){writeExport(d);return}
   if(choice.value==='find'){d.editor.find();return}
   if(d.readOnly){showToast('This file is read only.',null,'error');return}
@@ -229,8 +252,8 @@ function writeSelection(d,range){
   if(d.applying||writingUI.active!==d||writingUI.view.hidden)return;
   writeRemember(d);
   const popup=writingUI.selection;
-  if(range.empty||d.readOnly){d.selection=null;popup.hidden=true;return}
-  d.selection={from:range.from,to:range.to};
+  if(range.empty||d.readOnly){if(d.selection&&typeof writeStats==='function')writeStats(d);d.selection=null;popup.hidden=true;return}
+  d.selection={from:range.from,to:range.to};if(typeof writeStats==='function')writeStats(d);
   const rect=d.editor.view.coordsAtPos(range.to);if(!rect){popup.hidden=true;return}
   const canvas=writingUI.canvas.getBoundingClientRect();popup.style.left=Math.max(8,Math.min(rect.left-canvas.left,canvas.width-170))+'px';popup.style.top=Math.max(0,Math.min(rect.bottom-canvas.top+6,canvas.height-44))+'px';popup.hidden=false;
 }
@@ -379,7 +402,7 @@ function writeMarginSheet(){
 function writePreferenceKey(d){return 'manifest.writing.view.'+writingUI.vaultID+'.'+encodeURIComponent(d.path)}
 function writeRemember(d){
  if(!d.editor)return;const selection=d.editor.selection();
- try{localStorage.setItem(writePreferenceKey(d),JSON.stringify({source:d.source,revision:d.revision,anchor:selection.anchor,head:selection.head,scroll:d.editor.view.scrollDOM.scrollTop,expanded:d.expanded}))}catch(e){}
+ try{localStorage.setItem(writePreferenceKey(d),JSON.stringify({revision:d.revision,anchor:selection.anchor,head:selection.head,scroll:d.editor.view.scrollDOM.scrollTop,expanded:d.expanded}))}catch(e){}
 }
 
 window.matchMedia?.('(max-width:1100px)').addEventListener('change',e=>{if(e.matches&&writingUI.active&&!writingUI.margin.hidden&&window.mfSheet)writeMarginSheet();if(!e.matches&&window.mfSheet?.openKey()==='writing-comments'){mfSheet.close();writingUI.margin.hidden=false}});

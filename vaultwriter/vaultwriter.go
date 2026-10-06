@@ -26,6 +26,7 @@ type Writer struct {
 	caps       map[string]Capability // declared write-capabilities (§A3)
 	auditPath  string                // append-only write-audit.log ("" = no log)
 	historyDir string                // prior editor bytes, outside the vault when configured
+	dataDir    string                // the WithHistory root; editor sidecars live beside the history
 	auditMu    sync.Mutex
 
 	auditFailures int   // writes that landed without an audit line (see traced)
@@ -54,9 +55,13 @@ func (w *Writer) VaultRoot() string { return w.vault }
 func (w *Writer) WithHistory(dataDir string) *Writer {
 	if strings.TrimSpace(dataDir) != "" {
 		w.historyDir = filepath.Join(dataDir, "writing-history", Revision([]byte(filepath.Clean(w.vault))))
+		w.dataDir = dataDir
 	}
 	return w
 }
+
+// DataDir is the machine-local state root given to WithHistory ("" when none).
+func (w *Writer) DataDir() string { return w.dataDir }
 
 // ReadVaultFile reads a vault-relative file (read-only, traversal-guarded).
 func (w *Writer) ReadVaultFile(rel string) ([]byte, error) {

@@ -100,6 +100,9 @@ type Server struct {
 	writingAskMu    sync.Mutex
 	writingAsks     map[string]bool
 	writingComplete func(context.Context, any) (hermes.AnnotationResult, error)
+	writingTextOnce sync.Once
+	writingText     *writingIndex // the library's in-memory text index (writing_index.go)
+	writingSideMu   sync.Mutex    // library document + authorship sidecar writes
 	// deepseekStatePath: the last explicit portal test's result (dataDir,
 	// per-machine) — the DegradedPortal feed signal reads it (Phase 7).
 	deepseekStatePath string
@@ -1046,8 +1049,17 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/writing/comments", s.handleWritingComment)
 	mux.HandleFunc("POST /api/writing/ask", s.handleWritingAsk)
 	mux.HandleFunc("GET /api/writing/files", s.handleWritingFiles)
+	mux.HandleFunc("GET /api/writing/assets", s.handleWritingAssets)
+	mux.HandleFunc("GET /api/writing/asset", s.handleWritingAsset)
 	mux.HandleFunc("POST /api/writing/note", s.handleWritingCreate)
 	mux.HandleFunc("POST /api/writing/move", s.handleWritingMove)
+	mux.HandleFunc("GET /api/writing/search", s.handleWritingSearch)
+	mux.HandleFunc("GET /api/writing/tags", s.handleWritingTags)
+	mux.HandleFunc("POST /api/writing/folder", s.handleWritingFolder)
+	mux.HandleFunc("GET /api/writing/library", s.handleWritingLibrary)
+	mux.HandleFunc("PUT /api/writing/library", s.handleWritingLibrary)
+	mux.HandleFunc("GET /api/writing/authorship", s.handleWritingAuthorship)
+	mux.HandleFunc("PUT /api/writing/authorship", s.handleWritingAuthorship)
 	mux.HandleFunc("GET /api/note", s.handleNoteGet)
 	mux.HandleFunc("PUT /api/note", s.handleNotePut)
 	mux.HandleFunc("POST /api/note/task", s.handleNoteTask)

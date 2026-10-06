@@ -984,6 +984,42 @@
   #feedView .feed-card:not(.approval-card) > .feed-actions > .pill { flex: none; min-height: var(--touch); font-size: var(--fs-md); padding-inline: var(--sp-2); }
   #feedView .feed-top > .feed-title { min-width: 0; }
   .write-question, .contact-create-input { font-size: var(--fs-xl); }
+  /* WRITING — phone compression (docs/ui-conventions.md, 2026-10-06): an open
+     document's head is ‹ Library · name · Aa · ···; the app bar folds away as
+     a chat's does; tabs, quick search, new file and comments live in ··· and
+     the library; the Markdown keyboard bar shows while the text has focus */
+  .app-shell:has(#writeView:not([hidden])[data-doc][data-screen="doc"]) #crumbBar { display: none; }
+  #writeView[data-doc][data-screen="doc"] { padding-top: env(safe-area-inset-top); }
+  #writeView .write-tabs { display: none; }
+  #writeView .write-head { flex-wrap: nowrap; gap: var(--sp-2); padding: var(--sp-3) 0; min-height: var(--touch); }
+  #writeView .write-head > .write-library-toggle { order: -1; }
+  #writeView .write-identity { flex: 1 1 auto; flex-basis: auto; min-width: 0; }
+  #writeView .write-identity:has(.write-title[hidden]) { display: block; }
+  #writeView .write-path { font: 600 var(--fs-xl)/1.3 var(--sans); color: var(--text); }
+  #writeView .write-path-folder { display: none; }
+  #writeView .write-toolbar { width: auto; flex: none; flex-wrap: nowrap; }
+  #writeView .write-toolbar > .pill { min-width: var(--touch); min-height: var(--touch); }
+  #writeView .write-toolbar > .pill:not(.write-aa):not(.write-preview-toggle):not(:last-child) { display: none; }
+  #writeView .write-toolbar > .pill:last-child { margin-left: 0; }
+  #writeView .write-head > .write-library-toggle { min-width: var(--touch); min-height: var(--touch); }
+  #writeView[data-doc] .write-head > .write-library-toggle { font-size: 0; border: 0; background: none; box-shadow: none; color: var(--accent); padding: 0 var(--sp-2); }
+  #writeView[data-doc] .write-head > .write-library-toggle::before { content: "‹"; font: var(--fs-2xl)/1 var(--sans); }
+  .write-keybar { display: none; }
+  /* the library is its own screen: library → list → document */
+  #writeView { padding: 0 var(--sp-7); }
+  #writeView[data-screen="library"] > .write-main { display: none; }
+  #writeView[data-screen="library"] > .write-library { display: flex; flex: 1 1 auto; border-right: 0; margin-right: 0; }
+  #writeView[data-screen="doc"] > .write-library { display: none; }
+  .write-lib-head { min-height: var(--touch); padding-right: 0; }
+  .write-lib-back, .write-lib-head .write-icon { min-height: var(--touch); min-width: var(--touch); }
+  .write-lib-search { width: 100%; min-height: var(--touch); font-size: var(--fs-xl); }
+  .write-lib-body { padding-right: 0; }
+  .write-lib-row { min-height: var(--touch); }
+  .write-lib-name { font-size: var(--fs-xl); }
+  #writeView.write-editing .write-keybar { display: flex; gap: var(--sp-1); overflow-x: auto; padding: var(--sp-2) 0; border-top: 1px solid var(--line); background: var(--bg); flex: none; }
+  #writeView.write-editing .write-foot { display: none; }
+  .write-key { flex: 1 0 auto; min-width: var(--touch); min-height: var(--touch); border: 0; border-radius: var(--radius-lg); background: transparent; color: var(--text); font: var(--fs-xl) var(--mono); }
+  .write-key:active { background: var(--hover); }
   .consume-head-left, .consume-head-right { min-width: 0; max-width: 100%; }
   .consume-head-right { flex-wrap: wrap; justify-content: flex-start; }
   .consume-head .consume-search { min-width: 0; width: 100%; font-size: var(--fs-xl); min-height: var(--touch-sm); }

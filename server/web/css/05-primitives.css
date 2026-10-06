@@ -270,9 +270,16 @@
 .path-picker-hint { padding:var(--sp-6) var(--sp-8); }
 .action-menu-layer { position:fixed; inset:0; z-index:150; }
 .action-menu-backdrop { position:absolute; inset:0; }
-.action-menu { position:absolute; min-width:210px; padding:var(--sp-4); background:var(--surface-overlay); color:var(--text); border:1px solid var(--line); border-radius:var(--radius-lg); box-shadow:var(--shadow-2); }
+.action-menu { position:absolute; min-width:210px; max-height:calc(100dvh - 24px); overflow:auto; box-sizing:border-box; padding:var(--sp-4); background:var(--surface-overlay); color:var(--text); border:1px solid var(--line); border-radius:var(--radius-lg); box-shadow:var(--shadow-2); }
 .action-menu-item { display:block; width:100%; padding:var(--sp-6) var(--sp-7); text-align:left; border:0; border-radius:var(--radius); background:transparent; color:inherit; font:inherit; font-size:var(--fs-sm); cursor:pointer; }
 .action-menu-item:hover,.action-menu-item:focus-visible { background:var(--hover); outline:1px solid var(--line); }
+.action-menu-item:has(.action-menu-label) { display:flex; align-items:baseline; gap:var(--sp-4); }
+.action-menu-label { flex:1; }
+.action-menu-check { flex:none; width:1em; color:var(--accent); }
+.action-menu-shortcut { flex:none; color:var(--muted); font:var(--fs-xs) var(--mono); }
+.action-menu-item.danger { color:var(--danger); }
+.action-menu-header { padding:var(--sp-6) var(--sp-7) var(--sp-2); }
+.action-menu-header:first-child { padding-top:var(--sp-3); }
 
 /* Shared artifact workspace: restrained split pane; one surface on phones. */
 .artifact-workspace { display: flex; flex-direction: column; min-width: 0; min-height: 0; flex: 1; border-left: 1px solid var(--line); padding-left: var(--sp-7); background: var(--panel-bg, var(--bg)); }

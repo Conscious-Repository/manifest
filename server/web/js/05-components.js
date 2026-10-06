@@ -659,12 +659,22 @@ function chooseActionMenu(trigger, items, label = "Document actions") {
   return new Promise(resolve=>{
     const root=el('div','action-menu-layer'),back=el('div','action-menu-backdrop'),menu=el('div','action-menu');
     menu.setAttribute('role','menu');menu.setAttribute('aria-label',label);
-    const rect=trigger.getBoundingClientRect();menu.style.right=Math.max(8,window.innerWidth-rect.right)+'px';menu.style.top=Math.min(rect.bottom+6,window.innerHeight-260)+'px';
+    const rect=trigger.getBoundingClientRect();menu.style.right=Math.max(8,window.innerWidth-rect.right)+'px';const top=Math.max(8,Math.min(rect.bottom+6,window.innerHeight-260));menu.style.top=top+'px';menu.style.maxHeight=(window.innerHeight-top-12)+'px';
     let release,closed=false;
     const close=value=>{if(closed)return;closed=true;release?.();root.remove();resolve(value)};
-    items.forEach(item=>{const button=el('button','action-menu-item',item.label);button.setAttribute('role','menuitem');button.onclick=()=>close(item);menu.append(button)});
-    root.append(back,menu);document.body.append(root);release=containDialogFocus(root,menu.firstElementChild);
-    back.onclick=()=>close(null);menu.onkeydown=e=>{if(e.key==='Escape'){e.preventDefault();e.stopPropagation();close(null)}else if(e.key==='ArrowDown'||e.key==='ArrowUp'){e.preventDefault();const buttons=[...menu.children];const i=buttons.indexOf(document.activeElement);buttons[(i+(e.key==='ArrowDown'?1:-1)+buttons.length)%buttons.length].focus()}};
+    // an item may be a section header ({header}), checkable ({checked}), name
+    // its keyboard shortcut ({shortcut}) or be destructive ({danger})
+    items.forEach(item=>{
+      if(item.header){const h=el('div','action-menu-header micro-label',item.header);h.setAttribute('role','presentation');menu.append(h);return}
+      const button=el('button','action-menu-item'+(item.danger?' danger':''));
+      const checkable=typeof item.checked==='boolean';
+      button.setAttribute('role',checkable?'menuitemcheckbox':'menuitem');if(checkable)button.setAttribute('aria-checked',String(item.checked));
+      if(checkable)button.append(el('span','action-menu-check',item.checked?'✓':''));
+      button.append(el('span','action-menu-label',item.label));
+      if(item.shortcut)button.append(el('span','action-menu-shortcut',item.shortcut));
+      button.onclick=()=>close(item);menu.append(button)});
+    root.append(back,menu);document.body.append(root);release=containDialogFocus(root,menu.querySelector('button'));
+    back.onclick=()=>close(null);menu.onkeydown=e=>{if(e.key==='Escape'){e.preventDefault();e.stopPropagation();close(null)}else if(e.key==='ArrowDown'||e.key==='ArrowUp'){e.preventDefault();const buttons=[...menu.querySelectorAll('button')];const i=buttons.indexOf(document.activeElement);buttons[(i+(e.key==='ArrowDown'?1:-1)+buttons.length)%buttons.length].focus()}};
   });
 }
 

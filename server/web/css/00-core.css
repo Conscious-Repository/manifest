@@ -69,6 +69,11 @@
   --danger: #c0304a;    /* errors, destructive, alarm state */
   --warn:   #c47f1a;    /* caution, needs-attention amber */
   --good:   #4d9d6a;    /* success, healthy, done-positive green */
+  /* Writing's editing marks (71-write.css): parts of speech as iA Writer
+     colours them (adjustable for colour blindness: hue and lightness both
+     differ), and authorship (AI text, pasted text). Text colours, not states. */
+  --pos-noun: #b3261e; --pos-verb: #1f5fbf; --pos-adjective: #8a5a1f; --pos-adverb: #7a3fb0; --pos-conjunction: #2e7d4f;
+  --mark-ai: #7a3fb0;
 
   /* status fills/borders — paired with danger/warn above, for chips/badges/banners
      that need a soft background or border, not just the ink color */
@@ -216,6 +221,8 @@
   --danger: #FF453A;
   --warn:   #FFC247;
   --good:   #38E8A0;
+  --pos-noun: #FF7A70; --pos-verb: #6CB8FF; --pos-adjective: #E0A15A; --pos-adverb: #C69CFF; --pos-conjunction: #5FD9A0;
+  --mark-ai: #C69CFF;
   --status-danger-bg:     rgba(255, 69, 58, 0.14);
   --status-danger-deep:   #6E1A15;
   --status-danger-border: rgba(255, 69, 58, 0.45);
