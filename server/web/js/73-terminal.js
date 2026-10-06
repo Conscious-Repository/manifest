@@ -465,6 +465,11 @@ function attachTerm(id, recovery) {
 
 function sendTermResize() {
   if (!termInst || termInst.ws.readyState !== 1) return;
+  // a hidden or collapsed panel measures as a few cells; sizing the shared
+  // pane to that leaves the agent drawing for a 10×5 screen (its prompts
+  // then cannot be read, here or from chat) — keep the last real size
+  const box = termInst.term.element;
+  if (!box || !box.isConnected || !box.getClientRects().length || box.clientWidth < 80 || termInst.term.cols < 20 || termInst.term.rows < 6) return;
   termInst.ws.send(JSON.stringify({ t: "r", c: termInst.term.cols, r: termInst.term.rows }));
 }
 

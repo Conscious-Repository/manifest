@@ -3806,7 +3806,7 @@ function chatTermSyncOpen() {
   const wasLive = o.live, wasProcess = o.se.process, wasAgent=o.se.agentState;
   o.se = se;
   o.live = !!se.live;
-  if(wasAgent!==se.agentState){o.lastPollAt=0;chatTermRequestFinalTail(o);}
+  if(wasAgent!==se.agentState){o.lastPollAt=0;chatTermRequestFinalTail(o);chatPromptPaint(o);}
   const painted = chatTermRepaintHead();
   renderChatComposer(chatTermComposerSession());
   if (o.live !== wasLive) {
@@ -4310,7 +4310,10 @@ async function chatTermTail(o) {
   if(fullRead&&!missingHistory){o.title=d.title||'';o.cost=d.cost||0;headDirty=true;}
   if (headDirty) chatTermRepaintHead();
   if (typeof chatStatusPaint === "function") chatStatusPaint();
-  if (o.live && (o.se.agentState==='blocked'||o.prompt||document.querySelector('.chat-terminal-workspace:not([hidden])'))) chatTermScreenFetch();
+  // a chooser can open mid-run without the runtime calling it blocked: look every few seconds
+  const promptLook=o.se.agentState==='working'&&o.se.backend==='herdr'&&Date.now()-(o.promptLookAt||0)>3000;
+  if (promptLook) o.promptLookAt=Date.now();
+  if (o.live && (o.se.agentState==='blocked'||o.prompt||promptLook||document.querySelector('.chat-terminal-workspace:not([hidden])'))) chatTermScreenFetch();
 }
 
 // chatTermMerge — a tail's first assistant turn continues the last painted

@@ -12,12 +12,22 @@ let chatPromptBusy=false;
 
 function chatPromptPaint(o) {
   let card=document.getElementById('chatPrompt');
-  const p=o&&o.live&&!o.sharedConversation&&o.se?.backend==='herdr'?o.prompt:null;
+  const own=o&&o.live&&!o.sharedConversation&&o.se?.backend==='herdr';
+  const p=own?chatPromptView(o):null;
+  // blocked on something this chat cannot read (a pane too short to draw it):
+  // say so rather than leave "needs input" unexplained
+  const unread=own&&!p&&o.se.agentState==='blocked'&&o.screenSig&&!(o.questions||[]).some(q=>q.state==='pending');
+  if(unread){
+    if(card?.dataset.unread==='1'&&card.dataset.session===o.id)return;
+    const next=chatPromptUnread(o);
+    if(card)card.replaceWith(next);else document.getElementById('chatComposer')?.before(next);
+    return;
+  }
   if(!p){card?.remove();return;}
   const composer=document.getElementById('chatComposer');
   if(!composer)return;
   // same chooser, same cursor: keep the node (a half-typed answer, focus)
-  if(card&&card.dataset.session===o.id&&card.dataset.revision===p.revision&&card.dataset.selected===String(p.selected))return;
+  if(card&&card.dataset.session===o.id&&card.dataset.revision===p.revision&&card.dataset.selected===String(p.selected)&&card.dataset.rows===String(p.options.length))return;
   const hadFocus=card?.contains(document.activeElement);
   const next=chatPromptCard(o,p);
   if(card)card.replaceWith(next);else composer.before(next);
@@ -26,11 +36,41 @@ function chatPromptPaint(o) {
   if(hadFocus||!active||active===document.body)next.querySelector('.chat-prompt-option.is-cursor,.chat-prompt-option')?.focus({preventScroll:true});
 }
 
+// A list the CLI scrolled to fit its pane: the server walks the cursor over
+// the hidden rows once (nothing is confirmed) and the card keeps the whole
+// list for that prompt, following the live cursor.
+function chatPromptView(o){
+  const p=o.prompt;
+  if(!p||!p.clipped)return p;
+  const full=o.promptFull;
+  if(full&&full.revision===p.revision){
+    const cur=p.options.find(x=>x.index===p.selected);
+    const at=cur&&full.options.find(x=>cur.submit?x.submit:x.number&&x.number===cur.number);
+    return {...full,selected:at?at.index:full.selected,complete:true};
+  }
+  if(o.promptScanFor!==p.revision&&!chatPromptBusy){
+    o.promptScanFor=p.revision;
+    postJSONOk(chatTermBase(o.id)+'/prompt',{revision:p.revision,scan:true}).then(r=>{
+      if(r.prompt&&r.prompt.revision===p.revision){o.promptFull=r.prompt;if(chatTermOpen===o)chatPromptPaint(o);}
+    }).catch(()=>{});
+  }
+  return p;
+}
+
+function chatPromptUnread(o){
+  const card=el('section','chat-prompt chat-prompt-unread');card.id='chatPrompt';card.dataset.session=o.id;card.dataset.unread='1';
+  const head=el('div','chat-prompt-head');head.append(el('span','chat-prompt-badge','Needs input'));
+  const open=el('button','pill','Open terminal');open.type='button';open.onclick=()=>chatOpenTerminalPane(o.se);
+  const foot=el('div','chat-prompt-foot');foot.append(el('span','chat-prompt-hint chat-prompt-hint-keep','Shown in full when the terminal is tall enough, or answer it there.'),open);
+  card.append(head,el('div','chat-prompt-title',chatPromptAgentName(o)+' is waiting on a prompt this chat can’t read yet.'),foot);
+  return card;
+}
+
 function chatPromptAgentName(o){return o.se?.kind==='codex'?'Codex':o.se?.kind==='claude'?'Claude':'the agent';}
 
 function chatPromptCard(o,p) {
   const card=el('section','chat-prompt');card.id='chatPrompt';
-  card.dataset.session=o.id;card.dataset.revision=p.revision;card.dataset.selected=String(p.selected);
+  card.dataset.session=o.id;card.dataset.revision=p.revision;card.dataset.selected=String(p.selected);card.dataset.rows=String(p.options.length);
   card.setAttribute('role','group');card.setAttribute('aria-label','Agent needs input');
   const head=el('div','chat-prompt-head');
   head.append(el('span','chat-prompt-badge','Needs input'));
@@ -83,7 +123,7 @@ function chatPromptCard(o,p) {
     const back=el('button','sprt-quiet','Back');back.type='button';
     const submit=()=>{
       if(kind==='text'){if(!field.value.trim()){field.focus();return;}send({option:option.index,text:field.value.trim(),checked:chatPromptChecked(checks)});}
-      else send({option:option.index},field.value);
+      else send({option:option.index,label:option.label},field.value);
     };
     go.onclick=submit;back.onclick=()=>{extra.hidden=true;extra.replaceChildren();list.querySelector('[data-index="'+option.index+'"]')?.focus();};
     field.onkeydown=e=>{
@@ -114,11 +154,12 @@ function chatPromptCard(o,p) {
     b.onclick=()=>{
       if(option.text)openField(option,'text');
       else if(option.followup)openField(option,'note');
-      else send({option:option.index,checked:chatPromptChecked(checks)});
+      else send({option:option.index,label:option.label,checked:chatPromptChecked(checks)});
     };
     buttons.push(b);list.append(b);
   }
-  if(p.multi&&!p.options.some(x=>x.submit)){
+  if(p.clipped&&!p.complete)card.append(el('div','chat-prompt-note','Part of this list is scrolled out of view in the terminal — reading the rest…'));
+  if(p.multi&&!p.options.some(x=>x.submit)&&!(p.clipped&&!p.complete)){
     status.textContent='This chooser has no Submit row here — open Terminal to finish it.';
   }
   card.append(list,extra);

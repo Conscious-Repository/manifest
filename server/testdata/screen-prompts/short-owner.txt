@@ -1,0 +1,17 @@
+● Two choices remain:
+  1. Show everyone who took part
+  2. Keep the current note list
+
+────────────────────────────────────────────────────────────────────────────────────────────────────
+ ☐ Participants
+
+ Participants with no contact note (e.g. Raquel Colom, Jon Chu) are
+ currently left out of the note entirely. How should they appear?
+
+↑ 2. Leave them out
+     Keep today's behaviour: only people with notes appear
+❯ 3. Type something.
+────────────────────────────────────────────────────────────────────────────────────────────────────
+  4. Chat about this
+
+Enter to select · Tab/Arrow keys to navigate · ctrl+g to edit in Vim · Esc to cancel

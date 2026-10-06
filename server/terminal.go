@@ -1230,6 +1230,9 @@ func (s *Server) handleTermWS(w http.ResponseWriter, r *http.Request) {
 	defer release()
 
 	cols, rows := clampDim(r.URL.Query().Get("c"), 120), clampDim(r.URL.Query().Get("r"), 32)
+	if cols < 20 || rows < 6 { // measured while hidden: see the "r" floor below
+		cols, rows = 120, 32
+	}
 	if se.isDraft() {
 		http.Error(w, "send the first message from chat to start this draft", http.StatusConflict)
 		return
@@ -1347,7 +1350,9 @@ func (s *Server) handleTermWS(w http.ResponseWriter, r *http.Request) {
 		case "i":
 			_, _ = ptmx.Write([]byte(msg.D))
 		case "r":
-			if msg.C > 0 && msg.R > 0 {
+			// a collapsed client reports a few cells: never shrink the
+			// shared pane below what an agent can draw a dialog in
+			if msg.C >= 20 && msg.R >= 6 {
 				_ = pty.Setsize(ptmx, &pty.Winsize{Cols: uint16(clampInt(msg.C, 500)), Rows: uint16(clampInt(msg.R, 200))})
 			}
 		}

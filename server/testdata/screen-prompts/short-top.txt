@@ -1,0 +1,14 @@
+ ☐ Fruit
+
+Which fruit do you want?
+
+❯ 1. apple
+     Crisp and sweet, a classic everyday fruit.
+  2. pear
+     Soft, juicy, and mildly sweet with a grainy texture.
+↓ 3. plum
+     Tart skin with sweet, juicy flesh around a stone.
+────────────────────────────────────────────────────────────────────────────────────────────────────
+  6. Chat about this
+
+Enter to select · ↑/↓ to navigate · Esc to cancel

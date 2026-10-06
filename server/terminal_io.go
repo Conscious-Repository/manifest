@@ -174,8 +174,8 @@ func (s *Server) terminalScreen(ctx context.Context, se termSession) (map[string
 		}
 		// the chooser on screen, when there is one, answered from chat (terminal_prompt.go)
 		var prompt *termPrompt
-		if se.Device == "" && ob.AgentState != "working" {
-			prompt = parseTermPrompt(lines)
+		if se.Device == "" && ob.Process == "running" {
+			prompt = s.polledPrompt(ctx, se, lines, ob.AgentState == "blocked")
 		}
 		return map[string]any{"live": ob.Process == "running", "lines": lines, "prompt": prompt, "agentState": ob.AgentState, "connectivity": ob.Connectivity, "process": ob.Process}, nil
 	}

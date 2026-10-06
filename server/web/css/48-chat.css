@@ -859,6 +859,7 @@ button.chat-attach-chip { min-height: 44px; max-width: 100%; background: transpa
 .chat-prompt-status:empty { display: none; }
 .chat-prompt.is-error .chat-prompt-status { margin-top: var(--sp-3); color: var(--danger); }
 .chat-main.terminal-focus .chat-prompt { display: none; }
+.chat-prompt-note { margin-top: var(--sp-3); font-size: var(--fs-sm); color: var(--base-60); }
 /* Pending follow-ups: a compact row above the composer, with explicit dispatch. */
 .chat-pending-messages { grid-column: 1 / -1; width: 100%; min-width: 0; }
 .chat-pending-message { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-4); padding: var(--sp-4) var(--sp-6); border-bottom: 1px solid var(--line); }

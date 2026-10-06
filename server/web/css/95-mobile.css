@@ -838,7 +838,7 @@
   .chat-question-input { font-size: var(--fs-xl); }
   .chat-prompt { max-height: 60dvh; padding: var(--sp-4); margin-bottom: var(--sp-3); }
   .chat-prompt-option { min-height: var(--touch); align-items: center; }
-  .chat-prompt-hint { display: none; }
+  .chat-prompt-hint:not(.chat-prompt-hint-keep) { display: none; }
   .chat-prompt-input { font-size: var(--fs-xl); }
   .chat-prompt-foot .sprt-quiet { min-height: var(--touch); }
 }

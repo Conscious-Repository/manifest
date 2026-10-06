@@ -1,6 +1,7 @@
 package server
 
 import (
+	"fmt"
 	"os"
 	"strings"
 	"testing"
@@ -121,5 +122,34 @@ func TestParseTermPromptIgnoresPlainScreens(t *testing.T) {
 	b := parseTermPrompt(readPromptScreen(t, "perm-amend"))
 	if a.Revision == b.Revision {
 		t.Fatal("different dialogs share a revision")
+	}
+}
+
+// A short pane: Claude scrolls its list and marks the cut with ↑/↓.
+func TestParseTermPromptScrolledList(t *testing.T) {
+	top := parseTermPrompt(readPromptScreen(t, "short-top"))
+	if top == nil || top.Title != "Which fruit do you want?" || !top.Clipped || top.Selected != 0 {
+		t.Fatalf("top %+v", top)
+	}
+	var idx []int
+	for _, o := range top.Options {
+		idx = append(idx, o.Index)
+	}
+	if fmt.Sprint(idx) != "[0 1 2 5]" || top.Options[2].Label != "plum" {
+		t.Fatalf("positions %v %+v", idx, top.Options)
+	}
+	down := parseTermPrompt(readPromptScreen(t, "short-scrolled"))
+	if down == nil || down.Options[0].Label != "pear" || down.Options[0].Index != 1 || down.Selected != 3 || down.Revision != top.Revision {
+		t.Fatalf("scrolled %+v", down)
+	}
+	if !promptSame(top, down) {
+		t.Fatal("a scroll is not a different prompt")
+	}
+	owner := parseTermPrompt(readPromptScreen(t, "short-owner"))
+	if owner == nil || !strings.HasSuffix(owner.Title, "How should they appear?") || strings.Join(promptLabels(owner), "|") != "Leave them out|Type something.|Chat about this" {
+		t.Fatalf("owner %+v", owner)
+	}
+	if owner.Selected != 2 || len(owner.Tabs) != 1 {
+		t.Fatalf("owner cursor/tabs %+v", owner)
 	}
 }

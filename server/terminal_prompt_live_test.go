@@ -4,11 +4,14 @@ import (
 	"context"
 	"crypto/rand"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/creack/pty"
 )
 
 // Opt in against an isolated scratch herdr daemon (MANIFEST_HERDR_TEST_SESSION)
@@ -195,6 +198,105 @@ func TestHerdrLiveScreenPromptsCodex(t *testing.T) {
 		if i > 90 {
 			screen, _ := h.Screen(ctx, id)
 			t.Fatalf("approved command did not run:\n%s", strings.Join(screen, "\n"))
+		}
+		time.Sleep(time.Second)
+	}
+}
+
+// A short or tiny pane (run the scratch client ~16 rows, or a few cells as a
+// collapsed browser panel leaves it): read the chooser at the reading size
+// and pick an option Claude scrolled out of view, as the chat card does.
+func TestHerdrLiveScreenPromptsShortPane(t *testing.T) {
+	session := os.Getenv("MANIFEST_HERDR_TEST_SESSION")
+	if session == "" {
+		t.Skip("requires isolated live herdr 0.9.0 and authenticated Claude")
+	}
+	home, _ := os.UserHomeDir()
+	host, _ := os.Hostname()
+	cwd, err := os.MkdirTemp(os.Getenv("MANIFEST_HERDR_TEST_CWD"), "prompt-short-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := &Server{terminal: &termCfg{defaultWd: cwd}}
+	h := &herdrTerminalRuntime{server: s, Host: host, Session: session, Socket: filepath.Join(home, ".config", "herdr", "sessions", session, "herdr.sock")}
+	s.terminal.herdr = h
+	var u [16]byte
+	_, _ = rand.Read(u[:])
+	resume := fmt.Sprintf("%x-%x-%x-%x-%x", u[0:4], u[4:6], u[6:8], u[8:10], u[10:16])
+	se := termSession{ID: "abcdef654323", Backend: "herdr", Kind: "claude", Cwd: cwd, Name: "prompt-short", Model: "sonnet", Permission: "default", ResumeID: resume}
+	ctx, cancel := context.WithTimeout(context.Background(), 4*time.Minute)
+	defer cancel()
+	id, err := h.Create(ctx, se)
+	if err != nil {
+		t.Fatal(err)
+	}
+	se.Runtime = id
+	se.Started = true
+	defer func() { _ = h.Close(context.Background(), id) }()
+	time.Sleep(6 * time.Second)
+	// a phone or collapsed panel that attached and left: the pane keeps its few cells
+	// (the browser's own path: a direct attach over a PTY of that size)
+	if shrink, err := h.Attach(ctx, id); err == nil {
+		if tty, err := pty.StartWithSize(shrink, &pty.Winsize{Cols: 30, Rows: 7}); err == nil {
+			go func() { _, _ = io.Copy(io.Discard, tty) }()
+			time.Sleep(1500 * time.Millisecond)
+			_ = shrink.Process.Kill()
+			_ = shrink.Wait()
+			_ = tty.Close()
+		}
+	}
+	if err := h.SendText(ctx, id, "Use AskUserQuestion: one question 'Which fruit do you want?' with options apple, pear, plum, kiwi, each with a one-line description. Then reply only PICKED: <fruit>"); err != nil {
+		t.Fatal(err)
+	}
+	var p *termPrompt
+	for i := 0; i < 90 && (p == nil || !strings.Contains(p.Title, "fruit")); i++ {
+		time.Sleep(time.Second)
+		p, _ = s.readablePrompt(ctx, se, true)
+	}
+	if p == nil {
+		lines, _ := h.Screen(ctx, id)
+		ob, _ := h.Inspect(ctx, id)
+		t.Fatalf("no prompt (agent %s):\n%s", ob.AgentState, strings.Join(lines, "\n"))
+	}
+	t.Logf("prompt clipped=%v options=%q", p.Clipped, promptLabels(p))
+	// (a scratch daemon may restore the size when the attach leaves; the live
+	// one keeps it — log which this run exercised)
+	small, lines, _ := s.terminalScreenPrompt(ctx, se)
+	t.Logf("at the pane's own size: %d lines, readable=%v clipped=%v", len(lines), small != nil, small != nil && small.Clipped)
+	full := p
+	if p.Clipped {
+		if err := s.answerAtReadableSize(ctx, se, p.Revision, func() error {
+			var err error
+			cur, _, err := s.terminalScreenPrompt(ctx, se)
+			if err == nil && cur != nil {
+				full, _, err = s.scanTermPrompt(ctx, se, cur)
+			}
+			return err
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	t.Logf("scanned options=%q", promptLabels(full))
+	target := -1
+	for _, o := range full.Options {
+		if o.Label == "kiwi" {
+			target = o.Index
+		}
+	}
+	if target < 0 {
+		t.Fatalf("kiwi not offered: %+v", p.Options)
+	}
+	a := termPromptAnswer{Revision: p.Revision, Option: target, Label: "kiwi"}
+	if err := s.answerAtReadableSize(ctx, se, a.Revision, func() error { return s.answerTermPrompt(ctx, se, a) }); err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; ; i++ {
+		lines, _ := h.Screen(ctx, id)
+		if strings.Contains(strings.Join(lines, "\n"), "PICKED: kiwi") {
+			break
+		}
+		if i > 60 {
+			t.Fatalf("answer never arrived:\n%s", strings.Join(lines, "\n"))
 		}
 		time.Sleep(time.Second)
 	}
