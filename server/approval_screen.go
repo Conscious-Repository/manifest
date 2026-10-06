@@ -7,6 +7,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"manifest/aion"
@@ -157,6 +158,13 @@ func screenText(pl aion.ProposalPayload, src string) string {
 	return strings.Join([]string{pl.Kind, pl.Title, pl.Owner, pl.Rock, path.Base(src)}, "\n")
 }
 
+// screenExCache holds the owner's recent decisions as Jev examples, per
+// approval store and per day.
+var (
+	screenExMu    sync.Mutex
+	screenExCache = map[*approvals.Store]*screenExampleSet{}
+)
+
 // screenExampleSet is the owner's recent decisions, as Jev examples.
 type screenExampleSet struct {
 	tracked, declined []string
@@ -169,10 +177,10 @@ var rejectedReasonRe = regexp.MustCompile(`(?m)^> rejected: (.+)$`)
 // Cached by day so the fold does not reshuffle while he reviews.
 func (s *Server) screenExamples(store *approvals.Store) screenExampleSet {
 	day := time.Now().UTC().Format("2006-01-02")
-	s.screenMu.Lock()
-	defer s.screenMu.Unlock()
-	if s.screenEx != nil && s.screenEx.version == day {
-		return *s.screenEx
+	screenExMu.Lock()
+	defer screenExMu.Unlock()
+	if c := screenExCache[store]; c != nil && c.version == day {
+		return *c
 	}
 	type ex struct {
 		at, line string
@@ -214,7 +222,7 @@ func (s *Server) screenExamples(store *approvals.Store) screenExampleSet {
 	for _, e := range collect("rejected", notUnworthy) {
 		set.declined = append(set.declined, e.line)
 	}
-	s.screenEx = &set
+	screenExCache[store] = &set
 	return set
 }
 
