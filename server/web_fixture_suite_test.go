@@ -254,6 +254,11 @@ func TestFixtureFeedReaderPhone(t *testing.T) {
 	runFixture(t, "feed-reader-phone.cjs", true, false)
 }
 
+// Network facet chips wrap at phone width (network-phone.cjs).
+func TestFixtureNetworkPhone(t *testing.T) {
+	runFixture(t, "network-phone.cjs", true, false)
+}
+
 // Reject asks why in one tap; the "Probably not" fold (approvals-screen.cjs).
 func TestFixtureApprovalsScreen(t *testing.T) {
 	runFixture(t, "approvals-screen.cjs", true, false)

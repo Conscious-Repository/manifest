@@ -121,3 +121,7 @@
 .rg-canvas .rg-node.rg-known .rg-dot { fill: var(--base-60); }
 .rg-check .rg-swatch.rg-saved { background: var(--warn); }
 .rg-canvas .rg-node.rg-saved .rg-label { opacity: var(--rg-label-named); fill: var(--base-100); }
+/* a long experience topic ("Advanced neuroimaging techniques and
+   applications") wraps inside the row instead of widening the page
+   (390px pan of 62px, 2026-10-07) */
+.net-facet-row > .filter-chip { max-width: 100%; min-width: 0; white-space: normal; text-align: left; overflow-wrap: anywhere; }
