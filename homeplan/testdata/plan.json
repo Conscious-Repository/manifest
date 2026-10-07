@@ -1,0 +1,40 @@
+{
+  "schema": "manifest.home-plan/1",
+  "project": "home/backyard",
+  "timezone": "America/Chicago",
+  "horizon": {"start": "2026-10-05", "end": "2026-12-21"},
+  "people": {"benjamin": {"name": "Benjamin"}, "olga": {"name": "Olga"}},
+  "capacity": {"weekendDayHours": 8, "eveningsPerWeek": 2, "eveningHours": 3},
+  "away": {
+    "b-oct10": {"from": "2026-10-10", "to": "2026-10-11", "who": ["benjamin"]},
+    "both-oct24": {"from": "2026-10-24", "to": "2026-10-25", "who": ["benjamin", "olga"]},
+    "b-nov14": {"from": "2026-11-14", "to": "2026-11-15", "who": ["benjamin"]}
+  },
+  "reservations": {
+    "prep": {"weekend": "2026-10-17", "hours": 16, "purpose": "prep and coating", "kind": "work", "status": "provisional"},
+    "checks": {"weekend": "2026-12-12", "hours": 16, "purpose": "sealing and checks", "kind": "checks", "status": "provisional"},
+    "buffer": {"weekend": "2026-12-19", "hours": 16, "purpose": "contingency", "kind": "contingency", "status": "provisional"}
+  },
+  "milestones": {
+    "deadline": {"date": "2026-12-21", "title": "Weathertight", "kind": "deadline", "confirmed": true},
+    "frame": {"title": "Frame erected", "kind": "external", "confirmed": false}
+  },
+  "tasks": {
+    "home/roof-on": {"phase": "execution", "draws": "pool", "dependsOn": ["milestone:frame"],
+      "estimate": {"hours": null, "low": 24, "high": 56, "crew": 2, "basis": "assistant", "confidence": "allowance"}},
+    "home/flashing-into-house": {"phase": "execution", "draws": "pool", "includedIn": "home/roof-on"},
+    "home/plan-windows": {"phase": "planning", "draws": "evening",
+      "subtasks": {
+        "panes": {"title": "Panes", "phase": "execution", "draws": "pool", "estimate": {"hours": 12, "crew": 2, "basis": "user", "confidence": "confirmed"}},
+        "frames": {"title": "Frames", "phase": "execution", "draws": "pool", "estimate": {"hours": 16, "crew": 2, "basis": "user", "confidence": "confirmed"}},
+        "upper": {"title": "Upper glass", "phase": "execution", "draws": "pool", "wait": {"days": null, "label": "supplier lead time"}}
+      }},
+    "home/metal-finish-and-coated": {"phase": "execution", "draws": "reservation:prep"}
+  },
+  "scenarios": {
+    "roof-24": {"label": "Roof 24 h", "basis": "assistant", "patch": {"tasks": {"home/roof-on": {"estimate": {"hours": 24}}}}},
+    "roof-36": {"label": "Roof 36 h", "basis": "assistant", "patch": {"tasks": {"home/roof-on": {"estimate": {"hours": 36}}}}},
+    "roof-48": {"label": "Roof 48 h", "basis": "assistant", "patch": {"tasks": {"home/roof-on": {"estimate": {"hours": 48}}}}},
+    "roof-56": {"label": "Roof 56 h", "basis": "assistant", "patch": {"tasks": {"home/roof-on": {"estimate": {"hours": 56}}}}}
+  }
+}

@@ -225,6 +225,7 @@ async function renderTodoPanel(refetch) {
   const details = el("div", "tdo-p-details");
   const detailBody = collapsibleSection(details, "Task details", [row && row.container && row.container.name, rec.Description || rec.description ? "context saved" : "", rec.Plan || rec.plan ? "plan saved" : ""].filter(Boolean).join(" · "), false);
   host.append(details);
+  if (typeof homePlanPanelHook === "function") homePlanPanelHook(workAnchor, panelID); // Home timeline schedule
 
   // --- delegation state, when the todo is out with an agent ---
   if (d.delegation && typeof delegationChip === "function") {

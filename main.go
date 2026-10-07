@@ -500,6 +500,7 @@ func main() {
 	srv := server.New(svc, goalsStore, calClient)
 	srv.UseReIntake(cfg.ReIntake, cfg.DataDir, cfg.Hermes.Duties["extractor/re-intake"])
 	srv.UsePlannerNotes("", sharedHomeRoot, "Benjamin", vw.BindAbs("shared-home"))
+	srv.UseHomePlan(sharedHomeRoot, vw.BindAbs("shared-home"))
 	srv.UseChatState(filepath.Join(cfg.DataDir, "chat-state"))
 	srv.UseHosts(hostsInfo(cfg)) // Settings › Hosts & paths: the read-only config projection
 	// One geocoder instance serves every feature so the provider's global rate

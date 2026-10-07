@@ -590,3 +590,18 @@ planners through a separate `home`/`shared-home` capability. Other life areas an
 daily schedules remain private. Shared sections use optimistic conflict checks
 under an interprocess lock; notes are Markdown and human comments never dispatch
 an agent from Olga. Existing task identity survives enrichment and title edits.
+
+### 2026-10-07 — Shared Home plan
+
+`system/home/plan.json` (package `homeplan`, contract `docs/home-plan.md`) is
+the shared Home project's scheduling model. It covers availability, events,
+reservations, milestones, estimates, dependencies, allocations, decisions,
+budget and scenarios, keyed by Home task IDs as foreign keys. Titles,
+completion and notes stay in the task system.
+
+Writes are RFC 7396 merge patches against a content revision, validated whole
+and taken under the shared Home `flock`, so both planners and any CLI
+serialize across processes. Each replaced revision is kept in
+`plan-history/`. Capacity, conflicts and scenario outcomes are derived on
+read with date-only arithmetic, and unknown estimates stay `null`. Both
+servers mount the same narrow routes; nothing else is opened to Olga.

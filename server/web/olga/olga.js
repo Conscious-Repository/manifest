@@ -58,11 +58,21 @@ async function openTodoPanel(row){
   area.disabled=area.value==='Home';if(!area.disabled)for(const option of [...area.options])if(option.value==='Home')option.remove();
   if(area.value==='Home')form.append(el('p','olga-detail-hint','Home is shared with Benjamin.'));
   const priority=field('Priority',selectEl(['None','Low','Medium','High']));priority.value=({low:'Low',med:'Medium',high:'High'})[r.priority]||'None';
-  const description=field('Description',el('textarea'));description.rows=5;description.value=notes.description||'';description.placeholder='Add details, links, or a checklist…';
+  // Long research notes read as collapsible sections; the raw Markdown is one
+  // tap away. Nothing in a description is ever rendered as HTML.
+  const hasNotes=!!(notes.description||'').trim();
+  const notesWrap=el('div','olga-detail-field');notesWrap.append(el('span','','Notes'));
+  const notesView=homePlanNotesView(notes.description||'');notesView.hidden=!hasNotes;
+  const description=el('textarea');description.rows=hasNotes?14:5;description.value=notes.description||'';description.placeholder='Add details, links, or a checklist…';description.setAttribute('aria-label','Description');description.hidden=hasNotes;
+  const editNotes=pillLight('Edit notes',()=>{description.hidden=false;notesView.hidden=true;editNotes.hidden=true;description.focus();});editNotes.type='button';editNotes.hidden=!hasNotes;
   const status=el('p','olga-detail-hint');status.setAttribute('role','status');
   const save=el('button','pill','Save changes');save.type='submit';form.append(save,status);
+  // notes sit below the schedule; saving them is the same Save, offered beside them too
+  const saveNotes=el('button','pill','Save notes');saveNotes.type='button';saveNotes.hidden=hasNotes;saveNotes.onclick=()=>form.requestSubmit();
+  editNotes.addEventListener('click',()=>{saveNotes.hidden=false;});
+  notesWrap.append(notesView,editNotes,description,saveNotes);
   form.onsubmit=async e=>{e.preventDefault();save.disabled=true;status.textContent='Saving…';try{
-   notes=await postJSONOk('/api/tasks/notes',{id:r.id,kind:'description',description:description.value,revision:notes.revision});
+   if(description.value!==(notes.description||''))notes=await postJSONOk('/api/tasks/notes',{id:r.id,kind:'description',description:description.value,revision:notes.revision});
    await postJSONOk('/api/tasks/update',{id:r.id,text:title.value.trim(),domain:area.value});
    await postJSONOk('/api/tasks/priority',{id:r.id,priority:({Low:'low',Medium:'med',High:'high'})[priority.value]||''});
    r.text=title.value.trim();r.container={name:area.value};status.textContent='Saved';await loadTodos();
@@ -72,7 +82,11 @@ async function openTodoPanel(row){
   const composer=el('form');const comment=el('textarea');comment.rows=3;comment.placeholder='Add a comment…';comment.setAttribute('aria-label','Comment');comment.required=true;
   const send=el('button','pill','Add comment');send.type='submit';const error=el('p','olga-detail-hint');error.setAttribute('role','status');composer.append(comment,send,error);
   composer.onsubmit=async e=>{e.preventDefault();if(!comment.value.trim())return;send.disabled=true;try{const updated=await postJSONOk('/api/tasks/notes',{id:r.id,kind:'comment',comment:comment.value});notes.comments=updated.comments;comment.value='';renderComments();error.textContent='';}catch(e){error.textContent=e.message;}finally{send.disabled=false;}};
-  comments.append(entries,composer);els.pickerBody.replaceChildren(form,comments);title.focus();
+  comments.append(entries,composer);
+  // Home tasks carry their schedule from the shared plan, edited as a draft
+  const schedule=el('div','olga-schedule');
+  if(r.container?.name==='Home'&&typeof homePlanEditorInto==='function')homePlanEditorInto(schedule,r.id);
+  els.pickerBody.replaceChildren(form,schedule,notesWrap,comments);title.focus();
  }catch(e){els.pickerBody.replaceChildren(el('p','',e.message));}
 }
 async function openTodoQuickAdd(prefill='',options={}){
@@ -114,7 +128,7 @@ renderTodosToolbar=function(){
  const bar=document.getElementById('todosToolbar');const focused=document.activeElement?.id==='todosSearch',caret=focused?document.activeElement.selectionStart:0;
  bar.replaceChildren();const search=inputEl('Find a task…');search.id='todosSearch';search.value=todosQuery;search.type='search';search.setAttribute('aria-label','Search tasks');search.oninput=()=>{todosQuery=search.value;renderTodos();};
  const area=el('select','olga-area-filter');area.setAttribute('aria-label','Filter tasks by area');const allOption=el('option','','All areas');allOption.value='';area.append(allOption);for(const name of olgaTaskAreas(todosCache)){const option=el('option','',name);option.value=name;area.append(option);}area.value=olgaTaskArea;area.onchange=()=>{olgaTaskArea=area.value;localStorage.setItem('olga.tasks.area',olgaTaskArea);renderTodos();};
- const views=el('div','olga-task-views');for(const mode of ['list','board']){const button=pillLight(mode==='list'?'List':'Board',()=>{todosMode=mode;localStorage.setItem('olga.tasks.view',mode);renderTodos();});button.setAttribute('aria-pressed',String(todosMode===mode));button.classList.toggle('on',todosMode===mode);views.append(button);}bar.append(search,area,views,pillLight('＋ Add task',()=>openTodoQuickAdd()));if(focused){search.focus();search.setSelectionRange(caret,caret);}
+ const views=el('div','olga-task-views');for(const mode of ['list','board','timeline']){const button=pillLight({list:'List',board:'Board',timeline:'Timeline'}[mode],()=>{todosMode=mode;localStorage.setItem('olga.tasks.view',mode);renderTodos();});button.setAttribute('aria-pressed',String(todosMode===mode));button.classList.toggle('on',todosMode===mode);views.append(button);}bar.append(search,area,views,pillLight('＋ Add task',()=>openTodoQuickAdd()));if(focused){search.focus();search.setSelectionRange(caret,caret);}
 };
 // Surface errors instead of reporting a rejected save as successful.
 goalsApi=async function(method,path,body){

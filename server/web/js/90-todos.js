@@ -97,7 +97,8 @@ function renderTodosToolbar() {
   if(search.value!==todosQuery)search.value=todosQuery;
   const choices=[['all','All active'],['next','Next actions'],['agents','With agents'],['attention','Needs attention']].map(([value,label])=>[value,label+' · '+(todosCache.rows||[]).filter(r=>todoMatches(r,value)).length]);
   renderFilterButtons(bar.querySelector('.tdo-lenses'),choices,todosLens,value=>{todosLens=value;localStorage.setItem('todosLens',value);renderTodos();});
-  renderFilterButtons(bar.querySelector('.tdo-layouts'),[['list','List'],['board','Board']],todosMode,value=>{todosMode=value;localStorage.setItem('todosMode',value);renderTodos();});
+  // Timeline: the shared Home plan's weekly view (90-home-plan.js)
+  renderFilterButtons(bar.querySelector('.tdo-layouts'),[['list','List'],['board','Board']].concat(typeof homePlanRender==='function'?[['timeline','Home timeline']]:[]),todosMode,value=>{todosMode=value;localStorage.setItem('todosMode',value);renderTodos();});
 }
 
 function renderTodos() {
@@ -116,6 +117,7 @@ function renderTodos() {
     error.append(pillLight("Retry", loadTodos));
     host.append(error);
   }
+  if (todosMode === "timeline" && typeof homePlanRender === "function") { homePlanRender(host); return; }
   // 1. decisions lane — always visible, never collapsed
   const issues = [];
   (todosCache.domains || []).forEach((dom) => (dom.issues || []).forEach((is) => {

@@ -1,8 +1,12 @@
 package server
 
 import (
+	"encoding/json"
+	"manifest/homeplan"
+	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -257,6 +261,29 @@ func TestFixtureFeedReaderPhone(t *testing.T) {
 // Network facet chips wrap at phone width (network-phone.cjs).
 func TestFixtureNetworkPhone(t *testing.T) {
 	runFixture(t, "network-phone.cjs", true, false)
+}
+
+// The shared Home timeline over the server's own derivation of the
+// homeplan fixture (home-plan-timeline.cjs).
+func TestFixtureHomePlanTimeline(t *testing.T) {
+	raw, err := os.ReadFile("../homeplan/testdata/plan.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	p, err := homeplan.Decode(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	refs := map[string]homeplan.TaskRef{}
+	for id := range p.Tasks {
+		refs[id] = homeplan.TaskRef{Text: strings.TrimPrefix(id, "home/")}
+	}
+	d := homeplan.Derive(p, refs, "2026-10-07")
+	body, _ := json.Marshal(homePlanView{Revision: homeplan.Revision(raw), Plan: p, Derived: &d, Tasks: refs})
+	f := filepath.Join(t.TempDir(), "plan.json")
+	os.WriteFile(f, body, 0o600)
+	t.Setenv("HP_FIXTURE", f)
+	runFixture(t, "home-plan-timeline.cjs", true, false)
 }
 
 // Reject asks why in one tap; the "Probably not" fold (approvals-screen.cjs).

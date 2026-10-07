@@ -3,7 +3,7 @@
 #railGroups .rail-item.on { color:var(--text); background:var(--surface-hover,rgba(255,255,255,.06)); }
 #pickerBody > input,#pickerBody > select { margin-bottom:12px; width:100%; }
 .toast-host { position:fixed; bottom:24px; right:24px; z-index:1000; }
-.toast { padding:12px 18px; background:var(--panel,#222); border:1px solid var(--border,#555); border-radius:6px; }
+.toast { padding:12px 18px; background:var(--panel,#222); color:var(--text); border:1px solid var(--border,#555); border-radius:6px; }
 @media(max-width:860px){
  .app-shell { display:flex!important; flex-direction:column!important; height:100dvh; }
  #rail { display:flex!important; flex-direction:row; position:relative!important; width:100%!important; height:auto!important; padding:8px 12px; border-right:0; border-bottom:1px solid var(--border); box-sizing:border-box; align-items:center; }
@@ -104,3 +104,11 @@
 .olga-session-dialog .olga-detail-hint {margin-bottom:24px;}
 
 :root[data-olga-theme="default"] {--accent:#171717;--accent-soft:#a3a3a3;--blue:var(--accent);--blue-soft:var(--accent-soft);--border:var(--line);--panel:var(--bg);color-scheme:light;}
+
+/* the task dialog holds the Home schedule: give it room on desktop */
+#pickerModal .modal-card:has(.olga-schedule .hp-editor) {width:min(880px,calc(100vw - 32px));}
+.olga-schedule .hp-editor {margin-top:8px;}
+.olga-schedule + .olga-detail-field {margin-top:20px;}
+/* The shared phone band hides the toolbar's light pills (the main app captures
+   elsewhere); Olga's toolbar "＋ Add task" is her only list-view capture. */
+@media(max-width:860px){#todosToolbar > .pill.light {display:inline-flex; justify-content:center; min-height:44px;}}

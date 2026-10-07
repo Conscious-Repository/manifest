@@ -75,12 +75,14 @@ func NewOlgaHandler(vaultRoot, passwordFile, auditDir string) (http.Handler, err
 	s := New(svc, gs, nil)
 	s.UseTasks(ts)
 	s.UsePlannerNotes(root, sharedRoot, "Olga", write)
+	s.UseHomePlan(sharedRoot, write)
 	mux := http.NewServeMux()
 	routes := map[string]http.HandlerFunc{
 		"/api/day": s.handleDay, "/api/day/pull": s.handleDayPull, "/api/day/capture": s.handleDayCapture, "/api/day/focus": s.handleDayFocus, "/api/day/focus/milestone": s.handleDayFocusMilestone,
 		"/api/goals": s.handleGoalsGet, "/api/areas": s.handleAreas, "/api/areas/reorder": s.handleAreasReorder,
 		"/api/goals/item": s.handleGoalItem, "/api/goals/check": s.handleGoalCheck, "/api/goals/reorder": s.handleGoalsReorder, "POST /api/goals/move": s.handleGoalMove, "/api/goals/close": s.handleGoalClose, "/api/goals/archives": s.handleGoalsArchives, "/api/goals/carry": s.handleGoalCarry, "/api/goals/retro": s.handleGoalRetro,
 		"GET /api/tasks/notes": s.handlePlannerNotes, "POST /api/tasks/notes": s.handlePlannerNotes,
+		"GET /api/home/plan": s.handleHomePlan, "POST /api/home/plan": s.handleHomePlan, "GET /api/home/plan/history": s.handleHomePlanHistory, "POST /api/home/plan/preview": s.handleHomePlanPreview, "POST /api/home/plan/restore": s.handleHomePlanRestore,
 		"GET /api/tasks": s.handleTasksGet, "POST /api/tasks/item": s.handleTaskAdd, "POST /api/tasks/check": s.handleTaskCheck, "POST /api/tasks/update": s.handleTaskUpdate, "POST /api/tasks/rank": s.handleTasksRank, "POST /api/tasks/priority": s.handleTaskPriority, "POST /api/tasks/drop": s.handleTaskDrop, "POST /api/tasks/bucket": s.handleBucketRename, "POST /api/tasks/issue": s.handleIssueAdd, "POST /api/tasks/issue/resolve": s.handleIssueResolve,
 	}
 	for path, h := range routes {
@@ -89,10 +91,10 @@ func NewOlgaHandler(vaultRoot, passwordFile, auditDir string) (http.Handler, err
 	webfs, _ := fs.Sub(webFiles, "web")
 	files := http.FileServer(http.FS(webfs))
 	assets := map[string]bool{}
-	for _, f := range []string{"00-core.js", "05-components.js", "10-day.js", "20-goals.js", "90-todos.js"} {
+	for _, f := range []string{"00-core.js", "05-components.js", "10-day.js", "20-goals.js", "90-todos.js", "90-home-plan.js"} {
 		assets["/js/"+f] = true
 	}
-	for _, f := range []string{"99-local-fonts.css", "00-core.css", "05-primitives.css", "07-nav.css", "10-day.css", "20-goals.css", "90-todos.css", "93-todo-panel.css", "95-mobile.css"} {
+	for _, f := range []string{"99-local-fonts.css", "00-core.css", "05-primitives.css", "07-nav.css", "10-day.css", "20-goals.css", "90-todos.css", "90-home-plan.css", "93-todo-panel.css", "95-mobile.css"} {
 		assets["/css/"+f] = true
 	}
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {

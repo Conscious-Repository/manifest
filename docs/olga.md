@@ -121,3 +121,24 @@ still revoke sessions. `/api/session` supports in-place reauthentication. A 401
 opens a password dialog over the existing draft and retries the rejected request
 once after successful sign-in. Canceled/failed sign-in retains the original form.
 The first deployment of this fix requires one sign-in for old volatile cookies.
+
+## Home timeline (2026-10-07)
+
+TASKS › Timeline shows the shared Home plan (`system/home/plan.json`,
+contract in `docs/home-plan.md`). The main app shows the same document under
+TASKS › Home timeline.
+- **Desktop:** a weekly grid through December 21.
+- **Phones:** a chronological agenda.
+- **Task details:** a Home task's details hold its schedule editor, and its
+  notes read as collapsible text.
+- **Drafts:** edits are drafts until "Save to plan".
+
+New allowlisted routes: `GET|POST /api/home/plan`, `POST /api/home/plan/preview`,
+`GET /api/home/plan/history`, `POST /api/home/plan/restore`. New assets:
+`js/90-home-plan.js`, `css/90-home-plan.css`. All writes go through the
+existing `home` capability and the `system/home` lock; olga.service already
+has `system/home` in `ReadWritePaths`.
+
+The shared phone band (1731280, Sep 17) hid toolbar light pills, which would
+have removed Olga's only list-view "＋ Add task" on phones. `olga.css` restores
+it.

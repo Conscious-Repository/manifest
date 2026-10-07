@@ -43,6 +43,7 @@ import (
 	"manifest/goals"
 	"manifest/graph"
 	"manifest/hermes"
+	"manifest/homeplan"
 	"manifest/jev"
 	"manifest/ledger"
 	"manifest/manifestmcp"
@@ -66,6 +67,7 @@ var webFiles embed.FS
 
 type Server struct {
 	plannerNotes        *plannerNotesConfig
+	homePlan            *homeplan.Store
 	chatShareWriters    sync.Map // source identity -> writer/publication RWMutex
 	chatState           *chatstate.Store
 	chatQueueMu         sync.Mutex // serialize automatic follow-up claims
@@ -427,6 +429,11 @@ func (s *Server) Handler() http.Handler {
 	// TODOS — the third surface over `tasks.md` (todos-surface-scope).
 	mux.HandleFunc("GET /api/tasks/notes", s.handlePlannerNotes)
 	mux.HandleFunc("POST /api/tasks/notes", s.handlePlannerNotes)
+	mux.HandleFunc("GET /api/home/plan", s.handleHomePlan) // the shared Home plan (docs/home-plan.md)
+	mux.HandleFunc("POST /api/home/plan", s.handleHomePlan)
+	mux.HandleFunc("GET /api/home/plan/history", s.handleHomePlanHistory)
+	mux.HandleFunc("POST /api/home/plan/preview", s.handleHomePlanPreview)
+	mux.HandleFunc("POST /api/home/plan/restore", s.handleHomePlanRestore)
 	mux.HandleFunc("GET /api/tasks", s.handleTasksGet)
 	mux.HandleFunc("POST /api/tasks/item", s.handleTaskAdd)
 	mux.HandleFunc("POST /api/tasks/check", s.handleTaskCheck)
