@@ -4,7 +4,7 @@ const send=src.slice(src.indexOf('async function chatTermSend('),src.indexOf('//
 test('blocked and idle follow-ups deliver directly; only working stages',async()=>{
  for(const status of ['blocked','idle','working']){
   let staged=0,sent=0;
-  const c={chatTermSending:false,chatOpenId:'abc',chatAgent:'codex',chatRouteVersion:1,chatPendingProject:null,chatTermOpen:null,chatTermEcho:()=>{},chatTermFind:()=>({agentState:status,backend:'herdr'}),chatStageMessage:async()=>staged++,chatTermBase:()=>'/input',renderChatComposer:()=>{},chatTermComposerSession:()=>({}),chatRememberDelivery:(...x)=>x,chatDeliverRemembered:async()=>{sent++;return{}},loadChatTermSessions:async()=>{},showToast:()=>{}};
+  const c={chatTermSending:false,chatOpenId:'abc',chatAgent:'codex',chatRouteVersion:1,chatPendingProject:null,chatTermOpen:null,chatTermEcho:()=>{},chatTermFind:()=>({agentState:status,backend:'herdr'}),chatStageMessage:async()=>staged++,chatStageOrSteer:async()=>staged++,chatTermBase:()=>'/input',renderChatComposer:()=>{},chatTermComposerSession:()=>({}),chatRememberDelivery:(...x)=>x,chatDeliverRemembered:async()=>{sent++;return{}},loadChatTermSessions:async()=>{},showToast:()=>{}};
   vm.createContext(c);vm.runInContext(send,c);assert.equal(await c.chatTermSend('follow-up'),true);assert.equal(staged,status==='working'?1:0);assert.equal(sent,status==='working'?0:1);
  }
 });

@@ -57,7 +57,9 @@ test('next candidate order matches visible stage groups and inbound application 
     {id:'b',name:'B',stage:'reviewing'}, {id:'a',name:'A',stage:'new'},
     {id:'d',name:'D',stage:'ashby',inbound:'2026-09-04'}, {id:'c',name:'C',stage:'ashby',inbound:'2026-09-03'}]};
   vm.runInContext('recCache=fixture;recOrigin="both";',c);
-  assert.equal(c.recReviewCandidates().map(x=>x.id).join(','),'a,b,d,c');
+  // df3fd68 (2026-09-09): within a stage, the oldest application leads in
+  // every view, not only the inbound triage queue
+  assert.equal(c.recReviewCandidates().map(x=>x.id).join(','),'a,b,c,d');
   vm.runInContext('recOrigin="inbound";',c);
   assert.equal(c.recReviewCandidates().map(x=>x.id).join(','),'c,d');
 });

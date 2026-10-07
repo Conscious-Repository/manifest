@@ -418,6 +418,15 @@ func TestAgentChatStartupDrainsOnlyUnstartedMessages(t *testing.T) {
 	fresh := agentchat.New(st.Root())
 	s.UseAgentChat(fresh)
 	s.ResumeAgentChats()
+	// the drain runs in the background: idle alone can be observed before it
+	// starts (under load), so wait for the waiting message's own receipt
+	deadline := time.Now().Add(10 * time.Second)
+	for time.Now().Before(deadline) {
+		if r, ok := fresh.Receipt("alfred", id, "waiting-restart"); ok && r.State == agentchat.DeliveryCompleted {
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
 	sess := waitIdle(t, fresh, "alfred", id)
 	if sess.Turns != 4 {
 		t.Fatal("startup replayed or lost message", sess.Turns)

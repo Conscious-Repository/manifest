@@ -13,7 +13,7 @@ test('stream paints all received text, skips unchanged frames, and retains throt
 });
 test('slow delivery recovery does not hold transcript polling',async()=>{
  let recoveries=0,tails=0,finish;
- const c={chatDraftKey:'codex/one',chatTermOpen:{id:'one'},chatIsTerm:()=>true,chatOpenId:'one',els:{chatView:{hidden:false}},document:{hidden:false,getElementById:()=>null},chatTermTailing:false,chatTermTail:async()=>tails++,chatLoadDeliveryRecovery:()=>{recoveries++;return new Promise(r=>finish=r)},chatTermLeave:()=>{},chatTermRequestFinalTail:()=>{}};
+ const c={window:{},chatDraftKey:'codex/one',chatTermOpen:{id:'one',se:{agentState:'working'},turns:[]},chatIsTerm:()=>true,chatOpenId:'one',els:{chatView:{hidden:false}},document:{hidden:false,getElementById:()=>null},chatTermTailing:false,chatTermTail:async()=>tails++,chatLoadDeliveryRecovery:()=>{recoveries++;return new Promise(r=>finish=r)},chatTermLeave:()=>{},chatTermRequestFinalTail:()=>{}};
  vm.createContext(c);vm.runInContext(src.slice(src.indexOf('async function chatTermTick()'),src.indexOf('// Serialize the stop-triggered final read')),c);
- await c.chatTermTick();assert.equal(c.chatTermTailing,false);await c.chatTermTick();assert.equal(tails,2);assert.equal(recoveries,1,'only one receipt refresh per conversation');finish();
+ await c.chatTermTick();assert.equal(c.chatTermTailing,false);c.chatTermOpen.lastPollAt=0;/* the next poll after the adaptive interval */await c.chatTermTick();assert.equal(tails,2);assert.equal(recoveries,1,'only one receipt refresh per conversation');finish();
 });
