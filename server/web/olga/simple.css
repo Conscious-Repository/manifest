@@ -129,3 +129,10 @@
 .pill.olga-primary:disabled { background: var(--base-25) !important; border-color: var(--base-25) !important; color: var(--base-50) !important; }
 .pill.light { background: var(--bg); color: var(--text); border: 1px solid var(--base-30); }
 #todosView .agent-head { display: none; }
+#pickerModal .modal-title { font-family: var(--sans, system-ui) !important; letter-spacing: 0 !important; text-transform: none !important; font-weight: 600; }
+/* four menu items fit a small phone: icons go first, then the gaps */
+@media (max-width: 400px) {
+  #railGroups { justify-content: space-between !important; }
+  #railGroups .rail-item { padding: 6px 6px !important; }
+  #railGroups .rail-glyph { display: none !important; }
+}
