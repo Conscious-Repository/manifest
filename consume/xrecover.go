@@ -48,10 +48,25 @@ func (s *Service) recoverXPost(ctx context.Context, statusURL string) (Item, boo
 	if handle == "" || id == "" || s.hc == nil {
 		return Item{}, false
 	}
-	feedURL := s.rsshubBase() + "/twitter/user/" + url.PathEscape(handle)
-
 	ctx, cancel := context.WithTimeout(ctx, xRecoverTimeout)
 	defer cancel()
+	// The account's timeline first: one request that also serves the lane.
+	// It holds only the latest posts, so an older one is asked for by id —
+	// RSSHub's tweet route answers with the post's thread, the post among it.
+	for _, feedURL := range []string{
+		s.rsshubBase() + "/twitter/user/" + url.PathEscape(handle),
+		s.rsshubBase() + "/twitter/tweet/" + url.PathEscape(handle) + "/status/" + url.PathEscape(id),
+	} {
+		if it, ok := s.xPostIn(ctx, feedURL, handle, id, statusURL); ok {
+			return it, true
+		}
+	}
+	return Item{}, false
+}
+
+// xPostIn reads one bridge feed and returns the entry that IS the post (not a
+// reply quoting it), projected the way a subscription's poll would.
+func (s *Service) xPostIn(ctx context.Context, feedURL, handle, id, statusURL string) (Item, bool) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, feedURL, nil)
 	if err != nil {
 		return Item{}, false

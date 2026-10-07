@@ -28,12 +28,25 @@ const xClippedPost = "<p>It’s obvious that we’re simultaneously in a period 
 
 const xStatus = "https://x.com/ADoricko/status/1962778419282444649"
 
-// rsshub plays the bridge: one account's timeline, one post in it.
+// rsshub plays the bridge: one account's timeline, one post in it. Its tweet
+// route (a post's thread, asked by id) answers with nothing.
 func rsshub(t *testing.T, items string) *httptest.Server {
+	return rsshubRoutes(t, items, "")
+}
+
+// rsshubRoutes serves the timeline and, separately, the thread a post's id
+// opens on the tweet route.
+func rsshubRoutes(t *testing.T, timeline, thread string) *httptest.Server {
 	t.Helper()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if !strings.HasPrefix(r.URL.Path, "/twitter/user/") {
-			t.Errorf("the bridge was asked for %q, which is not a timeline", r.URL.Path)
+		items := ""
+		switch {
+		case strings.HasPrefix(r.URL.Path, "/twitter/user/"):
+			items = timeline
+		case strings.HasPrefix(r.URL.Path, "/twitter/tweet/"):
+			items = thread
+		default:
+			t.Errorf("the bridge was asked for %q, which is neither a timeline nor a post", r.URL.Path)
 		}
 		w.Header().Set("Content-Type", "application/xml")
 		_, _ = w.Write([]byte(`<?xml version="1.0" encoding="UTF-8"?>
@@ -92,6 +105,27 @@ func TestCurateURLXPostTakesTheWholePostFromTheBridge(t *testing.T) {
 	}
 	if got := s.Curated(); len(got) != 1 {
 		t.Fatalf("curated projection holds %d entries, want 1", len(got))
+	}
+}
+
+// A post too old for the account's timeline is asked for by id. The tweet
+// route answers with the whole thread — replies first, some quoting the post —
+// and only the entry whose address IS the post is taken.
+func TestCurateURLXPostOlderThanTheTimelineComesFromItsThread(t *testing.T) {
+	reply := `<item><title>Re @ADoricko great</title><link>https://x.com/someone/status/2000000000000000001</link>
+<guid isPermaLink="false">https://twitter.com/someone/status/2000000000000000001</guid>
+<description><![CDATA[Re It’s obvious that we’re simultaneously in a period… REPLY-ONLY]]></description></item>`
+	hub := rsshubRoutes(t, "", reply+xTimelineItem(xFullPost))
+	v := newVault(t)
+	s := New(t.TempDir(), v.io(), Config{RSSHubBase: hub.URL, AllowPrivateCurateFetch: true})
+
+	entry, err := s.CurateURL(context.Background(), xStatus, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	note := v.read(t, entry.Path)
+	if entry.Mirror != MirrorFull || !strings.Contains(note, "forgot how to build anything at all") || strings.Contains(note, "REPLY-ONLY") {
+		t.Fatalf("mirror %q, want the post itself, whole:\n%s", entry.Mirror, note)
 	}
 }
 
