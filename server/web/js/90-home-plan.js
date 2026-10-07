@@ -7,7 +7,6 @@
 // or availability by itself. All text renders as text: task notes never
 // execute as HTML.
 const HP_DRAFT_KEY = "homePlan.draft.v1";
-let hpShowSeq = (() => { try { return localStorage.getItem("homePlan.sequence") === "1"; } catch (e) { return false; } })();
 let hp = { data: null, view: null, error: "", scenario: "", draft: null, problems: [], previewing: false, saveError: "", stale: [] };
 
 function hpLoadDraft() {
@@ -157,101 +156,167 @@ function hpTitle(ref) {
 }
 const HP_STATUS = { shared: "together", partial: "partly together", solo: "one away", away: "both away", after: "" };
 
-// ---------------- the view ----------------
-let hpHost = null;
-// The list repaints often; the timeline is one node re-mounted each time, so
-// an open cell edit survives, and it refetches at most every 30 s.
-function homePlanRender(host) {
-  if (!hpHost) hpHost = el("div", "hp");
-  host.append(hpHost);
-  if (!hp.data && !hp.error) { if (!hpHost.childElementCount) hpHost.append(el("p", "hp-empty", "Loading the Home plan…")); if (!hp.loading) homePlanLoad(); return; }
-  if (!hpHost.childElementCount) hpPaint();
+// ---------------- the view: lanes on one date axis ----------------
+// One row per lane — away weekends, events, holds, work — over a single axis
+// from the horizon start to the deadline, and one sentence on what is left.
+// Everything unresolved lives in the "To resolve" feed, not here.
+let hpHost = null, hpFeedHost = null;
+// The list repaints often; each view is one node re-mounted each time, so an
+// open field survives, and the plan refetches at most every 30 s.
+function hpMount(host, cls, which) {
+  let node = which === "feed" ? hpFeedHost : hpHost;
+  if (!node) { node = el("div", cls); if (which === "feed") hpFeedHost = node; else hpHost = node; }
+  host.append(node);
+  if (!hp.data && !hp.error) { if (!node.childElementCount) node.append(el("p", "hp-empty", "Loading the Home plan…")); if (!hp.loading) homePlanLoad(); return; }
+  if (!node.childElementCount) hpRepaint();
   if (!hp.loading && Date.now() - (hp.loadedAt || 0) > 30000) homePlanLoad();
 }
-function hpRepaint() { if (hpHost && hpHost.isConnected) hpPaint(); if (hpEditorRepaint) hpEditorRepaint(); }
+function homePlanRender(host) { hpMount(host, "hp", "chart"); }
+function homePlanFeedRender(host) { hpMount(host, "hp hp-feed-view", "feed"); }
+function hpRepaint() {
+  if (hpHost && hpHost.isConnected) hpPaint();
+  if (hpFeedHost && hpFeedHost.isConnected) hpFeedPaint();
+  if (hpEditorRepaint) hpEditorRepaint();
+}
+function hpAddDays(s, n) { const { y, m, d } = hpDate(s); const t = new Date(Date.UTC(y, m - 1, d + n)); return t.toISOString().slice(0, 10); }
+function hpItemOf(plan, it) { const t = plan.tasks[it.task]; return !t ? null : it.sub ? (t.subtasks || {})[it.sub] : t; }
+function hpCap(s) { return s ? s.charAt(0).toUpperCase() + s.slice(1) : s; }
+
+function hpUnavailable(host) {
+  if (hp.error) { host.append(el("p", "hp-empty", "Couldn't load the Home plan — " + hp.error), pillLight("Retry", homePlanLoad)); return true; }
+  if (!hp.view || !hp.view.plan) { host.append(el("p", "hp-empty", "No shared Home plan yet. It is created through the plan API (docs/home-plan.md); this view then shows it.")); return true; }
+  return false;
+}
+
+// hpLanes turns the plan into rows of dated blocks. Work lanes show saved
+// placements solid and the estimates' suggested sequence as lighter blocks.
+function hpLanes(v) {
+  const p = v.plan, d = v.derived, lanes = [];
+  const day = (s) => s;
+  // away weekends
+  const away = Object.values(p.away || {}).sort((a, b) => a.from.localeCompare(b.from));
+  if (away.length) {
+    const noShared = d.weeks.filter((w) => !w.past && w.status !== "shared" && w.status !== "after").length;
+    lanes.push({ kind: "away", title: "Travel", meta: noShared ? noShared + " weekend" + (noShared === 1 ? "" : "s") + " without shared work" : "",
+      blocks: away.map((a) => ({ from: a.from, to: a.to, cls: "is-away", tip: a.who.map(hpPerson).join(" & ") + " away " + hpShort(a.from) + "–" + hpShort(a.to) + (a.note ? " · " + a.note : "") })) });
+  }
+  // events, one lane each
+  Object.values(p.events || {}).sort((a, b) => a.date.localeCompare(b.date)).forEach((e) => lanes.push({ kind: "event", title: e.title.replace(/,\s*\d.*$/, ""), meta: hpShort(e.date) + " · −" + hpH(e.hours) + " of work time", first: e.date,
+    blocks: [{ from: e.date, to: e.date, cls: "is-event", tip: e.title + (e.note ? "\n" + e.note : "") }] }));
+  const rest = [];
+  // holds, grouped by purpose ("Prep and coating" + its spill)
+  const holds = {};
+  Object.values(p.reservations || {}).forEach((r) => {
+    const name = r.purpose.replace(/\s*\((spill|cont\.?)\)\s*$/i, "");
+    const g = holds[name] = holds[name] || { kind: "hold", title: name, hours: 0, blocks: [], contingency: false, status: r.status };
+    g.hours += r.hours; g.contingency = g.contingency || r.kind === "contingency";
+    g.blocks.push({ from: r.weekend, to: hpAddDays(r.weekend, 1), cls: r.kind === "contingency" ? "is-buffer" : "is-hold", tip: r.purpose + " · " + hpH(r.hours) + " · " + r.status + (r.note ? "\n" + r.note : "") });
+  });
+  Object.values(holds).forEach((g) => { g.meta = hpH(g.hours) + " " + (g.contingency ? "protected" : "reserved"); g.first = g.blocks.map((b) => b.from).sort()[0]; rest.push(g); });
+  // work, one lane per task with weekend work
+  const seq = d.sequence ? d.sequence.placements : [];
+  const byTask = {};
+  d.items.forEach((it) => {
+    if (it.done || it.draws !== "pool") return;
+    const t = byTask[it.task] = byTask[it.task] || { kind: "work", task: it.task, items: [], blocks: [] };
+    t.items.push(it);
+    const item = hpItemOf(p, it) || {};
+    Object.entries(item.allocations || {}).forEach(([sat, h]) => t.blocks.push({ from: sat, to: hpAddDays(sat, 1), cls: "is-work", tip: it.title + " · " + hpH(h) + " placed" }));
+  });
+  seq.forEach((pl) => { const task = pl.ref.split("#")[0]; if (byTask[task]) byTask[task].blocks.push({ from: pl.weekend, to: hpAddDays(pl.weekend, 1), cls: "is-suggested", tip: hpTitle(pl.ref) + " · ≈" + hpH(pl.hours) + " suggested by the estimates" }); });
+  const unestimated = [];
+  Object.values(byTask).forEach((t) => {
+    const own = t.items.filter((it) => !it.includedIn);
+    if (!own.length) return; // fully inside another task's estimate
+    const known = own.filter((it) => it.hours != null).reduce((n, it) => n + it.hours, 0);
+    const allow = own.filter((it) => it.hours == null && it.high != null);
+    const missing = own.filter((it) => it.hours == null && it.high == null);
+    if (!known && !allow.length) { unestimated.push(...missing); return; }
+    const inside = d.items.filter((x) => x.includedIn && x.includedIn.split("#")[0] === t.task && !x.sub).map((x) => x.title);
+    const title = hpCap((v.tasks[t.task] || {}).text || t.task) + (inside.length ? " + " + inside.join(", ") : "");
+    const bits = [];
+    if (known) bits.push(hpH(known) + " estimated");
+    allow.forEach((it) => bits.push((it.low ?? "?") + "–" + it.high + " h allowance"));
+    if (missing.length) bits.push(missing.length + " part" + (missing.length === 1 ? "" : "s") + " without hours");
+    rest.push({ kind: "work", task: t.task, title, meta: bits.join(" · "), blocks: t.blocks, first: t.blocks.map((b) => b.from).sort()[0] || "9999" });
+  });
+  rest.sort((a, b) => (a.first || "9999").localeCompare(b.first || "9999"));
+  lanes.push(...rest);
+  if (unestimated.length) lanes.push({ kind: "unestimated", title: "Not yet estimated", meta: (unestimated.length <= 3 ? unestimated.map((it) => it.title).join(" · ") : unestimated.length + " items") + " — hours in To resolve", blocks: [], items: unestimated });
+  return lanes;
+}
 
 function hpPaint() {
   const host = hpHost;
-  const focus = document.activeElement && host.contains(document.activeElement) ? document.activeElement.dataset.hpFocus : "";
   host.replaceChildren();
-  if (hp.error) { host.append(el("p", "hp-empty", "Couldn't load the Home plan — " + hp.error), pillLight("Retry", homePlanLoad)); return; }
-  const v = hp.view;
-  if (!v || !v.plan) {
-    host.append(el("p", "hp-empty", "No shared Home plan yet. It is created through the plan API (docs/home-plan.md); this view then shows it."));
-    return;
-  }
-  const d = v.derived, p = v.plan, c = d.capacity;
-  host.append(hpModeBar());
-  // summary: the hard date, then capacity as it really is
-  const sum = el("div", "hp-summary");
-  const dl = Object.values(p.milestones || {}).find((m) => m.kind === "deadline");
-  const card = (label, value, sub, cls) => { const n = el("div", "hp-stat" + (cls ? " " + cls : "")); n.append(el("span", "micro-label", label), el("strong", "", value)); if (sub) n.append(el("span", "hp-stat-sub", sub)); sum.append(n); return n; };
-  if (dl) card("Hard deadline", hpShort(dl.date), dl.title + " · " + hpDaysBetween(d.asOf, dl.date) + " days", "hp-stat-deadline");
-  card("Shared weekends", String(c.sharedWeekends), hpH(c.sharedHours) + " together · " + p.capacity.weekendDayHours + " h a day");
-  card("Held", hpH(c.reservedHours), "reservations, incl. " + hpH(c.contingencyHours) + " contingency");
-  card("Open for work", hpH(c.poolHours), "after reservations");
-  card("Known work", hpH(c.knownDemand), c.unknownItems.length + " items still unknown");
-  const left = card("Left for other work", (c.remainingHours < 0 ? "−" : "") + hpH(Math.abs(c.remainingHours)), c.unknownItems.length ? "before " + c.unknownItems.length + " unknowns" + (c.unknownHigh ? " (allowances " + c.unknownLow + "–" + c.unknownHigh + " h)" : "") : "", c.remainingHours < 0 ? "hp-neg" : "");
-  left.title = "Open weekend hours minus known estimates. Unknown estimates are not counted as zero — they are listed below.";
-  if (d.budget && d.budget.total != null) card("Budget", "$" + Math.round(d.budget.remaining).toLocaleString() + " left", "of $" + d.budget.total.toLocaleString() + " · " + d.budget.unknown.length + " prices unknown");
-  card("Planning evenings", hpH(c.eveningHours), p.capacity.eveningsPerWeek + "×" + p.capacity.eveningHours + " h a week · not physical work");
-  host.append(sum);
-  // scenario outcomes side by side: what each assumption leaves
-  const sc = Object.entries(d.scenarios || hp.data.derived.scenarios || {});
+  if (hpUnavailable(host)) return;
+  const v = hp.view, p = v.plan, d = v.derived, c = d.capacity;
+  if (hp.scenario || hpDraftCount()) host.append(hpModeBar());
+  // what-if chips: the roof estimate drives everything else
+  const sc = Object.entries(hp.data.plan.scenarios || {}).sort((a, b) => (a[1].order || 0) - (b[1].order || 0) || a[0].localeCompare(b[0]));
   if (sc.length) {
-    const box = el("div", "hp-scenarios");
-    box.append(el("span", "micro-label", "Scenarios — what-ifs, never the saved plan"));
-    const row = el("div", "hp-scenario-row");
-    sc.sort((a, b) => ((p.scenarios[a[0]] || {}).order || 0) - ((p.scenarios[b[0]] || {}).order || 0) || a[0].localeCompare(b[0])).forEach(([id, s]) => {
-      const b = el("button", "hp-scenario" + (hp.scenario === id ? " on" : ""));
-      b.setAttribute("aria-pressed", String(hp.scenario === id));
-      const r = s.capacity.remainingHours;
-      b.append(el("span", "", s.label), el("strong", r < 0 ? "hp-neg" : "", s.error ? "invalid" : (r < 0 ? "−" : "") + hpH(Math.abs(r)) + " left"), el("span", "hp-stat-sub", s.basis === "assistant" ? "assistant" : "yours"));
-      b.onclick = () => { hp.scenario = hp.scenario === id ? "" : id; hpRefreshView(); };
-      row.append(b);
+    const row = el("div", "hp-whatif");
+    row.append(el("span", "hp-whatif-label", "What if"));
+    const chip = (id, label) => { const b = el("button", "hp-whatif-chip" + (hp.scenario === id ? " on" : ""), label); b.setAttribute("aria-pressed", String(hp.scenario === id)); b.onclick = () => { hp.scenario = id; hpRefreshView(); }; row.append(b); };
+    chip("", "Saved plan");
+    sc.forEach(([id, s]) => chip(id, s.label));
+    host.append(row);
+  }
+  // the chart
+  const start = p.horizon.start, end = c.hardDeadline || p.horizon.end, span = Math.max(1, hpDaysBetween(start, end) + 1);
+  const x = (s) => Math.min(100, Math.max(0, hpDaysBetween(start, s) / span * 100));
+  const chart = el("div", "hp-chart");
+  const axis = el("div", "hp-axis");
+  const ticks = [start];
+  for (let m = hpDate(start).m + 1, y = hpDate(start).y; ; m++) { if (m > 12) { m = 1; y++; } const s = y + "-" + String(m).padStart(2, "0") + "-01"; if (s >= end) break; ticks.push(s); }
+  ticks.push(end);
+  ticks.forEach((s, i) => { const t = el("span", "hp-tick", hpShort(s)); t.style.left = x(s) + "%"; if (i === ticks.length - 1) t.classList.add("is-end"); if (i === 0) t.classList.add("is-start"); axis.append(t); });
+  chart.append(axis);
+  hpLanes(v).forEach((lane) => {
+    const row = el("div", "hp-lane is-" + lane.kind);
+    const head = el("div", "hp-lane-head");
+    const title = lane.task ? el("button", "hp-lane-title", lane.title) : el("span", "hp-lane-title", lane.title);
+    if (lane.task) { title.onclick = () => homePlanOpen(lane.task); title.title = "Open the task"; }
+    head.append(title, el("span", "hp-lane-meta", lane.meta || ""));
+    const track = el("div", "hp-track");
+    const merged = {};
+    lane.blocks.forEach((b) => { const k = b.from + "|" + b.cls; if (merged[k]) merged[k].tip += "\n" + b.tip; else merged[k] = { ...b }; });
+    Object.values(merged).forEach((b) => {
+      const blk = el("span", "hp-blk " + b.cls);
+      const l = x(b.from), r = x(hpAddDays(b.to, 1));
+      blk.style.left = l + "%"; blk.style.width = Math.max(0.8, r - l) + "%";
+      blk.title = b.tip || "";
+      track.append(blk);
     });
-    box.append(row);
-    host.append(box);
-  }
-  host.append(hpSequenceBar(d));
-  if (hp.problems.length) {
-    const pr = el("div", "hp-problems");
-    pr.setAttribute("role", "alert");
-    pr.append(el("strong", "", "This draft can't be applied:"));
-    hp.problems.forEach((t) => pr.append(el("div", "", t)));
-    host.append(pr);
-  }
-  host.append(window.mf && window.mf.phone && window.mf.phone() || matchMedia("(max-width: 860px)").matches ? hpAgenda(v) : hpGrid(v));
-  host.append(hpConflicts(d), hpOpen(v));
-  if (focus) { const n = host.querySelector(`[data-hp-focus="${CSS.escape(focus)}"]`); if (n) n.focus(); }
+    const today = x(d.asOf); if (today > 0 && today < 100) { const t = el("span", "hp-today"); t.style.left = today + "%"; track.append(t); }
+    row.append(head, track);
+    chart.append(row);
+  });
+  host.append(chart);
+  // one sentence on what is left, then the fine print
+  const unknown = c.unknownItems.length;
+  const sent = el("p", "hp-sentence");
+  sent.textContent = hpH(c.knownDemand) + " of estimated work " + (c.remainingHours < 0 ? "is " + hpH(-c.remainingHours) + " more than" : "leaves " + hpH(c.remainingHours) + " of") + " the " + hpH(c.poolHours) + " of open weekend time" +
+    (unknown ? " — before " + unknown + " item" + (unknown === 1 ? "" : "s") + " without hours" + (c.unknownHigh ? " (allowances " + c.unknownLow + "–" + c.unknownHigh + " h)" : "") : "") + ".";
+  if (c.remainingHours < 0) sent.classList.add("hp-neg");
+  host.append(sent);
+  const dl = Object.values(p.milestones || {}).filter((m) => m.date).sort((a, b) => a.date.localeCompare(b.date)).map((m) => (m.kind === "deadline" ? "Deadline " : m.confirmed ? "Target " : "Draft target ") + hpShort(m.date) + ": " + m.title.toLowerCase());
+  const later = Object.values(p.milestones || {}).filter((m) => m.kind === "later").map((m) => m.title.toLowerCase());
+  const fine = el("p", "hp-fine");
+  fine.textContent = [
+    "Blocks hold capacity; lighter blocks are a suggested order from the estimates, not a confirmed sequence.",
+    "Weekends " + p.capacity.weekendDayHours + " h a day together; planning " + p.capacity.eveningsPerWeek + " × " + p.capacity.eveningHours + "-hour evenings weekly.",
+    dl.join(". ") + ".",
+    later.length ? "Later: " + later.join(", ") + "." : "",
+  ].filter(Boolean).join(" ");
+  host.append(fine);
+  const n = hpFeedItems(v).length;
+  if (n) { const a = el("button", "hp-feed-link", n + " to resolve — decisions, hours, lead times, prices →"); a.onclick = () => homePlanShowFeed(); host.append(a); }
 }
 
-// the assistant sequence: a derived what-if the server recomputes on every
-// read; toggling it shows ghost bars and never edits the plan
-function hpSeqAt(d) {
-  const at = {};
-  if (!hpShowSeq || !d.sequence) return at;
-  d.sequence.placements.forEach((pl) => { (at[pl.ref] = at[pl.ref] || {})[pl.weekend] = pl; });
-  return at;
-}
-function hpSequenceBar(d) {
-  const box = el("div", "hp-seq");
-  const s = d.sequence;
-  const toggle = el("button", "hp-scenario hp-seq-toggle" + (hpShowSeq ? " on" : ""));
-  toggle.setAttribute("aria-pressed", String(hpShowSeq));
-  toggle.append(el("span", "", "Assistant sequence"), el("strong", s && s.fits ? "" : "hp-neg", !s ? "—" : (s.fits ? "fits" + (s.finish ? " · done " + hpWeekend(s.finish) : "") : s.unplaced.length + " don't fit") + (s.unestimated.length ? " · " + s.unestimated.length + " without hours" : "")), el("span", "hp-stat-sub", "a what-if from the estimates · not saved"));
-  toggle.onclick = () => { hpShowSeq = !hpShowSeq; try { localStorage.setItem("homePlan.sequence", hpShowSeq ? "1" : "0"); } catch (e) {} hpRepaint(); };
-  box.append(toggle);
-  if (hpShowSeq && s) {
-    const det = el("div", "hp-seq-detail");
-    det.append(el("p", "hp-label-sub", "Weekend work in dependency order, around holds and saved placements, skipping weekends too cold for an item's materials (normal high under its minimum + " + 5 + "°F). Allowances use their high end. Dotted bars below; nothing is saved."));
-    s.unplaced.forEach((u) => det.append(el("div", "hp-conflict", hpTitle(u.ref) + " — " + u.reason)));
-    if (s.unestimated.length) det.append(el("div", "hp-label-sub", "· not placed until they have hours: " + s.unestimated.map(hpTitle).join(", ")));
-    s.assumptions.forEach((a) => det.append(el("div", "hp-label-sub", "· " + a)));
-    if (s.spareHours) det.append(el("div", "hp-label-sub", "· " + hpH(s.spareHours) + " of shared weekend time left over"));
-    box.append(det);
-  }
-  return box;
+// the feed is its own view; each shell decides how to switch to it
+function homePlanShowFeed() {
+  if (typeof todosMode !== "undefined") { todosMode = "homefeed"; try { localStorage.setItem(typeof olgaTaskArea !== "undefined" ? "olga.tasks.view" : "todosMode", "homefeed"); } catch (e) {} renderTodos(); }
 }
 
 function hpModeBar() {
@@ -260,14 +325,13 @@ function hpModeBar() {
   if (hp.scenario) {
     const s = hp.data.plan.scenarios[hp.scenario] || {};
     bar.classList.add("is-scenario");
-    bar.append(el("span", "", "Viewing scenario “" + (s.label || hp.scenario) + "” — " + (s.basis === "assistant" ? "an assistant what-if" : "a saved what-if") + ", not the plan."), pillLight("Back to the saved plan", () => { hp.scenario = ""; hpRefreshView(); }));
+    bar.append(el("span", "", "What if: “" + (s.label || hp.scenario) + "” — " + (s.basis === "assistant" ? "an assistant what-if" : "a saved what-if") + ", not the plan."), pillLight("Back to the saved plan", () => { hp.scenario = ""; hpRefreshView(); }));
   }
   if (n) {
     bar.classList.add("is-draft");
-    const msg = el("span", "", "Draft · " + n + " change" + (n === 1 ? "" : "s") + " not saved — kept in this browser" + (hp.draft.base !== hp.data.revision ? ". The plan was saved elsewhere since this draft began." : "."));
-    bar.append(msg);
+    bar.append(el("span", "", "Draft · " + n + " change" + (n === 1 ? "" : "s") + " not saved — kept in this browser" + (hp.draft.base !== hp.data.revision ? ". The plan was saved elsewhere since this draft began." : ".")));
     const acts = el("span", "hp-mode-acts");
-    acts.append(pill("Save to plan", () => hpSaveDraft(false)), hpInlineAsk("Save as scenario", "Scenario name", hpSaveScenario), pillLight("Discard", hpDiscardDraft));
+    acts.append(pill("Save to plan", () => hpSaveDraft(false)), hpInlineAsk("Save as what-if", "Name", hpSaveScenario), pillLight("Discard", hpDiscardDraft));
     bar.append(acts);
     if (hp.saveError) {
       const err = el("div", "hp-save-error", hp.saveError);
@@ -280,215 +344,137 @@ function hpModeBar() {
       bar.append(err);
     }
   }
-  if (!hp.scenario && !n) bar.append(el("span", "hp-mode-saved", "Saved plan · edits start a draft; nothing is committed until you save"));
+  if (!hp.scenario && !n) bar.append(el("span", "hp-mode-saved", "Saved plan · schedule edits start a draft; nothing is committed until you save"));
+  if (hp.problems.length) { const pr = el("div", "hp-problems"); pr.setAttribute("role", "alert"); pr.append(el("strong", "", "This draft can't be applied: ")); pr.append(hp.problems.join("; ")); bar.append(pr); }
   return bar;
 }
 
-const HP_PHASES = [["planning", "Planning"], ["procurement", "Procurement"], ["execution", "Execution"], ["later", "Later scope"]];
-
-// desktop: a weekly axis through the deadline
-function hpGrid(v) {
-  const d = v.derived, p = v.plan, weeks = d.weeks;
-  const wrap = el("div", "hp-grid-wrap");
-  const grid = el("div", "hp-grid");
-  grid.style.setProperty("--hp-weeks", String(weeks.length));
-  const cell = (cls, text) => el("div", "hp-cell " + (cls || ""), text);
-  const rowHead = (title, sub, cls) => { const h = el("div", "hp-label " + (cls || "")); h.append(el("span", "hp-label-title", title)); if (sub) h.append(el("span", "hp-label-sub", sub)); return h; };
-  // header
-  grid.append(rowHead("Week of", "", "hp-head"));
-  weeks.forEach((w) => { const h = cell("hp-head" + (w.past ? " is-past" : ""), ""); h.append(el("span", "hp-week-sat", hpWeekend(w.saturday)), el("span", "hp-week-mon", "wk " + hpShort(w.start))); grid.append(h); });
-  // availability
-  grid.append(rowHead("Weekend", "elapsed, together"));
-  weeks.forEach((w) => {
-    const t = w.status === "shared" ? hpH(w.sharedHours) : w.status === "after" ? "" : w.status === "solo" ? (w.present.map(hpPerson).join(", ") + " only") : HP_STATUS[w.status];
-    const n = cell("hp-avail is-" + w.status + (w.past ? " is-past" : ""), t);
-    (w.events || []).forEach((id) => { const e = (p.events || {})[id]; if (e) n.append(el("span", "hp-event", "−" + hpH(e.hours) + " " + e.title)); });
-    n.title = (w.away || []).map((a) => { const x = p.away[a]; return x ? (x.who.map(hpPerson).join(" & ") + " away " + hpShort(x.from) + "–" + hpShort(x.to) + (x.note ? " · " + x.note : "")) : a; }).join("\n") || (w.status === "shared" ? "both home" : "");
-    grid.append(n);
-  });
-  if (weeks.some((w) => w.normalHigh != null)) {
-    grid.append(rowHead("Typical weather", "normal high / low °F"));
-    weeks.forEach((w) => grid.append(cell("hp-normal" + (w.past ? " is-past" : ""), w.normalHigh == null ? "" : Math.round(w.normalHigh) + "° / " + Math.round(w.normalLow) + "°")));
-  }
-  grid.append(rowHead("Evenings", "planning & ordering"));
-  weeks.forEach((w) => grid.append(cell("hp-evening" + (w.past ? " is-past" : ""), w.status === "after" ? "" : hpH(w.eveningHours))));
-  grid.append(rowHead("Held", "provisional reservations"));
-  weeks.forEach((w) => {
-    const n = cell("hp-res" + (w.past ? " is-past" : ""));
-    (w.reserved || []).forEach((id) => { const r = p.reservations[id]; const b = el("span", "hp-res-block is-" + r.kind, r.purpose + " · " + hpH(r.hours)); b.title = r.purpose + " — " + r.status + (r.note ? "\n" + r.note : ""); n.append(b); });
-    grid.append(n);
-  });
-  grid.append(rowHead("Milestones", ""));
-  weeks.forEach((w) => {
-    const n = cell("hp-ms");
-    (w.milestones || []).forEach((id) => { const m = p.milestones[id]; const b = el("span", "hp-ms-mark is-" + m.kind + (m.confirmed ? " is-confirmed" : ""), (m.kind === "deadline" ? "◆ " : "◇ ") + hpShort(m.date) + " " + m.title); b.title = m.title + " — " + (m.kind === "deadline" ? "hard deadline" : m.kind === "target" ? (m.confirmed ? "confirmed target" : "draft target, not confirmed") : m.kind) + (m.note ? "\n" + m.note : ""); n.append(b); });
-    grid.append(n);
-  });
-  const deadlineSat = d.capacity.hardDeadline;
-  const seqAt = hpSeqAt(d);
-  for (const [phase, label] of HP_PHASES) {
-    const items = d.items.filter((it) => it.phase === phase);
-    if (!items.length) continue;
-    const g = el("div", "hp-group", label);
-    g.style.gridColumn = "1 / -1";
-    grid.append(g);
-    items.forEach((it) => {
-      const lab = el("div", "hp-label hp-item" + (it.sub ? " is-sub" : "") + (it.done ? " is-done" : ""));
-      const btn = el("button", "hp-item-title", it.title);
-      btn.dataset.hpFocus = "t:" + it.ref;
-      btn.onclick = () => homePlanOpen(it.task);
-      lab.append(btn);
-      const bits = [hpEstimate(it)];
-      if (it.hours != null && it.draws === "pool" && !it.done) bits.push(it.allocated ? hpH(it.allocated) + " placed" : "not placed");
-      if (it.dependsOn && it.dependsOn.length) bits.push("after " + it.dependsOn.map(hpTitle).join(", "));
-      if (it.minTempF != null) bits.push("≥ " + it.minTempF + "°F");
-      lab.append(el("span", "hp-label-sub" + (it.unknown ? " is-unknown" : ""), bits.filter(Boolean).join(" · ")));
-      grid.append(lab);
-      const item = hpItemOf(p, it);
-      weeks.forEach((w) => {
-        const h = item && item.allocations && item.allocations[w.saturday];
-        const inWin = it.window && it.window.start && w.start <= (it.window.end || it.window.start) && hpAddDays(w.start, 6) >= it.window.start;
-        const n = cell("hp-bar-cell" + (w.past ? " is-past" : "") + (deadlineSat && w.start <= deadlineSat && hpAddDays(w.start, 6) >= deadlineSat ? " is-deadline" : ""));
-        const ghost = !h && seqAt[it.ref] && seqAt[it.ref][w.saturday];
-        if (ghost) { const g = el("span", "hp-bar is-seq", "≈" + hpH(ghost.hours)); g.title = "Assistant sequence (" + (ghost.basis === "allowance-high" ? "allowance high end" : "estimate") + ") — not saved"; n.append(g); }
-        if (it.minTempF != null && w.normalHigh != null && w.normalHigh < it.minTempF + 5 && w.status !== "after") { n.classList.add("is-cold"); n.title = "Normally too cold here for this work (needs " + it.minTempF + "°F)"; }
-        if (h) { const b = el("span", "hp-bar" + (hp.draft && hpGet(hp.draft.patch, ["tasks", it.task].concat(it.sub ? ["subtasks", it.sub] : []).concat(["allocations", w.saturday])) !== undefined ? " is-draft" : ""), hpH(h)); n.append(b); }
-        else if (inWin) n.append(el("span", "hp-window", it.draws === "outside" ? "crew" : "window"));
-        const placeable = !it.done && it.draws !== "evening" && it.draws !== "none" && it.draws !== "outside" && !it.includedIn && w.status !== "after" && !w.past;
-        if (placeable) {
-          n.classList.add("is-placeable");
-          n.tabIndex = 0;
-          n.dataset.hpFocus = "c:" + it.ref + ":" + w.saturday;
-          n.setAttribute("role", "button");
-          n.setAttribute("aria-label", "Hours for " + it.title + " on " + hpWeekend(w.saturday));
-          const open = () => hpPlaceInCell(n, it, w);
-          n.onclick = open;
-          n.onkeydown = (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); open(); } };
-        }
-        grid.append(n);
-      });
-    });
-  }
-  grid.append(rowHead("Free", "after held + placed"));
-  weeks.forEach((w) => grid.append(cell("hp-free" + (w.freeHours < 0 ? " hp-neg" : "") + (w.past ? " is-past" : ""), w.status === "after" || (!w.sharedHours && !w.allocatedHours) ? "" : (w.freeHours < 0 ? "−" : "") + hpH(Math.abs(w.freeHours)))));
-  wrap.append(grid);
-  return wrap;
+// ---------------- the feed: what is still unresolved ----------------
+// One card per open question — a decision, missing hours, an unknown lead
+// time or price, a conflict — answered in place. A card's Save writes just
+// that field against the revision it was read at; if someone changed the same
+// field meanwhile it says so instead of overwriting.
+let hpFeedFilter = "all";
+const HP_FEED_KINDS = [["all", "All"], ["decision", "Decisions"], ["hours", "Hours"], ["wait", "Lead times"], ["price", "Prices"], ["conflict", "Conflicts"]];
+function hpFeedItems(v) {
+  if (!v || !v.plan || !v.derived) return [];
+  const p = v.plan, d = v.derived, out = [];
+  d.conflicts.forEach((c) => out.push({ kind: "conflict", key: "c:" + c.kind + ":" + c.ref, task: c.ref.split("#")[0].startsWith("home/") ? c.ref.split("#")[0] : "", title: c.message }));
+  const decs = [];
+  Object.entries(p.decisions || {}).forEach(([id, dec]) => decs.push({ path: ["decisions", id], task: "", dec }));
+  Object.entries(p.tasks || {}).forEach(([tid, t]) => Object.entries(t.decisions || {}).forEach(([id, dec]) => decs.push({ path: ["tasks", tid, "decisions", id], task: tid, dec })));
+  decs.filter((x) => x.dec.status === "open").forEach((x) => out.push({ kind: "decision", key: "d:" + x.path.join("/"), task: x.task, path: x.path, title: x.dec.question, dec: x.dec }));
+  const hoursRefs = d.capacity.unknownItems.concat(d.capacity.eveningUnknown); // weekend work first
+  hoursRefs.forEach((ref) => { const it = d.items.find((x) => x.ref === ref) || {}; out.push({ kind: "hours", key: "h:" + ref, task: it.task, ref, it, path: ["tasks", it.task].concat(it.sub ? ["subtasks", it.sub] : []).concat(["estimate", "hours"]), title: it.title }); });
+  d.capacity.waitUnknown.forEach((ref) => { const it = d.items.find((x) => x.ref === ref) || {}; const item = hpItemOf(p, it) || {}; out.push({ kind: "wait", key: "w:" + ref, task: it.task, ref, it, wait: item.wait || {}, path: ["tasks", it.task].concat(it.sub ? ["subtasks", it.sub] : []).concat(["wait", "days"]), title: it.title }); });
+  if (d.budget) d.budget.unknown.forEach((id) => { const l = (p.budget.lines || {})[id] || {}; out.push({ kind: "price", key: "p:" + id, path: ["budget", "lines", id, "amount"], title: l.label || id, line: l }); });
+  const rank = { conflict: 0, decision: 1, hours: 2, wait: 3, price: 4 };
+  return out.sort((a, b) => rank[a.kind] - rank[b.kind]);
 }
-function hpAddDays(s, n) { const { y, m, d } = hpDate(s); const t = new Date(Date.UTC(y, m - 1, d + n)); return t.toISOString().slice(0, 10); }
-function hpItemOf(plan, it) { const t = plan.tasks[it.task]; return !t ? null : it.sub ? (t.subtasks || {})[it.sub] : t; }
-function hpItemPath(it) { return ["tasks", it.task].concat(it.sub ? ["subtasks", it.sub] : []); }
 
-// a cell becomes a number field: hours on that weekend, into the draft
-function hpPlaceInCell(n, it, w) {
-  if (n.querySelector("input")) return;
-  const item = hpItemOf(hp.view.plan, it) || {};
-  const cur = (item.allocations || {})[w.saturday] || "";
-  const input = el("input", "hp-cell-input");
-  input.type = "number"; input.min = "0"; input.step = "1"; input.inputMode = "decimal"; input.value = cur;
-  input.setAttribute("aria-label", "Hours for " + it.title + " on " + hpWeekend(w.saturday) + " (empty removes)");
-  n.replaceChildren(input);
-  input.focus(); input.select();
-  let done = false;
-  const commit = () => {
-    if (done) return; done = true;
-    const val = input.value.trim() === "" ? null : Number(input.value);
-    if (val !== null && !(val > 0)) { hpEdit(hpItemPath(it).concat(["allocations", w.saturday]), null); return; }
-    if (val === (cur || null)) { hpRepaint(); return; }
-    hpEdit(hpItemPath(it).concat(["allocations", w.saturday]), val);
+async function hpQuickSave(card, patch, path, expect) {
+  card.classList.add("is-saving");
+  try {
+    let cur = await hpFetch("GET", "/api/home/plan");
+    if (JSON.stringify(hpGet(cur.plan, path) ?? null) !== JSON.stringify(expect ?? null)) {
+      hp.data = cur; await hpRefreshView();
+      showToast("Changed on another device — the card now shows the saved value");
+      return;
+    }
+    hp.data = await hpFetch("POST", "/api/home/plan", { revision: cur.revision, patch });
+    showToast("Saved");
+    await hpRefreshView();
+  } catch (e) {
+    card.classList.remove("is-saving");
+    const err = card.querySelector(".hp-card-error") || card.appendChild(el("p", "hp-card-error"));
+    err.textContent = e.status === 409 ? "Someone saved at the same moment — try again." : (e.problems && e.problems.length ? e.problems.join("; ") : e.message);
+  }
+}
+function hpPatchAt(path, value) { const root = {}; let node = root; path.slice(0, -1).forEach((k) => { node = node[k] = {}; }); node[path[path.length - 1]] = value; return root; }
+function hpMergePatches(...ps) { return ps.reduce((a, b) => hpMerge(a, b), {}); }
+
+function hpFeedPaint() {
+  const host = hpFeedHost;
+  const keepFocus = document.activeElement && host.contains(document.activeElement) ? document.activeElement.dataset.hpFocus : "";
+  host.replaceChildren();
+  if (hpUnavailable(host)) return;
+  const v = hp.data, items = hpFeedItems(v);
+  const head = el("div", "hp-feed-head");
+  head.append(el("p", "hp-sentence", items.length ? items.length + " things to resolve in the Home plan." : "Nothing left to resolve — every decision, estimate, lead time and price is in."));
+  const chips = el("div", "hp-whatif");
+  HP_FEED_KINDS.forEach(([k, label]) => {
+    const n = k === "all" ? items.length : items.filter((x) => x.kind === k).length;
+    if (k !== "all" && !n) return;
+    const b = el("button", "hp-whatif-chip" + (hpFeedFilter === k ? " on" : ""), label + " · " + n);
+    b.setAttribute("aria-pressed", String(hpFeedFilter === k));
+    b.onclick = () => { hpFeedFilter = k; hpFeedPaint(); };
+    chips.append(b);
+  });
+  head.append(chips);
+  host.append(head);
+  const list = el("div", "hp-feed");
+  let lastKind = "";
+  items.filter((x) => hpFeedFilter === "all" || x.kind === hpFeedFilter).forEach((x) => {
+    if (hpFeedFilter === "all" && x.kind !== lastKind) { lastKind = x.kind; const label = HP_FEED_KINDS.find(([k]) => k === x.kind)[1]; list.append(el("h2", "hp-feed-section", label + " · " + items.filter((y) => y.kind === x.kind).length)); }
+    list.append(hpFeedCard(v, x));
+  });
+  host.append(list);
+  if (keepFocus) { const n = host.querySelector(`[data-hp-focus="${CSS.escape(keepFocus)}"]`); if (n) n.focus(); }
+}
+
+function hpFeedCard(v, x) {
+  const card = el("article", "hp-card is-" + x.kind);
+  const label = { conflict: "Conflict", decision: "Decision", hours: "Hours", wait: "Lead time", price: "Price" }[x.kind];
+  const where = x.task ? hpCap((v.tasks[x.task] || {}).text || x.task) : x.kind === "price" ? "Budget" : "Project";
+  card.append(el("div", "hp-card-kicker", hpFeedFilter === "all" ? where : label + " · " + where)); // the section header already names the kind
+  const field = (input, onSave, extra) => {
+    const f = el("form", "hp-card-form");
+    f.append(input);
+    if (extra) f.append(extra);
+    const ok = el("button", "pill", "Save"); ok.type = "submit"; f.append(ok);
+    f.onsubmit = (e) => { e.preventDefault(); onSave(); };
+    return f;
   };
-  input.onkeydown = (e) => { if (e.key === "Enter") input.blur(); if (e.key === "Escape") { done = true; hpRepaint(); } };
-  input.onblur = commit;
-}
-
-// phone: the same plan as a chronological agenda
-function hpAgenda(v) {
-  const d = v.derived, p = v.plan;
-  const list = el("div", "hp-agenda");
-  const itemsByWeek = {};
-  d.items.forEach((it) => { const item = hpItemOf(p, it); Object.entries((item && item.allocations) || {}).forEach(([sat, h]) => (itemsByWeek[sat] = itemsByWeek[sat] || []).push([it, h])); });
-  d.weeks.forEach((w) => {
-    if (w.past) return;
-    const sec = el("section", "hp-week is-" + w.status);
-    const head = el("div", "hp-week-head");
-    head.append(el("strong", "", w.status === "after" ? "Week of " + hpShort(w.start) : hpWeekend(w.saturday)));
-    if (w.normalHigh != null) head.append(el("span", "hp-label-sub", "typically " + Math.round(w.normalHigh) + "° / " + Math.round(w.normalLow) + "°F"));
-    head.append(el("span", "hp-label-sub", w.status === "shared" ? hpH(w.sharedHours) + " together · " + (w.freeHours < 0 ? "over by " + hpH(-w.freeHours) : hpH(w.freeHours) + " free") : w.status === "solo" ? w.present.map(hpPerson).join(", ") + " only — light solo work" : HP_STATUS[w.status] || ""));
-    sec.append(head);
-    (w.milestones || []).forEach((id) => { const m = p.milestones[id]; sec.append(el("div", "hp-ms-mark is-" + m.kind + (m.confirmed ? " is-confirmed" : ""), (m.kind === "deadline" ? "◆ " : "◇ ") + hpShort(m.date) + " · " + m.title + (m.kind === "target" && !m.confirmed ? " (draft target)" : ""))); });
-    (w.events || []).forEach((id) => { const e = (p.events || {})[id]; if (e) sec.append(el("div", "hp-event", hpShort(e.date) + " · " + e.title + " (−" + hpH(e.hours) + ")")); });
-    (w.reserved || []).forEach((id) => { const r = p.reservations[id]; sec.append(el("div", "hp-res-block is-" + r.kind, "Held · " + r.purpose + " · " + hpH(r.hours) + " (" + r.status + ")")); });
-    (itemsByWeek[w.saturday] || []).forEach(([it, h]) => { const b = el("button", "hp-agenda-item", it.title + " · " + hpH(h)); b.onclick = () => homePlanOpen(it.task); sec.append(b); });
-    if (hpShowSeq && d.sequence) d.sequence.placements.filter((pl) => pl.weekend === w.saturday).forEach((pl) => { const b = el("button", "hp-agenda-item is-seq", "≈ " + hpTitle(pl.ref) + " · " + hpH(pl.hours) + " (assistant sequence)"); b.onclick = () => homePlanOpen(pl.ref.split("#")[0]); sec.append(b); });
-    if (w.status !== "after") sec.append(el("div", "hp-label-sub", "Evenings · " + hpH(w.eveningHours) + " planning & ordering"));
-    list.append(sec);
-  });
-  for (const [phase, label] of HP_PHASES) {
-    const items = d.items.filter((it) => it.phase === phase && !it.allocated);
-    if (!items.length) continue;
-    const sec = el("section", "hp-week hp-unplaced");
-    sec.append(el("div", "hp-week-head", label + " · not on a weekend"));
-    items.forEach((it) => {
-      const b = el("button", "hp-agenda-item" + (it.sub ? " is-sub" : "") + (it.done ? " is-done" : ""));
-      b.append(el("span", "", it.title), el("span", "hp-label-sub" + (it.unknown ? " is-unknown" : ""), [hpEstimate(it), it.dependsOn && it.dependsOn.length ? "after " + it.dependsOn.map(hpTitle).join(", ") : ""].filter(Boolean).join(" · ")));
-      b.onclick = () => homePlanOpen(it.task);
-      sec.append(b);
-    });
-    list.append(sec);
+  const num = (ph, focus, unit) => { const i = inputEl(ph); i.type = "number"; i.min = "0"; i.step = "0.5"; i.inputMode = "decimal"; i.dataset.hpFocus = focus; i.setAttribute("aria-label", ph); const w = el("label", "hp-num"); w.append(i); if (unit) w.append(el("span", "", unit)); return [w, i]; };
+  if (x.kind === "conflict") {
+    card.append(el("h3", "hp-card-title", x.title));
+  } else if (x.kind === "decision") {
+    card.append(el("h3", "hp-card-title", x.dec.question));
+    if (x.dec.note) { const det = el("details", "hp-card-note"); det.append(el("summary", "", "Details"), el("p", "hp-note", x.dec.note)); card.append(det); }
+    const decide = (answer) => hpQuickSave(card, hpPatchAt(x.path, { status: "decided", answer }), x.path.concat(["status"]), "open");
+    if ((x.dec.options || []).length) {
+      const opts = el("div", "hp-card-options");
+      x.dec.options.forEach((o) => { const b = el("button", "hp-option", o); b.onclick = () => decide(o); opts.append(b); });
+      card.append(opts);
+    }
+    const [w, i] = (() => { const i = inputEl((x.dec.options || []).length ? "Or write the answer" : "The answer"); i.dataset.hpFocus = "f:" + x.key; i.setAttribute("aria-label", "Answer: " + x.dec.question); return [i, i]; })();
+    const defer = el("button", "pill light", "Later"); defer.type = "button"; defer.title = "Mark deferred — it leaves this feed";
+    defer.onclick = () => hpQuickSave(card, hpPatchAt(x.path, { status: "deferred" }), x.path.concat(["status"]), "open");
+    card.append(field(w, () => { if (i.value.trim()) decide(i.value.trim()); }, defer));
+  } else if (x.kind === "hours") {
+    card.append(el("h3", "hp-card-title", "How many hours for " + x.title.charAt(0).toLowerCase() + x.title.slice(1) + "?"));
+    const it = x.it, hint = [it.draws === "evening" ? "planning-evening time" : "weekend time, both of you together"];
+    if (it.low != null || it.high != null) hint.push("allowance " + (it.low ?? "?") + "–" + (it.high ?? "?") + " h");
+    if (it.estimate && it.estimate.excludes) hint.push(it.estimate.excludes);
+    card.append(el("p", "hp-card-hint", hint.join(" · ")));
+    const [w, i] = num("Hours", "f:" + x.key, "h");
+    card.append(field(w, () => { if (i.value === "") return; const base = x.path.slice(0, -1); hpQuickSave(card, hpMergePatches(hpPatchAt(x.path, Number(i.value)), hpPatchAt(base.concat(["basis"]), "user")), x.path, null); }));
+  } else if (x.kind === "wait") {
+    card.append(el("h3", "hp-card-title", "How long is the wait — " + (x.wait.label || "lead time") + "?"));
+    card.append(el("p", "hp-card-hint", "Calendar days nobody works on it · for " + x.title.charAt(0).toLowerCase() + x.title.slice(1)));
+    const [w, i] = num("Days", "f:" + x.key, "days");
+    card.append(field(w, () => { if (i.value !== "") hpQuickSave(card, hpPatchAt(x.path, Number(i.value)), x.path, null); }));
+  } else if (x.kind === "price") {
+    card.append(el("h3", "hp-card-title", "What will " + x.title.charAt(0).toLowerCase() + x.title.slice(1) + " cost?"));
+    card.append(el("p", "hp-card-hint", "Out of the shared enclosure budget" + (x.line.note ? " · " + x.line.note : "")));
+    const [w, i] = num("Amount", "f:" + x.key, "$");
+    w.prepend(w.lastChild);
+    const status = el("select", "pp-in"); [["estimate", "estimate"], ["quote", "quote"], ["committed", "committed"]].forEach(([val, lab]) => { const o = el("option", "", lab); o.value = val; status.append(o); });
+    status.setAttribute("aria-label", "Kind of price");
+    card.append(field(w, () => { if (i.value !== "") hpQuickSave(card, hpMergePatches(hpPatchAt(x.path, Number(i.value)), hpPatchAt(x.path.slice(0, -1).concat(["status"]), status.value)), x.path, null); }, status));
   }
-  return list;
-}
-
-function hpConflicts(d) {
-  const box = el("section", "hp-list");
-  box.append(el("span", "micro-label", "Conflicts · " + d.conflicts.length));
-  if (!d.conflicts.length) box.append(el("p", "hp-label-sub", "None — nothing placed past what the calendar holds."));
-  d.conflicts.forEach((c) => box.append(el("div", "hp-conflict", c.message)));
-  // long chip lists fold; the count stays visible
-  const chips = (label, refs) => {
-    if (!refs.length) return;
-    const det = el("details", "hp-fold");
-    det.open = !!(hp.openSubs && hp.openSubs["fold:" + label]);
-    det.ontoggle = () => { hp.openSubs = hp.openSubs || {}; hp.openSubs["fold:" + label] = det.open; };
-    det.append(el("summary", "micro-label", label + " · " + refs.length));
-    const u = el("div", "hp-unknowns");
-    refs.forEach((ref) => { const b = el("button", "hp-chip", hpTitle(ref)); b.onclick = () => homePlanOpen(ref.split("#")[0]); u.append(b); });
-    det.append(u);
-    box.append(det);
-  };
-  chips("Unknown effort", d.capacity.unknownItems.concat(d.capacity.eveningUnknown));
-  chips("Lead times unknown", d.capacity.waitUnknown);
-  return box;
-}
-
-// open decisions and later scope, close to the plan
-function hpOpen(v) {
-  const p = v.plan;
-  const box = el("section", "hp-list");
-  const open = [];
-  Object.entries(p.decisions || {}).forEach(([id, dec]) => open.push([null, id, dec]));
-  Object.entries(p.tasks || {}).forEach(([tid, t]) => Object.entries(t.decisions || {}).forEach(([id, dec]) => open.push([tid, id, dec])));
-  const live = open.filter(([, , dec]) => dec.status !== "decided");
-  box.append(el("span", "micro-label", "Open decisions · " + live.length));
-  live.forEach(([tid, did, dec]) => {
-    const row = el("details", "hp-decision");
-    const key = "dec:" + (tid || "") + ":" + did;
-    row.open = !!(hp.openSubs && hp.openSubs[key]);
-    row.ontoggle = () => { hp.openSubs = hp.openSubs || {}; hp.openSubs[key] = row.open; };
-    const sum = el("summary", "");
-    sum.append(el("span", "hp-later-title", dec.question), el("span", "hp-label-sub", [dec.status, tid ? v.tasks[tid] && v.tasks[tid].text : "project", (dec.options || []).length ? (dec.options || []).length + " options" : ""].filter(Boolean).join(" · ")));
-    row.append(sum);
-    if ((dec.options || []).length) { const ul = el("ul", "hp-options"); dec.options.forEach((o) => ul.append(el("li", "", o))); row.append(ul); }
-    if (dec.note) row.append(el("p", "hp-note", dec.note));
-    if (dec.answer) row.append(el("p", "hp-note", "Answer: " + dec.answer));
-    if (tid) row.append(pillLight("Open task", () => homePlanOpen(tid)));
-    box.append(row);
-  });
-  const later = Object.values(p.milestones || {}).filter((m) => m.kind === "later");
-  if (later.length) {
-    box.append(el("span", "micro-label", "Later, after weathertight"));
-    later.forEach((m) => { const row = el("div", "hp-decision"); row.append(el("span", "hp-later-title", m.title)); if (m.note) row.append(el("span", "hp-label-sub", m.note)); box.append(row); });
-  }
-  return box;
+  if (x.task) { const open = el("button", "hp-card-open", "Open task"); open.onclick = () => homePlanOpen(x.task); card.append(open); }
+  return card;
 }
 
 // ---------------- the plan editor (one task) ----------------

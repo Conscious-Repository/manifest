@@ -202,6 +202,17 @@ A `<ref>` is `"<task id>"`, `"<task id>#<subtask id>"` or `"milestone:<id>"`.
 
 ## In the UI
 
+**Timeline:**
+- **Lanes:** one row per lane on a single date axis, from the horizon start to the deadline. Lanes are travel, each event, holds (grouped by purpose), work (one per task, with saved placements solid and the assistant sequence lighter) and what is not yet estimated.
+- **What-if chips** switch scenarios; a what-if never writes.
+- **Below the chart:** one sentence on what is left, and the fine print.
+
+**To resolve:** a feed of cards for open decisions, items without hours, unknown lead times, unknown prices and conflicts.
+- Each card's **Save** writes only that field (decision status + answer, `estimate.hours` with `basis: user`, `wait.days`, a budget line's amount and status), as an explicit, revision-checked write.
+- If the field changed on another device since it was read, nothing is written and the card shows the saved value.
+- **Later** marks a decision deferred, which takes it out of the feed.
+
+
 - **Drafts:** every edit in the timeline or a task's schedule goes into a
   draft first. The draft is kept in that browser (it survives reloads and a
   re-sign-in), previewed through `/preview`, and drawn dashed. "Save to plan"
