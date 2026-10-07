@@ -273,14 +273,20 @@ function liberPaintEmptyPane(pane) {
 function liberPaintThread(pane, which) {
   const head = el('div', 'liber-thread-head');
   const back = el('a', 'liber-back', '‹ Chats'); back.href = '#/chat';
+  // A task's chat names its task as a link straight back to the task card.
   const title = el('span', 'liber-thread-title', which && which.task ? 'About a task' : which ? 'Conversation' : 'New chat');
-  head.append(back, title);
+  if (which && which.task) {
+    const link = el('a', 'liber-task-link'); link.href = '#/tasks/' + encodeURIComponent(which.task);
+    link.append(title, el('span', 'liber-task-open', 'Open task ›'));
+    head.append(back, link);
+  } else head.append(back, title);
   const msgs = el('div', 'liber-msgs'); msgs.setAttribute('aria-live', 'polite');
   let th = null;
   const onThread = next => {
     if (!next) return;
     const atBottom = liberNearBottom();
     th = next; title.textContent = th.kind === 'task' ? 'About: ' + (th.taskTitle || 'a task') : (th.title || 'Conversation');
+    if (th.kind === 'task') head.querySelector('.liber-task-link')?.setAttribute('aria-label', 'Open the task “' + (th.taskTitle || 'this task') + '”');
     liberMessages(msgs, th, onThread);
     if (atBottom) liberScrollEnd();
   };

@@ -257,7 +257,14 @@ async function olgaRoute(){
  document.querySelectorAll('[data-olga-view]').forEach(n=>n.classList.toggle('active',n.dataset.olgaView===view));
  if(view==='day')await load(state.date);
  else if(view==='goals'){if(parts[1]==='history')await showGoalsHistory();else await loadGoals(parts[1]?decodeURIComponent(parts[1]):undefined);}
- else await loadTodos();
+ else{await loadTodos();if(parts[1])olgaOpenLinkedTask(decodeURIComponent(parts.slice(1).join('/')));}
+}
+// #/tasks/<id> (a task chat's header link) opens that task's card over the list;
+// the address goes back to #/tasks so a reload doesn't reopen it.
+function olgaOpenLinkedTask(id){
+ history.replaceState(null,'','#/tasks');
+ const row=(todosCache?.rows||[]).find(r=>r.id===id)||(typeof todosCompletedRow==='function'?todosCompletedRow(id):null);
+ if(row)openTodoPanel(row);else showToast('That task isn’t on your list any more.');
 }
 for(const [view,glyph]of [['day','◷'],['goals','◎'],['tasks','☑'],['chat','✦']]){
  const a=el('a','rail-item');a.href='#/'+view;a.dataset.olgaView=view;a.append(el('span','rail-glyph',glyph),el('span','rail-label',view==='chat'?'CHAT':view.toUpperCase()));if(view==='chat'){a.title='Liber — your assistant';a.setAttribute('aria-label','Chat with Liber');}els.railGroups.append(a);
