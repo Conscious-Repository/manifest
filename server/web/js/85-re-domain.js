@@ -1154,14 +1154,16 @@ async function renderREMoney() {
   monthSel.value = moneyMonth;
   if (monthSel.value !== moneyMonth) { moneyMonth = "all"; monthSel.value = "all"; } // stale month filtered away
   monthSel.onchange = () => { moneyMonth = monthSel.value; moneyPage = 0; paint(); };
-  bar.append(monthSel);
+  // the filters share one container: a phone scrolls them as one row (95-mobile.css)
+  const chipRow = el("div", "fr-chips"); bar.append(chipRow);
+  chipRow.append(monthSel);
   const chips = {};
   [["all", "ALL"], ["todo", "TO CATEGORIZE"], ["expense", "EXPENSES"], ["deposit", "DEPOSITS"]]
     .forEach(([key, label]) => {
       const b = el("button", "filter-chip", label);
       b.onclick = () => { moneyCut = key; moneyPage = 0; paint(); };
       chips[key] = b;
-      bar.append(b);
+      chipRow.append(b);
     });
   main.append(bar);
   // durable containers — paint() only wipes contents. History lives in its

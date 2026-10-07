@@ -6,7 +6,7 @@
 // Run: node server/testdata/fundraising-touch-rows.cjs
 const assert = require('node:assert/strict'), fs = require('node:fs'), vm = require('node:vm'), path = require('node:path');
 function el(tag, cls, text) {
-  const node = { tag, cls: cls || '', textContent: text == null ? '' : String(text), children: [], title: '', hidden: false, type: '', value: '',
+  const node = { tag, cls: cls || '', textContent: text == null ? '' : String(text), children: [], title: '', hidden: false, type: '', value: '', dataset: {},
     append(...items) { for (const c of items) if (c && typeof c === 'object') this.children.push(c); },
     text() { return (this.textContent + ' ' + this.children.map((c) => c.text()).join(' ')).replace(/\s+/g, ' ').trim(); },
     find(cls) { const out = []; const walk = (n) => { for (const c of n.children) { if ((c.cls || '').split(' ').includes(cls)) out.push(c); walk(c); } }; walk(this); return out; },

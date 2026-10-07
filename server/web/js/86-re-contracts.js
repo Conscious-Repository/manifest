@@ -307,12 +307,14 @@ async function renderREContractors() {
   search.value = reCtrQuery;
   search.oninput = () => { reCtrQuery = search.value; paint(); };
   bar.append(search);
-  const chips = {};
+  // the chips share one container: a phone scrolls them as one row (95-mobile.css)
+  const chips = {}, chipRow = el("div", "fr-chips");
+  bar.append(chipRow);
   [["all", "ALL"], ["working", "WORKING"], ["bidding", "BIDDING"], ["quiet", "QUIET"]].forEach(([key, label]) => {
     const b = el("button", "filter-chip", label);
     b.onclick = () => { reCtrFilter = key; paint(); };
     chips[key] = b;
-    bar.append(b);
+    chipRow.append(b);
   });
   main.append(bar);
 
@@ -482,7 +484,7 @@ function reCtrRow(c, a, paint) {
 
   // money first (the RE convention): committed on top, the shape of it beneath
   const money = el("div", "fr-stack");
-  money.append(el("span", "re-ctr-committed", a.committed ? fmtMoney(a.committed) : "—"));
+  money.append(el("span", "re-ctr-committed" + (a.committed ? "" : " is-empty"), a.committed ? fmtMoney(a.committed) : "—"));
   const bits = [];
   if (a.accepted) bits.push(a.accepted + " accepted");
   if (a.drawn) bits.push(fmtMoneyShort(a.drawn) + " drawn");

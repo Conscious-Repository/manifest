@@ -400,6 +400,9 @@ func TestFixtureChatTilesAttention(t *testing.T) {
 // The live +N −M chip on a coding session's header (chat-changes-chip.cjs).
 func TestFixtureChatChangesChip(t *testing.T) { runFixture(t, "chat-changes-chip.cjs", true, false) }
 
+// The fr-shell tables (Contractors, Fundraising, Portfolio, Money) on a phone (fr-shell-phone.cjs).
+func TestFixtureFrShellPhone(t *testing.T) { runFixture(t, "fr-shell-phone.cjs", true, false) }
+
 // Writing after iA Writer: editor, library, quick search, editing tools,
 // preview/export and the phone (writing-ia.cjs).
 func TestFixtureWritingIA(t *testing.T) { runFixture(t, "writing-ia.cjs", true, false) }

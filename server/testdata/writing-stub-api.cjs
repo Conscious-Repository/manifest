@@ -46,6 +46,8 @@ function makeStub(opts={}){
   const url=new URL(req.url,'http://x');const p=url.pathname;
   if(p.startsWith('/api/')){
    log.push(req.method+' '+p+url.search);
+   // other surfaces' reads, for fixtures that borrow this server: {path: body}
+   if(req.method==='GET'&&opts.json&&Object.prototype.hasOwnProperty.call(opts.json,p))return json(res,200,opts.json[p]);
    if(p==='/api/writing/files')return json(res,200,{files:[...files.keys()].sort().map(entry),folders:allFolders(),vaultID:'stubvault'});
    if(p==='/api/note'&&req.method==='GET'){const q=url.searchParams.get('path');if(!files.has(q))return json(res,404,{missing:true});const r=rev(files.get(q));if(req.headers['if-none-match']==='"'+r+'"'){res.writeHead(304);return res.end()}return json(res,200,{path:q,raw:files.get(q),revision:r,vaultID:'stubvault',readOnly:false})}
    if(p==='/api/note'&&req.method==='PUT'){const b=await body(req);if(!files.has(b.path))return json(res,409,{missing:true});const cur=files.get(b.path);if(rev(cur)!==b.ifRevision)return json(res,409,{revision:rev(cur),raw:cur});files.set(b.path,b.body);times.set(b.path,Math.floor(Date.now()/1000));return json(res,200,{revision:rev(b.body)})}

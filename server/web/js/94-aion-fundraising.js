@@ -41,12 +41,13 @@ async function renderAionFundraising(host) {
   search.oninput = () => { frQuery = search.value; paint(); };
   bar.append(search);
   const statuses = [["open", "OPEN"], ["all", "ALL"], ["prospect", "PROSPECT"], ["active", "ACTIVE"], ["committed", "COMMITTED"], ["passed", "PASSED"], ["archived", "ARCHIVED"]];
-  const chips = {};
-  statuses.forEach(([key, label]) => { const b = el("button", "filter-chip", label); b.onclick = () => { frStatus = key; paint(); }; chips[key] = b; bar.append(b); });
+  // the chips share one container: a phone scrolls them as one row (95-mobile.css)
+  const chips = {}, chipRow = el("div", "fr-chips"); bar.append(chipRow);
+  statuses.forEach(([key, label]) => { const b = el("button", "filter-chip", label); b.onclick = () => { frStatus = key; paint(); }; chips[key] = b; chipRow.append(b); });
   const syncCount = ((frSync && frSync.conflicts) || []).length;
   const syncButton = el("button", "filter-chip fr-sync-toggle" + (frSyncOpen ? " on" : ""), frSync && frSync.enabled ? (syncCount ? "SYNC · " + syncCount : "SYNC") : "SHEET OFF");
   syncButton.onclick = () => { frSyncOpen = !frSyncOpen; renderAion(); };
-  bar.append(syncButton);
+  chipRow.append(syncButton);
   main.append(bar);
   if (frSyncOpen) main.append(renderFundraisingSync());
 
@@ -108,10 +109,11 @@ function frRow(op, paint) {
   (op.people || []).forEach((p) => { const b = el("button", "fr-person-name fr-person", p.display); b.onclick = (e) => { e.stopPropagation(); location.hash = personHref(p.key); }; people.append(b); });
   (op.unlinkedPeople || []).forEach((name) => people.append(frPendingPerson(name)));
   if (!people.children.length) people.append(el("span", "fr-person-empty", "—"));
-  const touch = el("div", "fr-stack");
+  // the labels name each stack where a phone shows them without the header
+  const touch = el("div", "fr-stack fr-last" + (op.lastTouchpoint || op.lastTouch ? "" : " is-empty")); touch.dataset.label = "last";
   touch.append(el("span", "", op.lastTouchpoint || "—"));
   if (op.lastTouch) touch.append(frTouchLine(op.lastTouch));
-  const next = el("div", "fr-stack"); next.append(el("span", "", op.nextStep || "—")); if (op.nextTouch) next.append(frTouchLine(op.nextTouch));
+  const next = el("div", "fr-stack fr-next"); next.dataset.label = "next"; next.append(el("span", "", op.nextStep || "—")); if (op.nextTouch) next.append(frTouchLine(op.nextTouch));
   row.append(firm, people, touch, next);
   row.onclick = () => { frSel = frSel === op.id ? null : op.id; (paint || renderAion)(); };
   return row;

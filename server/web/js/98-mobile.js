@@ -111,6 +111,12 @@
     window.mf.follow = follow;
   }
 
+  // a section's tab row scrolls sideways on a phone; after a route change the
+  // lit tab is brought into view (the owner's CONTRACTORS tab sat cut off at
+  // the right edge as "CON", 2026-10-07)
+  const revealTab = () => { if (!mqPhone.matches) return; setTimeout(() => document.querySelectorAll(".view-tab.on").forEach((tab) => { if (tab.offsetParent) tab.scrollIntoView({ inline: "center", block: "nearest" }); }), 80); };
+  window.addEventListener("hashchange", revealTab); revealTab();
+
   // ---- scrim (shared by the drawer; the sheet has its own) ----
   const scrim = document.createElement("div");
   scrim.className = "mf-scrim";

@@ -984,6 +984,58 @@
   #feedView .feed-card:not(.approval-card) > .feed-actions > .pill { flex: none; min-height: var(--touch); font-size: var(--fs-md); padding-inline: var(--sp-2); }
   #feedView .feed-top > .feed-title { min-width: 0; }
   .write-question, .contact-create-input { font-size: var(--fs-xl); }
+  /* FR-SHELL TABLES on a phone (Contractors, Fundraising; Money and
+     Portfolio keep their own two-line rows above): phone compression
+     (docs/ui-conventions.md, 2026-10-07). The owner's Contractors screen
+     truncated every name to "Accredited…", printed property lines over the
+     "1 accepted" line, and wrapped four state chips into three rows.
+     - the toolbar is the search, then one sideways row of state chips;
+     - the scope vocabulary is one sideways row; a selected scope shows its
+       rename / retire (folded, not dropped: rule 1);
+     - a row is a card: the name whole, its money on the right, then what it
+       is (scopes) and where (properties); an absence says nothing ("—") and
+       a column header is not needed when each line names itself. */
+  .fr-main { overflow: visible; }
+  .fr-table, .properties-view .fr-table { min-width: 0; }
+  .fr-toolbar { position: static; width: auto; flex-wrap: wrap; gap: var(--sp-3); padding-bottom: var(--sp-4); }
+  .fr-toolbar > .fr-search { flex: 1 1 100%; min-height: var(--touch); font-size: var(--fs-xl); }
+  .fr-chips { display: flex; flex: 1 1 100%; gap: var(--sp-2); overflow-x: auto; scrollbar-width: none; }
+  .fr-chips::-webkit-scrollbar, .re-scope-bar::-webkit-scrollbar { display: none; }
+  .fr-chips > .filter-chip { flex: none; min-height: var(--touch-sm); padding: 0 var(--sp-5); white-space: nowrap; }
+  .fr-chips > select, .fr-chips > .rec-linkish { flex: none; width: auto; min-height: var(--touch-sm); }
+  .re-scope-bar { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; padding: var(--sp-4) 0; }
+  .re-scope-bar > * { flex: none; }
+  .re-scope-chip { min-height: var(--touch-sm); padding: 0 var(--sp-5); font-size: var(--fs-xs); align-items: center; }
+  .re-scope-act { display: none; }
+  .re-scope-chip.on ~ .re-scope-act { display: inline-flex; align-items: center; justify-content: center; opacity: 1; min-width: var(--touch-sm); min-height: var(--touch-sm); }
+  /* a sideways row fades at its edge, so more reads as more */
+  .fr-chips, .re-scope-bar { -webkit-mask-image: linear-gradient(90deg, currentColor calc(100% - 28px), transparent); mask-image: linear-gradient(90deg, currentColor calc(100% - 28px), transparent); padding-right: 28px; }
+  .fr-head.re-ctr-row, .fr-head:not([class*="-grid"]) { display: none; }
+  .fr-row.re-ctr-row { grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "who money" "scopes money" "props props"; gap: var(--sp-2) var(--sp-6); padding: var(--sp-6) var(--sp-2); align-items: start; }
+  .fr-row.re-ctr-row > .fr-firm { grid-area: who; }
+  .fr-row.re-ctr-row > :nth-child(2) { grid-area: scopes; }
+  .fr-row.re-ctr-row > .re-ctr-props { grid-area: props; }
+  .fr-row.re-ctr-row > .fr-stack { grid-area: money; max-width: 44vw; }
+  .fr-row.re-ctr-row .fr-firm-name { white-space: normal; overflow: visible; font-size: var(--fs-xl); font-weight: 600; line-height: 1.3; }
+  .fr-row.re-ctr-row .re-ctr-committed { font-size: var(--fs-xl); }
+  .fr-row.re-ctr-row .re-ctr-committed.is-empty { display: none; }
+  .fr-row.re-ctr-row .fr-stack > .fr-sub { font-size: var(--fs-xs); white-space: normal; text-align: right; line-height: 1.4; }
+  .fr-row .fr-person-empty { display: none; }
+  .fr-row.re-ctr-row .re-ctr-scope { font-size: var(--fs-sm); color: var(--base-60); }
+  .fr-people.re-ctr-props { gap: 0; color: var(--base-60); font-size: var(--fs-sm); }
+  .fr-people.re-ctr-props > .re-ctr-prop { color: var(--base-70); font-size: var(--fs-sm); }
+  .fr-people.re-ctr-props > .re-ctr-prop:not(:last-child)::after { content: " · "; color: var(--base-30); white-space: pre; }
+  /* Fundraising: the firm, then what happens next, then what happened, then who */
+  .fr-row:not([class*="-grid"]):not(.re-ctr-row):not(.fr-head) { grid-template-columns: minmax(0, 1fr); grid-template-areas: "firm" "next" "last" "people"; gap: var(--sp-2); padding: var(--sp-6) var(--sp-2); }
+  .fr-row:not([class*="-grid"]):not(.re-ctr-row) > .fr-firm { grid-area: firm; }
+  .fr-row:not([class*="-grid"]):not(.re-ctr-row) > .fr-firm .fr-firm-name { white-space: normal; font-size: var(--fs-xl); font-weight: 600; }
+  .fr-row:not([class*="-grid"]):not(.re-ctr-row) > .fr-people { grid-area: people; }
+  .fr-row > .fr-next { grid-area: next; } .fr-row > .fr-last { grid-area: last; }
+  .fr-row > .fr-stack[data-label] { flex-direction: row; flex-wrap: wrap; align-items: baseline; gap: var(--sp-2) var(--sp-4); font-size: var(--fs-md); }
+  .fr-row > .fr-stack[data-label]::before { content: attr(data-label); font: var(--fs-2xs) var(--mono); text-transform: uppercase; letter-spacing: 0.4px; color: var(--base-50); min-width: 3.2em; }
+  .fr-row > .fr-last { color: var(--base-60); }
+  .fr-row > .fr-last.is-empty { display: none; }
+  .fr-row:not([class*="-grid"]):not(.re-ctr-row) > .fr-people > .fr-person:not(:last-child)::after { content: " · "; color: var(--base-30); white-space: pre; }
   /* WRITING — phone compression (docs/ui-conventions.md, 2026-10-06): an open
      document's head is ‹ Library · name · Aa · ···; the app bar folds away as
      a chat's does; tabs, quick search, new file and comments live in ··· and

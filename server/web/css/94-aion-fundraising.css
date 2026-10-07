@@ -1,5 +1,6 @@
 .fr-shell { min-width: 0; }
 .fr-main { min-width: 0; overflow: hidden; }
+.fr-chips { display: contents; }
 .fr-toolbar { display: flex; align-items: center; gap: var(--sp-3); flex-wrap: wrap; padding-bottom: var(--sp-5); border-bottom: 1px solid var(--base-20); }
 .fr-search { flex: 1 1 auto; min-width: 0; font-size: var(--fs-md); }
 .fr-add { margin: var(--sp-4) 0; }
@@ -59,10 +60,7 @@ textarea.fr-in { min-height: calc(var(--sp-9) + var(--sp-9) + var(--sp-9) + var(
   .fr-table { min-width: var(--fr-wide-min); }
 }
 @media (min-width: 861px) and (max-width: 1100px) { .fr-inspector { display: block; } }
-@media (max-width: 700px) {
-  .fr-table { min-width: var(--fr-phone-min); }
-  .fr-toolbar { position: sticky; left: 0; width: calc(100vw - (var(--sp-9) + var(--sp-6))); }
-}
+/* a phone shows rows as cards, not a sideways table (95-mobile.css, 2026-10-07) */
 /* touches (2026-09-25): kind · date · person, one quiet line per touch */
 .fr-touch { display: inline-flex; align-items: baseline; gap: var(--sp-2); min-width: 0; }
 .fr-touch-kind { font-size: var(--fs-2xs); color: var(--base-50); }

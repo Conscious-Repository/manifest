@@ -122,11 +122,12 @@ function renderPortfolio() {
   search.oninput = () => { pfQuery = search.value; paint(); };
   bar.append(search);
   const cuts = [["open", "Active"], ["all", "All properties"], ["attention", "Needs attention"]];
-  const chips = {};
+  // the filters share one container: a phone scrolls them as one row (95-mobile.css)
+  const chips = {}, chipRow = el("div", "fr-chips"); bar.append(chipRow);
   cuts.forEach(([key, label]) => {
     const b = el("button", "filter-chip", label);
     b.onclick = () => { pfCut = key; paint(); };
-    chips[key] = b; bar.append(b);
+    chips[key] = b; chipRow.append(b);
   });
   const phase = el("select", "pp-in"); phase.setAttribute("aria-label", "Filter portfolio by phase");
   [["", "All phases"], ["construction", "Construction"], ["pre-dev", "Pre-development"], ["pipeline", "Pipeline"], ["stabilized", "Held / completed"], ["closed", "Sold"]].forEach(([value,label]) => {
@@ -136,7 +137,7 @@ function renderPortfolio() {
   phase.onchange = () => { pfPhase = phase.value; if (pfPhase === "stabilized" || pfPhase === "closed") pfCut = "all"; paint(); };
   const reset = el("button", "rec-linkish", "Reset filters");
   reset.onclick = () => { pfQuery = ""; search.value = ""; pfCut = "open"; pfPhase = ""; phase.value = ""; paint(); };
-  bar.append(phase, reset); main.append(bar);
+  chipRow.append(phase, reset); main.append(bar);
   const summary = el("div", "pf-summary");
   const count = el("span", "micro-label");
   summary.append(count, propertyComposer()); main.append(summary);
