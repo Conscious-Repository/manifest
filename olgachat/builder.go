@@ -248,7 +248,7 @@ func (g *GitBuilder) claude(ctx context.Context, wt, settings, session, prompt s
 	if err := CheckClaudeArgs(args); err != nil {
 		return builderOut{}, "", err
 	}
-	raw, err := g.run(ctx, wt, []string{"GOPROXY=off", "GOFLAGS=-mod=mod"}, firstNonEmpty(g.ClaudeBin, "claude"), args...)
+	raw, err := g.run(ctx, wt, []string{"GOPROXY=off", "GOFLAGS=-mod=readonly"}, firstNonEmpty(g.ClaudeBin, "claude"), args...)
 	var r struct {
 		Type             string          `json:"type"`
 		Subtype          string          `json:"subtype"`
