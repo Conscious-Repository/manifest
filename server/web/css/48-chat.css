@@ -1255,3 +1255,10 @@ label.chat-artifact-handoff{display:flex;flex-direction:row;align-items:flex-sta
 .chat-handoff .chat-model-list { flex: none; min-height: 0; max-height: 9.5em; }
 .chat-handoff-head { display: flex; flex-direction: column; gap: 2px; }
 .chat-handoff-draft { flex: none; min-height: 7em; max-height: 30vh; resize: vertical; padding: var(--sp-3) var(--sp-4); border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface-field); color: var(--text); font: var(--fs-sm)/1.5 var(--sans); }
+
+/* Olga's Liber conversation on a shared Home task (read-only) */
+.chat-liber { margin: var(--sp-6) 0; padding: var(--sp-4) 0; border-top: 1px solid var(--line); }
+.chat-liber-head { cursor: pointer; font-family: var(--sans); font-size: var(--fs-sm); color: var(--base-60); padding: var(--sp-3) 0; }
+.chat-liber-who { font-family: var(--sans); font-size: var(--fs-xs); color: var(--base-50); margin-bottom: var(--sp-2); }
+.chat-liber-card { font-family: var(--sans); font-size: var(--fs-sm); color: var(--base-60); margin-top: var(--sp-2); }
+.chat-liber-note { font-family: var(--sans); font-size: var(--fs-sm); color: var(--base-50); }

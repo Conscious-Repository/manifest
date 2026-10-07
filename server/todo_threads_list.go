@@ -73,16 +73,33 @@ func (s *Server) taskThreads() []taskThreadRow {
 			add("aion:" + item)
 		}
 	}
+	liber := s.liberThreads()
+	for id := range liber {
+		add(id)
+	}
 	doc := s.tasksDocOrNil()
 	deleg := s.delegationIndex()
 	now := time.Now()
 	out := []taskThreadRow{}
 	for _, id := range ids {
 		thread := s.listThread(id)
-		if len(thread) == 0 {
+		lt := liber[id]
+		if len(thread) == 0 && lt == nil {
 			continue
 		}
 		text, open, known := s.resolveTaskThread(doc, id)
+		if len(thread) == 0 {
+			// only Olga's conversation with Liber (her shared Home task chat)
+			var lastText string
+			for i := len(lt.Turns) - 1; i >= 0 && lastText == ""; i-- {
+				lastText = lt.Turns[i].Text
+			}
+			if keepTaskThread(known, open, false, lt.Updated, now) {
+				out = append(out, taskThreadRow{ID: id, Title: text, Domain: taskDomain(id), Updated: lt.Updated, Comments: len(lt.Turns),
+					LastAuthor: "Olga · Liber", LastText: snip(lastText, 140), Open: open})
+			}
+			continue
+		}
 		last := thread[len(thread)-1]
 		d, delegated := deleg[id]
 		if !keepTaskThread(known, open, delegated && activeDelegation(d.State), last.At, now) {

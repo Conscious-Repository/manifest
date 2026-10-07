@@ -677,9 +677,10 @@ func (s *Service) buildTurn(ref Ref, msg string, recent []Exchange, liberID, con
 	if note != "" && s.Notes != nil {
 		_ = s.Notes(fmt.Sprintf("- %s — Olga asked: %q\n  What it would take: %s\n", s.now().Format("2006-01-02 15:04"), msg, note))
 	}
+	built := ch
 	_, _ = s.update(ref, func(t *Thread) error {
 		_, c := t.Card(cardID)
-		ch := t.Server.change(ch.ID)
+		ch := t.Server.change(built.ID)
 		if c != nil {
 			c.State, c.Summary, c.Updated = state, firstNonEmpty(summary, "Your change is ready to look at."), s.now().UTC()
 			if state == StateDiscarded && note != "" {
@@ -688,6 +689,7 @@ func (s *Service) buildTurn(ref Ref, msg string, recent []Exchange, liberID, con
 		}
 		if ch != nil {
 			ch.State, ch.Files, ch.Session, ch.Updated = state, res.Files, firstNonEmpty(res.Session, ch.Session), s.now().UTC()
+			ch.Worktree = firstNonEmpty(built.Worktree, ch.Worktree)
 		}
 		if tu := t.Turn(liberID); tu != nil {
 			tu.Status = StatusDone

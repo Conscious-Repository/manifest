@@ -660,8 +660,9 @@ async function renderTaskChat(taskID, refetch) {
   host.append(...taskThreadWithRuns(d, d.timeline || d.thread || [], (c) => chatTaskThreadEntry(c, taskID),
     (l) => { const e = el("div", "chat-turn chat-system", l.text); e.title = l.title; return e; }));
   if (d.inflight) host.append(el("div", "chat-thinking", "✦ " + (d.inflight.name || "agent") + " is working…"));
-  if (!(d.thread || []).length && !d.inflight) host.append(emptyRow("no comments yet"));
+  if (!(d.thread || []).length && !d.inflight && !d.liber) host.append(emptyRow("no comments yet"));
   appendTaskApprovals(host, d);
+  if (d.liber && (d.liber.turns || []).length) host.append(chatLiberSection(d.liber));
   if (composer.dataset.task !== taskID || !composer.querySelector("textarea")) {
     composer.innerHTML = "";
     composer.dataset.task = taskID;
@@ -685,6 +686,27 @@ async function renderTaskChat(taskID, refetch) {
   chatStick = following;
   if (restoreReading) chatRestoreReadingPosition(host, chatReadingStates.get(readKey)?.value);
   if (chatPendingWorkspace?.task === taskID) { const spec=chatPendingWorkspace;chatPendingWorkspace=null;chatOpenWorkingArtifact(spec); }
+}
+
+// Olga's conversation with Liber about this shared Home task (her Manifest,
+// plan 2026-10-07-olga-chat §5.4): read-only here; reply through comments.
+function chatLiberSection(lv) {
+  const sec = el("details", "chat-liber");
+  sec.open = true;
+  sec.append(el("summary", "chat-liber-head", "Olga asked Liber · " + lv.turns.length + " message" + (lv.turns.length === 1 ? "" : "s") + " · read-only"));
+  for (const t of lv.turns) {
+    const wrap = el("div", "chat-turn " + (t.who === "olga" ? "chat-user" : "chat-spirit"));
+    const who = el("div", "chat-liber-who", (t.who === "olga" ? "Olga" : "Liber" + (t.model ? " · " + t.model : "")) + " · " + fmtWhen(t.at));
+    wrap.append(who);
+    if (t.text) {
+      if (t.who === "olga") wrap.append(el("div", "", t.text));
+      else { const say = el("div", "chat-say"); try { say.append(renderMarkdown(t.text, "", { readOnly: true, chat: true })); } catch (e) { say.textContent = t.text; } wrap.append(say); }
+    }
+    for (const c of t.cards || []) wrap.append(el("div", "chat-liber-card", "↳ " + c.summary + " — " + ({ pending: "waiting for Olga", applied: "applied", declined: "not now", conflict: "changed since", failed: "failed" }[c.state] || c.state)));
+    sec.append(wrap);
+  }
+  sec.append(el("p", "chat-liber-note", "Reply to Olga with a comment on this task — she sees comments in her task panel."));
+  return sec;
 }
 
 function chatTaskThreadEntry(c, taskID) {

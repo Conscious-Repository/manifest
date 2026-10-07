@@ -228,6 +228,9 @@ func (s *Server) handleTaskPanel(w http.ResponseWriter, r *http.Request) {
 	// artifacts (P1): what this task produced / consumes — bound ids plus
 	// every registered artifact whose provenance names it
 	out["artifacts"] = s.taskArtifactsView(id)
+	if lt := s.liberThreads()[id]; lt != nil {
+		out["liber"] = liberView(lt) // Olga's Liber chat about this shared task, read-only
+	}
 	// turn runs (chat_supervision.go): each sweep re-dispatch is its own run,
 	// so the thread can say a replay happened; omitted when there are none
 	if sv := s.taskThreadSupervision(id); len(sv.Runs) > 0 {

@@ -116,3 +116,72 @@ func TestRecoverSettlesInterruptedTurns(t *testing.T) {
 		t.Fatal("leak check")
 	}
 }
+
+type fakeVoice struct{}
+
+func (fakeVoice) Ask(_ context.Context, p string) (VoiceAnswer, error) {
+	if strings.Contains(p, "Manifest will now build") {
+		return VoiceAnswer{Text: "On it.\n```json\n{\"brief\":\"bigger titles\"}\n```"}, nil
+	}
+	return VoiceAnswer{Text: "Here is a preview."}, nil
+}
+
+type fakeBuilder struct {
+	used *Change
+}
+
+func (f *fakeBuilder) Build(_ context.Context, ch *Change, _ string, _ []Exchange) (BuildResult, error) {
+	ch.Worktree = "/work/" + ch.ID
+	return BuildResult{Summary: "Titles are bigger", Files: []string{"server/web/olga/custom.css"}, Session: "s1"}, nil
+}
+func (f *fakeBuilder) PreviewPath(ch *Change) string { return "/preview/" + ch.ID + "/" }
+func (f *fakeBuilder) Discard(*Change) error          { return nil }
+func (f *fakeBuilder) Use(_ context.Context, ch *Change) error {
+	f.used = ch
+	ch.Commit = "abc"
+	return nil
+}
+func (f *fakeBuilder) Undo(context.Context, *Change) error { return nil }
+func (f *fakeBuilder) Settled(*Change) string           { return "live" }
+
+// A built change keeps its worktree through the save, so Use can ship it.
+func TestBuildThenUseKeepsTheWorktree(t *testing.T) {
+	dir := t.TempDir()
+	st := &Store{Private: filepath.Join(dir, "olga"), Shared: filepath.Join(dir, "home"), Write: func(p string, b []byte) error {
+		os.MkdirAll(filepath.Dir(p), 0o755)
+		return os.WriteFile(p, b, 0o600)
+	}}
+	fb := &fakeBuilder{}
+	restarted := make(chan bool, 1)
+	s := &Service{Store: st, Voice: fakeVoice{}, Builder: fb, Restart: func() { restarted <- true }}
+	th := &Thread{ID: "c-abc", Kind: KindApp, Turns: []Turn{{ID: "o1", Who: "olga", Text: "bigger titles"}, {ID: "l1", Who: "liber", Status: StatusThinking}}}
+	st.Save(th)
+	s.buildTurn(Ref{KindApp, "c-abc"}, "bigger titles", nil, "l1", "", map[string]any{})
+	got, _ := st.App("c-abc")
+	var card *Card
+	for i := range got.Turns {
+		for j := range got.Turns[i].Cards {
+			card = &got.Turns[i].Cards[j]
+		}
+	}
+	if card == nil || card.State != StateReady {
+		t.Fatalf("card %+v", card)
+	}
+	if _, err := s.Act(Ref{KindApp, "c-abc"}, card.ID, "use"); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-restarted:
+	case <-time.After(5 * time.Second):
+		t.Fatal("no restart after Use")
+	}
+	if fb.used == nil || fb.used.Worktree == "" {
+		t.Fatalf("Use got %+v — the worktree was lost", fb.used)
+	}
+	s.Recover()
+	got, _ = st.App("c-abc")
+	_, c := got.Card(card.ID)
+	if c.State != StateLive || got.Server.Changes[c.ChangeID].Commit != "abc" {
+		t.Fatalf("after restart %+v", c)
+	}
+}
