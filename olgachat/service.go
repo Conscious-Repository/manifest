@@ -457,6 +457,10 @@ func (s *Service) taskTurn(t *Thread, ref Ref, msg string, recent []Exchange, li
 	var dropped []string
 	s.voiceTurn(ref, ModeTask, ctxData, recent, msg, liberID, entry, func(tu *Turn, r Reply) {
 		for _, raw := range r.Proposals {
+			if len(tu.Cards) >= 3 {
+				dropped = append(dropped, raw.Kind+": more than three suggestions")
+				continue
+			}
 			p, line, err := s.Planner.Validate(t.TaskID, raw)
 			if err != nil {
 				dropped = append(dropped, raw.Kind+": "+err.Error())

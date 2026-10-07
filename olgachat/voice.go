@@ -167,8 +167,8 @@ func ParseReply(raw string) Reply {
 		r.Text = strings.TrimSpace(v.Reply)
 	}
 	r.Route, r.Restatement, r.Brief, r.Proposals = strings.TrimSpace(v.Route), strings.TrimSpace(v.Restatement), strings.TrimSpace(v.Brief), v.Proposals
-	if len(r.Proposals) > 3 {
-		r.Proposals = r.Proposals[:3]
+	if len(r.Proposals) > 8 {
+		r.Proposals = r.Proposals[:8]
 	}
 	return r
 }

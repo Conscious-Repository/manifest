@@ -79,6 +79,9 @@ func NewOlgaHandlerWith(opts OlgaOptions) (http.Handler, error) {
 	gs := goals.NewStore(loc, root, "goals.md", write)
 	ts := tasks.NewStore(root, "tasks.md", write)
 	for path, content := range map[string]string{"goals.md": "# Goals\n", "tasks.md": "# Tasks\n\n## Inbox\n"} {
+		if opts.Preview != "" {
+			break // a preview never creates files; its copy already has them
+		}
 		if _, err := os.Stat(filepath.Join(root, path)); os.IsNotExist(err) {
 			if err = write(filepath.Join(root, path), []byte(content)); err != nil {
 				return nil, err
