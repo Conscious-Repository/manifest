@@ -4,8 +4,10 @@
 
 The standalone `cmd/olga` binary uses Manifest's DAY, GOALS and TASKS handlers
 and the same view modules and styles. The small Olga shell replaces the main
-boot/navigation and task conversation inspector. No agents, chat, calendar
-connections, feed, external projects, file browser, or owner services are wired.
+boot/navigation and task conversation inspector. Since 2026-10-07 it also runs
+**Liber**, her assistant (CHAT, and "Ask Liber" in every task). See
+ARCHITECTURE.md "Liber" and the section below. No calendar connections, feed,
+external projects, file browser or other owner services are wired.
 Her goals are entered directly in GOALS; no import step is needed.
 
 ## Source of truth
@@ -20,10 +22,36 @@ Her goals are entered directly in GOALS; no import step is needed.
 - Olga is an explicitly authorized additional vault editor within this one
   subtree. Her handlers never receive the owner's stores or integrations.
 
+## Liber (2026-10-07)
+
+- **Voice:** the Hermes profile `olga` (`~/.hermes/profiles/olga`).
+  - `SOUL.md` is `cmd/olga/hermes/SOUL.md`; copy it there when it changes.
+  - `config.yaml` pins `gpt-5.6-sol`, provider `openai-codex`, toolsets `[memory]`.
+- **Router:** Jev, with its key in `/private/olga/typesafe-key` (0600, a copy of
+  the TypeSafe key). Without the file, routing falls back to the voice: cards
+  only, never a build.
+- **Builder:** `claude` as benjamin in `~/src/olga-work/<change>` worktrees,
+  cloned from `~/src/manifest`, pushing to origin main.
+- **Runtime:** `~/.local/share/olga`.
+  - It holds `olga`, `olga.prev`, `olga-launch.sh`, and the `pending` /
+    `settled` markers.
+  - The unit starts `olga-launch.sh`. After a deploy (Liber's Use this or
+    Undo, or the autodeploy) it proves the new build answers within 20 s, or
+    restores `olga.prev`.
+- **Log:** `/private/olga/liber.log`, one JSON line per turn and deploy
+  (routes, models, timings; not her words).
+- **Notes for Benjamin:** `system/olga/requests.md`.
+- **Tests:**
+  - `go test ./server -run 'Liber|OlgaStrict|OlgaPreview'` and `go test ./olgachat`.
+  - Live, opt-in: `MANIFEST_LIBER_LIVE=1 go test ./olgachat -run Probes` (the
+    builder fence), and `MANIFEST_JEV_LIVE=1 go test ./jev -run Live` (routing
+    calibration).
+
 ## Install / update
 
-Build `go build -o olga ./cmd/olga` on Linux, install as
-`/home/benjamin/.local/bin/olga`, install `deploy/olga.service` into
+Build `go build -o olga ./cmd/olga` on Linux and install it as
+`/home/benjamin/.local/share/olga/olga`, with `deploy/olga-launch.sh` beside
+it (the autodeploy does both from now on). Install `deploy/olga.service` into
 `/etc/systemd/system/`, then `sudo systemctl daemon-reload` and
 `sudo systemctl enable --now olga`. Subsequent updates replace that binary
 and restart only `olga`. It is enabled under `engine-room.target`, so the

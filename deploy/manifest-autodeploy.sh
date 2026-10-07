@@ -34,6 +34,33 @@ if [ "$NOW" != "$BUILT" ]; then
   echo "autodeploy: manifest built $BUILT -> $(git rev-parse --short HEAD), restarted"
 fi
 
+# ---- Olga's Manifest (plan system/workbench/plans/2026-10-07-olga-chat.md §6) ----
+# Her app reads and writes the same Home data, so it is rebuilt whenever a
+# deploy changes code it shares — never left writing an older shape. The
+# launcher proves the new build answers or puts the previous one back. A
+# failed Olga build never blocks the dashboard above.
+OLGA=/home/benjamin/.local/share/olga
+if systemctl is-active -q olga && [ -x "$OLGA/olga-launch.sh" ]; then
+  cd /home/benjamin/src/manifest
+  OBUILT=$(cat "$STAMPS/olga.built" 2>/dev/null || echo none)
+  if [ "$OBUILT" != "$NOW" ]; then
+    SHARED="cmd/olga olgachat jev typesafe hermes tasks goals homeplan sharedhome daily vaultwriter record server/olga.go server/olga_liber.go server/home_plan.go server/planner_notes.go server/todos.go server/todos_unified.go server/todo_coord.go server/web/olga server/web/js/00-core.js server/web/js/05-components.js server/web/js/10-day.js server/web/js/20-goals.js server/web/js/90-todos.js server/web/js/90-home-plan.js server/web/css deploy/olga-launch.sh"
+    if [ "$OBUILT" = none ] || ! git cat-file -e "$OBUILT^{commit}" 2>/dev/null || [ -n "$(git diff --name-only "$OBUILT" "$NOW" -- $SHARED)" ]; then
+      if go build -o "$OLGA/olga.next" ./cmd/olga 2>"$STAMPS/olga-build.err"; then
+        cp -f deploy/olga-launch.sh "$OLGA/olga-launch.sh"
+        [ -x "$OLGA/olga" ] && cp -f "$OLGA/olga" "$OLGA/olga.prev"
+        mv -f "$OLGA/olga.next" "$OLGA/olga"
+        echo "autodeploy-$NOW" > "$OLGA/pending"
+        sudo systemctl restart olga
+        echo "autodeploy: olga rebuilt at $(git rev-parse --short HEAD), restarted"
+      else
+        echo "autodeploy: olga build FAILED at $(git rev-parse --short HEAD) — her app keeps its current build (see $STAMPS/olga-build.err)"
+      fi
+    fi
+    echo "$NOW" > "$STAMPS/olga.built"
+  fi
+fi
+
 # ---- harness repo → engine (source syncs in via manifest-sync) ----
 if [ -d /private/harnesses/excalibur/engine ]; then
   cd /private/harnesses

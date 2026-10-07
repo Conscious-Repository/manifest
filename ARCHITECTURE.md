@@ -605,3 +605,42 @@ serialize across processes. Each replaced revision is kept in
 `plan-history/`. Capacity, conflicts and scenario outcomes are derived on
 read with date-only arithmetic, and unknown estimates stay `null`. Both
 servers mount the same narrow routes; nothing else is opened to Olga.
+### 2026-10-07 — Liber, Olga's assistant
+
+Owner decision; this supersedes "no AI integrations or chat services wired"
+(Olga's personal Manifest, 2026-09-11) and "human comments never dispatch an
+agent from Olga" (Shared Home). Plan: `system/workbench/plans/2026-10-07-olga-chat.md`.
+
+Her listener now runs Liber (`olgachat`, `server/olga_liber.go`).
+- **Voice.** Her own Hermes profile `olga` on `gpt-5.6-sol`, with `memory` as
+  its only toolset. It can't read files, run commands or browse; it knows
+  only what Manifest puts in each prompt.
+- **Builder.** Claude Code on `claude-opus-5-5`, run as Benjamin with his
+  login. It works in a git worktree, fenced by `olgachat/assets/olga-builder.json`:
+  - reads limited to the worktree, edits limited to `server/web/olga/**`;
+  - no web tools, no MCP servers, sandboxed Bash;
+  - the three refusal probes in `olgachat/builder_live_test.go` prove it.
+- **Routing.** Jev's route judgment (`jev/route.go`) chooses talk, confirm or
+  build. Without Jev, the voice can only offer a confirm card.
+
+Nothing changes without her tap.
+- **Task chat** proposes cards that apply through her listener's own
+  handlers, with strict input that refuses unknown fields and markup in
+  titles.
+- **App changes** ship only after Use this.
+  - The diff must stay inside `server/web/olga/**`; anything else becomes a
+    note in `system/olga/requests.md`.
+  - A read-only preview build has to pass a phone check first.
+  - The change is committed to main as "Olga (via Liber)".
+  - The launcher proves the new build answers or restores the previous one.
+  - Undo reverts the commit.
+
+Data:
+- Conversations about shared Home tasks live in `system/home/chat` and show
+  read-only in Benjamin's CHAT under the task; her other chats live in
+  `system/olga/chat`.
+- Model names and routing stay server-side and in `/private/olga/liber.log`.
+- The autodeploy rebuilds her app whenever code it shares changes, so both
+  apps write one data shape.
+- Her messages go to OpenAI (voice) and TypeSafe (routing). Build briefs go
+  to Anthropic.

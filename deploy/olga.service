@@ -1,5 +1,5 @@
 [Unit]
-Description=Olga Manifest — day, goals and tasks
+Description=Olga Manifest — day, goals, tasks and Liber
 After=network-online.target private-ready.path
 Wants=network-online.target
 ConditionPathExists=/private/consciousrepo/system/olga
@@ -8,16 +8,25 @@ ConditionPathExists=/private/consciousrepo/system/olga
 Type=simple
 User=benjamin
 Group=benjamin
-ExecStart=/home/benjamin/.local/bin/olga -vault /private/consciousrepo -addr 127.0.0.1:7781 -password-file /private/olga/password -audit-dir /private/olga
+# The launcher proves a build Liber just shipped answers, or puts the previous one back.
+ExecStart=/home/benjamin/.local/share/olga/olga-launch.sh -vault /private/consciousrepo -addr 127.0.0.1:7781 -password-file /private/olga/password -audit-dir /private/olga \
+  -liber -typesafe-key /private/olga/typesafe-key -liber-log /private/olga/liber.log \
+  -work-root /home/benjamin/src/olga-work -runtime /home/benjamin/.local/share/olga -seed /home/benjamin/src/manifest \
+  -claude /home/benjamin/.local/bin/claude -go /usr/local/go/bin/go \
+  -node /home/benjamin/.hermes/node/bin/node -node-path /home/benjamin/.cache/manifest-qa/node_modules
 Restart=on-failure
-RestartSec=5
+RestartSec=2
 Environment=TZ=America/Chicago
+Environment=PATH=/home/benjamin/.local/bin:/usr/local/go/bin:/usr/local/bin:/usr/bin:/bin
+Environment=OLGA_RUNTIME=/home/benjamin/.local/share/olga
 UMask=0077
 NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
-ProtectHome=read-only
-ReadWritePaths=/private/consciousrepo/system/home /private/consciousrepo/system/olga /private/olga
+# Liber's voice (Hermes) and builder (Claude Code, Go) keep their logins,
+# caches and work folders in the home directory, so it is writable; the
+# models' own reach is fenced by their tool settings (plan §3.1–3.2).
+ReadWritePaths=/private/consciousrepo/system/home /private/consciousrepo/system/olga /private/olga /home/benjamin
 
 [Install]
 WantedBy=engine-room.target
