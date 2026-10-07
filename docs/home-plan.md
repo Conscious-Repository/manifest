@@ -194,7 +194,8 @@ A `<ref>` is `"<task id>"`, `"<task id>#<subtask id>"` or `"milestone:<id>"`.
     high end.
   - **Dependencies:** a dependency with no date (an outside milestone, evening
     work) is treated as ready, and listed in `assumptions`.
-  - **Result:** `placements`, `unplaced` (with reasons), `finish`, `fits` and
+  - **Result:** `placements`, `unplaced` (hours that found no weekend, with reasons),
+    `unestimated` (open weekend work with no hours yet), `finish`, `fits` and
     `spareHours`.
 
   It is recomputed on every read, for each scenario too, and never written.

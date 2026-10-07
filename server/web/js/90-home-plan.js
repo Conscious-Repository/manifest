@@ -239,13 +239,14 @@ function hpSequenceBar(d) {
   const s = d.sequence;
   const toggle = el("button", "hp-scenario hp-seq-toggle" + (hpShowSeq ? " on" : ""));
   toggle.setAttribute("aria-pressed", String(hpShowSeq));
-  toggle.append(el("span", "", "Assistant sequence"), el("strong", s && s.fits ? "" : "hp-neg", !s ? "—" : s.fits ? "fits · done " + hpWeekend(s.finish || d.asOf) : s.unplaced.length + " can't be placed"), el("span", "hp-stat-sub", "a what-if from the estimates · not saved"));
+  toggle.append(el("span", "", "Assistant sequence"), el("strong", s && s.fits ? "" : "hp-neg", !s ? "—" : (s.fits ? "fits" + (s.finish ? " · done " + hpWeekend(s.finish) : "") : s.unplaced.length + " don't fit") + (s.unestimated.length ? " · " + s.unestimated.length + " without hours" : "")), el("span", "hp-stat-sub", "a what-if from the estimates · not saved"));
   toggle.onclick = () => { hpShowSeq = !hpShowSeq; try { localStorage.setItem("homePlan.sequence", hpShowSeq ? "1" : "0"); } catch (e) {} hpRepaint(); };
   box.append(toggle);
   if (hpShowSeq && s) {
     const det = el("div", "hp-seq-detail");
     det.append(el("p", "hp-label-sub", "Weekend work in dependency order, around holds and saved placements, skipping weekends too cold for an item's materials (normal high under its minimum + " + 5 + "°F). Allowances use their high end. Dotted bars below; nothing is saved."));
     s.unplaced.forEach((u) => det.append(el("div", "hp-conflict", hpTitle(u.ref) + " — " + u.reason)));
+    if (s.unestimated.length) det.append(el("div", "hp-label-sub", "· not placed until they have hours: " + s.unestimated.map(hpTitle).join(", ")));
     s.assumptions.forEach((a) => det.append(el("div", "hp-label-sub", "· " + a)));
     if (s.spareHours) det.append(el("div", "hp-label-sub", "· " + hpH(s.spareHours) + " of shared weekend time left over"));
     box.append(det);

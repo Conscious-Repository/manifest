@@ -407,6 +407,9 @@ func TestAssistantSequence(t *testing.T) {
 	if s.Fits {
 		t.Fatal("20 roof hours have no warm weekend left: it must not claim to fit")
 	}
+	if strings.Join(s.Unestimated, ",") != "home/plan-windows#upper" {
+		t.Fatalf("unestimated = %v (kept apart from what does not fit)", s.Unestimated)
+	}
 	var roofLeft bool
 	for _, u := range s.Unplaced {
 		roofLeft = roofLeft || (u.Ref == "home/roof-on" && strings.Contains(u.Reason, "20 h") && strings.Contains(u.Reason, "50°F"))

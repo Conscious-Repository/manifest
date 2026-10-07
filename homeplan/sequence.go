@@ -12,10 +12,11 @@ import (
 // It is derived on every read and never written to the plan.
 type Sequence struct {
 	Placements  []SeqPlacement `json:"placements"`
-	Unplaced    []SeqUnplaced  `json:"unplaced"`
+	Unplaced    []SeqUnplaced  `json:"unplaced"`    // hours that found no weekend
+	Unestimated []string       `json:"unestimated"` // open weekend work with no hours yet
 	Assumptions []string       `json:"assumptions"`
 	Finish      string         `json:"finish,omitempty"` // last Saturday used
-	Fits        bool           `json:"fits"`             // all placed, none past the deadline
+	Fits        bool           `json:"fits"`             // every estimated hour placed by the deadline
 	SpareHours  float64        `json:"spareHours"`       // shared hours still free after it
 }
 
@@ -32,7 +33,7 @@ type SeqUnplaced struct {
 }
 
 func sequence(p *Plan, d *Derived, itemOf map[string]Item) *Sequence {
-	seq := &Sequence{Placements: []SeqPlacement{}, Unplaced: []SeqUnplaced{}, Assumptions: []string{}}
+	seq := &Sequence{Placements: []SeqPlacement{}, Unplaced: []SeqUnplaced{}, Unestimated: []string{}, Assumptions: []string{}}
 	deadline := d.Capacity.HardDeadline
 	// usable weekends and what is free on each
 	var weeks []int
@@ -71,7 +72,7 @@ func sequence(p *Plan, d *Derived, itemOf map[string]Item) *Sequence {
 		case iv.High != nil:
 			h, basis = *iv.High, "allowance-high"
 		default:
-			seq.Unplaced = append(seq.Unplaced, SeqUnplaced{iv.Ref, "no estimate"})
+			seq.Unestimated = append(seq.Unestimated, iv.Ref)
 			continue
 		}
 		h -= iv.Allocated // already placed in the saved plan
@@ -148,7 +149,13 @@ func sequence(p *Plan, d *Derived, itemOf map[string]Item) *Sequence {
 			if at, ok := lastAt[dep]; ok {
 				start = max(start, at)
 			} else if !isCand[dep] {
-				assume("assumes “" + view[dep].Title + "” is ready in time (" + strings.TrimSpace(map[string]string{"evening": "evening work", "outside": "outside crew", "none": "no household time"}[view[dep].Draws]+" — not placed on weekends)"))
+				how := map[string]string{"evening": "evening work", "outside": "outside crew", "none": "no household time"}[view[dep].Draws]
+				if strings.HasPrefix(view[dep].Draws, "reservation:") {
+					how = "inside its reservation"
+				} else if how == "" {
+					how = "no weekend hours"
+				}
+				assume("assumes “" + view[dep].Title + "” is ready in time (" + how + ")")
 			}
 		}
 		it := itemOf[c.ref]
