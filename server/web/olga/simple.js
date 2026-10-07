@@ -63,7 +63,9 @@ renderTodos = function () {
     det.append(sum);
     if (hint) det.append(el('p', 'olga-group-hint', hint));
     det.ontoggle = () => { if (searching) return; olgaSimple.open[key] = det.open; localStorage.setItem('olga.groups', JSON.stringify(olgaSimple.open)); };
+    olgaSimple.showArea = key === 'important' || searching;
     list.forEach((r, i) => det.append(rankedRow(r, i)));
+    olgaSimple.showArea = false;
     host.append(det);
   };
   if (important.length && !olgaTaskArea && !searching) fold('important', 'Important', important, 'Tasks marked high or medium priority.');
@@ -97,12 +99,11 @@ const olgaSimpleRow = rankedRow;
 rankedRow = function (r, i) {
   const row = olgaSimpleRow(r, i);
   row.dataset.id = r.id;
-  row.querySelectorAll('.tdo-age,.tdo-tether,.uw-x,.tdo-handle').forEach(n => n.remove());
+  row.querySelectorAll('.tdo-age,.tdo-tether,.uw-x,.tdo-handle,.tdo-pill').forEach(n => n.remove());
   row.draggable = false;
   const check = row.querySelector('.tdo-check'); if (check) check.setAttribute('aria-label', 'Mark “' + r.text + '” done');
-  if (!olgaTaskArea && r.container?.name && !row.querySelector('.olga-row-area')) {
+  if (olgaSimple.showArea && r.container?.name && !row.querySelector('.olga-row-area')) {
     const meta = row.querySelector('.tdo-right') || row;
-    row.querySelectorAll('.tdo-pill').forEach(n => n.remove());
     const area = el('span', 'olga-row-area', r.container.name);
     row.querySelector('.tdo-task-title')?.after(area) || meta.append(area);
   }
