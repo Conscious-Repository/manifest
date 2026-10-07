@@ -7,6 +7,7 @@
 // or availability by itself. All text renders as text: task notes never
 // execute as HTML.
 const HP_DRAFT_KEY = "homePlan.draft.v1";
+let hpShowSeq = (() => { try { return localStorage.getItem("homePlan.sequence") === "1"; } catch (e) { return false; } })();
 let hp = { data: null, view: null, error: "", scenario: "", draft: null, problems: [], previewing: false, saveError: "", stale: [] };
 
 function hpLoadDraft() {
@@ -212,6 +213,7 @@ function hpPaint() {
     box.append(row);
     host.append(box);
   }
+  host.append(hpSequenceBar(d));
   if (hp.problems.length) {
     const pr = el("div", "hp-problems");
     pr.setAttribute("role", "alert");
@@ -222,6 +224,33 @@ function hpPaint() {
   host.append(window.mf && window.mf.phone && window.mf.phone() || matchMedia("(max-width: 860px)").matches ? hpAgenda(v) : hpGrid(v));
   host.append(hpConflicts(d), hpOpen(v));
   if (focus) { const n = host.querySelector(`[data-hp-focus="${CSS.escape(focus)}"]`); if (n) n.focus(); }
+}
+
+// the assistant sequence: a derived what-if the server recomputes on every
+// read; toggling it shows ghost bars and never edits the plan
+function hpSeqAt(d) {
+  const at = {};
+  if (!hpShowSeq || !d.sequence) return at;
+  d.sequence.placements.forEach((pl) => { (at[pl.ref] = at[pl.ref] || {})[pl.weekend] = pl; });
+  return at;
+}
+function hpSequenceBar(d) {
+  const box = el("div", "hp-seq");
+  const s = d.sequence;
+  const toggle = el("button", "hp-scenario hp-seq-toggle" + (hpShowSeq ? " on" : ""));
+  toggle.setAttribute("aria-pressed", String(hpShowSeq));
+  toggle.append(el("span", "", "Assistant sequence"), el("strong", s && s.fits ? "" : "hp-neg", !s ? "—" : s.fits ? "fits · done " + hpWeekend(s.finish || d.asOf) : s.unplaced.length + " can't be placed"), el("span", "hp-stat-sub", "a what-if from the estimates · not saved"));
+  toggle.onclick = () => { hpShowSeq = !hpShowSeq; try { localStorage.setItem("homePlan.sequence", hpShowSeq ? "1" : "0"); } catch (e) {} hpRepaint(); };
+  box.append(toggle);
+  if (hpShowSeq && s) {
+    const det = el("div", "hp-seq-detail");
+    det.append(el("p", "hp-label-sub", "Weekend work in dependency order, around holds and saved placements, skipping weekends too cold for an item's materials (normal high under its minimum + " + 5 + "°F). Allowances use their high end. Dotted bars below; nothing is saved."));
+    s.unplaced.forEach((u) => det.append(el("div", "hp-conflict", hpTitle(u.ref) + " — " + u.reason)));
+    s.assumptions.forEach((a) => det.append(el("div", "hp-label-sub", "· " + a)));
+    if (s.spareHours) det.append(el("div", "hp-label-sub", "· " + hpH(s.spareHours) + " of shared weekend time left over"));
+    box.append(det);
+  }
+  return box;
 }
 
 function hpModeBar() {
@@ -276,6 +305,10 @@ function hpGrid(v) {
     n.title = (w.away || []).map((a) => { const x = p.away[a]; return x ? (x.who.map(hpPerson).join(" & ") + " away " + hpShort(x.from) + "–" + hpShort(x.to) + (x.note ? " · " + x.note : "")) : a; }).join("\n") || (w.status === "shared" ? "both home" : "");
     grid.append(n);
   });
+  if (weeks.some((w) => w.normalHigh != null)) {
+    grid.append(rowHead("Typical weather", "normal high / low °F"));
+    weeks.forEach((w) => grid.append(cell("hp-normal" + (w.past ? " is-past" : ""), w.normalHigh == null ? "" : Math.round(w.normalHigh) + "° / " + Math.round(w.normalLow) + "°")));
+  }
   grid.append(rowHead("Evenings", "planning & ordering"));
   weeks.forEach((w) => grid.append(cell("hp-evening" + (w.past ? " is-past" : ""), w.status === "after" ? "" : hpH(w.eveningHours))));
   grid.append(rowHead("Held", "provisional reservations"));
@@ -291,6 +324,7 @@ function hpGrid(v) {
     grid.append(n);
   });
   const deadlineSat = d.capacity.hardDeadline;
+  const seqAt = hpSeqAt(d);
   for (const [phase, label] of HP_PHASES) {
     const items = d.items.filter((it) => it.phase === phase);
     if (!items.length) continue;
@@ -306,6 +340,7 @@ function hpGrid(v) {
       const bits = [hpEstimate(it)];
       if (it.hours != null && it.draws === "pool" && !it.done) bits.push(it.allocated ? hpH(it.allocated) + " placed" : "not placed");
       if (it.dependsOn && it.dependsOn.length) bits.push("after " + it.dependsOn.map(hpTitle).join(", "));
+      if (it.minTempF != null) bits.push("≥ " + it.minTempF + "°F");
       lab.append(el("span", "hp-label-sub" + (it.unknown ? " is-unknown" : ""), bits.filter(Boolean).join(" · ")));
       grid.append(lab);
       const item = hpItemOf(p, it);
@@ -313,6 +348,9 @@ function hpGrid(v) {
         const h = item && item.allocations && item.allocations[w.saturday];
         const inWin = it.window && it.window.start && w.start <= (it.window.end || it.window.start) && hpAddDays(w.start, 6) >= it.window.start;
         const n = cell("hp-bar-cell" + (w.past ? " is-past" : "") + (deadlineSat && w.start <= deadlineSat && hpAddDays(w.start, 6) >= deadlineSat ? " is-deadline" : ""));
+        const ghost = !h && seqAt[it.ref] && seqAt[it.ref][w.saturday];
+        if (ghost) { const g = el("span", "hp-bar is-seq", "≈" + hpH(ghost.hours)); g.title = "Assistant sequence (" + (ghost.basis === "allowance-high" ? "allowance high end" : "estimate") + ") — not saved"; n.append(g); }
+        if (it.minTempF != null && w.normalHigh != null && w.normalHigh < it.minTempF + 5 && w.status !== "after") { n.classList.add("is-cold"); n.title = "Normally too cold here for this work (needs " + it.minTempF + "°F)"; }
         if (h) { const b = el("span", "hp-bar" + (hp.draft && hpGet(hp.draft.patch, ["tasks", it.task].concat(it.sub ? ["subtasks", it.sub] : []).concat(["allocations", w.saturday])) !== undefined ? " is-draft" : ""), hpH(h)); n.append(b); }
         else if (inWin) n.append(el("span", "hp-window", it.draws === "outside" ? "crew" : "window"));
         const placeable = !it.done && it.draws !== "evening" && it.draws !== "none" && it.draws !== "outside" && !it.includedIn && w.status !== "after" && !w.past;
@@ -372,12 +410,14 @@ function hpAgenda(v) {
     const sec = el("section", "hp-week is-" + w.status);
     const head = el("div", "hp-week-head");
     head.append(el("strong", "", w.status === "after" ? "Week of " + hpShort(w.start) : hpWeekend(w.saturday)));
+    if (w.normalHigh != null) head.append(el("span", "hp-label-sub", "typically " + Math.round(w.normalHigh) + "° / " + Math.round(w.normalLow) + "°F"));
     head.append(el("span", "hp-label-sub", w.status === "shared" ? hpH(w.sharedHours) + " together · " + (w.freeHours < 0 ? "over by " + hpH(-w.freeHours) : hpH(w.freeHours) + " free") : w.status === "solo" ? w.present.map(hpPerson).join(", ") + " only — light solo work" : HP_STATUS[w.status] || ""));
     sec.append(head);
     (w.milestones || []).forEach((id) => { const m = p.milestones[id]; sec.append(el("div", "hp-ms-mark is-" + m.kind + (m.confirmed ? " is-confirmed" : ""), (m.kind === "deadline" ? "◆ " : "◇ ") + hpShort(m.date) + " · " + m.title + (m.kind === "target" && !m.confirmed ? " (draft target)" : ""))); });
     (w.events || []).forEach((id) => { const e = (p.events || {})[id]; if (e) sec.append(el("div", "hp-event", hpShort(e.date) + " · " + e.title + " (−" + hpH(e.hours) + ")")); });
     (w.reserved || []).forEach((id) => { const r = p.reservations[id]; sec.append(el("div", "hp-res-block is-" + r.kind, "Held · " + r.purpose + " · " + hpH(r.hours) + " (" + r.status + ")")); });
     (itemsByWeek[w.saturday] || []).forEach(([it, h]) => { const b = el("button", "hp-agenda-item", it.title + " · " + hpH(h)); b.onclick = () => homePlanOpen(it.task); sec.append(b); });
+    if (hpShowSeq && d.sequence) d.sequence.placements.filter((pl) => pl.weekend === w.saturday).forEach((pl) => { const b = el("button", "hp-agenda-item is-seq", "≈ " + hpTitle(pl.ref) + " · " + hpH(pl.hours) + " (assistant sequence)"); b.onclick = () => homePlanOpen(pl.ref.split("#")[0]); sec.append(b); });
     if (w.status !== "after") sec.append(el("div", "hp-label-sub", "Evenings · " + hpH(w.eveningHours) + " planning & ordering"));
     list.append(sec);
   });
@@ -402,19 +442,20 @@ function hpConflicts(d) {
   box.append(el("span", "micro-label", "Conflicts · " + d.conflicts.length));
   if (!d.conflicts.length) box.append(el("p", "hp-label-sub", "None — nothing placed past what the calendar holds."));
   d.conflicts.forEach((c) => box.append(el("div", "hp-conflict", c.message)));
-  const unknown = d.capacity.unknownItems.concat(d.capacity.eveningUnknown);
-  if (unknown.length) {
-    box.append(el("span", "micro-label", "Unknown effort · " + unknown.length));
+  // long chip lists fold; the count stays visible
+  const chips = (label, refs) => {
+    if (!refs.length) return;
+    const det = el("details", "hp-fold");
+    det.open = !!(hp.openSubs && hp.openSubs["fold:" + label]);
+    det.ontoggle = () => { hp.openSubs = hp.openSubs || {}; hp.openSubs["fold:" + label] = det.open; };
+    det.append(el("summary", "micro-label", label + " · " + refs.length));
     const u = el("div", "hp-unknowns");
-    unknown.forEach((ref) => { const b = el("button", "hp-chip", hpTitle(ref)); b.onclick = () => homePlanOpen(ref.split("#")[0]); u.append(b); });
-    box.append(u);
-  }
-  if (d.capacity.waitUnknown.length) {
-    box.append(el("span", "micro-label", "Lead times unknown · " + d.capacity.waitUnknown.length));
-    const u = el("div", "hp-unknowns");
-    d.capacity.waitUnknown.forEach((ref) => { const b = el("button", "hp-chip", hpTitle(ref)); b.onclick = () => homePlanOpen(ref.split("#")[0]); u.append(b); });
-    box.append(u);
-  }
+    refs.forEach((ref) => { const b = el("button", "hp-chip", hpTitle(ref)); b.onclick = () => homePlanOpen(ref.split("#")[0]); u.append(b); });
+    det.append(u);
+    box.append(det);
+  };
+  chips("Unknown effort", d.capacity.unknownItems.concat(d.capacity.eveningUnknown));
+  chips("Lead times unknown", d.capacity.waitUnknown);
   return box;
 }
 
@@ -427,12 +468,18 @@ function hpOpen(v) {
   Object.entries(p.tasks || {}).forEach(([tid, t]) => Object.entries(t.decisions || {}).forEach(([id, dec]) => open.push([tid, id, dec])));
   const live = open.filter(([, , dec]) => dec.status !== "decided");
   box.append(el("span", "micro-label", "Open decisions · " + live.length));
-  live.forEach(([tid, , dec]) => {
-    const row = el("div", "hp-decision");
-    const q = el("button", "hp-item-title", dec.question);
-    q.onclick = () => tid && homePlanOpen(tid);
-    if (!tid) q.disabled = true;
-    row.append(q, el("span", "hp-label-sub", [dec.status, tid ? v.tasks[tid] && v.tasks[tid].text : "project", (dec.options || []).length ? (dec.options || []).length + " options" : ""].filter(Boolean).join(" · ")));
+  live.forEach(([tid, did, dec]) => {
+    const row = el("details", "hp-decision");
+    const key = "dec:" + (tid || "") + ":" + did;
+    row.open = !!(hp.openSubs && hp.openSubs[key]);
+    row.ontoggle = () => { hp.openSubs = hp.openSubs || {}; hp.openSubs[key] = row.open; };
+    const sum = el("summary", "");
+    sum.append(el("span", "hp-later-title", dec.question), el("span", "hp-label-sub", [dec.status, tid ? v.tasks[tid] && v.tasks[tid].text : "project", (dec.options || []).length ? (dec.options || []).length + " options" : ""].filter(Boolean).join(" · ")));
+    row.append(sum);
+    if ((dec.options || []).length) { const ul = el("ul", "hp-options"); dec.options.forEach((o) => ul.append(el("li", "", o))); row.append(ul); }
+    if (dec.note) row.append(el("p", "hp-note", dec.note));
+    if (dec.answer) row.append(el("p", "hp-note", "Answer: " + dec.answer));
+    if (tid) row.append(pillLight("Open task", () => homePlanOpen(tid)));
     box.append(row);
   });
   const later = Object.values(p.milestones || {}).filter((m) => m.kind === "later");

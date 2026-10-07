@@ -367,3 +367,61 @@ func TestEventTakesHoursOutOfADay(t *testing.T) {
 		}
 	}
 }
+
+// The assistant sequence: dependency order, around holds and saved work,
+// never on a weekend too cold for an item, and never saved.
+func TestAssistantSequence(t *testing.T) {
+	base, _ := os.ReadFile("testdata/plan.json")
+	merged, _ := MergePatch(base, []byte(`{
+	  "climate": {"source": "test", "normals": {"2026-10-31": {"high": 63, "low": 43}, "2026-11-07": {"high": 59, "low": 41}, "2026-11-21": {"high": 53, "low": 35}, "2026-11-28": {"high": 50, "low": 33}, "2026-12-05": {"high": 48, "low": 31}, "2026-12-12": {"high": 45, "low": 29}, "2026-12-19": {"high": 44, "low": 28}}},
+	  "milestones": {"frame": {"date": "2026-11-05"}},
+	  "tasks": {
+	    "home/roof-on": {"minTempF": 50, "estimate": {"hours": 36}},
+	    "home/plan-windows": {"subtasks": {"frames": {"dependsOn": ["home/roof-on"]}, "panes": {"allocations": {"2026-10-31": 8}}}}
+	  }}`))
+	p, err := Decode(merged)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := Validate(p, known, nil); err != nil {
+		t.Fatal(err)
+	}
+	d := Derive(p, homeTasks, "2026-10-07")
+	s := d.Sequence
+	got := map[string][]string{}
+	for _, pl := range s.Placements {
+		got[pl.Ref] = append(got[pl.Ref], fmt.Sprintf("%s:%v", pl.Weekend, pl.Hours))
+	}
+	// the roof waits for the frame (Nov 5) and needs ≥ 55°F normal highs: Nov 7 only (59°F)
+	if strings.Join(got["home/roof-on"], " ") != "2026-11-07:16" {
+		t.Fatalf("roof = %v", got["home/roof-on"])
+	}
+	// the rest of the panes go first (Oct 31 had 8 saved, 8 left of 16 free after the 8)
+	if strings.Join(got["home/plan-windows#panes"], " ") != "2026-10-31:4" {
+		t.Fatalf("panes = %v", got["home/plan-windows#panes"])
+	}
+	// frames wait on the roof, so start on its last weekend or later
+	if len(got["home/plan-windows#frames"]) == 0 || got["home/plan-windows#frames"][0] < "2026-11-07" {
+		t.Fatalf("frames = %v", got["home/plan-windows#frames"])
+	}
+	if s.Fits {
+		t.Fatal("20 roof hours have no warm weekend left: it must not claim to fit")
+	}
+	var roofLeft bool
+	for _, u := range s.Unplaced {
+		roofLeft = roofLeft || (u.Ref == "home/roof-on" && strings.Contains(u.Reason, "20 h") && strings.Contains(u.Reason, "50°F"))
+	}
+	if !roofLeft {
+		t.Fatalf("unplaced = %+v", s.Unplaced)
+	}
+	// a saved placement on a cold weekend is a conflict
+	roof := p.Tasks["home/roof-on"]
+	roof.Allocations = map[string]float64{"2026-12-19": 4}
+	p.Tasks["home/roof-on"] = roof
+	if !hasConflict(Derive(p, homeTasks, "2026-10-07").Conflicts, "cold") {
+		t.Fatal("roof on Dec 19 (44°F) is not flagged cold")
+	}
+	if b, _ := Encode(p); strings.Contains(string(b), "placements") {
+		t.Fatal("the sequence leaked into the saved document")
+	}
+}

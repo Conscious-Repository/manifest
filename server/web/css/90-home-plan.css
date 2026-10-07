@@ -74,7 +74,7 @@
 .hp-conflict { padding: 6px 10px; border-left: 3px solid var(--text); font-size: 13px; overflow-wrap: anywhere; }
 .hp-unknowns { display: flex; flex-wrap: wrap; gap: 6px; }
 .hp-chip { display: inline-flex; align-items: center; gap: 4px; padding: 4px 8px; border: 1px dashed var(--line); border-radius: 999px; background: transparent; color: var(--text); font: 12px var(--sans); cursor: pointer; max-width: 100%; overflow-wrap: anywhere; text-align: left; }
-.hp-decision { display: flex; flex-direction: column; gap: 2px; padding: 6px 0; border-bottom: 1px solid var(--line-soft); }
+.hp-decision { display: flex; flex-direction: column; gap: 2px; padding: 6px 0; border-bottom: 1px solid var(--line-soft); font-size: 13px; }
 
 /* phone agenda */
 .hp-agenda { display: flex; flex-direction: column; gap: 10px; }
@@ -135,5 +135,18 @@
 .hp-event { display: block; font: 10px var(--mono); color: var(--base-60); overflow-wrap: anywhere; }
 .hp-editor > *, .hp-fields > *, .hp-field > *, .hp-est > * { min-width: 0; max-width: 100%; }
 @media (max-width: 860px) { .hp-fields { grid-template-columns: minmax(0, 1fr); } .hp-est { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
-.hp-decision { font-size: 13px; }
 .hp-later-title { font: 13px var(--sans); }
+.hp-seq { display: flex; flex-direction: column; gap: 6px; }
+.hp-seq-toggle { align-self: flex-start; }
+.hp-seq-detail { display: flex; flex-direction: column; gap: 4px; padding: 8px 10px; border: 1px dotted var(--text); border-radius: 6px; }
+.hp-bar.is-seq { background: transparent; color: var(--text); border: 1px dotted var(--text); }
+.hp-agenda-item.is-seq { border-style: dotted; }
+.hp-normal { font: 11px var(--mono); color: var(--base-60); }
+.hp-bar-cell.is-cold { background: repeating-linear-gradient(90deg, transparent 0 5px, var(--line-soft) 5px 6px); }
+.hp-fold > summary { cursor: pointer; padding: 4px 0; }
+.hp-fold .hp-unknowns { padding: 6px 0; }
+details.hp-decision > summary { cursor: pointer; display: flex; flex-direction: column; gap: 2px; list-style: none; }
+details.hp-decision > summary::-webkit-details-marker { display: none; }
+details.hp-decision > summary::before { content: "▸ "; font-size: 10px; color: var(--base-60); }
+details.hp-decision[open] > summary::before { content: "▾ "; }
+details.hp-decision .pill { align-self: flex-start; margin-top: 6px; }

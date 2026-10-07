@@ -132,6 +132,7 @@ Unknown is `null`, never `0`.
       "window": {"start": "…", "end": "…"},   // outside/crew dates: planned, never proof
       "dependsOn": ["<ref>"],
       "allocations": {"<Saturday>": 8},       // baseline weekend placement
+      "minTempF": 40,                         // lowest application/cure temperature of its materials
       "subtasks": {"<id>": {"title": "…", "done": false, /* the same item fields */}},
       "decisions": {"<id>": {"question": "…", "status": "open|decided|deferred",
                      "options": ["…"], "answer": "…", "note": "…"}},
@@ -142,6 +143,7 @@ Unknown is `null`, never `0`.
              "lines": {"<id>": {"label": "…", "amount": null, "status": "estimate|quote|committed|paid|unknown"}}},
   "scenarios": {"<id>": {"label": "…", "basis": "assistant|user", "order": 1, "note": "…",
                  "patch": { /* a merge patch over this plan */ }}},
+  "climate": {"source": "…", "normals": {"<Saturday>": {"high": 59, "low": 41}}},  // °F normals, not a forecast
   "source": "provenance of the import"
 }
 ```
@@ -181,7 +183,21 @@ A `<ref>` is `"<task id>"`, `"<task id>#<subtask id>"` or `"milestone:<id>"`.
   - `order`: placed before something it waits on.
   - `deadline`: placed after the hard deadline.
   - `missing-task`: the task left Home.
+  - `cold`: an item with `minTempF` is placed on a weekend whose normal high is below `minTempF + 5` °F.
+    The high lasts only a few hours, and mornings are colder.
 - **Scenarios** are derived separately and never change the saved plan.
+- **`derived.sequence`** is the assistant sequence: open weekend work
+  (`draws: "pool"`, not done, not `includedIn`) laid onto shared weekends in
+  dependency order. It works around reservations and saved placements, and
+  skips weekends that are `cold` for the item.
+  - **Hours:** known hours are used where they exist; otherwise the allowance's
+    high end.
+  - **Dependencies:** a dependency with no date (an outside milestone, evening
+    work) is treated as ready, and listed in `assumptions`.
+  - **Result:** `placements`, `unplaced` (with reasons), `finish`, `fits` and
+    `spareHours`.
+
+  It is recomputed on every read, for each scenario too, and never written.
 
 ## In the UI
 

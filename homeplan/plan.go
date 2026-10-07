@@ -35,7 +35,20 @@ type Plan struct {
 	Decisions    map[string]Decision    `json:"decisions,omitempty"` // project-wide
 	Budget       *Budget                `json:"budget,omitempty"`
 	Scenarios    map[string]Scenario    `json:"scenarios,omitempty"`
+	Climate      *Climate               `json:"climate,omitempty"`
 	Source       string                 `json:"source,omitempty"`
+}
+
+// Climate is typical weather per weekend (normals, not a forecast), so
+// temperature-limited work can be checked against when it is placed.
+type Climate struct {
+	Source  string            `json:"source"`
+	Normals map[string]Normal `json:"normals"` // Saturday → normal high/low °F
+}
+
+type Normal struct {
+	High float64 `json:"high"`
+	Low  float64 `json:"low"`
 }
 
 type Span struct {
@@ -131,6 +144,7 @@ type Item struct {
 	Window      *Span              `json:"window,omitempty"` // planned dates for outside/crew work; never proof of completion
 	DependsOn   []string           `json:"dependsOn,omitempty"`
 	Allocations map[string]float64 `json:"allocations,omitempty"` // Saturday → elapsed hours
+	MinTempF    *float64           `json:"minTempF,omitempty"`    // lowest application/cure temperature of its materials
 	Order       int                `json:"order,omitempty"`
 	Note        string             `json:"note,omitempty"`
 	Source      string             `json:"source,omitempty"`
@@ -412,6 +426,13 @@ func Validate(p *Plan, known func(string) bool, newTasks []string) error {
 	}
 	if cyc := findCycle(p); cyc != nil {
 		add("dependencies form a cycle: %s", strings.Join(cyc, " → "))
+	}
+	if c := p.Climate; c != nil {
+		for sat, n := range c.Normals {
+			if d, ok := parseDate(sat); !ok || d.Weekday() != time.Saturday || n.High < n.Low {
+				add("climate normal %s: a Saturday with high ≥ low", sat)
+			}
+		}
 	}
 	for id, s := range p.Scenarios {
 		if !scenBasis[s.Basis] || strings.TrimSpace(s.Label) == "" {

@@ -24,6 +24,7 @@ type Derived struct {
 	Conflicts []Conflict                 `json:"conflicts"`
 	Budget    *BudgetTotals              `json:"budget,omitempty"`
 	Scenarios map[string]ScenarioOutcome `json:"scenarios,omitempty"`
+	Sequence  *Sequence                  `json:"sequence,omitempty"` // assistant what-if; never saved
 }
 
 // Week is Monday-first. Weekend hours are elapsed hours together.
@@ -44,6 +45,8 @@ type Week struct {
 	Events       []string         `json:"events,omitempty"` // hours taken out of the day
 	Away         []string         `json:"away,omitempty"`
 	Past         bool             `json:"past,omitempty"`
+	NormalHigh   *float64         `json:"normalHigh,omitempty"` // °F, from plan.climate
+	NormalLow    *float64         `json:"normalLow,omitempty"`
 }
 
 type WeekAllocation struct {
@@ -94,6 +97,7 @@ type ItemView struct {
 	Order      int       `json:"order"`
 	Unknown    bool      `json:"unknown"`
 	Estimate   *Estimate `json:"estimate,omitempty"`
+	MinTempF   *float64  `json:"minTempF,omitempty"`
 }
 
 type Conflict struct {
@@ -114,6 +118,7 @@ type ScenarioOutcome struct {
 	Basis     string     `json:"basis"`
 	Capacity  Totals     `json:"capacity"`
 	Conflicts []Conflict `json:"conflicts"`
+	Sequence  *Sequence  `json:"sequence,omitempty"`
 	Error     string     `json:"error,omitempty"`
 }
 
@@ -142,7 +147,7 @@ func Derive(p *Plan, tasks map[string]TaskRef, asOf string) Derived {
 				out.Error = err.Error()
 			} else {
 				sd := derive(sp, tasks, asOf)
-				out.Capacity, out.Conflicts = sd.Capacity, sd.Conflicts
+				out.Capacity, out.Conflicts, out.Sequence = sd.Capacity, sd.Conflicts, sd.Sequence
 			}
 			d.Scenarios[id] = out
 		}
@@ -280,6 +285,12 @@ func derive(p *Plan, tasks map[string]TaskRef, asOf string) Derived {
 			wk.SharedHours, wk.SoloHours = 0, 0 // the deadline week: no weekend left
 			wk.Status = "after"
 		}
+		if p.Climate != nil {
+			if n, ok := p.Climate.Normals[wk.Saturday]; ok {
+				hi, lo := n.High, n.Low
+				wk.NormalHigh, wk.NormalLow = &hi, &lo
+			}
+		}
 		weekIdx[wk.Saturday] = len(d.Weeks)
 		d.Weeks = append(d.Weeks, wk)
 	}
@@ -338,6 +349,9 @@ func derive(p *Plan, tasks map[string]TaskRef, asOf string) Derived {
 			}
 			if w.Status != "shared" && !(need == 1 && w.SoloHours > 0) {
 				d.Conflicts = append(d.Conflicts, Conflict{"unavailable", iv.Ref, fmt.Sprintf("%s is placed on %s, which is not a shared weekend (%s)", iv.Title, sat, w.Status)})
+			}
+			if tooCold(it.MinTempF, w) {
+				d.Conflicts = append(d.Conflicts, Conflict{"cold", iv.Ref, fmt.Sprintf("%s needs %.0f°F; the weekend of %s normally peaks at %.0f°F", iv.Title, *it.MinTempF, sat, *w.NormalHigh)})
 			}
 			if hardDeadline != "" && sat > hardDeadline {
 				d.Conflicts = append(d.Conflicts, Conflict{"deadline", iv.Ref, iv.Title + " is placed after the deadline " + hardDeadline})
@@ -469,7 +483,16 @@ func derive(p *Plan, tasks map[string]TaskRef, asOf string) Derived {
 		d.Budget = bt
 	}
 	sort.SliceStable(d.Conflicts, func(i, j int) bool { return d.Conflicts[i].Ref < d.Conflicts[j].Ref })
+	d.Sequence = sequence(p, &d, itemOf)
 	return d
+}
+
+// ColdMarginF: a normal high only this far above a material's minimum is
+// treated as too cold — the high lasts a few hours and mornings are colder.
+const ColdMarginF = 5
+
+func tooCold(min *float64, w *Week) bool {
+	return min != nil && w.NormalHigh != nil && *w.NormalHigh < *min+ColdMarginF
 }
 
 func view(task, sub string, it Item, title string, done bool) ItemView {
@@ -478,7 +501,7 @@ func view(task, sub string, it Item, title string, done bool) ItemView {
 		ref = task + "#" + sub
 	}
 	iv := ItemView{Ref: ref, Task: task, Sub: sub, Title: title, Phase: it.Phase, Draws: it.Draws, IncludedIn: it.IncludedIn,
-		Done: done, Window: it.Window, DependsOn: it.DependsOn, Order: it.Order, Estimate: it.Estimate}
+		Done: done, Window: it.Window, DependsOn: it.DependsOn, Order: it.Order, Estimate: it.Estimate, MinTempF: it.MinTempF}
 	if iv.Draws == "" {
 		iv.Draws = "pool"
 		if it.Phase != "execution" {

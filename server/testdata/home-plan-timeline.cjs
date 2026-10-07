@@ -37,7 +37,7 @@ const plan=JSON.parse(fs.readFileSync(process.env.HP_FIXTURE,'utf8'));
  await p.waitForSelector('.hp-stat');
  const stats=(await p.locator('.hp-stat').allInnerTexts()).join(' / ');
  for(const want of ['128 h together','80 h','28 h','52 h'])assert.ok(stats.includes(want),'summary lacks '+want+': '+stats);
- const scen=(await p.locator('.hp-scenario').allInnerTexts()).map(s=>s.replace(/\s+/g,' '));
+ const scen=(await p.locator('.hp-scenario-row .hp-scenario').allInnerTexts()).map(s=>s.replace(/\s+/g,' '));
  assert.deepEqual(scen.map(s=>s.match(/(−?\d+ h) left/)[1]),['28 h','16 h','4 h','−4 h'],scen.join(' | '));
  assert.equal(await p.evaluate(()=>window.pwned),undefined,'a task title ran as markup');
  // every number the server derives reaches the page under its real name
@@ -48,6 +48,16 @@ const plan=JSON.parse(fs.readFileSync(process.env.HP_FIXTURE,'utf8'));
  const pan=await p.evaluate(()=>document.documentElement.scrollWidth-document.documentElement.clientWidth);
  assert.ok(pan<=0,'page pans sideways by '+pan+' at '+width);
  if(width===390){assert.equal(await p.locator('.hp-agenda').count(),1,'phones get the agenda');assert.equal(await p.locator('.hp-grid').count(),0);await p.close();assert.deepEqual(errors,[]);continue;}
+ // the assistant sequence: ghost bars only when asked, and never a write
+ assert.equal(await p.locator('.hp-bar.is-seq').count(),0,'sequence hidden by default');
+ const before=await p.evaluate(()=>calls.length);
+ await p.click('.hp-seq-toggle');
+ assert.ok(await p.locator('.hp-bar.is-seq').count()>0,'sequence ghost bars');
+ assert.ok(!(await p.evaluate((n)=>calls.slice(n).some(x=>x.method==='POST'&&x.url==='/api/home/plan'),before)),'showing the sequence wrote the plan');
+ await p.click('.hp-seq-toggle');
+ // long chip lists fold; their counts stay visible
+ assert.match(await p.locator('.hp-fold > summary').first().innerText(),/Unknown effort · \d+/i);
+ assert.equal(await p.locator('.hp-fold').first().evaluate(d=>d.open),false);
  // 2. a cell edit is a draft, previewed, not saved
  await p.click('[data-hp-focus="c:home/plan-windows#panes:2026-11-07"]');await p.keyboard.type('6');await p.keyboard.press('Enter');await p.waitForTimeout(100);
  assert.match(await p.locator('.hp-mode').first().innerText(),/Draft · 1 change not saved/);
