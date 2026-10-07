@@ -130,8 +130,8 @@
 .pill.light { background: var(--bg); color: var(--text); border: 1px solid var(--base-30); }
 #todosView .agent-head { display: none; }
 #pickerModal .modal-title { font-family: var(--sans, system-ui) !important; letter-spacing: 0 !important; text-transform: none !important; font-weight: 600; }
-/* four menu items fit a small phone: icons go first, then the gaps */
-@media (max-width: 400px) {
+/* four menu items fit a small phone (320–379px): icons go first, then the gaps */
+@media (max-width: 379px) {
   #railGroups { justify-content: space-between !important; }
   #railGroups .rail-item { padding: 6px 6px !important; }
   #railGroups .rail-glyph { display: none !important; }
