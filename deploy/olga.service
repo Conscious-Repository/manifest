@@ -12,7 +12,7 @@ Group=benjamin
 ExecStart=/home/benjamin/.local/share/olga/olga-launch.sh -vault /private/consciousrepo -addr 127.0.0.1:7781 -password-file /private/olga/password -audit-dir /private/olga \
   -liber -typesafe-key /private/olga/typesafe-key -liber-log /private/olga/liber.log \
   -work-root /home/benjamin/src/olga-work -runtime /home/benjamin/.local/share/olga -seed /home/benjamin/src/manifest \
-  -claude /home/benjamin/.local/bin/claude -go /usr/local/go/bin/go \
+  -claude /home/benjamin/.local/bin/claude -go /usr/bin/go \
   -node /home/benjamin/.hermes/node/bin/node -node-path /home/benjamin/.cache/manifest-qa/node_modules
 Restart=on-failure
 RestartSec=2
