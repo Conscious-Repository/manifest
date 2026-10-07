@@ -282,3 +282,26 @@ func TestOlgaPreviewIsReadOnly(t *testing.T) {
 		t.Fatalf("preview served outside its prefix: %d", w.Code)
 	}
 }
+
+// Benjamin's Manifest lists Olga's shared Home-task Liber chats and shows them
+// read-only on the task; a reader ignores fields it doesn't know (plan §6 rule 5).
+func TestLiberSharedThreadsReachBenjamin(t *testing.T) {
+	vault := t.TempDir()
+	home := filepath.Join(vault, "system", "home")
+	os.MkdirAll(filepath.Join(home, "chat"), 0o700)
+	os.WriteFile(filepath.Join(home, "chat", "home_2froof-on.json"), []byte(`{"v":1,"id":"task-x","kind":"task","taskId":"home/roof-on","shared":true,"futureField":{"a":1},
+	 "updated":"2026-10-07T10:00:00Z","turns":[{"id":"t1","who":"olga","text":"What first?"},{"id":"t2","who":"liber","text":"The flashing.","cards":[{"id":"k1","kind":"proposal","state":"applied","summary":"Add task: quotes"}]}],
+	 "server":{"turnModels":{"t2":"gpt-5.6-sol"}}}`), 0o600)
+	owner := &Server{}
+	owner.UseHomePlan(home, func(p string, b []byte) error { return os.WriteFile(p, b, 0o600) })
+	got := owner.liberThreads()
+	lt := got["home/roof-on"]
+	if lt == nil || len(lt.Turns) != 2 {
+		t.Fatalf("threads %v", got)
+	}
+	v := liberView(lt)
+	b, _ := json.Marshal(v)
+	if !strings.Contains(string(b), "gpt-5.6-sol") || !strings.Contains(string(b), "Add task: quotes") {
+		t.Fatalf("Benjamin's view %s", b)
+	}
+}

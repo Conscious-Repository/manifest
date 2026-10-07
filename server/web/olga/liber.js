@@ -259,3 +259,6 @@ async function liberTaskThreadIds(force) {
   } catch (e) { liber.taskThreads = liber.taskThreads || new Map(); }
   return liber.taskThreads;
 }
+
+// olga.js routes once before this file loads; a page opened on #/chat routes again now.
+if (/^#\/chat/.test(location.hash) && typeof olgaRoute === 'function') olgaRoute();

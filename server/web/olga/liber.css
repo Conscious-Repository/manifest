@@ -86,3 +86,4 @@
   .liber-pane { min-height: calc(100dvh - 120px); }
   .liber-msg { max-width: 94%; }
 }
+.liber-card.is-change .liber-card-summary { font-weight: 400; }
