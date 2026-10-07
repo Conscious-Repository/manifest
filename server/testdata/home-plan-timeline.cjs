@@ -40,6 +40,11 @@ const plan=JSON.parse(fs.readFileSync(process.env.HP_FIXTURE,'utf8'));
  const scen=(await p.locator('.hp-scenario').allInnerTexts()).map(s=>s.replace(/\s+/g,' '));
  assert.deepEqual(scen.map(s=>s.match(/(−?\d+ h) left/)[1]),['28 h','16 h','4 h','−4 h'],scen.join(' | '));
  assert.equal(await p.evaluate(()=>window.pwned),undefined,'a task title ran as markup');
+ // every number the server derives reaches the page under its real name
+ const shown=await p.evaluate(()=>document.querySelector('.hp').innerText);
+ assert.ok(!/NaN|undefined/.test(shown),'a derived field is missing: '+(shown.match(/.{0,40}(NaN|undefined).{0,20}/)||[])[0]);
+ if(width!==390)assert.match(await p.locator('.hp-free').allInnerTexts().then(t=>t.join(' ')),/16 h/,'free hours per weekend');
+ else assert.match(shown,/16 h together · 16 h free/,'free hours on the agenda');
  const pan=await p.evaluate(()=>document.documentElement.scrollWidth-document.documentElement.clientWidth);
  assert.ok(pan<=0,'page pans sideways by '+pan+' at '+width);
  if(width===390){assert.equal(await p.locator('.hp-agenda').count(),1,'phones get the agenda');assert.equal(await p.locator('.hp-grid').count(),0);await p.close();assert.deepEqual(errors,[]);continue;}

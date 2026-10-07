@@ -331,7 +331,7 @@ function hpGrid(v) {
     });
   }
   grid.append(rowHead("Free", "after held + placed"));
-  weeks.forEach((w) => grid.append(cell("hp-free" + (w.free < 0 ? " hp-neg" : "") + (w.past ? " is-past" : ""), w.status === "after" || (!w.sharedHours && !w.allocatedHours) ? "" : (w.free < 0 ? "−" : "") + hpH(Math.abs(w.free)))));
+  weeks.forEach((w) => grid.append(cell("hp-free" + (w.freeHours < 0 ? " hp-neg" : "") + (w.past ? " is-past" : ""), w.status === "after" || (!w.sharedHours && !w.allocatedHours) ? "" : (w.freeHours < 0 ? "−" : "") + hpH(Math.abs(w.freeHours)))));
   wrap.append(grid);
   return wrap;
 }
@@ -372,7 +372,7 @@ function hpAgenda(v) {
     const sec = el("section", "hp-week is-" + w.status);
     const head = el("div", "hp-week-head");
     head.append(el("strong", "", w.status === "after" ? "Week of " + hpShort(w.start) : hpWeekend(w.saturday)));
-    head.append(el("span", "hp-label-sub", w.status === "shared" ? hpH(w.sharedHours) + " together · " + (w.free < 0 ? "over by " + hpH(-w.free) : hpH(w.free) + " free") : w.status === "solo" ? w.present.map(hpPerson).join(", ") + " only — light solo work" : HP_STATUS[w.status] || ""));
+    head.append(el("span", "hp-label-sub", w.status === "shared" ? hpH(w.sharedHours) + " together · " + (w.freeHours < 0 ? "over by " + hpH(-w.freeHours) : hpH(w.freeHours) + " free") : w.status === "solo" ? w.present.map(hpPerson).join(", ") + " only — light solo work" : HP_STATUS[w.status] || ""));
     sec.append(head);
     (w.milestones || []).forEach((id) => { const m = p.milestones[id]; sec.append(el("div", "hp-ms-mark is-" + m.kind + (m.confirmed ? " is-confirmed" : ""), (m.kind === "deadline" ? "◆ " : "◇ ") + hpShort(m.date) + " · " + m.title + (m.kind === "target" && !m.confirmed ? " (draft target)" : ""))); });
     (w.events || []).forEach((id) => { const e = (p.events || {})[id]; if (e) sec.append(el("div", "hp-event", hpShort(e.date) + " · " + e.title + " (−" + hpH(e.hours) + ")")); });
@@ -438,7 +438,7 @@ function hpOpen(v) {
   const later = Object.values(p.milestones || {}).filter((m) => m.kind === "later");
   if (later.length) {
     box.append(el("span", "micro-label", "Later, after weathertight"));
-    later.forEach((m) => box.append(el("div", "hp-decision", m.title + (m.note ? " — " + m.note : ""))));
+    later.forEach((m) => { const row = el("div", "hp-decision"); row.append(el("span", "hp-later-title", m.title)); if (m.note) row.append(el("span", "hp-label-sub", m.note)); box.append(row); });
   }
   return box;
 }
@@ -648,7 +648,7 @@ function hpItemFields(path, it, v, isTask) {
   else {
     const pick = el("select", "pp-in");
     pick.append(el("option", "", "＋ place on a weekend…"));
-    weeks.filter((w) => !(it.allocations || {})[w.saturday]).forEach((w) => { const o = el("option", "", hpWeekend(w.saturday) + " · " + (w.status === "shared" ? hpH(Math.max(0, w.free)) + " free" : HP_STATUS[w.status])); o.value = w.saturday; pick.append(o); });
+    weeks.filter((w) => !(it.allocations || {})[w.saturday]).forEach((w) => { const o = el("option", "", hpWeekend(w.saturday) + " · " + (w.status === "shared" ? hpH(Math.max(0, w.freeHours)) + " free" : HP_STATUS[w.status])); o.value = w.saturday; pick.append(o); });
     pick.setAttribute("aria-label", "Place on a weekend");
     pick.onchange = () => { if (/^\d{4}-/.test(pick.value)) hpEdit(path.concat(["allocations", pick.value]), Math.min(8, (it.estimate && it.estimate.hours) || 8)); };
     alloc.append(pick);

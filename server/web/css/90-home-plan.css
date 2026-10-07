@@ -135,3 +135,5 @@
 .hp-event { display: block; font: 10px var(--mono); color: var(--base-60); overflow-wrap: anywhere; }
 .hp-editor > *, .hp-fields > *, .hp-field > *, .hp-est > * { min-width: 0; max-width: 100%; }
 @media (max-width: 860px) { .hp-fields { grid-template-columns: minmax(0, 1fr); } .hp-est { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.hp-decision { font-size: 13px; }
+.hp-later-title { font: 13px var(--sans); }
