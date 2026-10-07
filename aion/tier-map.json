@@ -1149,9 +1149,94 @@
   "reason": "internal ops",
   "tier": "internal"
  },
+ "2026-09-20 rj sync.md": {
+  "bytes": 52865,
+  "reason": "owner · chat 2026-10-06 (Jev advised held: comp, personal, legal)",
+  "tier": "held"
+ },
  "2026-09-21 andy bromberg.md": {
   "bytes": 34468,
   "reason": "owner · approvals inbox (granola)",
   "tier": "internal"
+ },
+ "2026-09-22 glp market brainstorm.md": {
+  "bytes": 30117,
+  "reason": "owner · approvals inbox (granola)",
+  "tier": "held"
+ },
+ "2026-09-22 hiring brainstorm.md": {
+  "bytes": 28013,
+  "reason": "owner · approvals inbox (granola)",
+  "tier": "held"
+ },
+ "2026-09-22 web of trust brainstorm.md": {
+  "bytes": 43548,
+  "reason": "owner · approvals inbox (granola)",
+  "tier": "held"
+ },
+ "2026-09-23 ken cron.md": {
+  "bytes": 41475,
+  "reason": "owner · approvals inbox (granola)",
+  "tier": "held"
+ },
+ "2026-09-24 amity ventures.md": {
+  "bytes": 49457,
+  "reason": "owner · approvals inbox (granola)",
+  "tier": "internal"
+ },
+ "2026-09-24 david cahn.md": {
+  "bytes": 23314,
+  "reason": "owner · approvals inbox (granola)",
+  "tier": "internal"
+ },
+ "2026-09-24 mike spain intro.md": {
+  "bytes": 41870,
+  "reason": "owner · approvals inbox (granola)",
+  "tier": "internal"
+ },
+ "2026-09-25 brainstorming.md": {
+  "bytes": 28718,
+  "reason": "owner · approvals inbox (granola)",
+  "tier": "held"
+ },
+ "2026-09-25 ljv ii lee, jonathan and scott.md": {
+  "bytes": 45236,
+  "reason": "owner · approvals inbox (granola)",
+  "tier": "internal"
+ },
+ "2026-09-28 a16z.md": {
+  "bytes": 33370,
+  "reason": "owner · approvals inbox (granola)",
+  "tier": "internal"
+ },
+ "2026-09-28 team sync.md": {
+  "bytes": 28955,
+  "reason": "owner · approvals inbox (granola)",
+  "tier": "open"
+ },
+ "2026-10-02 - 2026-10-05 psum update.md": {
+  "bytes": 3229,
+  "reason": "owner · chat 2026-10-06 (Jev leaned internal, low confidence)",
+  "tier": "internal"
+ },
+ "2026-10-02 psum update.md": {
+  "bytes": 1454,
+  "reason": "owner · approvals inbox (email)",
+  "tier": "held"
+ },
+ "2026-10-05 aion sync.md": {
+  "bytes": 24109,
+  "reason": "owner · approvals inbox (granola)",
+  "tier": "open"
+ },
+ "2026-10-06 gokhan intro.md": {
+  "bytes": 28045,
+  "reason": "owner · approvals inbox (granola)",
+  "tier": "internal"
+ },
+ "2026-10-06 jacob orrell intro.md": {
+  "bytes": 26095,
+  "reason": "owner · approvals inbox (granola)",
+  "tier": "held"
  }
 }
