@@ -191,6 +191,18 @@ func (s *Service) Submit(input Input) (string, error) {
 		if json.Unmarshal(b, &j) != nil || j.ID != id {
 			return "", fmt.Errorf("extraction job unreadable")
 		}
+		// a refusal that came before any model ran (a stale context, a guard)
+		// had no effects: submitting the note again queues it again, the
+		// earlier refusal kept in the reason (2026-10-07)
+		if j.State == "refused" && j.Version == 1 && !j.Replay && j.Execution == nil && j.Model == "" && j.SpentUSD == 0 && len(j.Candidates) == 0 && j.Published == 0 {
+			again := Job{Version: 1, OwnershipRevision: fence.Revision, ID: id, Input: input, State: "queued", Started: time.Now().UTC(),
+				Reason: "submitted again; earlier refused before any model ran: " + j.Reason}
+			if e := s.save(again); e != nil {
+				return "", e
+			}
+			notify = true
+			return id, nil
+		}
 		if j.Version != 1 || j.Replay || j.OwnershipRevision != fence.Revision || j.State == "uncertain" || j.State == "refused" {
 			return "", fmt.Errorf("existing extraction held; reconciliation required, replay=false")
 		}
@@ -300,8 +312,23 @@ func (s *Service) run(path string) {
 		}
 	}
 	if e = s.fresh(j.Input); e != nil {
-		finish("refused", "source or domain context changed before publication")
-		return
+		// nothing has run yet and only the context moved (an approval landed
+		// in the backlog while the job waited): take the current context and
+		// carry on — the job's identity is its source, which is unchanged
+		// (2026-10-07: two intros were refused 30 s after queueing, unread)
+		if j.State == "queued" {
+			if in, ok := s.refreshedInput(j); ok {
+				j.Input = in
+				if s.save(j) != nil {
+					return
+				}
+				e = nil
+			}
+		}
+		if e != nil {
+			finish("refused", "source or domain context changed before publication")
+			return
+		}
 	}
 	if j.State == "queued" {
 		if s.runner == nil || s.runner.ValidateExtractionDuty(j.Input.Ritual) != nil {
@@ -399,6 +426,34 @@ func (s *Service) run(path string) {
 	}
 	finish("completed", "candidates filed for owner review; no vault writes")
 }
+
+// refreshedInput re-reads a queued job's context when its source documents
+// are unchanged (a changed transcript is a new submission's business, not a
+// silent retry). The identity is the source, so it must come out equal.
+func (s *Service) refreshedInput(j Job) (Input, bool) {
+	if j.Input.Ritual == "ooda-email" {
+		return Input{}, false
+	}
+	root, e := os.OpenRoot(s.vault)
+	if e != nil {
+		return Input{}, false
+	}
+	defer root.Close()
+	docs := make([]Document, 0, len(j.Input.Documents))
+	for _, d := range j.Input.Documents {
+		b, e := root.ReadFile(d.Name)
+		if e != nil || string(b) != d.Text {
+			return Input{}, false
+		}
+		docs = append(docs, Document{Name: d.Name})
+	}
+	in, e := ReadInput(s.vault, j.Input.Ritual, docs)
+	if e != nil || in.Validate() != nil || in.ID() != j.ID {
+		return Input{}, false
+	}
+	return in, true
+}
+
 func (s *Service) fresh(i Input) error {
 	root, e := os.OpenRoot(s.vault)
 	if e != nil {

@@ -154,3 +154,92 @@ func TestRetryAfterOutageQueuesOneAttempt(t *testing.T) {
 		t.Fatal("an attempt a model answered is not eligible")
 	}
 }
+
+// A queued job whose CONTEXT moved before anything ran (an approval landed
+// in the backlog) takes the current context and carries on instead of being
+// dropped;
+// a job whose SOURCE changed is still refused, with no silent retry.
+func TestQueuedJobOutlivesABacklogChange(t *testing.T) {
+	for _, sourceChanged := range []bool{false, true} {
+		dir, vault := t.TempDir(), t.TempDir()
+		input := inputFixture()
+		writeInput(t, vault, input)
+		in, err := ReadInput(vault, "aion", []Document{{Name: input.Documents[0].Name}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		ap := approvals.NewStore(filepath.Join(dir, "artifacts"))
+		harness := prepareHandoff(t, dir, "aion", 1)
+		s := New(context.Background(), dir, vault, harness, Config{Aion: true}, hermes.NewRunner(hermes.Config{Enabled: true}), ap)
+		j := Job{Version: 1, OwnershipRevision: 1, ID: in.ID(), Input: in, State: "queued", Started: time.Now()}
+		if err := s.save(j); err != nil {
+			t.Fatal(err)
+		}
+		// an approval lands in the backlog while the job waits
+		if err := os.WriteFile(filepath.Join(vault, "system/aion/backlog.md"), []byte("# aion backlog\n\n- [ ] Approved meanwhile [id:: aion-bl/x] [kind:: task]\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if sourceChanged {
+			if err := os.WriteFile(filepath.Join(vault, filepath.FromSlash(in.Documents[0].Name)), []byte("Jane: something else entirely."), 0o644); err != nil {
+				t.Fatal(err)
+			}
+		}
+		// the lab is "down" and the job may not leave: it must not run, only be judged fresh or not
+		s.UseFallback(&Fallback{LabUp: func(context.Context) bool { return false }})
+		s.run(filepath.Join(s.dir, j.ID+".json"))
+		var got Job
+		raw, _ := os.ReadFile(filepath.Join(s.dir, j.ID+".json"))
+		json.Unmarshal(raw, &got)
+		files, _ := filepath.Glob(filepath.Join(s.dir, "*.json"))
+		if sourceChanged {
+			if got.State != "refused" || len(files) != 1 {
+				t.Fatalf("a changed source is refused without a retry: %q %q (%d jobs)", got.State, got.Reason, len(files))
+			}
+			continue
+		}
+		if got.State != "queued" || !strings.Contains(got.Reason, "waiting for the lab model") || len(files) != 1 {
+			t.Fatalf("a queued job outlives a context change and carries on (here: waits for the lab): %q %q (%d jobs)", got.State, got.Reason, len(files))
+		}
+		if !strings.Contains(got.Input.Context["system/aion/backlog.md"], "Approved meanwhile") || !s.validIdentity(got) || got.ID != j.ID {
+			t.Fatal("the job keeps its identity and takes the current backlog")
+		}
+	}
+}
+
+// Submitting a note again re-queues a job that was refused before any model
+// ran; a refused job that did run stays held for reconciliation.
+func TestResubmitRequeuesOnlyAnUnexecutedRefusal(t *testing.T) {
+	for _, ran := range []bool{false, true} {
+		dir, vault := t.TempDir(), t.TempDir()
+		input := inputFixture()
+		writeInput(t, vault, input)
+		in, err := ReadInput(vault, "aion", []Document{{Name: input.Documents[0].Name}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		ap := approvals.NewStore(filepath.Join(dir, "artifacts"))
+		harness := prepareHandoff(t, dir, "aion", 1)
+		s := New(context.Background(), dir, vault, harness, Config{Aion: true}, hermes.NewRunner(hermes.Config{Enabled: true}), ap)
+		old := Job{Version: 1, OwnershipRevision: 1, ID: in.ID(), Input: in, State: "refused", Reason: "source or domain context changed before publication", Started: time.Now()}
+		if ran {
+			old.Execution = &hermes.ExtractionExecution{Provider: "lab-sparks", Model: "deepseek-v4.1-flash", ResponseModel: "deepseek-v4.1-flash", Steps: 1, Completed: true, Status: 200}
+			old.Model = "deepseek-v4.1-flash"
+		}
+		if err := s.save(old); err != nil {
+			t.Fatal(err)
+		}
+		id, err := s.Submit(in)
+		var got Job
+		raw, _ := os.ReadFile(filepath.Join(s.dir, old.ID+".json"))
+		json.Unmarshal(raw, &got)
+		if ran {
+			if err == nil || got.State != "refused" {
+				t.Fatalf("a refusal after a model ran stays held: %v %q", err, got.State)
+			}
+			continue
+		}
+		if err != nil || id != old.ID || got.State != "queued" || !strings.Contains(got.Reason, "earlier refused before any model ran") {
+			t.Fatalf("an unexecuted refusal is queued again: %v %q %q", err, got.State, got.Reason)
+		}
+	}
+}
