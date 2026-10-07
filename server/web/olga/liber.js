@@ -151,7 +151,7 @@ async function liberShow(parts) {
   const v = liberView(); v.hidden = false;
   document.body.classList.add('liber-on');
   if (liber.stop) { liber.stop(); liber.stop = null; }
-  const which = parts[1] === 'task' ? { task: decodeURIComponent(parts.slice(2).join('/')) } : parts[1] ? { id: parts[1] } : null;
+  const which = parts[1] === 'task' ? { task: decodeURIComponent(parts.slice(2).join('/')) } : parts[1] && parts[1] !== 'new' ? { id: parts[1] } : null;
   v.classList.toggle('is-thread', !!which || parts[1] === 'new');
   v.replaceChildren();
   const list = el('div', 'liber-list'), pane = el('div', 'liber-pane');
