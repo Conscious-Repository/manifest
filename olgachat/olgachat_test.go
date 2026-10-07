@@ -96,7 +96,6 @@ func TestChangedFlagsFilesOutsideHerLayer(t *testing.T) {
 	}
 }
 
-
 func TestRecoverSettlesInterruptedTurns(t *testing.T) {
 	dir := t.TempDir()
 	st := &Store{Private: filepath.Join(dir, "olga"), Shared: filepath.Join(dir, "home"), Write: func(p string, b []byte) error {

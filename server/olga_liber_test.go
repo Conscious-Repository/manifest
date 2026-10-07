@@ -87,7 +87,9 @@ func liberRig(t *testing.T, voice *fakeVoice, router olgachat.Router) (do func(m
 	if w := raw("POST", "/api/home/plan", string(body), "", c); w.Code != 200 {
 		t.Fatalf("seed plan: %d %s", w.Code, w.Body)
 	}
-	return func(method, path, body, origin string) *httptest.ResponseRecorder { return raw(method, path, body, origin, c) }, vault
+	return func(method, path, body, origin string) *httptest.ResponseRecorder {
+		return raw(method, path, body, origin, c)
+	}, vault
 }
 
 func waitThread(t *testing.T, do func(string, string, string, string) *httptest.ResponseRecorder, q string, done func(*olgachat.Thread) bool) *olgachat.Thread {
@@ -242,12 +244,12 @@ func (s *switchRouter) Route(context.Context, jev.RouteInput) (*jev.RouteAdvice,
 func TestOlgaStrictInput(t *testing.T) {
 	do, _ := liberRig(t, &fakeVoice{answer: func(string) string { return "ok" }}, nil)
 	for body, want := range map[string]int{
-		`{"text":"Buy paint","domain":"Home"}`:              200,
-		`{"text":"Buy paint\nand brushes","domain":"Home"}`: 400,
+		`{"text":"Buy paint","domain":"Home"}`:               200,
+		`{"text":"Buy paint\nand brushes","domain":"Home"}`:  400,
 		`{"text":"Buy paint [owner:: ben]","domain":"Home"}`: 400,
-		`{"text":"- Buy paint","domain":"Home"}`:            400,
-		`{"text":"Buy paint @alfred","domain":"Home"}`:      400,
-		`{"text":"Buy paint","domain":"Home","secret":1}`:   400,
+		`{"text":"- Buy paint","domain":"Home"}`:             400,
+		`{"text":"Buy paint @alfred","domain":"Home"}`:       400,
+		`{"text":"Buy paint","domain":"Home","secret":1}`:    400,
 	} {
 		if w := do("POST", "/api/tasks/item", body, ""); w.Code != want {
 			t.Errorf("%s → %d, want %d (%s)", body, w.Code, want, w.Body)
