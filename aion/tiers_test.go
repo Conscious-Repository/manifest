@@ -153,7 +153,8 @@ func TestWriteTierMapEntry(t *testing.T) {
 	if err := os.WriteFile(p, tierMapJSON, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	const name = "2026-09-20 rj sync.md"
+	// a note the real map can never hold: the owner tiers real ones over time
+	const name = "2099-01-01 not a real sync.md"
 	if err := WriteTierMapEntry(p, name, TierEntry{Tier: TierHeld, Reason: "owner · approvals inbox (granola)", Bytes: 12}); err != nil {
 		t.Fatal(err)
 	}
@@ -168,7 +169,7 @@ func TestWriteTierMapEntry(t *testing.T) {
 	if e := m[name]; e.Tier != TierHeld || e.Reason != "owner · approvals inbox (granola)" || e.Bytes != 12 {
 		t.Fatalf("entry = %+v", e)
 	}
-	if !m.HeldSource("log/2026-09-20 rj sync") {
+	if !m.HeldSource("log/2099-01-01 not a real sync") {
 		t.Fatal("the recorded tier must govern the export predicate")
 	}
 	// override in place: same count, new tier

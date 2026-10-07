@@ -209,7 +209,10 @@ func (s *Store) List(status string) []Proposal {
 			out = append(out, p)
 		}
 	}
-	sort.Slice(out, func(i, j int) bool { return out[i].Created < out[j].Created })
+	// Stable: one extraction files many cards in the same second, and an
+	// unstable sort reshuffled those ties every time one card was decided —
+	// the owner lost his place mid-review (2026-10-07). Ties keep file order.
+	sort.SliceStable(out, func(i, j int) bool { return out[i].Created < out[j].Created })
 	return out
 }
 

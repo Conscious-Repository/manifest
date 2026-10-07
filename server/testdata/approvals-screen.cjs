@@ -41,6 +41,12 @@ const root=path.join(__dirname,'../web');
  assert.equal(await p.locator('.feed-probably-not .feed-card').count(),2,'every folded card is still there');
  await p.locator('.feed-probably-not-head').click();await p.waitForTimeout(50);await p.evaluate(()=>paint());
  assert.equal(await p.locator('details.feed-probably-not').evaluate(d=>d.open),true,'stays open across a repaint');
+ // 2b. a card keeps the lane it was first painted in while the owner works:
+ // approving a sibling (now "already tracked") must not pull it into the fold
+ const lanes=await p.evaluate(()=>{const a={id:'a',screen:{state:'advised',fold:false}},b={id:'b',screen:{state:'pending',fold:false}};
+  const r=[feedFolded(a),feedFolded(b)];a.screen.fold=true;b.screen={state:'advised',fold:true};r.push(feedFolded(a),feedFolded(b));
+  b.screen.fold=false;r.push(feedFolded(b));feedFoldPlaced=new Map();r.push(feedFolded(a));return r;});
+ assert.deepEqual(lanes,[false,false,false,true,true,true],'placed once; a pending Jev judgment settles once; a new visit re-places');
  // 3. everyone on an email thread is named; a person without a note is one tap from a link
  await p.addStyleTag({content:fs.readFileSync(path.join(root,'css/55-approvals.css'),'utf8')});
  const people=await p.evaluate(()=>{window.attachWikilinkAutocomplete=()=>{};
@@ -52,5 +58,5 @@ const root=path.join(__dirname,'../web');
  assert.deepEqual(await p.evaluate(()=>att),['rj tevonian','Jon Chu'],'one tap links');
  assert.deepEqual(await p.locator('.attendee-unlinked-chip').allTextContents(),['+ Raquel Colom']);
  assert.deepEqual(errors,[]);
- console.log('PASS: reject asks why in one tap (no owner/goal reason), typed or cancelled; the fold is collapsed, counted, complete and stays open; unknown thread participants are offered as one-tap links.');
+ console.log('PASS: reject asks why in one tap (no owner/goal reason), typed or cancelled; the fold is collapsed, counted, complete and stays open; a card keeps its lane through a visit; unknown thread participants are offered as one-tap links.');
 }finally{await browser.close();}})().catch(e=>{console.error(e);process.exitCode=1;});

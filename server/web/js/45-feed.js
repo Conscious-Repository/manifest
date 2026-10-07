@@ -89,6 +89,20 @@ const FEED_TAIL_LANES = [ // after the empty-state check, like today
 // feedProbablyNot is the fold: a <details> that remembers whether you opened
 // it this session, so a repaint (the 3 s poll) does not snap it shut.
 let feedProbablyNotOpen = false;
+// feedFoldPlaced pins each card's lane (main list or fold) to where it was
+// first painted this visit. A decision changes what the screen sees — an
+// approved line makes a sibling "already tracked", Jev advice lands a beat
+// after a card does — and cards used to jump in or out of the fold under the
+// owner's cursor (2026-10-07). New reasons still show on the card itself;
+// the next visit to the feed places everything afresh.
+let feedFoldPlaced = new Map();
+function feedFolded(c) {
+  if (feedFoldPlaced.has(c.id)) return feedFoldPlaced.get(c.id);
+  const fold = !!(c.screen && c.screen.fold);
+  // Jev still judging: place it as it stands, but decide for good later
+  if (!(c.screen && c.screen.state === "pending")) feedFoldPlaced.set(c.id, fold);
+  return fold;
+}
 function feedProbablyNot(cards) {
   const fold = el("details", "feed-probably-not");
   fold.open = feedProbablyNotOpen;
@@ -105,6 +119,7 @@ function showFeed(h) {
   // The address decides the view: #/feed is the Inbox, #/feed/approvals the
   // approvals lane, anything else a reader view (46-consume.js).
   if (typeof consumeApplyHash === "function") consumeApplyHash(h || location.hash);
+  feedFoldPlaced = new Map(); // a fresh visit places every card afresh
   renderFeedFilters();
   feedLayout();
   // paint the last known view at once and refresh behind it — the fetch used
@@ -237,8 +252,8 @@ function renderFeed() {
     // "Probably not" (2026-10-06): cards the screen folds go under ONE
     // collapsed, counted section at the end of the approvals — never
     // rejected, never hidden; each still carries its reason and full controls
-    const folded = cards.filter((c) => c.screen && c.screen.fold);
-    cards.filter((c) => !(c.screen && c.screen.fold)).forEach((c) => host.appendChild(FEED_CARD.proposal(c)));
+    const folded = cards.filter(feedFolded);
+    cards.filter((c) => !feedFolded(c)).forEach((c) => host.appendChild(FEED_CARD.proposal(c)));
     if (folded.length) host.appendChild(feedProbablyNot(folded));
   });
   // one line pointing at the reading, which lives in its own views now; it

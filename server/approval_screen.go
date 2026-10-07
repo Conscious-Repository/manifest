@@ -242,7 +242,7 @@ func (s *Server) screenExamples(store *approvals.Store) screenExampleSet {
 			}
 			out = append(out, ex{q.Created, fmt.Sprintf("%s — %s (from “%s”)", pl.Kind, pl.Title, path.Base(src))})
 		}
-		sort.Slice(out, func(i, j int) bool { return out[i].at > out[j].at })
+		sort.SliceStable(out, func(i, j int) bool { return out[i].at > out[j].at })
 		if len(out) > screenExamplesEach {
 			out = out[:screenExamplesEach]
 		}
