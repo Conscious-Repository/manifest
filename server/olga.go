@@ -3,6 +3,7 @@ package server
 // Olga is a deliberately unwired Server: the existing planner handlers, with
 // an explicit route allowlist and a vaultwriter capability for system/olga only.
 import (
+	"errors"
 	"crypto/hmac"
 	"crypto/rand"
 	"crypto/sha256"
@@ -39,12 +40,31 @@ func (l olgaLocator) DailyNote(date string) (string, error) {
 // NewOlgaHandler never receives the owner's Server or any integration objects.
 // An empty/missing password file fails closed; changing it revokes sessions.
 func NewOlgaHandler(vaultRoot, passwordFile, auditDir string) (http.Handler, error) {
+	return NewOlgaHandlerWith(OlgaOptions{Vault: vaultRoot, PasswordFile: passwordFile, AuditDir: auditDir})
+}
+
+// OlgaOptions configures her listener. Preview runs a read-only copy under a
+// path prefix with no sign-in (reachable only through her signed-in live
+// server's proxy); Liber wires her assistant (olga_liber.go).
+type OlgaOptions struct {
+	Vault, PasswordFile, AuditDir string
+	Preview                       string // "/preview/<change-id>" → preview mode
+	Liber                         *LiberConfig
+}
+
+var errOlgaPreview = errors.New("Preview — changes here aren't saved")
+
+func NewOlgaHandlerWith(opts OlgaOptions) (http.Handler, error) {
+	vaultRoot, passwordFile, auditDir := opts.Vault, opts.PasswordFile, opts.AuditDir
 	root := filepath.Join(vaultRoot, "system", "olga")
 	if err := os.MkdirAll(filepath.Join(root, "daily"), 0700); err != nil {
 		return nil, err
 	}
 	writer := vaultwriter.New(vaultRoot).WithAudit(auditDir).Grant(vaultwriter.Capability{Name: "olga", Zone: record.ZoneSystem, Pattern: "system/olga/**", Actor: vaultwriter.ActorPortalMember}, vaultwriter.Capability{Name: "home", Zone: record.ZoneSystem, Pattern: "system/home/**", Actor: vaultwriter.ActorPortalMember})
 	write := func(path string, data []byte) error {
+		if opts.Preview != "" {
+			return errOlgaPreview
+		}
 		rel, err := filepath.Rel(vaultRoot, path)
 		if err != nil {
 			return err
@@ -105,12 +125,23 @@ func NewOlgaHandler(vaultRoot, passwordFile, auditDir string) (http.Handler, err
 		switch r.URL.Path {
 		case "/":
 			b, _ := fs.ReadFile(webfs, "olga/index.html")
+			if opts.Preview != "" {
+				b = olgaPreviewPage(b, opts.Preview)
+			}
 			w.Header().Set("Content-Type", "text/html; charset=utf-8")
 			w.Write(b)
 		case "/olga.js", "/olga.css", "/manifest.webmanifest":
 			r.URL.Path = "/olga/" + strings.TrimPrefix(r.URL.Path, "/")
 			files.ServeHTTP(w, r)
 		default:
+			// Her own layer is served whole (plan §4.2): any file under /olga/
+			// with a known static type — never a directory listing.
+			if strings.HasPrefix(r.URL.Path, "/olga/") && olgaStaticType(r.URL.Path) {
+				if _, err := fs.Stat(webfs, strings.TrimPrefix(r.URL.Path, "/")); err == nil {
+					files.ServeHTTP(w, r)
+					return
+				}
+			}
 			if assets[r.URL.Path] || strings.HasPrefix(r.URL.Path, "/fonts/") || strings.HasPrefix(r.URL.Path, "/icons/") || r.URL.Path == "/manifest.webmanifest" {
 				files.ServeHTTP(w, r)
 			} else {
@@ -123,8 +154,22 @@ func NewOlgaHandler(vaultRoot, passwordFile, auditDir string) (http.Handler, err
 		lock.Lock()
 		defer lock.Unlock()
 		r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
+		if err := olgaStrictInput(r); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
 		mux.ServeHTTP(w, r)
 	})
+	if opts.Preview != "" {
+		return olgaPreviewHandler(opts.Preview, gated), nil
+	}
+	var liber http.Handler
+	var err error
+	if opts.Liber != nil {
+		if liber, err = newLiber(opts, gated, write); err != nil {
+			return nil, err
+		}
+	}
 	key, err := olgaSessionKey(passwordFile + ".session-key")
 	if err != nil {
 		return nil, err
@@ -218,6 +263,12 @@ func NewOlgaHandler(vaultRoot, passwordFile, auditDir string) (http.Handler, err
 		}
 		if r.URL.Path == "/api/session" && r.Method == "GET" {
 			writeJSON(w, map[string]bool{"ok": true})
+			return
+		}
+		// Liber and previews run outside the planner's one-request-at-a-time
+		// lock (a model turn takes seconds to minutes); they lock per thread.
+		if liber != nil && (strings.HasPrefix(r.URL.Path, "/api/liber/") || strings.HasPrefix(r.URL.Path, "/preview/")) {
+			liber.ServeHTTP(w, r)
 			return
 		}
 		gated.ServeHTTP(w, r)

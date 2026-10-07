@@ -1,0 +1,40 @@
+{
+  "permissions": {
+    "defaultMode": "dontAsk",
+    "allow": [
+      "Read(./**)",
+      "Edit(./server/web/olga/**)",
+      "Write(./server/web/olga/**)",
+      "Glob",
+      "Grep",
+      "Bash(go build -o /dev/null ./cmd/olga)",
+      "Bash(go vet ./server/...)",
+      "Bash(node --check:*)"
+    ],
+    "deny": [
+      "Read(//private/**)",
+      "Read(~/.claude/**)",
+      "Read(~/.claude.json)",
+      "Read(~/.codex/**)",
+      "Read(~/.hermes/**)",
+      "Read(~/.config/**)",
+      "Read(~/.ssh/**)",
+      "Read(~/.local/**)",
+      "Read(//etc/**)",
+      "Edit(./server/web/js/**)",
+      "Edit(./server/web/css/**)",
+      "Edit(./**/*.go)",
+      "WebFetch",
+      "WebSearch",
+      "Bash(curl:*)",
+      "Bash(wget:*)",
+      "Bash(git push:*)"
+    ]
+  },
+  "sandbox": {
+    "enabled": true,
+    "autoAllowBashIfSandboxed": false
+  },
+  "disableAllHooks": true,
+  "enableAllProjectMcpServers": false
+}
