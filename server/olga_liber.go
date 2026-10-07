@@ -41,7 +41,7 @@ type LiberConfig struct {
 	VoiceProvider string // openai-codex
 	TypesafeKey   string // file holding the Jev key ("" → the voice decides)
 	Builder       *olgachat.GitBuilder
-	LogFile       string // Benjamin's log (outside the vault)
+	LogFile       string          // Benjamin's log (outside the vault)
 	Voice         olgachat.Voice  // tests
 	Router        olgachat.Router // tests
 }

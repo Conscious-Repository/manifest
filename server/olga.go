@@ -3,12 +3,12 @@ package server
 // Olga is a deliberately unwired Server: the existing planner handlers, with
 // an explicit route allowlist and a vaultwriter capability for system/olga only.
 import (
-	"errors"
 	"crypto/hmac"
 	"crypto/rand"
 	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io/fs"
 	"manifest/daily"
