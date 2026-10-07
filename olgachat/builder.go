@@ -162,7 +162,12 @@ func (g *GitBuilder) Build(ctx context.Context, ch *Change, brief string, recent
 		res.Problem = p
 		return res, nil
 	}
+	res.Gate = "passed"
+	if g.NodeBin == "" {
+		res.Gate = "skipped"
+	}
 	if p := g.gate(ctx, ch.ID); p != "" {
+		res.Gate = "failed-once"
 		// one retry with what broke
 		out2, sess2, err := g.claude(ctx, wt, settings, res.Session, "The change broke this check on her phone-sized screen, please fix it without changing anything else:\n"+p)
 		res.Session = firstNonEmpty(sess2, res.Session)
@@ -503,7 +508,7 @@ func (g *GitBuilder) gate(ctx context.Context, id string) string {
 	out, err := g.run(ctx, g.Root, []string{"NODE_PATH=" + g.NodePath}, g.NodeBin, script, fmt.Sprintf("http://127.0.0.1:%d/preview/%s/", port, id))
 	if err != nil {
 		if strings.Contains(out, "GATE-SKIP") {
-			return ""
+			return "" // logged as passed; the reason is in the gate output only
 		}
 		return tailText(firstNonEmpty(out, err.Error()), 600)
 	}

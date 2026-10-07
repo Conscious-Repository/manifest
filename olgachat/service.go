@@ -53,6 +53,7 @@ type BuildResult struct {
 	Model         string
 	Session       string
 	Problem       string // the change could not be offered (gate failed, build broke); logged
+	Gate          string // the phone check: passed | skipped | failed-once
 }
 
 // Builder makes, previews and ships app changes (nil → app changes are noted
@@ -661,7 +662,7 @@ func (s *Service) buildTurn(ref Ref, msg string, recent []Exchange, liberID, con
 	}
 	res, berr := s.Builder.Build(ctx, ch, brief, recent)
 	cancel()
-	entry["builderModel"], entry["files"], entry["problem"] = res.Model, res.Files, res.Problem
+	entry["builderModel"], entry["files"], entry["problem"], entry["gate"] = res.Model, res.Files, res.Problem, res.Gate
 	if berr != nil {
 		entry["error"] = berr.Error()
 	}

@@ -11,6 +11,7 @@ const base = process.argv[2];
   page.on('pageerror', e => problems.push('script error: ' + e.message));
   const api = async p => (await page.request.get(new URL(p.replace(/^\//, ''), base).href)).json();
   const tasks = await api('/api/tasks').catch(() => null);
+  if (!tasks || !Array.isArray(tasks.domains)) problems.push('her tasks did not load in the preview');
   const home = [];
   for (const dom of (tasks && tasks.domains) || []) {
     if (dom.name !== 'Home') continue;
@@ -22,6 +23,7 @@ const base = process.argv[2];
     const wide = await page.evaluate(() => document.scrollingElement.scrollWidth - innerWidth);
     if (wide > 2) problems.push(view.toUpperCase() + ' scrolls sideways by ' + wide + 'px on a phone');
   }
+  if (!(await page.$('#todosView'))) problems.push('the preview is not her app');
   // every open Home task is findable on TASKS (search box or board)
   const text = await page.evaluate(() => document.body.innerText);
   const missing = home.filter(t => !text.includes(t.slice(0, 40)));
