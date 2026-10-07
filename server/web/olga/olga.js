@@ -80,6 +80,12 @@ function olgaWhen(taskId){
  }
  return box;
 }
+function olgaCommentWhen(at){
+ const d=new Date(at);if(isNaN(d))return '';const time=d.toLocaleTimeString([],{hour:'numeric',minute:'2-digit'});
+ const day=x=>new Date(x.getFullYear(),x.getMonth(),x.getDate()).getTime(),diff=Math.round((day(new Date())-day(d))/864e5);
+ if(diff===0)return 'today, '+time;if(diff===1)return 'yesterday, '+time;
+ return d.toLocaleDateString([],{month:'short',day:'numeric',...(d.getFullYear()!==new Date().getFullYear()?{year:'numeric'}:{})})+', '+time;
+}
 async function openTodoPanel(row){
  const r=typeof row==='string'?(todosCache?.rows||[]).find(r=>r.id===row)||todosCompletedRow(row):row;
  if(!r)return;
@@ -130,12 +136,20 @@ async function openTodoPanel(row){
   notesFold.append(notesView,editNotes,description);parts.push(notesFold);
   // 5. Liber: the latest exchange, the whole conversation one tap away
   if(typeof liberTaskSection==='function'){liberSec=liberTaskSection(r.id,isHome);parts.push(liberSec);}
-  // comments for Benjamin (folded)
-  const comFold=el('details','olga-fold');const cs=el('summary');cs.append(el('span','','Comments'+((notes.comments||[]).length?' · '+notes.comments.length:'')));comFold.append(cs);
-  const entries=el('div');const renderComments=()=>{entries.replaceChildren();for(const c of notes.comments||[]){const item=el('article','olga-comment');item.append(el('div','olga-detail-hint',(c.author_name||c.author)+' · '+new Date(c.at).toLocaleString()),el('p','',c.text));entries.append(item);}};renderComments();
-  const composer=el('form','olga-comment-form');const comment=el('textarea');comment.rows=2;comment.placeholder='Write a comment for Benjamin…';comment.setAttribute('aria-label','Comment');comment.required=true;comment.style.fontSize='16px';
-  const send=el('button','pill','Add comment');send.type='submit';const cerr=el('p','olga-detail-hint');cerr.setAttribute('role','status');composer.append(comment,send,cerr);
-  composer.onsubmit=async e=>{e.preventDefault();if(!comment.value.trim())return;send.disabled=true;try{const updated=await postJSONOk('/api/tasks/notes',{id:r.id,kind:'comment',comment:comment.value});notes.comments=updated.comments;comment.value='';renderComments();cs.firstChild.textContent='Comments · '+notes.comments.length;}catch(err){cerr.textContent=err.message;}finally{send.disabled=false;}};
+  // comments: her conversation with Benjamin, oldest first, hers on the right.
+  // Open when there is any; reopening fetches again so his replies show up.
+  const comFold=el('details','olga-fold olga-convo');comFold.open=!!(notes.comments||[]).length;const cs=el('summary');cs.append(el('span','','Comments'));comFold.append(cs);
+  const entries=el('div','olga-convo-list');
+  const renderComments=()=>{const list=[...(notes.comments||[])].sort((a,b)=>new Date(a.at)-new Date(b.at));entries.replaceChildren();
+   cs.firstChild.textContent='Comments'+(list.length?' · '+list.length:'');
+   if(!list.length)entries.append(el('p','olga-detail-hint','No comments yet. Benjamin sees what you write here and can reply.'));
+   for(const c of list){const mine=c.author==='Olga'||c.author_name==='Olga';const item=el('article','olga-comment olga-convo-msg'+(mine?' is-mine':''));
+    item.append(el('div','olga-convo-who',(mine?'You':(c.author_name||(c.author==='owner'?'Benjamin':c.author)||'Someone'))+' · '+olgaCommentWhen(c.at)),el('p','',c.text));entries.append(item);}
+   const last=list[list.length-1];comment.placeholder=last&&!(last.author==='Olga'||last.author_name==='Olga')?'Reply to Benjamin…':'Write a comment for Benjamin…';};
+  const composer=el('form','olga-comment-form');const comment=el('textarea');comment.rows=2;comment.setAttribute('aria-label','Comment');comment.required=true;comment.style.fontSize='16px';
+  const send=el('button','pill','Add comment');send.type='submit';const cerr=el('p','olga-detail-hint');cerr.setAttribute('role','status');composer.append(comment,send,cerr);renderComments();
+  comFold.addEventListener('toggle',async()=>{if(!comFold.open)return;try{const res=await fetch('/api/tasks/notes?id='+encodeURIComponent(r.id));if(res.ok){notes.comments=(await res.json()).comments;renderComments();}}catch(e){}});
+  composer.onsubmit=async e=>{e.preventDefault();if(!comment.value.trim())return;send.disabled=true;cerr.textContent='';try{const updated=await postJSONOk('/api/tasks/notes',{id:r.id,kind:'comment',comment:comment.value});notes.comments=updated.comments;comment.value='';renderComments();entries.lastChild?.scrollIntoView({block:'nearest'});}catch(err){cerr.textContent=err.message;}finally{send.disabled=false;}};
   comFold.append(entries,composer);parts.push(comFold);
   // 6. planning details (Home): the full editor, one fold away
   if(isHome&&typeof homePlanEditorInto==='function'){const det=el('details','olga-fold');const ds=el('summary');ds.append(el('span','','Planning details'));det.append(ds);const box=el('div','olga-schedule');det.append(box);det.ontoggle=()=>{if(det.open&&!box.childElementCount)homePlanEditorInto(box,r.id);};parts.push(det);}

@@ -79,6 +79,13 @@
 .olga-comment p {white-space:pre-wrap;overflow-wrap:anywhere;}
 .olga-comments .pill {margin-top:8px;}
 .olga-board .tdo-card-text {overflow-wrap:anywhere;}
+.olga-convo-list {display:flex;flex-direction:column;gap:8px;margin:4px 0 12px;}
+.olga-convo .olga-convo-msg {max-width:85%;box-sizing:border-box;align-self:flex-start;padding:8px 12px;border:1px solid var(--line);border-bottom:1px solid var(--line);border-radius:var(--radius-lg);background:var(--bg);}
+.olga-convo .olga-convo-msg.is-mine {align-self:flex-end;background:var(--base-10);border-color:var(--line-soft);}
+.olga-convo-msg p {margin:4px 0 0;font-size:16px;line-height:1.4;}
+.olga-convo-who {font:12px var(--mono);color:var(--base-60);}
+.olga-convo .olga-comment-form textarea {box-sizing:border-box;width:100%;padding:10px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--text);font:16px var(--sans);resize:vertical;}
+.olga-convo .olga-comment-form .pill {margin-top:8px;min-height:44px;}
 @media(max-width:860px){.olga-board {grid-template-columns:1fr;} .olga-task-details .pill,.olga-comments .pill {min-height:44px;} #todosToolbar {flex-wrap:wrap;} #todosSearch {flex:1 1 100%;}}
 
 .olga-board .tdo-card-text {border:0;padding:0;text-align:left;background:transparent;color:var(--text);cursor:pointer;}
