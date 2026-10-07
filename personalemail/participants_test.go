@@ -10,7 +10,10 @@ import (
 
 type mapResolver map[string]string
 
-func (m mapResolver) PersonByEmail(e string) (string, bool) { n, ok := m[strings.ToLower(e)]; return n, ok }
+func (m mapResolver) PersonByEmail(e string) (string, bool) {
+	n, ok := m[strings.ToLower(e)]
+	return n, ok
+}
 
 // Everyone on the thread is named: people with a note are links, everyone
 // else a plain name on its own "no contact note" line — never a guessed link;

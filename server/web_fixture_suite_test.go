@@ -374,7 +374,9 @@ func TestFixtureWritingIA(t *testing.T) { runFixture(t, "writing-ia.cjs", true, 
 
 // The phone compression rules (docs/ui-conventions.md) on chat: head, status
 // line, one-row composer with folds in ＋, ··· as an action list (chat-phone-compression.cjs).
-func TestFixtureChatPhoneCompression(t *testing.T) { runFixture(t, "chat-phone-compression.cjs", true, false) }
+func TestFixtureChatPhoneCompression(t *testing.T) {
+	runFixture(t, "chat-phone-compression.cjs", true, false)
+}
 
 // The single-chat UI pass: clean load, legible meta and menu, 44px phone
 // targets, a whole run-state hint, a shell that fills its column
