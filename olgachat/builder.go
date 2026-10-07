@@ -28,6 +28,13 @@ var builderPrompt string
 //go:embed assets/gate.cjs
 var gateScript []byte
 
+// VoiceShim runs one Liber turn with photos: Hermes's own one-shot path with
+// a multimodal message (the -z flag takes text only). Same profile, same
+// memory-only toolset.
+//
+//go:embed assets/voice.py
+var VoiceShim []byte
+
 // BuilderModel is the only model the builder runs.
 const BuilderModel = "claude-opus-5-5"
 
@@ -112,7 +119,7 @@ func (g *GitBuilder) ensureRepo(ctx context.Context) error {
 func (g *GitBuilder) worktree(id string) string { return filepath.Join(g.Root, id) }
 
 // Build runs (or continues) one change.
-func (g *GitBuilder) Build(ctx context.Context, ch *Change, brief string, recent []Exchange) (BuildResult, error) {
+func (g *GitBuilder) Build(ctx context.Context, ch *Change, brief string, recent []Exchange, images []string) (BuildResult, error) {
 	res := BuildResult{Model: BuilderModel}
 	if err := g.ensureRepo(ctx); err != nil {
 		return res, err
@@ -127,6 +134,17 @@ func (g *GitBuilder) Build(ctx context.Context, ch *Change, brief string, recent
 	g.stopPreview(ch.ID)
 	if err := g.snapshot(filepath.Join(wt, ".olga-data")); err != nil {
 		return res, err
+	}
+	// her screenshots, where the builder may read them
+	var shots []string
+	for i, p := range images {
+		name := fmt.Sprintf("photo-%d%s", i+1, filepath.Ext(p))
+		if copyFile(p, filepath.Join(wt, ".olga-data", "attachments", name)) == nil {
+			shots = append(shots, ".olga-data/attachments/"+name)
+		}
+	}
+	if len(shots) > 0 {
+		brief += "\n\nOlga attached photos/screenshots for this change — look at them with the Read tool before changing anything: " + strings.Join(shots, ", ")
 	}
 	settings := filepath.Join(g.Root, "olga-builder.json")
 	if err := os.WriteFile(settings, builderSettings, 0o644); err != nil {

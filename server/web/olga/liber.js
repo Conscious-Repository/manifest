@@ -14,16 +14,22 @@ async function liberApi(path, body) {
 function liberRef(th) { return th.kind === 'task' ? { task: th.taskId } : { id: th.id }; }
 function liberQuery(ref) { return ref.task ? 'task=' + encodeURIComponent(ref.task) : 'id=' + encodeURIComponent(ref.id); }
 
-// Plain text with paragraphs, simple bullets and **bold** — never HTML.
+// Plain text with paragraphs, simple bullets and **bold** — never HTML. A
+// block may mix a lead-in line with its bullets ("First:\n- this\n- that").
 function liberText(text) {
   const box = el('div', 'liber-text');
+  const bullet = /^\s*([-*•]|\d+[.)])\s+/;
   for (const block of String(text || '').split(/\n{2,}/)) {
-    const lines = block.split('\n');
-    if (lines.every(l => /^\s*([-*•]|\d+[.)])\s+/.test(l))) {
-      const list = el(/^\s*\d/.test(lines[0]) ? 'ol' : 'ul');
-      for (const l of lines) list.append(liberInline(el('li'), l.replace(/^\s*([-*•]|\d+[.)])\s+/, '')));
-      box.append(list);
-    } else box.append(liberInline(el('p'), lines.join('\n')));
+    let list = null, para = [];
+    const flush = () => { if (para.length) box.append(liberInline(el('p'), para.join('\n'))); para = []; };
+    for (const l of block.split('\n')) {
+      if (bullet.test(l)) {
+        flush();
+        if (!list) { list = el(/^\s*\d/.test(l) ? 'ol' : 'ul'); box.append(list); }
+        list.append(liberInline(el('li'), l.replace(bullet, '')));
+      } else if (l.trim()) { list = null; para.push(l); }
+    }
+    flush();
   }
   return box;
 }
@@ -91,7 +97,14 @@ function liberMessages(host, th, onThread) {
     if (t.who === 'liber' && t.status === 'thinking' && !t.text) {
       const dots = el('div', 'liber-thinking'); dots.setAttribute('aria-label', 'Liber is thinking'); dots.append(el('span'), el('span'), el('span'));
       msg.append(dots);
-    } else if (t.text) msg.append(t.who === 'liber' ? liberText(t.text) : el('p', 'liber-mine', t.text));
+    } else {
+      if ((t.images || []).length) {
+        const grid = el('div', 'liber-photos');
+        for (const id of t.images) { const b = el('button', 'liber-photo'); b.type = 'button'; b.setAttribute('aria-label', 'Open photo'); const img = el('img'); img.src = liberPhotoURL(id, liberRef(th)); img.alt = 'Photo'; img.loading = 'lazy'; b.append(img); b.onclick = () => liberViewPhoto(img.src); grid.append(b); }
+        msg.append(grid);
+      }
+      if (t.text) msg.append(t.who === 'liber' ? liberText(t.text) : el('p', 'liber-mine', t.text));
+    }
     for (const c of t.cards || []) msg.append(liberCard(th, c, onThread));
     if (t.queued) msg.append(el('p', 'liber-meta', 'Waiting for Liber…'));
     else if (t.at && t.who === 'olga') msg.append(el('p', 'liber-meta', liberWhen(t.at)));
@@ -99,20 +112,80 @@ function liberMessages(host, th, onThread) {
   }
 }
 
-function liberComposer(placeholder, onSend) {
+// Photos: chosen, pasted or dropped; shrunk on the phone before upload (a
+// 12-megapixel photo becomes ~300 KB), uploaded at once, sent with the words.
+const LIBER_MAX_PHOTOS = 6;
+async function liberShrink(file) {
+  if (file.type === 'image/gif' && file.size < 5e6) return file;
+  try {
+    const bmp = await createImageBitmap(file, { imageOrientation: 'from-image' });
+    const scale = Math.min(1, 1600 / Math.max(bmp.width, bmp.height));
+    const c = document.createElement('canvas'); c.width = Math.round(bmp.width * scale); c.height = Math.round(bmp.height * scale);
+    c.getContext('2d').drawImage(bmp, 0, 0, c.width, c.height);
+    return await new Promise(res => c.toBlob(b => res(b || file), 'image/jpeg', 0.85));
+  } catch (e) { return file; }
+}
+function liberPhotoURL(id, ref) { return '/api/liber/file?id=' + encodeURIComponent(id) + (ref && ref.task ? '&task=' + encodeURIComponent(ref.task) : ''); }
+function liberViewPhoto(src) {
+  const o = el('div', 'liber-photo-view'); o.setAttribute('role', 'dialog'); o.setAttribute('aria-label', 'Photo');
+  const img = el('img'); img.src = src; img.alt = 'Photo';
+  const x = el('button', 'liber-photo-close', '✕'); x.type = 'button'; x.setAttribute('aria-label', 'Close photo');
+  const close = () => { o.remove(); document.removeEventListener('keydown', key); };
+  const key = e => { if (e.key === 'Escape') close(); };
+  x.onclick = close; o.onclick = e => { if (e.target === o) close(); };
+  document.addEventListener('keydown', key);
+  o.append(img, x); document.body.append(o); x.focus();
+}
+
+function liberComposer(placeholder, onSend, scope) {
   const form = el('form', 'liber-composer');
+  const tray = el('div', 'liber-tray'); tray.hidden = true;
+  const row = el('div', 'liber-row-input');
+  const pick = el('input'); pick.type = 'file'; pick.accept = 'image/*'; pick.multiple = true; pick.hidden = true;
+  const add = el('button', 'liber-attach'); add.type = 'button'; add.setAttribute('aria-label', 'Add photos'); add.title = 'Add photos';
+  add.innerHTML = '<svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" d="M4 7h3l2-2.5h6L17 7h3a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V8a1 1 0 0 1 1-1z"/><circle cx="12" cy="13" r="3.6" fill="none" stroke="currentColor" stroke-width="1.8"/></svg>';
   const box = el('textarea', 'liber-input'); box.rows = 1; box.placeholder = placeholder; box.setAttribute('aria-label', placeholder); box.maxLength = 8000; box.enterKeyHint = 'send';
   const send = el('button', 'liber-send', '↑'); send.type = 'submit'; send.setAttribute('aria-label', 'Send'); send.disabled = true;
-  const grow = () => { box.style.height = 'auto'; box.style.height = Math.min(box.scrollHeight, 160) + 'px'; send.disabled = !box.value.trim(); };
+  const photos = []; // {id, url, state: 'up'|'ok'|'bad', node}
+  const ready = () => { const busy = photos.some(p => p.state === 'up'); send.disabled = busy || (!box.value.trim() && !photos.some(p => p.state === 'ok')); tray.hidden = !photos.length; };
+  const grow = () => { box.style.height = 'auto'; box.style.height = Math.min(box.scrollHeight, 160) + 'px'; ready(); };
+  const addFiles = async files => {
+    for (const f of [...files].filter(f => f.type.startsWith('image/'))) {
+      if (photos.length >= LIBER_MAX_PHOTOS) { showToast('Up to ' + LIBER_MAX_PHOTOS + ' photos at a time'); break; }
+      const p = { state: 'up', url: URL.createObjectURL(f) };
+      const chip = el('div', 'liber-chip is-up'); const img = el('img'); img.src = p.url; img.alt = 'Photo to send';
+      const x = el('button', 'liber-chip-x', '✕'); x.type = 'button'; x.setAttribute('aria-label', 'Remove this photo');
+      x.onclick = () => { photos.splice(photos.indexOf(p), 1); chip.remove(); URL.revokeObjectURL(p.url); ready(); };
+      chip.append(img, x); tray.append(chip); p.node = chip; photos.push(p); ready();
+      try {
+        const blob = await liberShrink(f);
+        const r = await fetch('/api/liber/upload' + (scope && scope.task ? '?task=' + encodeURIComponent(scope.task) : ''), { method: 'POST', headers: { 'Content-Type': blob.type || 'application/octet-stream' }, body: blob });
+        if (!r.ok) throw new Error((await r.text()).trim() || 'That photo didn’t upload');
+        p.id = (await r.json()).id; p.state = 'ok'; chip.classList.remove('is-up');
+      } catch (e) { p.state = 'bad'; chip.classList.remove('is-up'); chip.classList.add('is-bad'); chip.title = e.message; showToast(e.message); }
+      ready();
+    }
+  };
+  add.onclick = () => pick.click();
+  pick.onchange = () => { addFiles(pick.files); pick.value = ''; };
+  box.addEventListener('paste', e => { const files = [...(e.clipboardData?.files || [])]; if (files.some(f => f.type.startsWith('image/'))) { e.preventDefault(); addFiles(files); } });
+  form.addEventListener('dragover', e => { if ([...(e.dataTransfer?.items || [])].some(i => i.kind === 'file')) { e.preventDefault(); form.classList.add('is-drop'); } });
+  form.addEventListener('dragleave', () => form.classList.remove('is-drop'));
+  form.addEventListener('drop', e => { form.classList.remove('is-drop'); if (e.dataTransfer?.files?.length) { e.preventDefault(); addFiles(e.dataTransfer.files); } });
   box.oninput = grow;
   box.onkeydown = e => { if (e.key === 'Enter' && !e.shiftKey && !e.isComposing && matchMedia('(hover:hover)').matches) { e.preventDefault(); form.requestSubmit(); } };
   form.onsubmit = async e => {
-    e.preventDefault(); const text = box.value.trim(); if (!text || send.disabled) return;
-    send.disabled = true; box.disabled = true;
-    try { await onSend(text); box.value = ''; } catch (err) { showToast(err.message); }
-    finally { box.disabled = false; grow(); }
+    e.preventDefault(); const text = box.value.trim(); const ids = photos.filter(p => p.state === 'ok').map(p => p.id);
+    if (send.disabled || (!text && !ids.length)) return;
+    send.disabled = true; box.disabled = true; add.disabled = true;
+    try {
+      await onSend(text, ids);
+      box.value = ''; photos.splice(0).forEach(p => { p.node.remove(); URL.revokeObjectURL(p.url); });
+    } catch (err) { showToast(err.message); }
+    finally { box.disabled = false; add.disabled = false; grow(); }
   };
-  form.append(box, send);
+  row.append(add, box, send);
+  form.append(tray, row, pick);
   form.focusInput = () => box.focus();
   form.setText = t => { box.value = t; grow(); box.focus(); };
   return form;
@@ -193,7 +266,7 @@ function liberPaintEmptyPane(pane) {
   pane.replaceChildren(el('div', 'liber-hello'));
   const hello = pane.firstChild;
   hello.append(el('p', 'liber-hello-title', 'Hi Olga — I’m Liber.'), el('p', 'liber-hello-text', 'Ask me anything about your plans, or tell me how you’d like your app to look or work and I’ll show you a preview first.'));
-  const composer = liberComposer('Message Liber', async text => { const th = await liberApi('/api/liber/send', { text }); location.hash = '#/chat/' + th.id; });
+  const composer = liberComposer('Message Liber', async (text, images) => { const th = await liberApi('/api/liber/send', { text, images }); location.hash = '#/chat/' + th.id; }, {});
   pane.append(liberStarters(LIBER_STARTERS_APP, s => composer.setText(s)), composer);
 }
 
@@ -211,12 +284,12 @@ function liberPaintThread(pane, which) {
     liberMessages(msgs, th, onThread);
     if (atBottom) liberScrollEnd();
   };
-  const composer = liberComposer('Message Liber', async text => {
+  const composer = liberComposer('Message Liber', async (text, images) => {
     const ref = th ? liberRef(th) : which || {};
-    const next = await liberApi('/api/liber/send', { ...ref, text });
+    const next = await liberApi('/api/liber/send', { ...ref, text, images });
     if (!th && next.kind === 'app') { location.hash = '#/chat/' + next.id; return; }
     onThread(next); liberScrollEnd(true);
-  });
+  }, which || {});
   pane.replaceChildren(head, msgs);
   if (!which) { pane.append(liberStarters(LIBER_STARTERS_APP, s => composer.setText(s))); pane.append(composer); composer.focusInput(); return; }
   pane.append(composer);
@@ -231,16 +304,29 @@ function liberScrollEnd(force) { const s = document.getElementById('contentScrol
 function liberTaskSection(taskId, shared) {
   const sec = el('section', 'liber-task');
   sec.append(el('h3', 'liber-task-title', 'Ask Liber about this task'));
-  sec.append(el('p', 'liber-task-note', shared ? 'Shared with Benjamin, like the task.' : 'Just you and Liber.'));
+  sec.append(el('p', 'liber-task-note', shared ? 'Shared with Benjamin, like the task. You can add photos.' : 'Just you and Liber. You can add photos.'));
+  // Only the latest exchange shows here; earlier turns open on a tap, and the
+  // full conversation has its own screen.
   const msgs = el('div', 'liber-msgs');
-  let th = null, stop = null;
-  const onThread = next => { th = next; liberMessages(msgs, th, onThread); starters.hidden = !!(th.turns || []).length; };
+  const earlier = el('button', 'olga-more liber-earlier'); earlier.type = 'button'; earlier.hidden = true;
+  const full = el('a', 'olga-more liber-full', 'Open the full conversation'); full.href = '#/chat/task/' + encodeURIComponent(taskId); full.hidden = true;
+  full.onclick = e => { if (typeof olgaPanelDirty === 'function' && olgaPanelDirty()) { e.preventDefault(); showToast('Save or cancel your changes first.'); return; } closePicker(); };
+  let th = null, stop = null, showAll = false;
+  const onThread = next => {
+    th = next; const turns = th.turns || [];
+    let from = 0; for (let i = turns.length - 1; i >= 0; i--) if (turns[i].who === 'olga') { from = i; break; }
+    const hiddenN = showAll ? 0 : from;
+    liberMessages(msgs, hiddenN ? { ...th, turns: turns.slice(from) } : th, onThread);
+    earlier.hidden = !hiddenN; earlier.textContent = 'Show ' + hiddenN + ' earlier message' + (hiddenN === 1 ? '' : 's');
+    full.hidden = !turns.length; starters.hidden = !!turns.length;
+  };
+  earlier.onclick = () => { showAll = true; if (th) onThread(th); };
   const starters = liberStarters(LIBER_STARTERS_TASK, s => composer.setText(s));
-  const composer = liberComposer('Ask about this task', async text => {
-    onThread(await liberApi('/api/liber/send', { task: taskId, text }));
+  const composer = liberComposer('Ask about this task', async (text, images) => {
+    onThread(await liberApi('/api/liber/send', { task: taskId, text, images }));
     if (!stop) stop = liberWatch({ task: taskId }, onThread);
-  });
-  sec.append(msgs, starters, composer);
+  }, { task: taskId });
+  sec.append(earlier, msgs, starters, composer, full);
   liberApi('/api/liber/thread?task=' + encodeURIComponent(taskId)).then(t => {
     onThread(t);
     if ((t.turns || []).length) stop = liberWatch({ task: taskId }, onThread);

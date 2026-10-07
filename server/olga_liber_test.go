@@ -22,12 +22,14 @@ import (
 type fakeVoice struct {
 	mu      sync.Mutex
 	prompts []string
+	images  [][]string
 	answer  func(prompt string) string
 }
 
-func (f *fakeVoice) Ask(_ context.Context, prompt string) (olgachat.VoiceAnswer, error) {
+func (f *fakeVoice) Ask(_ context.Context, prompt string, images []string) (olgachat.VoiceAnswer, error) {
 	f.mu.Lock()
 	f.prompts = append(f.prompts, prompt)
+	f.images = append(f.images, images)
 	f.mu.Unlock()
 	return olgachat.VoiceAnswer{Text: f.answer(prompt), Model: "gpt-5.6-sol", Tokens: 10}, nil
 }
@@ -116,7 +118,7 @@ func TestLiberTaskChatSuggestsAndApplies(t *testing.T) {
 			`{"kind":"task.update","id":"home/nope","priority":"high"},` +
 			`{"kind":"plan.patch","patch":{"tasks":{"home/roof-on":{"estimate":{"hours":12,"basis":"assistant"}}}},"summary":"Set the roof estimate to 12 hours"}]}` + "\n```"
 	}}
-	do, vault := liberRig(t, voice, fakeRouter{route: jev.RouteBuild})
+	do, vault := liberRig(t, voice, fakeRouter{route: jev.RouteTalk})
 	if w := do("POST", "/api/liber/send", `{"task":"home/roof-on","text":"What first?"}`, "https://evil.example"); w.Code != 403 {
 		t.Fatalf("cross-origin send: %d", w.Code)
 	}
@@ -131,7 +133,6 @@ func TestLiberTaskChatSuggestsAndApplies(t *testing.T) {
 	if len(cards) != 2 || cards[0].Summary != "Add task: Get three roofing quotes (Home)" || cards[1].Proposal.Kind != "plan.patch" {
 		t.Fatalf("cards %+v — invalid suggestions must be dropped, valid ones shown", cards)
 	}
-	// the task chat never builds, whatever the router says
 	if strings.Contains(voice.prompts[0], "Manifest will now build") || !strings.Contains(voice.prompts[0], "roof on") {
 		t.Fatalf("task prompt %s", voice.prompts[0])
 	}
@@ -303,5 +304,55 @@ func TestLiberSharedThreadsReachBenjamin(t *testing.T) {
 	b, _ := json.Marshal(v)
 	if !strings.Contains(string(b), "gpt-5.6-sol") || !strings.Contains(string(b), "Add task: quotes") {
 		t.Fatalf("Benjamin's view %s", b)
+	}
+}
+
+// An app change asked from a task chat becomes a "Make this change" card —
+// never a dead end, never a build on its own — and photos reach the voice.
+func TestLiberTaskChatAppChangeAndPhotos(t *testing.T) {
+	voice := &fakeVoice{answer: func(p string) string {
+		if strings.Contains(p, "Restate what you understand") {
+			return "You'd like to attach photos here — tap Make this change and I'll build it.\n```json\n{\"restatement\":\"Let me attach photos in task chats\"}\n```"
+		}
+		return "Nice photo of the flashing.\n```json\n{}\n```"
+	}}
+	router := &switchRouter{route: jev.RouteConfirm}
+	do, vault := liberRig(t, voice, router)
+	do("POST", "/api/liber/send", `{"task":"home/flashing-into-house","text":"Please make it so I can attach images here"}`, "")
+	th := waitThread(t, do, "task=home/flashing-into-house", func(th *olgachat.Thread) bool { return len(th.Turns) == 2 && th.Turns[1].Status == "" })
+	if len(th.Turns[1].Cards) != 1 || th.Turns[1].Cards[0].Kind != olgachat.CardConfirm {
+		t.Fatalf("no Make this change card: %+v", th.Turns[1])
+	}
+	// a photo: uploaded (raw body), stored with the shared Home data, sent
+	png := append([]byte("\x89PNG\r\n\x1a\n"), make([]byte, 64)...)
+	w := do("POST", "/api/liber/upload?task=home/flashing-into-house", string(png), "")
+	var up struct{ ID string }
+	json.Unmarshal(w.Body.Bytes(), &up)
+	if w.Code != 200 || !olgachat.ValidImageID(up.ID) {
+		t.Fatalf("upload %d %s", w.Code, w.Body)
+	}
+	if _, err := os.Stat(filepath.Join(vault, "system", "home", "chat", "files", up.ID)); err != nil {
+		t.Fatal("photo not stored with the shared chat:", err)
+	}
+	if w := do("POST", "/api/liber/upload", "not an image", ""); w.Code != 400 {
+		t.Fatalf("non-image accepted: %d", w.Code)
+	}
+	if w := do("GET", "/api/liber/file?task=home/flashing-into-house&id="+up.ID, "", ""); w.Code != 200 || w.Header().Get("Content-Type") != "image/png" {
+		t.Fatalf("photo fetch %d %s", w.Code, w.Header().Get("Content-Type"))
+	}
+	router.set(jev.RouteTalk)
+	do("POST", "/api/liber/send", `{"task":"home/flashing-into-house","text":"","images":["`+up.ID+`"]}`, "")
+	th = waitThread(t, do, "task=home/flashing-into-house", func(th *olgachat.Thread) bool { return len(th.Turns) == 4 && th.Turns[3].Status == "" })
+	if len(th.Turns[2].Images) != 1 || th.Turns[3].Text != "Nice photo of the flashing." {
+		t.Fatalf("photo turn %+v", th.Turns[2:])
+	}
+	voice.mu.Lock()
+	last := voice.images[len(voice.images)-1]
+	voice.mu.Unlock()
+	if len(last) != 1 || !strings.HasSuffix(last[0], up.ID) {
+		t.Fatalf("voice got images %v", last)
+	}
+	if w := do("POST", "/api/liber/send", `{"task":"home/flashing-into-house","text":"x","images":["img-00000000000000000000.png"]}`, ""); w.Code != 400 {
+		t.Fatalf("unknown photo accepted: %d", w.Code)
 	}
 }

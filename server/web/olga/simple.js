@@ -176,7 +176,7 @@ function olgaQuestions(v) {
 }
 function olgaQTitle(x) {
   const lc = s => s.charAt(0).toLowerCase() + s.slice(1);
-  return { decision: x.title, hours: 'About how many hours will ' + lc(x.title) + ' take?', wait: 'How long is the wait for ' + lc(x.it?.title || x.title) + '?', price: 'What will ' + lc(x.title) + ' cost?', conflict: x.title }[x.kind] || x.title;
+  return { decision: x.title, hours: 'About how many hours will ' + lc(x.title) + ' take?', wait: 'After “' + (x.it?.title || x.title) + '”, how many days of waiting?', price: 'What will ' + lc(x.title) + ' cost?', conflict: x.title }[x.kind] || x.title;
 }
 async function olgaSaveAnswer(card, patch, path, expect, undoPatch, message) {
   card.classList.add('is-saving');

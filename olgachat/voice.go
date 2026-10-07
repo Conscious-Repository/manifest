@@ -2,6 +2,7 @@ package olgachat
 
 import (
 	"encoding/json"
+	"fmt"
 	"regexp"
 	"strings"
 	"time"
@@ -32,7 +33,10 @@ var modeText = map[Mode]string{
 	ModeTask: `This is a conversation about ONE task in her planner (shown under "task" below).
 Help her think it through: costs, timing, order, trade-offs, what to decide first.
 If a change to her tasks or the house plan would clearly help, you may suggest up to 3, but only after she
-has asked or agreed; she applies each one herself by tapping a card. Never say anything has changed.`,
+has asked or agreed; she applies each one herself by tapping a card. Never say anything has changed.
+If she asks to change how the app itself looks or works (a button, a screen, a feature), don't describe it as
+if it will happen: restate it in one line ("restatement"), set "route" to "confirm", and tell her she can tap
+"Make this change" to have it built and previewed.`,
 	ModeTalk: `This is her app conversation: she can ask you anything, including how her Manifest works.
 Changes to the app itself are made only after she agrees; if she seems to want one, restate it in one line
 and set "route" to "confirm".`,
@@ -51,7 +55,8 @@ drop it. If the result says it needs Benjamin or nothing changed, say so kindly 
 const outputSpec = "\n\nEnd your message with one fenced JSON block exactly like this, and nothing after it:\n```json\n%s\n```\n"
 
 var outputShape = map[Mode]string{
-	ModeTask: `{"proposals": [ /* zero to three; omit or [] when none */
+	ModeTask: `{"route": "talk" (or "confirm" for an app change), "restatement": "only with confirm",
+ "proposals": [ /* zero to three; omit or [] when none */
   {"kind": "task.add", "text": "short task title", "area": "the task's area", "summary": "one line she will read"},
   {"kind": "task.update", "id": "existing task id", "text": "new title, optional", "priority": "low|med|high|none, optional", "summary": "…"},
   {"kind": "task.note", "id": "existing task id", "append": "markdown to add to its notes", "summary": "…"},
@@ -74,7 +79,7 @@ func Recent(t *Thread, n int, skipLast bool) []Exchange {
 	}
 	var out []Exchange
 	for _, tu := range turns {
-		if strings.TrimSpace(tu.Text) == "" || tu.Status == StatusThinking || tu.Status == StatusWorking {
+		if (strings.TrimSpace(tu.Text) == "" && len(tu.Images) == 0) || tu.Status == StatusThinking || tu.Status == StatusWorking {
 			continue
 		}
 		who := "Olga"
@@ -82,6 +87,9 @@ func Recent(t *Thread, n int, skipLast bool) []Exchange {
 			who = "Liber"
 		}
 		txt := tu.Text
+		if n := len(tu.Images); n > 0 {
+			txt = strings.TrimSpace(txt + fmt.Sprintf(" [sent %d photo(s)]", n))
+		}
 		if len(txt) > MaxTurnText {
 			txt = txt[:MaxTurnText] + "…"
 		}

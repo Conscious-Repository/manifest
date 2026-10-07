@@ -119,7 +119,7 @@ func TestRecoverSettlesInterruptedTurns(t *testing.T) {
 
 type fakeVoice struct{}
 
-func (fakeVoice) Ask(_ context.Context, p string) (VoiceAnswer, error) {
+func (fakeVoice) Ask(_ context.Context, p string, _ []string) (VoiceAnswer, error) {
 	if strings.Contains(p, "Manifest will now build") {
 		return VoiceAnswer{Text: "On it.\n```json\n{\"brief\":\"bigger titles\"}\n```"}, nil
 	}
@@ -130,19 +130,19 @@ type fakeBuilder struct {
 	used *Change
 }
 
-func (f *fakeBuilder) Build(_ context.Context, ch *Change, _ string, _ []Exchange) (BuildResult, error) {
+func (f *fakeBuilder) Build(_ context.Context, ch *Change, _ string, _ []Exchange, _ []string) (BuildResult, error) {
 	ch.Worktree = "/work/" + ch.ID
 	return BuildResult{Summary: "Titles are bigger", Files: []string{"server/web/olga/custom.css"}, Session: "s1"}, nil
 }
 func (f *fakeBuilder) PreviewPath(ch *Change) string { return "/preview/" + ch.ID + "/" }
-func (f *fakeBuilder) Discard(*Change) error          { return nil }
+func (f *fakeBuilder) Discard(*Change) error         { return nil }
 func (f *fakeBuilder) Use(_ context.Context, ch *Change) error {
 	f.used = ch
 	ch.Commit = "abc"
 	return nil
 }
 func (f *fakeBuilder) Undo(context.Context, *Change) error { return nil }
-func (f *fakeBuilder) Settled(*Change) string           { return "live" }
+func (f *fakeBuilder) Settled(*Change) string              { return "live" }
 
 // A built change keeps its worktree through the save, so Use can ship it.
 func TestBuildThenUseKeepsTheWorktree(t *testing.T) {
@@ -156,7 +156,7 @@ func TestBuildThenUseKeepsTheWorktree(t *testing.T) {
 	s := &Service{Store: st, Voice: fakeVoice{}, Builder: fb, Restart: func() { restarted <- true }}
 	th := &Thread{ID: "c-abc", Kind: KindApp, Turns: []Turn{{ID: "o1", Who: "olga", Text: "bigger titles"}, {ID: "l1", Who: "liber", Status: StatusThinking}}}
 	st.Save(th)
-	s.buildTurn(Ref{KindApp, "c-abc"}, "bigger titles", nil, "l1", "", map[string]any{})
+	s.buildTurn(Ref{KindApp, "c-abc"}, "bigger titles", nil, "l1", "", nil, map[string]any{})
 	got, _ := st.App("c-abc")
 	var card *Card
 	for i := range got.Turns {

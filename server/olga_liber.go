@@ -18,6 +18,7 @@ import (
 	"net/http/httputil"
 	"net/url"
 	"os"
+	"os/exec"
 	"path"
 	"path/filepath"
 	"regexp"
@@ -37,6 +38,7 @@ import (
 type LiberConfig struct {
 	HermesBin     string // "" → hermes on PATH
 	HermesProfile string // "olga"
+	HermesPython  string // Hermes's venv Python, for turns with photos ("" → ~/.hermes/hermes-agent/venv/bin/python)
 	VoiceModel    string // gpt-5.6-sol
 	VoiceProvider string // openai-codex
 	TypesafeKey   string // file holding the Jev key ("" → the voice decides)
@@ -189,8 +191,12 @@ func newLiber(opts OlgaOptions, gated http.Handler, write func(string, []byte) e
 	if cfg.Voice != nil {
 		svc.Voice = cfg.Voice
 	} else {
-		svc.Voice = &hermesVoice{run: hermes.NewRunner(hermes.Config{Enabled: true, Bin: cfg.HermesBin}), profile: firstNonEmptyStr(cfg.HermesProfile, "olga"),
-			model: firstNonEmptyStr(cfg.VoiceModel, "gpt-5.6-sol"), provider: firstNonEmptyStr(cfg.VoiceProvider, "openai-codex")}
+		home, _ := os.UserHomeDir()
+		profile := firstNonEmptyStr(cfg.HermesProfile, "olga")
+		svc.Voice = &hermesVoice{run: hermes.NewRunner(hermes.Config{Enabled: true, Bin: cfg.HermesBin}), profile: profile,
+			model: firstNonEmptyStr(cfg.VoiceModel, "gpt-5.6-sol"), provider: firstNonEmptyStr(cfg.VoiceProvider, "openai-codex"),
+			python: firstNonEmptyStr(cfg.HermesPython, filepath.Join(home, ".hermes", "hermes-agent", "venv", "bin", "python")),
+			home:   filepath.Join(home, ".hermes", "profiles", profile)}
 	}
 	// The router: Jev, with her own key file.
 	if cfg.Router != nil {
@@ -254,15 +260,67 @@ func newLiber(opts OlgaOptions, gated http.Handler, write func(string, []byte) e
 type hermesVoice struct {
 	run                      *hermes.Runner
 	profile, model, provider string
+	python, home             string // Hermes's Python and this profile's home (photo turns)
 }
 
-func (h *hermesVoice) Ask(ctx context.Context, prompt string) (olgachat.VoiceAnswer, error) {
+func (h *hermesVoice) Ask(ctx context.Context, prompt string, images []string) (olgachat.VoiceAnswer, error) {
+	if len(images) > 0 {
+		return h.askWithPhotos(ctx, prompt, images)
+	}
 	res, err := h.run.Run(ctx, hermes.Request{Prompt: prompt, Profile: h.profile, Model: h.model, Provider: h.provider, Toolsets: "memory", TimeoutSeconds: 170})
 	tokens := 0
 	if res.Usage != nil {
 		tokens = int(res.Usage.TotalTokens)
 	}
 	return olgachat.VoiceAnswer{Text: res.Reply, Model: firstNonEmptyStr(res.Model, h.model), Tokens: tokens}, err
+}
+
+// askWithPhotos runs the embedded shim with Hermes's own Python, in the same
+// profile, with the photos as image parts of her message.
+func (h *hermesVoice) askWithPhotos(ctx context.Context, prompt string, images []string) (olgachat.VoiceAnswer, error) {
+	ans := olgachat.VoiceAnswer{Model: h.model}
+	dir, err := os.MkdirTemp("", "liber-voice-")
+	if err != nil {
+		return ans, err
+	}
+	defer os.RemoveAll(dir)
+	shim, usage, reqFile := filepath.Join(dir, "voice.py"), filepath.Join(dir, "usage.json"), filepath.Join(dir, "request.json")
+	if err := os.WriteFile(shim, olgachat.VoiceShim, 0o600); err != nil {
+		return ans, err
+	}
+	var imgs []map[string]string
+	for _, p := range images {
+		imgs = append(imgs, map[string]string{"path": p, "mime": olgachat.ImageMime(filepath.Base(p))})
+	}
+	req, _ := json.Marshal(map[string]any{"prompt": prompt, "images": imgs, "home": h.home, "model": h.model, "provider": h.provider, "usage": usage})
+	if err := os.WriteFile(reqFile, req, 0o600); err != nil {
+		return ans, err
+	}
+	ctx, cancel := context.WithTimeout(ctx, 170*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, h.python, shim, reqFile)
+	cmd.Dir = dir
+	var out, errb bytes.Buffer
+	cmd.Stdout, cmd.Stderr = &out, &errb
+	cmd.WaitDelay = 5 * time.Second
+	runErr := cmd.Run()
+	ans.Text = strings.TrimSpace(out.String())
+	var u struct {
+		Completed   *bool  `json:"completed"`
+		Failed      bool   `json:"failed"`
+		Model       string `json:"model"`
+		TotalTokens int    `json:"total_tokens"`
+	}
+	if b, err := os.ReadFile(usage); err == nil && json.Unmarshal(b, &u) == nil {
+		ans.Model, ans.Tokens = firstNonEmptyStr(u.Model, h.model), u.TotalTokens
+		if u.Failed || (u.Completed != nil && !*u.Completed) {
+			return ans, errors.New("hermes reported that the turn failed")
+		}
+	}
+	if runErr != nil {
+		return ans, fmt.Errorf("hermes (photos): %v: %s", runErr, clipLine(errb.String(), 300))
+	}
+	return ans, nil
 }
 
 type jevRouter struct {
@@ -283,6 +341,14 @@ func (l *liber) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
 	if strings.HasPrefix(r.URL.Path, "/preview/") {
 		l.proxyPreview(w, r)
+		return
+	}
+	if r.URL.Path == "/api/liber/upload" && r.Method == http.MethodPost {
+		l.upload(w, r)
+		return
+	}
+	if r.URL.Path == "/api/liber/file" && r.Method == http.MethodGet {
+		l.file(w, r)
 		return
 	}
 	r.Body = http.MaxBytesReader(w, r.Body, 64<<10)
@@ -386,7 +452,10 @@ func (l *liber) get(w http.ResponseWriter, r *http.Request) {
 }
 
 func (l *liber) send(w http.ResponseWriter, r *http.Request) {
-	var b struct{ ID, Task, Text string }
+	var b struct {
+		ID, Task, Text string
+		Images         []string
+	}
 	if err := json.NewDecoder(r.Body).Decode(&b); err != nil {
 		http.Error(w, "invalid request", 400)
 		return
@@ -402,7 +471,7 @@ func (l *liber) send(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	t, err := l.svc.Send(ref, b.Text)
+	t, err := l.svc.Send(ref, b.Text, b.Images...)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			http.NotFound(w, r)
@@ -442,6 +511,53 @@ func (l *liber) act(w http.ResponseWriter, r *http.Request) {
 	default:
 		liberJSON(w, t.Public())
 	}
+}
+
+// photoShared: does a photo for this scope belong with the shared Home data?
+func (l *liber) photoShared(q url.Values) (bool, bool) {
+	task := q.Get("task")
+	if task == "" {
+		return false, true
+	}
+	_, shared, ok := l.svc.Planner.TaskInfo(task)
+	return shared, ok
+}
+
+// upload stores one photo (the raw image is the body) and returns its id.
+func (l *liber) upload(w http.ResponseWriter, r *http.Request) {
+	shared, ok := l.photoShared(r.URL.Query())
+	if !ok {
+		http.NotFound(w, r)
+		return
+	}
+	data, err := io.ReadAll(http.MaxBytesReader(w, r.Body, olgachat.MaxImageBytes+1))
+	if err != nil {
+		http.Error(w, "a photo can be at most 12 MB", http.StatusRequestEntityTooLarge)
+		return
+	}
+	id, err := l.svc.Store.SaveImage(data, shared)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	liberJSON(w, map[string]string{"id": id})
+}
+
+// file serves one of her photos (behind her sign-in, like everything here).
+func (l *liber) file(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	shared, ok := l.photoShared(q)
+	p := ""
+	if ok {
+		p = l.svc.Store.ImagePath(q.Get("id"), shared)
+	}
+	if p == "" {
+		http.NotFound(w, r)
+		return
+	}
+	w.Header().Set("Content-Type", olgachat.ImageMime(q.Get("id")))
+	w.Header().Set("Cache-Control", "private, max-age=86400")
+	http.ServeFile(w, r, p)
 }
 
 // events streams the thread whenever it changes (Server-Sent Events). The

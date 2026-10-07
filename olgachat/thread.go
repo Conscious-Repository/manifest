@@ -12,9 +12,11 @@ package olgachat
 
 import (
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"net/http"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -77,6 +79,7 @@ type Turn struct {
 	ID     string    `json:"id"`
 	Who    string    `json:"who"` // olga | liber
 	Text   string    `json:"text"`
+	Images []string  `json:"images,omitempty"` // photos she attached (ids in the thread's files folder)
 	At     time.Time `json:"at"`
 	Status string    `json:"status,omitempty"`
 	Cards  []Card    `json:"cards,omitempty"`
@@ -121,6 +124,7 @@ type Server struct {
 type Change struct {
 	ID        string    `json:"id"`
 	Brief     string    `json:"brief"`
+	Images    []string  `json:"images,omitempty"` // her screenshots, shown to the builder
 	Session   string    `json:"session,omitempty"`
 	Worktree  string    `json:"worktree,omitempty"`
 	Commit    string    `json:"commit,omitempty"`
@@ -282,4 +286,59 @@ func (s *Store) List() []*Thread {
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Updated.After(out[j].Updated) })
 	return out
+}
+
+// ---- photos ----
+
+// MaxImageBytes bounds one photo as stored (the page shrinks phone photos
+// before upload, so this only stops abuse).
+const MaxImageBytes = 12 << 20
+
+var imageIDRe = regexp.MustCompile(`^img-[0-9a-f]{20}\.(jpg|png|webp|gif)$`)
+
+// ValidImageID reports whether id can name a stored photo.
+func ValidImageID(id string) bool { return imageIDRe.MatchString(id) }
+
+// FilesDir is where a thread's photos live: beside the shared Home chats for
+// a shared task (Benjamin can see them), else beside her private chats.
+func (s *Store) FilesDir(shared bool) string {
+	if shared {
+		return filepath.Join(s.Shared, "files")
+	}
+	return filepath.Join(s.Private, "files")
+}
+
+// SaveImage stores one photo (content-addressed) and returns its id.
+func (s *Store) SaveImage(data []byte, shared bool) (string, error) {
+	if len(data) == 0 || len(data) > MaxImageBytes {
+		return "", errors.New("a photo can be at most 12 MB")
+	}
+	ext := map[string]string{"image/jpeg": "jpg", "image/png": "png", "image/webp": "webp", "image/gif": "gif"}[http.DetectContentType(data)]
+	if ext == "" {
+		return "", errors.New("that file isn't a photo (JPEG, PNG, WebP or GIF)")
+	}
+	sum := sha256.Sum256(data)
+	id := "img-" + hex.EncodeToString(sum[:10]) + "." + ext
+	p := filepath.Join(s.FilesDir(shared), id)
+	if _, err := os.Stat(p); err == nil {
+		return id, nil
+	}
+	return id, s.Write(p, data)
+}
+
+// ImagePath is a stored photo's file, or "" when it doesn't exist.
+func (s *Store) ImagePath(id string, shared bool) string {
+	if !ValidImageID(id) {
+		return ""
+	}
+	p := filepath.Join(s.FilesDir(shared), id)
+	if _, err := os.Stat(p); err != nil {
+		return ""
+	}
+	return p
+}
+
+// ImageMime is the content type for a stored photo id.
+func ImageMime(id string) string {
+	return map[string]string{"jpg": "image/jpeg", "png": "image/png", "webp": "image/webp", "gif": "image/gif"}[strings.TrimPrefix(filepath.Ext(id), ".")]
 }

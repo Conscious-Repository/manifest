@@ -60,11 +60,24 @@ function olgaWhen(taskId){
  const when=ws.length?(ws.length===1?'Planned for the weekend of '+hpWeekend(ws[0]):'Planned over '+ws.length+' weekends, starting '+hpWeekend(ws[0])):'Not on a weekend yet';
  const hours=items.filter(it=>it.hours!=null).reduce((n,it)=>n+it.hours,0),unknown=items.filter(it=>it.hours==null).length;
  const line1=el('p');line1.append(el('strong','',when));box.append(line1);
- const bits=[];if(hours)bits.push('about '+Math.round(hours)+' hours of work');if(unknown)bits.push(unknown+' part'+(unknown===1?'':'s')+' without an hours guess yet');
+ const h=Math.max(1,Math.round(hours)),bits=[];if(hours)bits.push('about '+h+' hour'+(h===1?'':'s')+' of work');if(unknown)bits.push(unknown+' step'+(unknown===1?' still needs':'s still need')+' an hours guess');
  if(bits.length)box.append(el('p','',hpCap(bits.join(' · '))));
- if(t.nextAction)box.append(el('p','','Next: '+t.nextAction));
- const subs=Object.values(t.subtasks||{});
- if(subs.length){const ul=el('ul','olga-steps');subs.forEach(st=>ul.append(el('li',st.done?'is-done':'',(st.done?'✓ ':'')+st.title)));box.append(el('p','','Steps:'),ul);}
+ if(t.nextAction){const next=el('p','olga-next');next.append(el('strong','','Next: '),document.createTextNode(t.nextAction));box.append(next);}
+ // Steps tick off right here: the same plan patch Benjamin's planner writes.
+ const subs=Object.entries(t.subtasks||{}).sort((a,b)=>(a[1].order||0)-(b[1].order||0)||a[0].localeCompare(b[0]));
+ if(subs.length){
+  const open=subs.filter(([,st])=>!st.done),closed=subs.filter(([,st])=>st.done),SHOW=3;
+  const head=el('p','olga-steps-head');head.append(el('strong','','Steps'),el('span','',' · '+closed.length+' of '+subs.length+' done'));box.append(head);
+  const list=el('div','olga-steps');
+  const step=([sid,st])=>{const lab=el('label','olga-step'+(st.done?' is-done':''));const cb=el('input');cb.type='checkbox';cb.checked=!!st.done;
+   cb.onchange=async()=>{cb.disabled=true;lab.classList.toggle('is-done',cb.checked);
+    try{const cur=await hpFetch('GET','/api/home/plan');hp.data=await hpFetch('POST','/api/home/plan',{revision:cur.revision,patch:{tasks:{[taskId]:{subtasks:{[sid]:{done:cb.checked}}}}}});hp.loadedAt=Date.now();st.done=cb.checked;
+     const n=Object.values(hp.data.plan.tasks[taskId]?.subtasks||{}).filter(s=>s.done).length;head.lastChild.textContent=' · '+n+' of '+subs.length+' done';olgaToast(cb.checked?'Step done':'Step back on the list');}
+    catch(e){cb.checked=!cb.checked;lab.classList.toggle('is-done',cb.checked);showToast(e.message);}finally{cb.disabled=false;}};
+   lab.append(cb,el('span','',st.title));return lab;};
+  const rows=[...open,...closed].map(step);rows.forEach((r,i)=>{if(i>=SHOW)r.hidden=true;list.append(r);});box.append(list);
+  if(rows.length>SHOW){const more=el('button','olga-more','Show all '+rows.length+' steps');more.type='button';more.onclick=()=>{rows.forEach(r=>r.hidden=false);more.remove();};box.append(more);}
+ }
  return box;
 }
 async function openTodoPanel(row){
@@ -85,16 +98,22 @@ async function openTodoPanel(row){
    if(!r.done)olgaToast('Done — “'+r.text+'”',async()=>{await todosApi('/api/tasks/check',{id:r.id,checked:false});});else olgaToast('Back on your list');}
    catch(e){done.disabled=false;showToast(e.message);}};
   top.append(done);parts.push(top);
-  // 2. the basics
-  const form=el('form','olga-task-details');
-  const field=(label,node)=>{const wrap=el('label','olga-detail-field');wrap.append(el('span','',label),node);form.append(wrap);return node;};
-  const title=field('Task',inputEl('Task'));title.value=r.text;title.required=true;
-  const area=field('Area',selectEl([...new Set([r.container?.name||'Inbox','Inbox',...(todosCache?.areas||[])])]));area.value=r.container?.name||'Inbox';
+  // 2. the basics, compact: area and importance side by side; renaming is rare,
+  // so the name opens for editing only when she asks
+  const form=el('form','olga-task-details olga-task-meta');
+  const field=(label,node,cls='')=>{const wrap=el('label','olga-detail-field '+cls);wrap.append(el('span','',label),node);form.append(wrap);return wrap;};
+  const title=inputEl('Task');title.value=r.text;title.required=true;const titleWrap=field('Name',title,'olga-rename');titleWrap.hidden=true;
+  const area=selectEl([...new Set([r.container?.name||'Inbox','Inbox',...(todosCache?.areas||[])])]);area.value=r.container?.name||'Inbox';
   area.disabled=area.value==='Home';if(!area.disabled)for(const option of [...area.options])if(option.value==='Home')option.remove();
+  const priority=selectEl(['Normal','Low','Medium','High']);priority.value=({low:'Low',med:'Medium',high:'High'})[r.priority]||'Normal';
+  const pair=el('div','olga-meta-pair');form.append(pair);
+  pair.append(field('Area',area),field('Importance',priority));
+  const rename=el('button','olga-rename-btn','Rename');rename.type='button';rename.onclick=()=>{titleWrap.hidden=false;rename.hidden=true;title.focus();title.select();};
+  top.append(rename);
   if(isHome)form.append(el('p','olga-detail-hint','Home is shared with Benjamin.'));
-  const priority=field('Importance',selectEl(['Normal','Low','Medium','High']));priority.value=({low:'Low',med:'Medium',high:'High'})[r.priority]||'Normal';
+  form.prepend(titleWrap);
   parts.push(form);
-  // 3. the house plan, in plain words
+  // 3. the house plan, in plain words: when, next, steps, then her questions
   if(isHome){
    const when=olgaWhen(r.id);if(when)parts.push(when);
    const qs=typeof olgaQuestions==='function'&&hp.data?olgaQuestions(hp.data).open.filter(x=>x.task===r.id):[];
@@ -102,18 +121,19 @@ async function openTodoPanel(row){
     qs.forEach(x=>{const item=el('div','olga-q');const head=el('button','olga-q-head');head.type='button';head.append(el('span','olga-q-title',olgaQTitle(x)));item.append(head);head.onclick=()=>{if(item.querySelector('.olga-q-card'))return;item.classList.add('is-open');item.append(olgaQuestionCard(hp.data,x));};sec.append(item);});
     parts.push(sec);}
   }
-  // 4. Liber
-  if(typeof liberTaskSection==='function'){liberSec=liberTaskSection(r.id,isHome);parts.push(liberSec);}
-  // 5. notes (folded), comments (folded)
+  // 4. notes: open when short (their sections stay folded), else one row
   const hasNotes=!!(notes.description||'').trim();
-  const notesFold=el('details','olga-fold');const ns=el('summary');ns.append(el('span','',hasNotes?'Notes':'Add notes'));notesFold.append(ns);
-  const notesView=homePlanNotesView(notes.description||'');notesView.hidden=!hasNotes;
+  const notesView=homePlanNotesView(notes.description||'');notesView.hidden=!hasNotes;const noteSecs=notesView.querySelectorAll('.hp-note-sec').length;
+  const notesFold=el('details','olga-fold');notesFold.open=hasNotes&&noteSecs<=3;const ns=el('summary');ns.append(el('span','',hasNotes?(noteSecs>1?'Notes · '+noteSecs:'Notes'):'Add notes'));notesFold.append(ns);
   const description=el('textarea');description.rows=hasNotes?12:5;description.value=notes.description||'';description.placeholder='Details, links, or a checklist…';description.setAttribute('aria-label','Notes');description.hidden=hasNotes;description.style.fontSize='16px';
   const editNotes=pillLight('Edit notes',()=>{description.hidden=false;notesView.hidden=true;editNotes.hidden=true;description.focus();});editNotes.type='button';editNotes.hidden=!hasNotes;
   notesFold.append(notesView,editNotes,description);parts.push(notesFold);
+  // 5. Liber: the latest exchange, the whole conversation one tap away
+  if(typeof liberTaskSection==='function'){liberSec=liberTaskSection(r.id,isHome);parts.push(liberSec);}
+  // comments for Benjamin (folded)
   const comFold=el('details','olga-fold');const cs=el('summary');cs.append(el('span','','Comments'+((notes.comments||[]).length?' · '+notes.comments.length:'')));comFold.append(cs);
   const entries=el('div');const renderComments=()=>{entries.replaceChildren();for(const c of notes.comments||[]){const item=el('article','olga-comment');item.append(el('div','olga-detail-hint',(c.author_name||c.author)+' · '+new Date(c.at).toLocaleString()),el('p','',c.text));entries.append(item);}};renderComments();
-  const composer=el('form');const comment=el('textarea');comment.rows=2;comment.placeholder='Write a comment for Benjamin…';comment.setAttribute('aria-label','Comment');comment.required=true;comment.style.fontSize='16px';
+  const composer=el('form','olga-comment-form');const comment=el('textarea');comment.rows=2;comment.placeholder='Write a comment for Benjamin…';comment.setAttribute('aria-label','Comment');comment.required=true;comment.style.fontSize='16px';
   const send=el('button','pill','Add comment');send.type='submit';const cerr=el('p','olga-detail-hint');cerr.setAttribute('role','status');composer.append(comment,send,cerr);
   composer.onsubmit=async e=>{e.preventDefault();if(!comment.value.trim())return;send.disabled=true;try{const updated=await postJSONOk('/api/tasks/notes',{id:r.id,kind:'comment',comment:comment.value});notes.comments=updated.comments;comment.value='';renderComments();cs.firstChild.textContent='Comments · '+notes.comments.length;}catch(err){cerr.textContent=err.message;}finally{send.disabled=false;}};
   comFold.append(entries,composer);parts.push(comFold);

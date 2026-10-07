@@ -1262,3 +1262,5 @@ label.chat-artifact-handoff{display:flex;flex-direction:row;align-items:flex-sta
 .chat-liber-who { font-family: var(--sans); font-size: var(--fs-xs); color: var(--base-50); margin-bottom: var(--sp-2); }
 .chat-liber-card { font-family: var(--sans); font-size: var(--fs-sm); color: var(--base-60); margin-top: var(--sp-2); }
 .chat-liber-note { font-family: var(--sans); font-size: var(--fs-sm); color: var(--base-50); }
+.chat-liber-photos { display: flex; flex-wrap: wrap; gap: var(--sp-2); margin-bottom: var(--sp-2); }
+.chat-liber-photos img { width: 96px; height: 96px; object-fit: cover; border-radius: var(--radius); border: 1px solid var(--line); }

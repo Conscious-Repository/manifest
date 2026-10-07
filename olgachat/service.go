@@ -15,7 +15,9 @@ import (
 
 // Voice answers one composed prompt (Liber's Hermes profile on Sol).
 type Voice interface {
-	Ask(ctx context.Context, prompt string) (VoiceAnswer, error)
+	// Ask answers one composed prompt; images are absolute paths of photos
+	// she attached to this message (none for most turns).
+	Ask(ctx context.Context, prompt string, images []string) (VoiceAnswer, error)
 }
 
 type VoiceAnswer struct {
@@ -41,6 +43,9 @@ type Planner interface {
 	// ErrConflict from Apply means the data changed since the card was made.
 }
 
+// MaxImagesPerMessage bounds the photos in one message.
+const MaxImagesPerMessage = 6
+
 // ErrConflict: the record changed since the suggestion was made.
 var ErrConflict = errors.New("changed since")
 
@@ -59,7 +64,7 @@ type BuildResult struct {
 // Builder makes, previews and ships app changes (nil → app changes are noted
 // for Benjamin instead).
 type Builder interface {
-	Build(ctx context.Context, ch *Change, brief string, recent []Exchange) (BuildResult, error)
+	Build(ctx context.Context, ch *Change, brief string, recent []Exchange, images []string) (BuildResult, error)
 	PreviewPath(ch *Change) string
 	Discard(ch *Change) error
 	// Use and Undo ship to her live app; the process restarts afterwards,
@@ -195,10 +200,13 @@ var ErrBusy = errors.New("busy")
 
 // Send adds her message and starts Liber's answer. A message sent while
 // Liber is still answering is queued and answered next.
-func (s *Service) Send(ref Ref, text string) (*Thread, error) {
+func (s *Service) Send(ref Ref, text string, images ...string) (*Thread, error) {
 	text = strings.TrimSpace(text)
-	if text == "" || len(text) > 8000 {
+	if (text == "" && len(images) == 0) || len(text) > 8000 {
 		return nil, errors.New("write a message of up to 8000 characters")
+	}
+	if len(images) > MaxImagesPerMessage {
+		return nil, fmt.Errorf("send up to %d photos at a time", MaxImagesPerMessage)
 	}
 	var t *Thread
 	var err error
@@ -221,11 +229,16 @@ func (s *Service) Send(ref Ref, text string) (*Thread, error) {
 			t = fresh
 		}
 	}
+	for _, id := range images {
+		if s.Store.ImagePath(id, t.Kind == KindTask && t.Shared) == "" {
+			return nil, errors.New("a photo didn't finish uploading — add it again")
+		}
+	}
 	busy := t.Busy()
-	olga := Turn{ID: NewID("t-"), Who: "olga", Text: text, At: s.now().UTC(), Queued: busy}
+	olga := Turn{ID: NewID("t-"), Who: "olga", Text: text, Images: images, At: s.now().UTC(), Queued: busy}
 	t.Turns = append(t.Turns, olga)
 	if t.Title == "" && t.Kind == KindApp {
-		t.Title = clipWords(text, 60)
+		t.Title = clipWords(firstNonEmpty(text, "Photo"), 60)
 	}
 	if !busy {
 		t.Turns = append(t.Turns, Turn{ID: NewID("t-"), Who: "liber", At: s.now().UTC(), Status: StatusThinking})
@@ -300,33 +313,45 @@ func (s *Service) answer(kind string, ref Ref, olgaID, liberID, forced string) {
 		entry["error"] = err.Error()
 		return
 	}
-	msg := ""
+	msg, images := "", []string(nil)
 	if tu := t.Turn(olgaID); tu != nil {
 		msg = tu.Text
+		for _, id := range tu.Images {
+			if p := s.Store.ImagePath(id, t.Kind == KindTask && t.Shared); p != "" {
+				images = append(images, p)
+			}
+		}
+		if len(images) > 0 {
+			entry["images"] = len(images)
+			if msg == "" {
+				msg = "(Olga sent a photo without a message.)"
+			}
+		}
 	}
 	recent := Recent(t, RecentTurns, true)
 	if forced == "" {
 		recent = trimTo(recent, olgaID, t)
 	}
+	route, why := s.route(ref, t, msg, forced, entry)
 	if kind == KindTask {
-		s.taskTurn(t, ref, msg, recent, liberID, entry)
+		s.taskTurn(t, ref, msg, recent, liberID, images, route, entry)
+		entry["why"] = why
 		return
 	}
-	route, why := s.route(ref, t, msg, forced, entry)
 	entry["route"], entry["why"] = route, why
 	switch {
 	case strings.HasPrefix(route, "continue:"):
-		s.buildTurn(ref, msg, recent, liberID, strings.TrimPrefix(route, "continue:"), entry)
+		s.buildTurn(ref, msg, recent, liberID, strings.TrimPrefix(route, "continue:"), images, entry)
 	case route == jev.RouteBuild:
-		s.buildTurn(ref, msg, recent, liberID, "", entry)
+		s.buildTurn(ref, msg, recent, liberID, "", images, entry)
 	case route == jev.RouteConfirm:
-		s.voiceTurn(ref, ModeConfirm, nil, recent, msg, liberID, entry, func(tu *Turn, r Reply) {
+		s.voiceTurn(ref, ModeConfirm, nil, recent, msg, liberID, images, entry, func(tu *Turn, r Reply) {
 			line := firstNonEmpty(r.Restatement, clipWords(msg, 140))
 			tu.Cards = append(tu.Cards, Card{ID: NewID("k-"), Kind: CardConfirm, State: StatePending, Summary: line, Updated: s.now().UTC()})
 		})
 	default:
 		jevDown := entry["jev"] == "unavailable"
-		s.voiceTurn(ref, ModeTalk, nil, recent, msg, liberID, entry, func(tu *Turn, r Reply) {
+		s.voiceTurn(ref, ModeTalk, nil, recent, msg, liberID, images, entry, func(tu *Turn, r Reply) {
 			// Only when Jev could not judge does the voice's own read add a
 			// card; it can never start a build (plan §3.4 step 4).
 			if jevDown && r.Route == "confirm" && r.Restatement != "" {
@@ -403,15 +428,18 @@ func openChange(t *Thread) *Change {
 }
 
 // voiceTurn asks the voice and writes its answer into the Liber turn.
-func (s *Service) voiceTurn(ref Ref, mode Mode, ctxData map[string]any, recent []Exchange, msg, liberID string, entry map[string]any, cards func(*Turn, Reply)) (Reply, bool) {
+func (s *Service) voiceTurn(ref Ref, mode Mode, ctxData map[string]any, recent []Exchange, msg, liberID string, images []string, entry map[string]any, cards func(*Turn, Reply)) (Reply, bool) {
 	prompt := Compose(mode, ctxData, recent, msg, s.now())
+	if len(images) > 0 {
+		prompt += fmt.Sprintf("\n(Olga attached %d photo(s) to her message; they are included with it. Look at them closely.)\n", len(images))
+	}
 	to := s.VoiceTimeout
 	if to <= 0 {
 		to = 3 * time.Minute
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), to)
 	defer cancel()
-	ans, err := s.Voice.Ask(ctx, prompt)
+	ans, err := s.Voice.Ask(ctx, prompt, images)
 	entry["voiceModel"], entry["tokens"] = ans.Model, ans.Tokens
 	if err != nil {
 		entry["error"] = err.Error()
@@ -448,15 +476,35 @@ func (s *Service) voiceTurn(ref Ref, mode Mode, ctxData map[string]any, recent [
 	return r, true
 }
 
-// taskTurn: planning about one task; suggestions become cards.
-func (s *Service) taskTurn(t *Thread, ref Ref, msg string, recent []Exchange, liberID string, entry map[string]any) {
+// taskTurn: planning about one task; suggestions become cards. A request to
+// change the app itself, asked from a task, becomes a "Make this change" card
+// here too — a task chat never builds on its own (plan §3.4 rule 1).
+func (s *Service) taskTurn(t *Thread, ref Ref, msg string, recent []Exchange, liberID string, images []string, route string, entry map[string]any) {
 	ctxData, err := s.Planner.TaskContext(t.TaskID)
 	if err != nil {
 		entry["contextError"] = err.Error()
 	}
-	entry["route"], entry["why"] = "talk", "rule: task chat never builds"
+	wantsChange := route == jev.RouteBuild || route == jev.RouteConfirm || strings.HasPrefix(route, "continue:")
+	if strings.HasPrefix(route, "continue:") {
+		// she's adjusting a change she's looking at: carry straight on
+		s.buildTurn(ref, msg, recent, liberID, strings.TrimPrefix(route, "continue:"), images, entry)
+		return
+	}
+	entry["route"] = "talk"
+	if wantsChange {
+		entry["route"] = "confirm"
+		s.voiceTurn(ref, ModeConfirm, nil, recent, msg, liberID, images, entry, func(tu *Turn, r Reply) {
+			line := firstNonEmpty(r.Restatement, clipWords(msg, 140))
+			tu.Cards = append(tu.Cards, Card{ID: NewID("k-"), Kind: CardConfirm, State: StatePending, Summary: line, Updated: s.now().UTC()})
+		})
+		return
+	}
+	jevDown := entry["jev"] == "unavailable"
 	var dropped []string
-	s.voiceTurn(ref, ModeTask, ctxData, recent, msg, liberID, entry, func(tu *Turn, r Reply) {
+	s.voiceTurn(ref, ModeTask, ctxData, recent, msg, liberID, images, entry, func(tu *Turn, r Reply) {
+		if jevDown && r.Route == "confirm" && r.Restatement != "" {
+			tu.Cards = append(tu.Cards, Card{ID: NewID("k-"), Kind: CardConfirm, State: StatePending, Summary: r.Restatement, Updated: s.now().UTC()})
+		}
 		for _, raw := range r.Proposals {
 			if len(tu.Cards) >= 3 {
 				dropped = append(dropped, raw.Kind+": more than three suggestions")
@@ -598,7 +646,7 @@ func (s *Service) startBuild(ref Ref, olgaID, liberID, restatement string) {
 	if err != nil {
 		return
 	}
-	s.buildTurn(ref, "Make this change: "+restatement, Recent(t, RecentTurns, true), liberID, "", entry)
+	s.buildTurn(ref, "Make this change: "+restatement, Recent(t, RecentTurns, true), liberID, "", s.recentImages(t), entry)
 	entry["ms"] = s.now().Sub(start).Milliseconds()
 	if s.Log != nil {
 		s.Log(entry)
@@ -608,12 +656,12 @@ func (s *Service) startBuild(ref Ref, olgaID, liberID, restatement string) {
 
 // buildTurn: hand-off (voice), build (builder), relay (voice).
 // continueID resumes an existing change ("continue:<id>" routes).
-func (s *Service) buildTurn(ref Ref, msg string, recent []Exchange, liberID, continueID string, entry map[string]any) {
+func (s *Service) buildTurn(ref Ref, msg string, recent []Exchange, liberID, continueID string, images []string, entry map[string]any) {
 	if s.Builder == nil {
 		s.noteForBenjamin(ref, msg, liberID, entry, "app changes are switched off")
 		return
 	}
-	r, ok := s.voiceTurn(ref, ModeHandoff, nil, recent, msg, liberID, entry, nil)
+	r, ok := s.voiceTurn(ref, ModeHandoff, nil, recent, msg, liberID, images, entry, nil)
 	if !ok {
 		return
 	}
@@ -660,7 +708,7 @@ func (s *Service) buildTurn(ref Ref, msg string, recent []Exchange, liberID, con
 	if continueID != "" {
 		brief = ch.Brief
 	}
-	res, berr := s.Builder.Build(ctx, ch, brief, recent)
+	res, berr := s.Builder.Build(ctx, ch, brief, recent, images)
 	cancel()
 	entry["builderModel"], entry["files"], entry["problem"], entry["gate"] = res.Model, res.Files, res.Problem, res.Gate
 	if berr != nil {
@@ -704,7 +752,7 @@ func (s *Service) buildTurn(ref Ref, msg string, recent []Exchange, liberID, con
 		t.Turns = append(t.Turns, Turn{ID: relayID, Who: "liber", At: s.now().UTC(), Status: StatusThinking})
 		return nil
 	})
-	s.voiceTurn(ref, ModeRelay, result, nil, "", relayID, map[string]any{}, nil)
+	s.voiceTurn(ref, ModeRelay, result, nil, "", relayID, nil, map[string]any{}, nil)
 }
 
 func cardFor(t *Thread, changeID string) string {
@@ -876,3 +924,17 @@ func (s *Service) SettleDeploys() bool {
 
 // MarshalPublic is the JSON Olga's browser receives.
 func MarshalPublic(t *Thread) ([]byte, error) { return json.Marshal(t.Public()) }
+
+// recentImages: the photos she sent in the last few messages (for a build
+// started from a card, so her screenshots reach the builder).
+func (s *Service) recentImages(t *Thread) []string {
+	var out []string
+	for i := len(t.Turns) - 1; i >= 0 && i >= len(t.Turns)-8; i-- {
+		for _, id := range t.Turns[i].Images {
+			if p := s.Store.ImagePath(id, t.Kind == KindTask && t.Shared); p != "" && len(out) < MaxImagesPerMessage {
+				out = append(out, p)
+			}
+		}
+	}
+	return out
+}

@@ -698,6 +698,11 @@ function chatLiberSection(lv) {
     const wrap = el("div", "chat-turn " + (t.who === "olga" ? "chat-user" : "chat-spirit"));
     const who = el("div", "chat-liber-who", (t.who === "olga" ? "Olga" : "Liber" + (t.model ? " · " + t.model : "")) + " · " + fmtWhen(t.at));
     wrap.append(who);
+    if ((t.images || []).length) {
+      const row = el("div", "chat-liber-photos");
+      for (const id of t.images) { const a = el("a"); a.href = "/api/home/liber-file?id=" + encodeURIComponent(id); a.target = "_blank"; a.rel = "noopener"; const img = el("img"); img.src = a.href; img.alt = "Photo Olga attached"; img.loading = "lazy"; a.append(img); row.append(a); }
+      wrap.append(row);
+    }
     if (t.text) {
       if (t.who === "olga") wrap.append(el("div", "", t.text));
       else { const say = el("div", "chat-say"); try { say.append(renderMarkdown(t.text, "", { readOnly: true, chat: true })); } catch (e) { say.textContent = t.text; } wrap.append(say); }

@@ -429,7 +429,8 @@ func (s *Server) Handler() http.Handler {
 	// TODOS — the third surface over `tasks.md` (todos-surface-scope).
 	mux.HandleFunc("GET /api/tasks/notes", s.handlePlannerNotes)
 	mux.HandleFunc("POST /api/tasks/notes", s.handlePlannerNotes)
-	mux.HandleFunc("GET /api/home/plan", s.handleHomePlan) // the shared Home plan (docs/home-plan.md)
+	mux.HandleFunc("GET /api/home/plan", s.handleHomePlan)        // the shared Home plan (docs/home-plan.md)
+	mux.HandleFunc("GET /api/home/liber-file", s.handleLiberFile) // Olga's photos in shared Home-task Liber chats
 	mux.HandleFunc("POST /api/home/plan", s.handleHomePlan)
 	mux.HandleFunc("GET /api/home/plan/history", s.handleHomePlanHistory)
 	mux.HandleFunc("POST /api/home/plan/preview", s.handleHomePlanPreview)

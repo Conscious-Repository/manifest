@@ -7,6 +7,7 @@ package server
 // behind each answer (he sees the machinery; she never does).
 
 import (
+	"net/http"
 	"os"
 	"path/filepath"
 	"time"
@@ -39,22 +40,40 @@ func (s *Server) liberThreads() map[string]*olgachat.Thread {
 // liberView is the read-only projection for his task stage.
 func liberView(t *olgachat.Thread) map[string]any {
 	type turn struct {
-		Who   string          `json:"who"`
-		Text  string          `json:"text"`
-		At    time.Time       `json:"at"`
-		Model string          `json:"model,omitempty"`
-		Cards []olgachat.Card `json:"cards,omitempty"`
+		Who    string          `json:"who"`
+		Text   string          `json:"text"`
+		At     time.Time       `json:"at"`
+		Model  string          `json:"model,omitempty"`
+		Images []string        `json:"images,omitempty"`
+		Cards  []olgachat.Card `json:"cards,omitempty"`
 	}
 	var turns []turn
 	for _, tu := range t.Turns {
-		if tu.Text == "" && len(tu.Cards) == 0 {
+		if tu.Text == "" && len(tu.Cards) == 0 && len(tu.Images) == 0 {
 			continue
 		}
-		row := turn{Who: tu.Who, Text: tu.Text, At: tu.At, Cards: tu.Cards}
+		row := turn{Who: tu.Who, Text: tu.Text, At: tu.At, Cards: tu.Cards, Images: tu.Images}
 		if t.Server != nil {
 			row.Model = t.Server.TurnModels[tu.ID]
 		}
 		turns = append(turns, row)
 	}
 	return map[string]any{"updated": t.Updated, "turns": turns}
+}
+
+// handleLiberFile (GET /api/home/liber-file?id=) serves a photo Olga attached
+// in a shared Home-task chat, for his read-only view.
+func (s *Server) handleLiberFile(w http.ResponseWriter, r *http.Request) {
+	st := s.liberStore()
+	id := r.URL.Query().Get("id")
+	p := ""
+	if st != nil {
+		p = st.ImagePath(id, true)
+	}
+	if p == "" {
+		http.NotFound(w, r)
+		return
+	}
+	w.Header().Set("Content-Type", olgachat.ImageMime(id))
+	http.ServeFile(w, r, p)
 }

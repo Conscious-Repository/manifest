@@ -136,3 +136,29 @@
   #railGroups .rail-item { padding: 6px 6px !important; }
   #railGroups .rail-glyph { display: none !important; }
 }
+
+/* task details, second pass (2026-10-07): compact basics, checkable steps,
+   44px targets throughout */
+.olga-panel-top { justify-content: space-between; }
+.olga-rename-btn { min-height: 44px; padding: 0 14px; border: 1px solid var(--base-30); border-radius: 22px; background: var(--bg); color: var(--text); font: 15px var(--sans, system-ui); cursor: pointer; }
+.olga-task-meta .olga-meta-pair { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.olga-task-meta .olga-meta-pair .olga-detail-field { margin-bottom: 8px; min-width: 0; }
+.olga-task-meta select { min-height: 44px; padding: 8px 10px; }
+.olga-task-meta .olga-detail-hint { margin: 0 0 14px; }
+.olga-next { margin: 8px 0 0; }
+.olga-steps-head { margin: 12px 0 4px; }
+.olga-steps-head span { color: var(--base-50); }
+.olga-steps { display: flex; flex-direction: column; }
+.olga-step { display: flex; gap: 12px; align-items: flex-start; min-height: 44px; padding: 10px 0; box-sizing: border-box; border-top: 1px solid var(--line); cursor: pointer; color: var(--text); font: 15px/1.4 var(--sans, system-ui); }
+.olga-step:first-child { border-top: 0; }
+.olga-step[hidden] { display: none; }
+.olga-step input { flex: none; width: 22px; height: 22px; margin: 0; accent-color: var(--good); }
+.olga-step.is-done span { color: var(--base-50); text-decoration: line-through; }
+.olga-more { display: inline-flex; align-items: center; min-height: 44px; padding: 0; border: 0; background: none; color: var(--accent, #2a62c9); font: 600 15px var(--sans, system-ui); cursor: pointer; text-decoration: none; }
+.olga-more[hidden] { display: none; }
+#pickerModal .hp-note-sec > summary { min-height: 44px; display: flex; align-items: center; box-sizing: border-box; cursor: pointer; font: 600 15px var(--sans, system-ui); }
+#pickerModal .hp-note-body a { display: inline-block; min-height: 44px; line-height: 44px; overflow-wrap: anywhere; }
+#pickerModal .olga-fold .pill, .olga-comment-form .pill { min-height: 44px; padding: 0 18px; font-size: 15px; }
+.olga-comment-form { display: flex; flex-direction: column; gap: 8px; padding-bottom: 12px; }
+.olga-comment-form .pill { align-self: flex-start; }
+.olga-toast { z-index: 3100; }
