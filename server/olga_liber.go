@@ -234,6 +234,12 @@ func newLiber(opts OlgaOptions, gated http.Handler, write func(string, []byte) e
 	}
 	l.svc = svc
 	svc.Recover()
+	go func() {
+		// the launcher writes its verdict a few seconds after start
+		for i := 0; i < 60 && svc.SettleDeploys(); i++ {
+			time.Sleep(time.Second)
+		}
+	}()
 	if cfg.Builder != nil {
 		go func() {
 			for range time.Tick(10 * time.Minute) {

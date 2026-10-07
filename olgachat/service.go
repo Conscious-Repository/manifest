@@ -782,11 +782,12 @@ func (s *Service) ship(ref Ref, cardID, changeID string, undo bool) {
 }
 
 // Recover settles what a restart interrupted: answers that were running fail
-// politely, and deploys are marked live, undone or failed.
+// politely (once, at start), and deploys are settled from the launcher's
+// verdict — which may land a few seconds after start, so SettleDeploys is
+// also polled until nothing is waiting.
 func (s *Service) Recover() {
 	for _, t := range s.Store.List() {
-		ref := refOf(t)
-		_, _ = s.update(ref, func(t *Thread) error {
+		_, _ = s.update(refOf(t), func(t *Thread) error {
 			for i := range t.Turns {
 				tu := &t.Turns[i]
 				if tu.Who == "liber" && (tu.Status == StatusThinking || tu.Status == StatusWorking) {
@@ -800,17 +801,41 @@ func (s *Service) Recover() {
 						}
 					}
 				}
-				if tu.Queued {
-					tu.Queued = false
+				tu.Queued = false
+			}
+			if t.Server != nil {
+				for _, ch := range t.Server.Changes {
+					if ch.State == StateBuilding {
+						ch.State = StateFailed
+					}
 				}
 			}
-			if t.Server == nil || s.Builder == nil {
-				return nil
-			}
+			return nil
+		})
+	}
+	s.SettleDeploys()
+}
+
+// SettleDeploys marks changes that were being shipped as live, undone or
+// failed once the launcher has said; it reports whether any are still waiting.
+func (s *Service) SettleDeploys() bool {
+	if s.Builder == nil {
+		return false
+	}
+	waiting := false
+	for _, t := range s.Store.List() {
+		if t.Server == nil {
+			continue
+		}
+		pending := false
+		for _, ch := range t.Server.Changes {
+			pending = pending || ch.State == StateDeploying
+		}
+		if !pending {
+			continue
+		}
+		_, _ = s.update(refOf(t), func(t *Thread) error {
 			for _, ch := range t.Server.Changes {
-				if ch.State == StateBuilding {
-					ch.State = StateFailed
-				}
 				if ch.State != StateDeploying {
 					continue
 				}
@@ -838,11 +863,14 @@ func (s *Service) Recover() {
 					if c != nil {
 						c.State, c.Message = ch.State, "That didn't work, so I put things back."
 					}
+				default:
+					waiting = true
 				}
 			}
 			return nil
 		})
 	}
+	return waiting
 }
 
 // MarshalPublic is the JSON Olga's browser receives.
