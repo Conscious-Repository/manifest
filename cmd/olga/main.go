@@ -20,6 +20,7 @@ func main() {
 	// Liber, her assistant (plan system/workbench/plans/2026-10-07-olga-chat.md).
 	liber := flag.Bool("liber", false, "Turn on Liber")
 	hermesBin := flag.String("hermes", "", "Hermes binary (default: hermes on PATH)")
+	profile := flag.String("liber-profile", "olga", "Liber's Hermes profile")
 	typesafeKey := flag.String("typesafe-key", "", "File holding the Jev (TypeSafe) key; empty → no router")
 	liberLog := flag.String("liber-log", "", "Liber's log for Benjamin (outside the vault)")
 	work := flag.String("work-root", "", "Where Liber builds app changes (empty → app changes are noted for Benjamin)")
@@ -36,7 +37,7 @@ func main() {
 	}
 	opts := server.OlgaOptions{Vault: *vault, PasswordFile: *password, AuditDir: *audit, Preview: *preview}
 	if *liber && *preview == "" {
-		cfg := &server.LiberConfig{HermesBin: *hermesBin, HermesProfile: "olga", VoiceModel: "gpt-5.6-sol", VoiceProvider: "openai-codex", TypesafeKey: *typesafeKey, LogFile: *liberLog}
+		cfg := &server.LiberConfig{HermesBin: *hermesBin, HermesProfile: *profile, VoiceModel: "gpt-5.6-sol", VoiceProvider: "openai-codex", TypesafeKey: *typesafeKey, LogFile: *liberLog}
 		if *work != "" && *runtime != "" {
 			cfg.Builder = &olgachat.GitBuilder{Origin: *origin, Seed: *seed, Root: *work, Vault: *vault, Runtime: *runtime,
 				ClaudeBin: *claudeBin, GoBin: *goBin, NodeBin: *nodeBin, NodePath: *nodePath,

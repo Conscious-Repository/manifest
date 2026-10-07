@@ -1,0 +1,119 @@
+/* Olga's simpler planner (2026-10-07 audit): calm type, big targets, nothing
+   that needs a mouse. Loaded after every shared stylesheet. */
+#todosView .tdo-sec-label, #todosView .tdo-capture, #todosView .tdo-quiet-row, #todosView .tdo-decisions { display: none; }
+#todosView .panel-head { display: none; }
+
+/* toolbar */
+.olga-task-views { display: flex; gap: 6px; padding: 4px; border-radius: 12px; background: var(--base-10); margin-bottom: 12px; }
+.olga-view { flex: 1; min-height: 44px; border: 0; border-radius: 9px; background: transparent; font: 600 15px var(--sans, system-ui); color: var(--base-60); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
+.olga-view.on { background: var(--bg); color: var(--text); box-shadow: 0 1px 2px rgba(0,0,0,.08); }
+.olga-view-count { min-width: 20px; height: 20px; padding: 0 6px; border-radius: 10px; background: #fff4d6; color: #5a4300; font: 600 12px/20px var(--sans, system-ui); }
+.olga-find { display: flex; gap: 8px; margin-bottom: 12px; }
+.olga-find input { flex: 1; min-width: 0; min-height: 44px; font-size: 16px; border-radius: 10px; }
+.olga-find select { flex: none; max-width: 42%; min-height: 44px; font-size: 16px; border-radius: 10px; }
+.olga-add-fab { min-height: 44px; padding: 0 18px; border: 0; border-radius: 22px; background: var(--base-100); color: #fff; font: 600 16px var(--sans, system-ui); cursor: pointer; margin-bottom: 12px; }
+.olga-empty { color: var(--base-50); font: 16px/1.5 var(--sans, system-ui); padding: 16px 0; }
+
+/* grouped list */
+.olga-group { border-bottom: 1px solid var(--line); }
+.olga-group-head { display: flex; align-items: center; justify-content: space-between; min-height: 52px; cursor: pointer; list-style: none; font: 600 17px var(--sans, system-ui); color: var(--text); }
+.olga-group-head::-webkit-details-marker { display: none; }
+.olga-group-head::after { content: "›"; margin-left: 10px; font-size: 22px; color: var(--base-40); transition: transform .15s; }
+.olga-group[open] > .olga-group-head::after { transform: rotate(90deg); }
+.olga-group-title { flex: 1; }
+.olga-group-count { color: var(--base-40); font-weight: 400; font-size: 15px; }
+.olga-group-hint { margin: -6px 0 6px; font: 14px var(--sans, system-ui); color: var(--base-50); }
+#todosView .tdo-row { min-height: 52px; }
+#todosView .tdo-check { width: 44px; height: 44px; display: inline-flex; align-items: center; justify-content: center; color: var(--base-60); }
+#todosView .tdo-check::before { content: ""; }
+#todosView .tdo-row:not(.done) .tdo-check { font-size: 0; }
+#todosView .tdo-row:not(.done) .tdo-check::after { content: ""; width: 22px; height: 22px; border: 2px solid var(--base-50); border-radius: 50%; box-sizing: border-box; }
+#todosView .tdo-task-title { font: 16px/1.35 var(--sans, system-ui); }
+.olga-row-area { display: block; font: 13px var(--sans, system-ui); color: var(--base-40); margin-top: 2px; }
+.olga-new { animation: olga-flash 2.4s ease-out; }
+@keyframes olga-flash { 0%, 40% { background: #fff4d6; } 100% { background: transparent; } }
+.olga-done-row { display: flex; align-items: center; gap: 4px; }
+.olga-done-text { display: flex; flex-direction: column; min-width: 0; }
+.olga-done-text .tdo-text { color: var(--base-50); text-decoration: line-through; }
+
+/* timeline */
+.olga-tl-lead { margin: 4px 0 16px; }
+.olga-tl-sentence { font: 600 20px/1.3 var(--sans, system-ui); color: var(--text); margin: 0 0 4px; }
+.olga-tl-sub { font: 15px/1.45 var(--sans, system-ui); color: var(--base-60); margin: 0; }
+.olga-link { border: 0; background: none; padding: 10px 0; color: var(--accent); font: 600 15px var(--sans, system-ui); cursor: pointer; }
+.olga-weekends { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+.olga-weekend { padding: 12px 14px; border: 1px solid var(--line); border-radius: 12px; }
+.olga-weekend.is-now { border-color: var(--base-100); }
+.olga-weekend.is-away { background: var(--base-05); }
+.olga-wk-head { display: flex; justify-content: space-between; gap: 8px; font: 600 16px var(--sans, system-ui); color: var(--text); }
+.olga-wk-temp { font-weight: 400; color: var(--base-40); }
+.olga-wk-lines { list-style: none; margin: 6px 0 0; padding: 0; font: 15px/1.45 var(--sans, system-ui); color: var(--base-70); }
+.olga-wk-lines li { padding: 2px 0; }
+.olga-wk-lines .is-away { color: var(--base-50); }
+.olga-wk-lines .is-free { color: var(--base-40); }
+.olga-wk-lines .is-spare { color: var(--base-50); }
+.olga-chart-fold { margin-top: 20px; }
+.olga-chart-fold summary { min-height: 44px; display: flex; align-items: center; cursor: pointer; color: var(--base-60); font: 15px var(--sans, system-ui); }
+
+/* questions */
+.olga-q-lead { font: 16px/1.45 var(--sans, system-ui); color: var(--base-60); margin: 4px 0 12px; }
+.olga-q-list { display: grid; gap: 8px; }
+.olga-q { border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
+.olga-q.is-open { border-color: var(--base-100); }
+.olga-q-head { display: flex; flex-direction: column; align-items: flex-start; gap: 3px; width: 100%; min-height: 56px; padding: 12px 14px; border: 0; background: var(--bg); text-align: left; cursor: pointer; }
+.olga-q-title { font: 600 16px/1.35 var(--sans, system-ui); color: var(--text); }
+.olga-q-for { font: 13px var(--sans, system-ui); color: var(--base-40); }
+.olga-q-card { padding: 0 14px 14px; display: grid; gap: 10px; }
+.olga-q-card input { min-height: 46px; font-size: 16px; border-radius: 10px; width: 100%; box-sizing: border-box; }
+.olga-q-options { display: grid; gap: 8px; }
+.olga-q-option { min-height: 46px; padding: 10px 14px; border: 1px solid var(--base-30); border-radius: 10px; background: var(--bg); text-align: left; font: 15px/1.35 var(--sans, system-ui); color: var(--text); cursor: pointer; }
+.olga-q-option[aria-pressed="true"] { border-color: var(--base-100); background: var(--base-10); box-shadow: inset 0 0 0 1px var(--base-100); }
+.olga-q-hint { margin: 0; font: 14px/1.45 var(--sans, system-ui); color: var(--base-50); }
+.olga-q-more summary { min-height: 44px; display: flex; align-items: center; cursor: pointer; color: var(--base-60); font: 15px var(--sans, system-ui); }
+.olga-q-more p { margin: 0 0 6px; font: 15px/1.5 var(--sans, system-ui); color: var(--base-60); white-space: pre-wrap; }
+.olga-q-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.olga-q-actions .pill { min-height: 44px; padding: 0 16px; font-size: 15px; }
+.olga-q-actions .pill:disabled { opacity: .45; }
+.olga-q-error { color: var(--danger); font: 14px var(--sans, system-ui); margin: 0; }
+.olga-q-card.is-saving { opacity: .6; pointer-events: none; }
+.olga-putoff { margin-top: 16px; }
+.olga-putoff-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 8px 0; font: 15px/1.4 var(--sans, system-ui); }
+.olga-putoff-row .pill { min-height: 44px; flex: none; }
+
+/* toast with undo */
+.olga-toast { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(20px + env(safe-area-inset-bottom)); z-index: 1001; display: flex; align-items: center; gap: 14px; max-width: calc(100vw - 32px); box-sizing: border-box; padding: 10px 10px 10px 18px; border-radius: 14px; background: var(--base-100); color: #fff; font: 15px/1.35 var(--sans, system-ui); box-shadow: 0 6px 20px rgba(0,0,0,.18); }
+.olga-toast[hidden] { display: none; }
+.olga-toast-undo { min-height: 40px; padding: 0 14px; border: 0; border-radius: 10px; background: rgba(255,255,255,.16); color: #fff; font: 600 15px var(--sans, system-ui); cursor: pointer; }
+
+/* the task panel */
+.olga-panel-top { display: flex; gap: 10px; align-items: center; margin-bottom: 14px; }
+.olga-done-btn { min-height: 48px; padding: 0 18px; border: 0; border-radius: 24px; background: var(--good); color: #fff; font: 600 16px var(--sans, system-ui); cursor: pointer; }
+.olga-done-btn.is-done { background: var(--base-20); color: var(--text); }
+.olga-panel-footer { position: sticky; bottom: 0; display: flex; gap: 8px; justify-content: flex-end; padding: 10px 0 calc(10px + env(safe-area-inset-bottom)); background: var(--bg); border-top: 1px solid var(--line); z-index: 2; }
+.olga-panel-footer[hidden] { display: none; }
+.olga-panel-footer .pill { min-height: 44px; padding: 0 18px; font-size: 16px; }
+.olga-when { margin: 0 0 14px; padding: 12px 14px; border-radius: 12px; background: var(--base-05); font: 15px/1.5 var(--sans, system-ui); color: var(--base-70); }
+.olga-when strong { color: var(--text); }
+.olga-fold { border-top: 1px solid var(--line); }
+.olga-fold > summary { min-height: 52px; display: flex; align-items: center; justify-content: space-between; cursor: pointer; list-style: none; font: 600 16px var(--sans, system-ui); color: var(--text); }
+.olga-fold > summary::-webkit-details-marker { display: none; }
+.olga-fold > summary::after { content: "›"; font-size: 22px; color: var(--base-40); transition: transform .15s; }
+.olga-fold[open] > summary::after { transform: rotate(90deg); }
+.olga-remove { margin: 18px 0 8px; border: 0; background: none; padding: 12px 0; min-height: 44px; color: var(--danger); font: 15px var(--sans, system-ui); cursor: pointer; }
+.olga-leave { padding: 12px 14px; margin: 0 0 12px; border-radius: 12px; background: #fff4d6; color: #4a3800; font: 15px/1.4 var(--sans, system-ui); display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+
+/* plain labels instead of spaced capitals */
+#todosView .micro-label, #pickerModal .olga-detail-field > span, #todosView .tdo-pill, .hp-card-kicker { font-family: var(--sans, system-ui) !important; letter-spacing: 0 !important; text-transform: none !important; font-size: 13px !important; }
+
+@media (max-width: 860px) {
+  .olga-add-fab { position: fixed; right: 16px; bottom: calc(20px + env(safe-area-inset-bottom)); z-index: 50; width: 58px; height: 58px; padding: 0; border-radius: 50%; font-size: 28px; line-height: 58px; box-shadow: 0 6px 18px rgba(0,0,0,.22); margin: 0; }
+  .olga-add-fab .olga-add-label { display: none; }
+  body.liber-on .olga-add-fab { display: none; }
+  #todosView .content-scroll, #todosView { padding-bottom: 90px; }
+  /* the dialog fills the phone screen */
+  #pickerModal .modal-card { position: fixed !important; inset: 0 !important; width: auto !important; max-width: none !important; height: 100dvh !important; max-height: none !important; margin: 0 !important; border-radius: 0 !important; display: flex; flex-direction: column; padding-top: env(safe-area-inset-top); }
+  #pickerModal .modal-close, #pickerModal [aria-label="Close"] { min-width: 44px; min-height: 44px; font-size: 22px; }
+  #pickerBody { flex: 1; overflow: auto; -webkit-overflow-scrolling: touch; padding-bottom: 0; }
+  .olga-mobile-signout { min-height: 44px; display: inline-flex !important; align-items: center; padding: 0 6px; }
+  .crumb-bar #crumbMeta { font-size: 13px; }
+}
