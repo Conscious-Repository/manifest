@@ -133,7 +133,7 @@ func olgaPreviewPage(b []byte, prefix string) []byte {
 	for _, a := range []string{`src="/`, `href="/`} {
 		s = strings.ReplaceAll(s, a, a+strings.TrimPrefix(prefix, "/")+"/")
 	}
-	shim := `<base href="` + prefix + `/"><script>(()=>{const p=` + strconv.Quote(prefix) + `;const fix=u=>typeof u==='string'&&u.startsWith('/')&&!u.startsWith(p+'/')?p+u:u;const f=window.fetch.bind(window);window.fetch=(u,o)=>f(fix(u),o);const E=window.EventSource;if(E)window.EventSource=function(u,o){return new E(fix(u),o)};})();</script>`
+	shim := `<base href="` + prefix + `/"><script>(()=>{const p=` + strconv.Quote(prefix) + `;const fix=u=>typeof u==='string'&&u.startsWith('/')&&!u.startsWith(p+'/')?p+u:u;const f=window.fetch.bind(window);window.fetch=(u,o)=>{if(u instanceof Request){const url=new URL(u.url);if(url.origin===location.origin&&!url.pathname.startsWith(p+'/')){url.pathname=p+url.pathname;u=new Request(url,u);}return f(u,o);}return f(fix(u),o);};const E=window.EventSource;if(E)window.EventSource=function(u,o){return new E(fix(u),o)};})();</script>`
 	banner := `<div style="position:sticky;top:0;z-index:9999;display:flex;gap:12px;align-items:center;justify-content:center;flex-wrap:wrap;padding:10px 16px calc(10px);padding-top:calc(10px + env(safe-area-inset-top));background:#fff4d6;color:#4a3800;font:15px/1.3 system-ui;border-bottom:1px solid #e8d49a">Preview — this is how it would look. Changes here aren't saved.</div>`
 	s = strings.Replace(s, "<head>", "<head>"+shim, 1)
 	if i := strings.Index(s, "<body"); i >= 0 {
