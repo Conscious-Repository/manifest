@@ -78,12 +78,46 @@ func (s *Server) approvalScreen(p approvals.Proposal, store *approvals.Store) *s
 	return v
 }
 
+// screenDupMemo remembers each card's verdict until the backlog changes:
+// the feed asks on every poll, and comparing one title against ~500 items
+// cost ~30 ms a card (0.4 s per feed request, 2026-10-07).
+var (
+	screenDupMu   sync.Mutex
+	screenDupMemo = map[string]string{}
+	screenDupRaw  string
+)
+
 // screenDuplicate names an aion backlog item from another meeting that this
 // title restates, or "".
 func (s *Server) screenDuplicate(title, src string) string {
+	raw := s.aion.RawFile("backlog.md")
+	key := title + "\x00" + src
+	screenDupMu.Lock()
+	if raw != screenDupRaw {
+		screenDupRaw, screenDupMemo = raw, map[string]string{}
+	}
+	if v, ok := screenDupMemo[key]; ok {
+		screenDupMu.Unlock()
+		return v
+	}
+	screenDupMu.Unlock()
+	v := s.screenDuplicateCompute(title, src, aion.ParseBacklog(raw))
+	screenDupMu.Lock()
+	if raw == screenDupRaw {
+		screenDupMemo[key] = v
+	}
+	screenDupMu.Unlock()
+	return v
+}
+
+func (s *Server) screenDuplicateCompute(title, src string, doc *aion.BacklogDoc) string {
 	best, bestItem := 0.0, (*aion.BacklogItem)(nil)
 	a := screenNorm(title)
-	for _, it := range s.aion.LoadBacklog().Items() {
+	var ah [256]int
+	for i := 0; i < len(a); i++ {
+		ah[a[i]]++
+	}
+	for _, it := range doc.Items() {
 		other := ""
 		if len(it.Sources) > 0 {
 			other = strings.TrimSuffix(it.Sources[0], ".md")
@@ -91,7 +125,14 @@ func (s *Server) screenDuplicate(title, src string) string {
 		if src != "" && other == src {
 			continue // the same meeting is not a duplicate of itself
 		}
-		if r := ratcliff(a, screenNorm(it.Text)); r > best {
+		b := screenNorm(it.Text)
+		// matched characters can never exceed the characters the two titles
+		// share (their histograms' overlap): skip, exactly, what cannot reach
+		// the threshold before the expensive comparison
+		if sum := len(a) + len(b); sum == 0 || 2*float64(charOverlap(&ah, b))/float64(sum) < screenDupThreshold {
+			continue
+		}
+		if r := ratcliff(a, b); r > best {
 			best, bestItem = r, it
 		}
 	}
@@ -260,6 +301,21 @@ var screenNonWord = regexp.MustCompile(`[^a-z0-9 ]+`)
 
 func screenNorm(s string) string {
 	return strings.Join(strings.Fields(screenNonWord.ReplaceAllString(strings.ToLower(s), " ")), " ")
+}
+
+// charOverlap counts the characters b shares with the histogram ah — an
+// upper bound on the characters Ratcliff/Obershelp can match.
+func charOverlap(ah *[256]int, b string) int {
+	var bh [256]int
+	n := 0
+	for i := 0; i < len(b); i++ {
+		c := b[i]
+		if bh[c] < ah[c] {
+			n++
+		}
+		bh[c]++
+	}
+	return n
 }
 
 // ratcliff is the Ratcliff/Obershelp similarity (Python difflib's ratio):
