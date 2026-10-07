@@ -829,7 +829,7 @@ button.chat-attach-chip { min-height: 44px; max-width: 100%; background: transpa
 .chat-prompt { flex: none; max-height: 52vh; overflow-y: auto; margin: 0 0 var(--sp-4); padding: var(--sp-5) var(--sp-6); border: 1px solid var(--line); border-left: 3px solid var(--warn); border-radius: var(--radius-lg); background: var(--surface-panel, var(--bg)); font-family: var(--sans); }
 .chat-prompt.is-busy { opacity: .7; }
 .chat-prompt-head { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-3) var(--sp-4); margin-bottom: var(--sp-3); }
-.chat-prompt-badge { font-size: var(--fs-xs); font-weight: 600; letter-spacing: .02em; color: var(--warn); text-transform: uppercase; }
+.chat-prompt-badge { font-weight: 600; color: var(--warn); } /* the .micro-label recipe does the rest */
 .chat-prompt-header { font-size: var(--fs-sm); color: var(--base-60); }
 .chat-prompt-tabs { display: flex; flex-wrap: wrap; gap: var(--sp-2); margin-left: auto; }
 .chat-prompt-tab { font-size: var(--fs-xs); color: var(--base-60); padding: 0 var(--sp-3); border: 1px solid var(--line); border-radius: 999px; }

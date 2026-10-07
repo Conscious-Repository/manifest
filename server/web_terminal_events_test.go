@@ -48,6 +48,7 @@ global.document = { addEventListener(){}, hidden: false, querySelectorAll: () =>
 global.els = { chatView: { hidden: false } };
 global.fmtWhen = value => value;
 global.cmdRegistry = {register(){}};
+global.chatPromptPaint = () => {}; // 48-chat-prompt.js (the on-screen chooser) is not under test here
 global.window = {addEventListener(){},dispatchEvent(){}};
 global.CustomEvent = class { constructor(name,init){this.type=name;this.detail=init.detail;} };
 global.el = (tag, cls, text) => ({ textContent: text || '', children: [], dataset: {}, classList: {add(){}}, setAttribute(){}, replaceChildren(...nodes){this.children=nodes;}, append(...nodes){this.children.push(...nodes);} });

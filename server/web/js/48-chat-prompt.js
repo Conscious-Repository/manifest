@@ -59,7 +59,7 @@ function chatPromptView(o){
 
 function chatPromptUnread(o){
   const card=el('section','chat-prompt chat-prompt-unread');card.id='chatPrompt';card.dataset.session=o.id;card.dataset.unread='1';
-  const head=el('div','chat-prompt-head');head.append(el('span','chat-prompt-badge','Needs input'));
+  const head=el('div','chat-prompt-head');head.append(el('span','micro-label chat-prompt-badge','Needs input'));
   const open=el('button','pill','Open terminal');open.type='button';open.onclick=()=>chatOpenTerminalPane(o.se);
   const foot=el('div','chat-prompt-foot');foot.append(el('span','chat-prompt-hint chat-prompt-hint-keep','Shown in full when the terminal is tall enough, or answer it there.'),open);
   card.append(head,el('div','chat-prompt-title',chatPromptAgentName(o)+' is waiting on a prompt this chat can’t read yet.'),foot);
@@ -73,7 +73,7 @@ function chatPromptCard(o,p) {
   card.dataset.session=o.id;card.dataset.revision=p.revision;card.dataset.selected=String(p.selected);card.dataset.rows=String(p.options.length);
   card.setAttribute('role','group');card.setAttribute('aria-label','Agent needs input');
   const head=el('div','chat-prompt-head');
-  head.append(el('span','chat-prompt-badge','Needs input'));
+  head.append(el('span','micro-label chat-prompt-badge','Needs input'));
   if(p.header)head.append(el('span','chat-prompt-header',p.header));
   if(p.tabs?.length){
     const tabs=el('span','chat-prompt-tabs');

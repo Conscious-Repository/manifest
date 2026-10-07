@@ -87,7 +87,9 @@ func TestPromptDetectorIsNotFooledByAMenu(t *testing.T) {
 	if why == "" {
 		t.Fatal("a dialog must be named, so the send can refuse in words")
 	}
-	if !strings.Contains(why, "TERMINAL") {
+	// since 0902948 prompts are answered from chat (the chooser above the
+	// composer), with Terminal as the fallback: the refusal names both
+	if !strings.Contains(why, "above the composer") || !strings.Contains(why, "Terminal") {
 		t.Fatalf("the refusal must say where to answer it: %q", why)
 	}
 }
