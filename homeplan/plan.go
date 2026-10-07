@@ -64,12 +64,16 @@ type Person struct {
 // spend together: two people working eight hours is eight, not sixteen.
 // Evenings are planning/ordering time only and never carry physical work.
 type Capacity struct {
-	WeekendDayHours float64  `json:"weekendDayHours"`
-	EveningsPerWeek int      `json:"eveningsPerWeek"`
-	EveningHours    float64  `json:"eveningHours"`
-	Note            string   `json:"note,omitempty"`
-	Solo            string   `json:"solo,omitempty"` // what a one-person weekend may hold; never baseline
-	Days            []string `json:"days,omitempty"` // reserved for later; weekends are Sat+Sun
+	WeekendDayHours float64 `json:"weekendDayHours"`
+	EveningsPerWeek int     `json:"eveningsPerWeek"`
+	EveningHours    float64 `json:"eveningHours"`
+	Note            string  `json:"note,omitempty"`
+	Solo            string  `json:"solo,omitempty"` // what a one-person weekend may hold; never baseline
+	// FamilyHelp, when set, says helpers on some weekends cover work beyond
+	// the household's own hours: a shortfall is then a ballpark for them,
+	// not a conflict. Free text: who helps and how it is estimated.
+	FamilyHelp string   `json:"familyHelp,omitempty"`
+	Days       []string `json:"days,omitempty"` // reserved for later; weekends are Sat+Sun
 }
 
 // Away removes people from the calendar for an inclusive date range.

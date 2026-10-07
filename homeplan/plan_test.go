@@ -428,3 +428,23 @@ func TestAssistantSequence(t *testing.T) {
 		t.Fatal("the sequence leaked into the saved document")
 	}
 }
+
+// Family help: a shortfall becomes the hours helpers are expected to cover,
+// not a conflict, and the sequence spreads all known work over the weekends.
+func TestFamilyHelpCoversShortfall(t *testing.T) {
+	base, _ := os.ReadFile("testdata/plan.json")
+	merged, _ := MergePatch(base, []byte(`{"tasks": {"home/roof-on": {"estimate": {"hours": 70, "low": null, "high": null}}}}`))
+	p, _ := Decode(merged)
+	d := Derive(p, homeTasks, "2026-10-07")
+	if !hasConflict(d.Conflicts, "overdemand") || d.Capacity.HelpHours != 0 {
+		t.Fatalf("without help: %+v", d.Capacity)
+	}
+	p.Capacity.FamilyHelp = "parents on some weekends"
+	d = Derive(p, homeTasks, "2026-10-07")
+	if hasConflict(d.Conflicts, "overdemand") || d.Capacity.HelpHours != 18 || d.Capacity.RemainingHours != -18 {
+		t.Fatalf("with help: remaining %v help %v conflicts %+v", d.Capacity.RemainingHours, d.Capacity.HelpHours, d.Conflicts)
+	}
+	if !d.Sequence.Fits {
+		t.Fatalf("with help the known work should spread over the weekends: %+v", d.Sequence.Unplaced)
+	}
+}

@@ -70,7 +70,8 @@ type Totals struct {
 	EveningUnknown []string `json:"eveningUnknown"`   // evening work with no estimate
 	SoloWeekendHrs float64  `json:"soloWeekendHours"` // optional, outside the baseline
 	ContingencyHrs float64  `json:"contingencyHours"`
-	WaitUnknown    []string `json:"waitUnknown"` // supplier/crew waits with no duration
+	HelpHours      float64  `json:"helpHours,omitempty"` // shortfall family help is expected to cover
+	WaitUnknown    []string `json:"waitUnknown"`         // supplier/crew waits with no duration
 	HardDeadline   string   `json:"hardDeadline,omitempty"`
 }
 
@@ -421,7 +422,11 @@ func derive(p *Plan, tasks map[string]TaskRef, asOf string) Derived {
 	}
 	d.Capacity.RemainingHours = d.Capacity.PoolHours - d.Capacity.KnownDemand
 	if d.Capacity.RemainingHours < 0 {
-		d.Conflicts = append(d.Conflicts, Conflict{"overdemand", "pool", fmt.Sprintf("known work needs %.0f h but the open weekends hold %.0f h", d.Capacity.KnownDemand, d.Capacity.PoolHours)})
+		if p.Capacity.FamilyHelp != "" {
+			d.Capacity.HelpHours = -d.Capacity.RemainingHours
+		} else {
+			d.Conflicts = append(d.Conflicts, Conflict{"overdemand", "pool", fmt.Sprintf("known work needs %.0f h but the open weekends hold %.0f h", d.Capacity.KnownDemand, d.Capacity.PoolHours)})
+		}
 	}
 
 	// dependency order: nothing placed before what it waits on

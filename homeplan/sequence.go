@@ -45,6 +45,15 @@ func sequence(p *Plan, d *Derived, itemOf map[string]Item) *Sequence {
 		weeks = append(weeks, i)
 		free[i] = max(w.Free, 0)
 	}
+	// family help: stretch the open weekends so all known work spreads over
+	// them in proportion — a ballpark, as the household asked for
+	if h := d.Capacity.HelpHours; h > 0 && d.Capacity.PoolHours > 0 {
+		f := (d.Capacity.PoolHours + h) / d.Capacity.PoolHours
+		for i := range free {
+			free[i] *= f
+		}
+		seq.Assumptions = append(seq.Assumptions, fmt.Sprintf("family help on some weekends covers about %.0f h beyond the household's own time", h))
+	}
 	pos := map[string]int{} // Saturday → index into d.Weeks
 	for i, w := range d.Weeks {
 		pos[w.Saturday] = i

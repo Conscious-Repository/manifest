@@ -2,8 +2,7 @@
 // over a stubbed /api/home/plan whose body is the Go server's own derivation
 // of homeplan/testdata/plan.json (written by TestFixtureHomePlanTimeline):
 //   1. the timeline is lanes on one axis (travel, holds, work) and one
-//      sentence: 28 h estimated leaves 52 h of 80 h; the Roof 56 h what-if
-//      turns it into 4 h more than the open time — negative kept visible;
+//      sentence: about 28 h of work leaves 52 h of 80 h; no what-if chips;
 //   2. the "To resolve" feed lists each open question as a card; a card's
 //      Save writes only that field, against the revision it read; a 409
 //      keeps the answer on screen with the error;
@@ -47,19 +46,15 @@ const plan=JSON.parse(fs.readFileSync(process.env.HP_FIXTURE,'utf8'));
  for(const want of ['prep and coating','sealing and checks','contingency'])assert.ok(lanes.some(l=>l.toLowerCase()===want),'no lane for '+want+': '+lanes.join(' | '));
  assert.ok(lanes.some(l=>/roof on \+ flashing-into-house$/.test(l)),'roof lane names what its estimate includes: '+lanes.join(' | '));
  assert.equal(await p.locator('.hp-blk.is-away').count(),3,'three away weekends');
- assert.match(await p.locator('.hp-sentence').innerText(),/28 h of estimated work leaves 52 h of the 80 h of open weekend time/);
+ assert.match(await p.locator('.hp-sentence').innerText(),/About 28 h of work leaves 52 h of the 80 h of open weekend time spare/);
  assert.equal(await p.locator('.hp-grid, .hp-stat, .hp-agenda').count(),0,'the old grid and stat cards are gone');
  assert.equal(await p.evaluate(()=>window.pwned),undefined,'a task title ran as markup');
  const shown=await p.evaluate(()=>document.querySelector('.hp').innerText);
  assert.ok(!/NaN|undefined/.test(shown),'a derived value is missing: '+(shown.match(/.{0,40}(NaN|undefined).{0,20}/)||[])[0]);
  let pan=await p.evaluate(()=>document.documentElement.scrollWidth-document.documentElement.clientWidth);
  assert.ok(pan<=0,'timeline pans sideways by '+pan+' at '+width);
- // a what-if changes the sentence, says so, and writes nothing
- await p.click('.hp-whatif-chip:has-text("Roof 56 h")');await p.waitForTimeout(50);
- assert.match(await p.locator('.hp-sentence').innerText(),/is 4 h more than the 80 h/);
- assert.match(await p.locator('.hp-mode').innerText(),/What if: “Roof 56 h”/);
- assert.ok(!(await p.evaluate(()=>calls.some(x=>x.method==='POST'&&x.url==='/api/home/plan'))),'a what-if wrote the plan');
- await p.click('.hp-whatif-chip:has-text("Saved plan")');await p.waitForTimeout(50);
+ // no what-if machinery on the timeline any more
+ assert.equal(await p.locator('.hp-whatif-chip').count(),0,'what-if chips are gone from the timeline');
  // 2. the feed
  await p.evaluate(()=>homePlanFeedRender(document.getElementById('feed')));
  await p.waitForSelector('.hp-card');
@@ -95,5 +90,5 @@ const plan=JSON.parse(fs.readFileSync(process.env.HP_FIXTURE,'utf8'));
  assert.deepEqual(errors,[]);
  await p.close();
  }
- console.log('PASS: Home timeline — lanes on one axis with one sentence (28 h leaves 52 h of 80 h; Roof 56 h → 4 h over, never written); the To-resolve feed answers one field per card against the read revision and keeps a refused answer; notes never run markup; neither view pans at 390 px.');
+ console.log('PASS: Home timeline — lanes on one axis with one sentence (28 h leaves 52 h of 80 h), no what-ifs; the To-resolve feed answers one field per card against the read revision and keeps a refused answer; notes never run markup; neither view pans at 390 px.');
 }finally{await browser.close();}})().catch(e=>{console.error(e);process.exitCode=1;});

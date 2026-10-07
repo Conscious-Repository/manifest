@@ -7,7 +7,7 @@
 // or availability by itself. All text renders as text: task notes never
 // execute as HTML.
 const HP_DRAFT_KEY = "homePlan.draft.v1";
-let hp = { data: null, view: null, error: "", scenario: "", draft: null, problems: [], previewing: false, saveError: "", stale: [] };
+let hp = { data: null, view: null, error: "", draft: null, problems: [], previewing: false, saveError: "", stale: [] };
 
 function hpLoadDraft() {
   try { const d = JSON.parse(localStorage.getItem(HP_DRAFT_KEY) || "null"); if (d && d.patch) return d; } catch (e) {}
@@ -55,14 +55,8 @@ async function homePlanLoad() {
   await hpRefreshView();
 }
 
-// the shown plan: saved, or saved + scenario + draft as the server derives it
-function hpActivePatch() {
-  let patch = {};
-  const sc = hp.scenario && hp.data && hp.data.plan && (hp.data.plan.scenarios || {})[hp.scenario];
-  if (sc) patch = hpMerge(patch, sc.patch);
-  if (hp.draft) patch = hpMerge(patch, hp.draft.patch);
-  return patch;
-}
+// the shown plan: saved, or saved + draft as the server derives it
+function hpActivePatch() { return hp.draft ? hpClone(hp.draft.patch) : {}; }
 async function hpRefreshView() {
   hp.problems = [];
   const patch = hpActivePatch();
@@ -116,18 +110,6 @@ async function hpSaveDraft(force) {
     hp.saveError = e.status === 409 ? "Someone saved the plan at the same moment. Your draft is kept — save again to review." : (e.problems && e.problems.length ? e.problems.join("; ") : e.message);
   }
   await hpRefreshView();
-}
-
-async function hpSaveScenario(label) {
-  if (!hp.draft || !hp.data) return;
-  await (async () => {
-    const id = "user-" + label.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 40);
-    try {
-      hp.data = await hpFetch("POST", "/api/home/plan", { revision: hp.data.revision, patch: { scenarios: { [id]: { label, basis: "user", patch: hp.draft.patch } } } });
-      hp.draft = null; hpStoreDraft(); hp.scenario = id; showToast("Saved as a scenario — the baseline is unchanged");
-    } catch (e) { showToast(e.message); }
-    await hpRefreshView();
-  })();
 }
 
 // ---------------- formatting ----------------
@@ -251,17 +233,7 @@ function hpPaint() {
   host.replaceChildren();
   if (hpUnavailable(host)) return;
   const v = hp.view, p = v.plan, d = v.derived, c = d.capacity;
-  if (hp.scenario || hpDraftCount()) host.append(hpModeBar());
-  // what-if chips: the roof estimate drives everything else
-  const sc = Object.entries(hp.data.plan.scenarios || {}).sort((a, b) => (a[1].order || 0) - (b[1].order || 0) || a[0].localeCompare(b[0]));
-  if (sc.length) {
-    const row = el("div", "hp-whatif");
-    row.append(el("span", "hp-whatif-label", "What if"));
-    const chip = (id, label) => { const b = el("button", "hp-whatif-chip" + (hp.scenario === id ? " on" : ""), label); b.setAttribute("aria-pressed", String(hp.scenario === id)); b.onclick = () => { hp.scenario = id; hpRefreshView(); }; row.append(b); };
-    chip("", "Saved plan");
-    sc.forEach(([id, s]) => chip(id, s.label));
-    host.append(row);
-  }
+  if (hpDraftCount()) host.append(hpModeBar());
   // the chart
   const start = p.horizon.start, end = c.hardDeadline || p.horizon.end, span = Math.max(1, hpDaysBetween(start, end) + 1);
   const x = (s) => Math.min(100, Math.max(0, hpDaysBetween(start, s) / span * 100));
@@ -296,15 +268,16 @@ function hpPaint() {
   // one sentence on what is left, then the fine print
   const unknown = c.unknownItems.length;
   const sent = el("p", "hp-sentence");
-  sent.textContent = hpH(c.knownDemand) + " of estimated work " + (c.remainingHours < 0 ? "is " + hpH(-c.remainingHours) + " more than" : "leaves " + hpH(c.remainingHours) + " of") + " the " + hpH(c.poolHours) + " of open weekend time" +
-    (unknown ? " — before " + unknown + " item" + (unknown === 1 ? "" : "s") + " without hours" + (c.unknownHigh ? " (allowances " + c.unknownLow + "–" + c.unknownHigh + " h)" : "") : "") + ".";
-  if (c.remainingHours < 0) sent.classList.add("hp-neg");
+  const tail = unknown ? " " + unknown + " item" + (unknown === 1 ? " still needs" : "s still need") + " hours." : "";
+  if (c.helpHours > 0) sent.textContent = "About " + hpH(Math.round(c.knownDemand)) + " of work: " + hpH(c.poolHours) + " from the two of you on open weekends, and roughly " + hpH(Math.round(c.helpHours)) + " with family helping on some weekends." + tail;
+  else if (c.remainingHours < 0) { sent.textContent = "About " + hpH(Math.round(c.knownDemand)) + " of work is " + hpH(Math.round(-c.remainingHours)) + " more than the " + hpH(c.poolHours) + " of open weekend time." + tail; sent.classList.add("hp-neg"); }
+  else sent.textContent = "About " + hpH(Math.round(c.knownDemand)) + " of work leaves " + hpH(Math.round(c.remainingHours)) + " of the " + hpH(c.poolHours) + " of open weekend time spare." + tail;
   host.append(sent);
   const dl = Object.values(p.milestones || {}).filter((m) => m.date).sort((a, b) => a.date.localeCompare(b.date)).map((m) => (m.kind === "deadline" ? "Deadline " : m.confirmed ? "Target " : "Draft target ") + hpShort(m.date) + ": " + m.title.toLowerCase());
   const later = Object.values(p.milestones || {}).filter((m) => m.kind === "later").map((m) => m.title.toLowerCase());
   const fine = el("p", "hp-fine");
   fine.textContent = [
-    "Blocks hold capacity; lighter blocks are a suggested order from the estimates, not a confirmed sequence.",
+    "Solid blocks hold time; lighter blocks are a rough order from the estimates" + (c.helpHours > 0 ? ", spread as if family help fills the gap" : "") + ".",
     "Weekends " + p.capacity.weekendDayHours + " h a day together; planning " + p.capacity.eveningsPerWeek + " × " + p.capacity.eveningHours + "-hour evenings weekly.",
     dl.join(". ") + ".",
     later.length ? "Later: " + later.join(", ") + "." : "",
@@ -322,16 +295,11 @@ function homePlanShowFeed() {
 function hpModeBar() {
   const bar = el("div", "hp-mode");
   const n = hpDraftCount();
-  if (hp.scenario) {
-    const s = hp.data.plan.scenarios[hp.scenario] || {};
-    bar.classList.add("is-scenario");
-    bar.append(el("span", "", "What if: “" + (s.label || hp.scenario) + "” — " + (s.basis === "assistant" ? "an assistant what-if" : "a saved what-if") + ", not the plan."), pillLight("Back to the saved plan", () => { hp.scenario = ""; hpRefreshView(); }));
-  }
   if (n) {
     bar.classList.add("is-draft");
     bar.append(el("span", "", "Draft · " + n + " change" + (n === 1 ? "" : "s") + " not saved — kept in this browser" + (hp.draft.base !== hp.data.revision ? ". The plan was saved elsewhere since this draft began." : ".")));
     const acts = el("span", "hp-mode-acts");
-    acts.append(pill("Save to plan", () => hpSaveDraft(false)), hpInlineAsk("Save as what-if", "Name", hpSaveScenario), pillLight("Discard", hpDiscardDraft));
+    acts.append(pill("Save to plan", () => hpSaveDraft(false)), pillLight("Discard", hpDiscardDraft));
     bar.append(acts);
     if (hp.saveError) {
       const err = el("div", "hp-save-error", hp.saveError);
@@ -344,7 +312,7 @@ function hpModeBar() {
       bar.append(err);
     }
   }
-  if (!hp.scenario && !n) bar.append(el("span", "hp-mode-saved", "Saved plan · schedule edits start a draft; nothing is committed until you save"));
+  if (!n) bar.append(el("span", "hp-mode-saved", "Saved plan · schedule edits start a draft; nothing is committed until you save"));
   if (hp.problems.length) { const pr = el("div", "hp-problems"); pr.setAttribute("role", "alert"); pr.append(el("strong", "", "This draft can't be applied: ")); pr.append(hp.problems.join("; ")); bar.append(pr); }
   return bar;
 }

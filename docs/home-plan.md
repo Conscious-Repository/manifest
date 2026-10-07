@@ -110,7 +110,8 @@ Unknown is `null`, never `0`.
   "capacity": {
     "weekendDayHours": 8,                     // each Saturday and Sunday, together
     "eveningsPerWeek": 2, "eveningHours": 3,  // planning/ordering only
-    "note": "…", "solo": "what a one-person weekend may hold (never baseline)"
+    "note": "…", "solo": "what a one-person weekend may hold (never baseline)",
+    "familyHelp": "who helps on some weekends — set, a shortfall is a ballpark for them, not a conflict"
   },
   "away":   {"<id>": {"from": "…", "to": "…", "who": ["benjamin"], "note": "…"}},
   "events": {"<id>": {"date": "…", "hours": 4, "title": "…", "task": "<home task id>", "note": "…"}},
@@ -171,8 +172,11 @@ A `<ref>` is `"<task id>"`, `"<task id>#<subtask id>"` or `"milestone:<id>"`.
 - **Known demand** is open (not done) items with `draws: "pool"` and a known
   `hours`, not `includedIn` another item. Items with no estimate are listed
   in `unknownItems`, with allowance totals, and are never counted as zero.
-- **Remaining** is pool minus known demand. A negative value stays negative
-  and also appears as an `overdemand` conflict.
+- **Remaining** is pool minus known demand. A negative value stays negative.
+  - If `capacity.familyHelp` is set, the shortfall is reported as `helpHours`
+    (what helpers are expected to cover), and the sequence spreads all known
+    work across the open weekends in proportion.
+  - Otherwise the shortfall is an `overdemand` conflict.
 - **Person-hours** are shown (`hours × crew`) but never used as capacity.
 - **Conflicts:**
   - `overallocated`: a weekend's reservations plus allocations exceed its
@@ -204,7 +208,7 @@ A `<ref>` is `"<task id>"`, `"<task id>#<subtask id>"` or `"milestone:<id>"`.
 
 **Timeline:**
 - **Lanes:** one row per lane on a single date axis, from the horizon start to the deadline. Lanes are travel, each event, holds (grouped by purpose), work (one per task, with saved placements solid and the assistant sequence lighter) and what is not yet estimated.
-- **What-if chips** switch scenarios; a what-if never writes.
+- **Scenarios** remain in the data and API (`derived.scenarios`); the view does not show them. The household's hours are canonical.
 - **Below the chart:** one sentence on what is left, and the fine print.
 
 **To resolve:** a feed of cards for open decisions, items without hours, unknown lead times, unknown prices and conflicts.
