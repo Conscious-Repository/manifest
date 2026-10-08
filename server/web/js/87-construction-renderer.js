@@ -38,7 +38,7 @@ async function cxRendererCreate(host, opts) {
   canvas.className = "cx-canvas";
   canvas.tabIndex = 0;
   canvas.setAttribute("role", "img");
-  canvas.setAttribute("aria-label", "3D assembly model — drag to orbit, shift-drag to pan, wheel to zoom, arrows rotate, 1–4 set views, click a part to select it");
+  canvas.setAttribute("aria-label", "3D assembly model — drag to rotate (or move, in Move mode), right- or shift-drag to move, scroll or pinch to zoom where you point, double-click to zoom in on a spot, arrows rotate, 1–4 set views, click a part to select it");
   let renderer;
   try {
     renderer = new T.WebGLRenderer({ canvas, antialias: true, alpha: true, preserveDrawingBuffer: true });
@@ -103,6 +103,42 @@ async function cxRendererCreate(host, opts) {
     else ctl.radius = Math.max(0.05, Math.min(60, ctl.radius * f));
     applyCamera();
   }
+  // the world point under the cursor: a part if one is hit, else the plane
+  // through the target facing the camera
+  function pointUnder(cx, cy) {
+    const h = hitAt(cx, cy);
+    if (h) return h.point.clone();
+    const r = canvas.getBoundingClientRect();
+    ray.setFromCamera(new T.Vector2(((cx - r.left) / r.width) * 2 - 1, -((cy - r.top) / r.height) * 2 + 1), camera);
+    const n = new T.Vector3(); camera.getWorldDirection(n);
+    const out = new T.Vector3();
+    return ray.ray.intersectPlane(new T.Plane().setFromNormalAndCoplanarPoint(n, ctl.target), out) ? out : null;
+  }
+  // zoom toward what the cursor points at: the target slides toward it by
+  // the same factor the distance shrinks, so that point stays under the cursor
+  function zoomAt(f, cx, cy) {
+    const p = pointUnder(cx, cy);
+    const before = camera === ortho ? 1 / ctl.zoom : ctl.radius;
+    dolly(f);
+    const after = camera === ortho ? 1 / ctl.zoom : ctl.radius;
+    if (p && before > 0) { ctl.target.lerp(p, 1 - after / before); applyCamera(); }
+  }
+  // fly the target and distance to a new place over ~200 ms
+  let tween = 0;
+  function flyTo(target, radius) {
+    const from = { t: ctl.target.clone(), r: ctl.radius, z: ctl.zoom }, start = performance.now(), id = ++tween;
+    const step = (now) => {
+      if (id !== tween) return;
+      const k = Math.min(1, (now - start) / 200), e = k * (2 - k);
+      ctl.target.lerpVectors(from.t, target, e);
+      ctl.radius = from.r + (radius - from.r) * e;
+      if (camera === ortho) ctl.zoom = from.z + (1 - from.z) * e; // the ortho frame follows the distance
+      applyCamera();
+      if (k < 1) requestAnimationFrame(step);
+    };
+    requestAnimationFrame(step);
+  }
+  let dragMode = "orbit";
   const ptrs = new Map();
   let down = null, pinch = 0;
   canvas.addEventListener("pointerdown", (e) => {
@@ -126,7 +162,8 @@ async function cxRendererCreate(host, opts) {
       pan(dx / 2, dy / 2);
       return;
     }
-    if (down.button === 2 || down.shift) pan(dx, dy); else orbit(dx, dy);
+    const panning = down.button === 1 || down.button === 2 || (dragMode === "pan") !== down.shift;
+    if (panning) pan(dx, dy); else orbit(dx, dy);
   });
   const up = (e) => {
     ptrs.delete(e.pointerId);
@@ -136,7 +173,19 @@ async function cxRendererCreate(host, opts) {
   canvas.addEventListener("pointerup", up);
   canvas.addEventListener("pointercancel", up);
   canvas.addEventListener("contextmenu", (e) => e.preventDefault());
-  canvas.addEventListener("wheel", (e) => { e.preventDefault(); dolly(e.deltaY > 0 ? 1.1 : 1 / 1.1); }, { passive: false });
+  canvas.addEventListener("wheel", (e) => {
+    e.preventDefault();
+    // a trackpad pinch arrives as ctrl+wheel with small deltas; a mouse wheel in ~100 px notches
+    const k = e.ctrlKey ? 0.01 : 0.0015;
+    const dy = Math.max(-120, Math.min(120, e.deltaMode === 1 ? e.deltaY * 33 : e.deltaY));
+    zoomAt(Math.exp(dy * k), e.clientX, e.clientY);
+  }, { passive: false });
+  canvas.addEventListener("dblclick", (e) => {
+    e.preventDefault();
+    const p = pointUnder(e.clientX, e.clientY);
+    if (p) flyTo(p, Math.max(0.08, ctl.radius * 0.45));
+  });
+  canvas.addEventListener("mousedown", (e) => { if (e.button === 1) e.preventDefault(); });
   canvas.addEventListener("keydown", (e) => {
     const step = 18;
     const handled = { ArrowLeft: () => (e.shiftKey ? pan(-step, 0) : orbit(-step, 0)), ArrowRight: () => (e.shiftKey ? pan(step, 0) : orbit(step, 0)),
@@ -326,6 +375,31 @@ async function cxRendererCreate(host, opts) {
       applyState();
     },
     setProjection(p) { camera = p === "orthographic" ? ortho : persp; applyCamera(); },
+    setDragMode(m) { dragMode = m === "pan" ? "pan" : "orbit"; canvas.style.cursor = dragMode === "pan" ? "grab" : ""; },
+    dragMode() { return dragMode; },
+    // frame these parts: centre on their bounds, close enough to fill the view
+    // section: frame the parts' cross-section (ignore their long dimension)
+    // from a three-quarter end view — a flashing that runs along the wall
+    focusParts(ids, o = {}) {
+      const box = new T.Box3();
+      for (const id of ids) { const part = st.parts.get(id); if (part && part.group.visible) box.expandByObject(part.group); }
+      if (box.isEmpty()) return false;
+      const c = new T.Vector3(), size = new T.Vector3();
+      box.getCenter(c); box.getSize(size);
+      let reach = size.length();
+      if (o.section) {
+        const dims = [size.x, size.y, size.z].sort((a, b) => a - b);
+        reach = Math.hypot(dims[0], dims[1]) * 1.6;
+        const longX = size.x >= size.y && size.x >= size.z;
+        // aim at the cut end, where every layer shows in profile, from outside it
+        if (longX) c.x = box.min.x; else c.z = box.min.z;
+        ctl.theta = (longX ? views.side.theta : views.front.theta) + 0.45;
+        ctl.phi = Math.PI / 2 - 0.35;
+        camera = persp;
+      }
+      flyTo(c, Math.max(0.08, reach * 0.9));
+      return true;
+    },
     projection() { return camera === ortho ? "orthographic" : "perspective"; },
     view(name) {
       const v = views[name] || views.iso;

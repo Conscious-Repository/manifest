@@ -903,6 +903,22 @@ function cxModelToolbar() {
   proj.dataset.role = "projection";
   const views = el("div", "cx-seg");
   for (const [k, l] of [["front", "Front"], ["side", "Side"], ["top", "Top"], ["iso", "Iso"]]) views.append(cxToolBtn(l, l + " view", () => { if (cx.renderer) { cx.renderer.view(k); cxSyncToolbar(tb.parentElement); } }));
+  // close-ups: the junction (flashing, closures, sealant and the wall face) and the selected part
+  views.append(cxToolBtn("Junction", "Zoom in on where the roof meets the wall", () => {
+    const a = cxAsm(); if (!cx.renderer || !a) return;
+    const kinds = new Set(["apron-flashing", "counterflashing", "sealant-bead", "profile-closure", "sidewall-flashing", "through-wall-flashing", "end-dams"]);
+    cx.renderer.focusParts((a.components || []).filter((c) => kinds.has(c.type)).map((c) => c.id), { section: true });
+    cxSyncToolbar(tb.parentElement);
+  }));
+  views.append(cxToolBtn("Selected", "Zoom in on the selected part", () => { if (cx.renderer && cx.selection) cx.renderer.focusParts([cx.selection]); }));
+  // what a plain drag does: rotate, or move the view (right-drag / shift-drag always does the other)
+  const drag = el("div", "cx-seg");
+  drag.setAttribute("role", "group"); drag.setAttribute("aria-label", "Drag to");
+  for (const [m, l, t] of [["orbit", "Rotate", "Drag rotates the model"], ["pan", "Move", "Drag moves the view (click-and-drag to the area you want)"]]) {
+    const b = cxToolBtn(l, t, () => { if (cx.renderer) { cx.renderer.setDragMode(m); cxSyncToolbar(tb.parentElement); } });
+    b.dataset.drag = m;
+    drag.append(b);
+  }
   const sec = el("label", "cx-tool-check");
   const secOn = document.createElement("input"); secOn.type = "checkbox"; secOn.setAttribute("aria-label", "Section plane on/off"); secOn.dataset.role = "section";
   sec.append(secOn, document.createTextNode(" Section"));
@@ -959,7 +975,9 @@ function cxModelToolbar() {
   const bms = selectEl([]); bms.className = "cx-in cx-in-sm"; bms.setAttribute("aria-label", "Camera bookmarks"); bms.dataset.role = "bookmarks";
   bms.onchange = () => { const b = (cx.vs.bookmarks || [])[Number(bms.value)]; if (b && cx.renderer) cx.renderer.setCamera(b.camera); bms.value = ""; };
   const sec2d = cxToolBtn("2D section", "Show the true section drawing of this revision", () => cxToggleSection2D(!cx.section2D));
-  tb.append(mode, proj, views, sec, secKind, secOff, expLab, water, att, vis, measure, bm, bms, sec2d, el("span", "cx-model-note"));
+  tb.append(mode, proj, views, drag, sec, secKind, secOff, expLab, water, att, vis, measure, bm, bms, sec2d,
+    el("span", "cx-model-hint", "Scroll or pinch zooms where you point · drag rotates (Move: drag pans) · right-drag moves · double-click zooms in on a spot"),
+    el("span", "cx-model-note"));
   return tb;
 }
 
@@ -969,6 +987,8 @@ function cxSyncToolbar(wrap) {
   if (!wrap) return;
   const vs = cx.vs || {};
   wrap.querySelectorAll(".cx-seg [data-mode]").forEach((b) => b.classList.toggle("on", b.dataset.mode === (vs.mode || "technical")));
+  const dm = cx.renderer && cx.renderer.dragMode ? cx.renderer.dragMode() : "orbit";
+  wrap.querySelectorAll(".cx-seg [data-drag]").forEach((b) => { const on = b.dataset.drag === dm; b.classList.toggle("on", on); b.setAttribute("aria-pressed", String(on)); });
   const proj = wrap.querySelector('[data-role="projection"]');
   if (proj) proj.textContent = cx.renderer && cx.renderer.projection() === "orthographic" ? "Perspective" : "Ortho";
   const q = (r) => wrap.querySelector('[data-role="' + r + '"]');

@@ -302,3 +302,4 @@ button.cx-path-node { border: 1px solid var(--accent); color: var(--accent); cur
   .cx-guide-words dl { grid-template-columns: 1fr; }
   .cx-guide-words dd { margin-bottom: var(--sp-2); }
 }
+.cx-model-hint { flex-basis: 100%; font-size: var(--fs-xs); color: var(--base-60); }
