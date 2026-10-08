@@ -768,6 +768,9 @@ func (s *Server) startAgentChatDelivery(agent, id string) {
 // read between the claim and the goroutine start would otherwise project a
 // turn this process owns as disconnected.
 func (s *Server) claimAgentChatDelivery(agent, id string) (agentchat.Delivery, context.Context, context.CancelFunc, bool) {
+	// every claim — the first and each next one in a turn loop — passes the
+	// construction gate; deliveries without a construction step are untouched
+	s.gateConstructionDeliveries(agent, id)
 	s.agentChat.runMu.Lock()
 	defer s.agentChat.runMu.Unlock()
 	d, claimed, err := s.agentChat.store.Claim(agent, id)
@@ -848,6 +851,16 @@ func (s *Server) runAgentChatTurnContext(ctx context.Context, agent, id, request
 		}
 	}
 	prompt, omitted := s.composeAgentChatPromptWindow(recipient.Agent, executionSession, body)
+	toolsets := s.hermes.readTools // chat turns are read-only (vault gate, §3.6)
+	if receipt, ok := st.Receipt(agent, id, requestID); ok && receipt.Context != nil && receipt.Context.Construction != nil {
+		// a construction step carries its exact retained packet and only its
+		// bounded tool scope — never the chat window's MCP instructions
+		p, scope, err := s.constructionTurnPrompt(executionSession, receipt.Context.Construction)
+		if err != nil {
+			return failBeforeRun("Construction context unavailable: " + err.Error() + ".")
+		}
+		prompt, omitted, toolsets = p, 0, scope
+	}
 	if err := st.RecordHistoryOmission(agent, id, requestID, omitted); err != nil {
 		return err
 	}
@@ -868,7 +881,7 @@ func (s *Server) runAgentChatTurnContext(ctx context.Context, agent, id, request
 		Model:                recipient.Model,
 		Provider:             recipient.Provider,
 		Reasoning:            recipient.Effort,
-		Toolsets:             s.hermes.readTools, // chat turns are read-only (vault gate, §3.6)
+		Toolsets:             toolsets,
 		Profile:              recipient.Profile,
 	}
 	scope, scopeSource := s.hermes.runner.ToolsetScope(request)

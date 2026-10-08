@@ -955,3 +955,49 @@ func publicationTokensHook(tx *Tx, tokens map[string]string) error {
 	}
 	return nil
 }
+
+// AttachConversation records a native conversation on the problem (a
+// pointer to the native store, never a copy). Idempotent by session.
+func (s *Store) AttachConversation(sub SubjectRef, problemID string, ref ConversationRef, key string) (*State, error) {
+	if !stewards[ref.Agent] && ref.Agent != "" {
+		return nil, Invalid("conversation agent must be alfred or zeck")
+	}
+	req, err := runCommitRequest("attach-"+key, SystemActor(""), map[string]any{"conversation": ref.Conversation, "session": ref.Session, "purpose": ref.Purpose})
+	if err != nil {
+		return nil, err
+	}
+	st, _, err := s.Commit(sub, problemID, req, func(tx *Tx) error {
+		p := tx.Next.Problem
+		for _, c := range p.Conversations {
+			if c.Session == ref.Session && c.Agent == ref.Agent {
+				return nil
+			}
+		}
+		ref.CreatedAt = tx.Now.Format(time.RFC3339Nano)
+		p.Conversations = append(p.Conversations, ref)
+		tx.Record("AttachConversation", "problem.conversations", nil, ref)
+		tx.Summary("native " + ref.Purpose + " conversation linked")
+		return nil
+	})
+	return st, err
+}
+
+// RetainPacket retains an exact agent-step context packet as a member of the
+// problem (so it can be delivered by hash and exported with the problem).
+func (s *Store) RetainPacket(sub SubjectRef, problemID, requestID string, content []byte, actor Actor) (string, error) {
+	if len(content) == 0 || len(content) > MaxDocumentBytes {
+		return "", Invalid("packet size out of bounds")
+	}
+	hash := Token(content)
+	req := CommitRequest{RequestID: requestID, PayloadHash: hash, Actor: actor}
+	_, _, err := s.Commit(sub, problemID, req, func(tx *Tx) error {
+		if _, _, err := tx.Retain("construction-context-packet", "steward packet", content); err != nil {
+			return err
+		}
+		tx.Output(hash)
+		tx.ViewOnly()
+		tx.Record("RetainPacket", "packet/"+hash[:12], nil, map[string]any{"hash": hash, "bytes": len(content)})
+		return nil
+	})
+	return hash, err
+}

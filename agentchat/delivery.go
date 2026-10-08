@@ -92,6 +92,25 @@ type MessageContext struct {
 	Task              string              `json:"task,omitempty"`
 	Agent             string              `json:"agent"`
 	Artifacts         []ArtifactReference `json:"artifacts,omitempty"`
+	// Construction is set only on construction research/steward steps: the
+	// exact retained packet the turn carries and its bounded tool scope. It
+	// is nil (and omitted) for every other delivery, so existing delivery
+	// fingerprints and behaviour are unchanged.
+	Construction *ConstructionContext `json:"construction,omitempty"`
+}
+
+// ConstructionContext names one construction agent step. The packet bytes
+// stay in the private construction store; the turn reads them by hash.
+type ConstructionContext struct {
+	Subject    string `json:"subject"` // kind:id
+	ProblemID  string `json:"problemId"`
+	RunID      string `json:"runId,omitempty"`
+	Stage      string `json:"stage"` // extract | steward
+	AttemptID  string `json:"attemptId,omitempty"`
+	Epoch      int    `json:"epoch,omitempty"`
+	PacketHash string `json:"packetHash"`
+	Capability string `json:"capability,omitempty"`
+	ToolScope  string `json:"toolScope"`
 }
 
 func deliveryFingerprint(text string, context *MessageContext) string {

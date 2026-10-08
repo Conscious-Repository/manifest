@@ -35,6 +35,7 @@ type constructionCfg struct {
 	fixture      bool // the synthetic fixture source adapter is wired (tests only)
 	opts         ConstructionOptions
 	agents       constructionAgentTools
+	stewards     constructionStewards
 }
 
 // ConstructionOptions configure the feature at composition time.
@@ -51,6 +52,13 @@ type ConstructionOptions struct {
 	FixtureSources string
 	// MaxConcurrentRuns bounds in-process research workers (default 2).
 	MaxConcurrentRuns int
+	// AgentToolsets is the explicit bounded toolset construction agent steps
+	// request ("" → native construction steps are unavailable).
+	AgentToolsets string
+	// AllowUnverifiedNative lets an isolated fixture run native steps whose
+	// tool confinement is declared but not observable. Never set in
+	// production wiring.
+	AllowUnverifiedNative bool
 }
 
 // UseConstruction opens the private construction store at root (outside the
@@ -133,6 +141,7 @@ func (s *Server) registerConstructionRoutes(mux *http.ServeMux) {
 		s.registerConstructionSourceRoutes(mux, p)
 		s.registerConstructionCatalogRoutes(mux, p)
 		s.registerConstructionCommandRoutes(mux, p)
+		s.registerConstructionStewardRoutes(mux, p)
 	}
 }
 
