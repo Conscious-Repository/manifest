@@ -131,6 +131,7 @@ func (s *Server) registerConstructionRoutes(mux *http.ServeMux) {
 		s.registerConstructionResearchRoutes(mux, p)
 		s.registerConstructionSourceRoutes(mux, p)
 		s.registerConstructionCatalogRoutes(mux, p)
+		s.registerConstructionCommandRoutes(mux, p)
 	}
 }
 
@@ -507,21 +508,22 @@ func (s *Server) constructionView(sub construction.SubjectRef, st *construction.
 		revs[k] = d.Revision
 	}
 	v := map[string]any{
-		"problem":    st.Problem,
-		"revisions":  revs,
-		"generation": st.Head.Generation,
-		"updatedAt":  st.Head.UpdatedAt,
-		"readOnly":   st.ReadOnly,
-		"context":    s.constructionContext(sub, st.Problem),
-		"assemblies": st.Assemblies,
-		"validation": st.Validation,
-		"decisions":  st.Decisions,
-		"runs":       st.Runs,
-		"views":      st.Views,
-		"catalog":    st.Catalog,
-		"evidence":   st.Evidence,
-		"derived":    st.Derived,
-		"notice":     construction.NonApprovalNotice,
+		"problem":        st.Problem,
+		"revisions":      revs,
+		"generation":     st.Head.Generation,
+		"updatedAt":      st.Head.UpdatedAt,
+		"readOnly":       st.ReadOnly,
+		"context":        s.constructionContext(sub, st.Problem),
+		"assemblies":     st.Assemblies,
+		"validation":     st.Validation,
+		"decisions":      st.Decisions,
+		"decisionStates": construction.DecisionStates(st),
+		"runs":           st.Runs,
+		"views":          st.Views,
+		"catalog":        st.Catalog,
+		"evidence":       st.Evidence,
+		"derived":        st.Derived,
+		"notice":         construction.NonApprovalNotice,
 	}
 	if st.ReadOnly {
 		raw := map[string]json.RawMessage{}
