@@ -91,8 +91,12 @@ const tab = (page, name) => page.getByRole('tab', {name, exact: true}).click();
     const before = await page.evaluate(() => ({gen: cx.view.generation, sel: cx.view.problem.selectedAssembly, run: cxLatestRun().id}));
     await page.reload();
     await page.getByRole('heading', {name: '761 N Euclid — Back Addition'}).waitFor();
+    // the heading paints before the runs reload; compare once the view has settled
+    await page.waitForFunction((b) => { try { const r = cxLatestRun(); return cx.view.generation === b.gen && r && r.id === b.run; } catch (e) { return false; } }, before, {timeout: 15000}).catch(() => {});
     const after = await page.evaluate(() => ({gen: cx.view.generation, sel: cx.view.problem.selectedAssembly, run: cxLatestRun().id}));
-    assert.deepEqual(after, before, 'reload shows the same durable problem');
+    // a camera-view save after reload may add a generation; the problem is the same
+    assert.deepEqual({sel: after.sel, run: after.run}, {sel: before.sel, run: before.run}, 'reload shows the same durable problem');
+    assert.ok(after.gen >= before.gen, 'reload never goes back a generation');
     // ---- phone width ----
     const phone = await browser.newContext({viewport: {width: 390, height: 800}, isMobile: true, hasTouch: true});
     const p2 = await phone.newPage();

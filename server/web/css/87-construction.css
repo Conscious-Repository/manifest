@@ -81,6 +81,11 @@
   .cx-wb[data-active="agent"] .cx-right { display: none; }
   .cx-wb[data-active="assembly"] .cx-right, .cx-wb[data-active="research"] .cx-right { display: grid; }
   .cx-wb.a-collapsed .cx-grid { grid-template-columns: minmax(320px, 1fr) 6px var(--cx-right); }
+  /* the switch picks the pane: Assembly or Research gets the whole column */
+  .cx-wb[data-active="assembly"] .cx-right, .cx-wb[data-active="research"] .cx-right, .cx-wb[data-active="model"] .cx-right { grid-template-rows: 1fr; }
+  .cx-wb[data-active="assembly"] .cx-pane-d, .cx-wb[data-active="research"] .cx-pane-c,
+  .cx-wb[data-active="model"] .cx-pane-d, .cx-right .cx-divider-cfrac { display: none; }
+  .cx-wb[data-active="model"] .cx-pane-c { display: flex; }
 }
 
 /* phones/narrow: one pane at a time, with the selection breadcrumb */
@@ -264,3 +269,36 @@ button.cx-path-node { border: 1px solid var(--accent); color: var(--accent); cur
 .cx-compare-box select { margin: var(--sp-1) var(--sp-2) var(--sp-1) 0; max-width: 100%; }
 .cx-asm-rev .cx-link { margin-left: auto; }
 .cx-fine { font-family: var(--mono); font-size: var(--fs-2xs); color: var(--base-60); margin: var(--sp-2) 0 var(--sp-4); }
+
+/* the plain-language guide (87-construction-guide.js) */
+.cx-guide { border: 1px solid var(--line); border-radius: var(--radius-lg); padding: var(--sp-3) var(--sp-5); background: var(--surface-panel); }
+.cx-guide-sum { cursor: pointer; display: flex; gap: var(--sp-4); align-items: baseline; flex-wrap: wrap; }
+.cx-guide-next { font-size: var(--fs-md); font-weight: 600; }
+.cx-guide-body { display: flex; flex-direction: column; gap: var(--sp-4); padding-top: var(--sp-4); }
+.cx-guide-what { margin: 0; font-size: var(--fs-sm); line-height: 1.5; }
+.cx-guide-steps { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: var(--sp-3); margin: 0; padding: 0; list-style: none; counter-reset: cxstep; }
+.cx-guide-step { counter-increment: cxstep; }
+.cx-guide-step-btn { width: 100%; height: 100%; display: grid; grid-template-columns: auto 1fr; gap: 2px var(--sp-3); text-align: left; padding: var(--sp-3) var(--sp-4); border: 1px solid var(--line); border-radius: var(--radius); background: var(--bg); color: var(--text); cursor: pointer; font: inherit; }
+.cx-guide-step-btn::before { content: counter(cxstep); grid-row: span 2; font-family: var(--mono); font-size: var(--fs-xs); color: var(--base-60); }
+.cx-guide-tick { display: none; }
+.cx-guide-title { font-size: var(--fs-sm); font-weight: 600; }
+.cx-guide-now { grid-column: 2; font-size: var(--fs-xs); color: var(--base-60); overflow-wrap: anywhere; }
+.cx-guide-step.is-done .cx-guide-step-btn::before { content: "✓"; color: var(--text); }
+.cx-guide-step.is-done .cx-guide-title { color: var(--base-60); }
+.cx-guide-step.is-next .cx-guide-step-btn { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+.cx-guide-open > summary, .cx-guide-words > summary { cursor: pointer; font-size: var(--fs-sm); }
+.cx-guide-open ul { margin: var(--sp-2) 0 0; padding-left: 1.2em; font-size: var(--fs-sm); line-height: 1.5; }
+.cx-guide-words dl { display: grid; grid-template-columns: minmax(140px, max-content) 1fr; gap: var(--sp-2) var(--sp-5); margin: var(--sp-3) 0 0; font-size: var(--fs-sm); }
+.cx-guide-words dt { font-weight: 600; }
+.cx-guide-words dd { margin: 0; color: var(--base-70, var(--text)); }
+.cx-q { font-size: var(--fs-sm); font-weight: 600; margin: var(--sp-4) 0 var(--sp-2); }
+.cx-explain { font-size: var(--fs-sm); line-height: 1.5; margin-top: var(--sp-3); padding: var(--sp-3) var(--sp-4); border-left: 2px solid var(--line); }
+.cx-explain p { margin: 0 0 var(--sp-2); }
+.cx-explain-warn { color: var(--danger); }
+.cx-issue-plain { flex-basis: 100%; font-size: var(--fs-sm); color: var(--text); }
+@media (max-width: 860px) {
+  .cx-guide-steps { grid-template-columns: 1fr; }
+  .cx-guide-step-btn { min-height: 44px; }
+  .cx-guide-words dl { grid-template-columns: 1fr; }
+  .cx-guide-words dd { margin-bottom: var(--sp-2); }
+}
