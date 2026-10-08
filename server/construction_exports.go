@@ -9,14 +9,63 @@ package server
 
 import (
 	"net/http"
+	"os"
+	"path/filepath"
 	"strconv"
 
+	"manifest/agentchat"
 	"manifest/construction"
 )
 
 func (s *Server) registerConstructionExportRoutes(mux *http.ServeMux, p string) {
 	mux.HandleFunc("POST "+p+"/problems/{id}/assemblies/{asm}/exports", s.handleConstructionExport)
 	mux.HandleFunc("GET "+p+"/problems/{id}/assemblies/{asm}/section", s.handleConstructionSection)
+	mux.HandleFunc("GET "+p+"/problems/{id}/export", s.handleConstructionRecoveryExport)
+}
+
+// handleConstructionRecoveryExport downloads the private recovery bundle:
+// the problem's complete retained closure plus read-only copies of the
+// native conversations it points at (listed as missing when the native
+// store cannot supply them). It is a private download, never published.
+func (s *Server) handleConstructionRecoveryExport(w http.ResponseWriter, r *http.Request) {
+	sub, _, ok := s.constructionBegin(w, r, false)
+	if !ok {
+		return
+	}
+	id := r.PathValue("id")
+	st, err := s.construction.store.Load(sub, id)
+	if err != nil {
+		constructionError(w, err)
+		return
+	}
+	var extras []construction.BundleExtra
+	missing := []string{}
+	if st.Problem != nil {
+		for _, c := range st.Problem.Conversations {
+			agent := constructionAgentName(c.Agent)
+			if s.agentChat == nil || !agentchat.ValidAgent(agent) || !agentchat.ValidID(c.Session) {
+				missing = append(missing, "native "+c.Purpose+" conversation "+c.Session+": native store unavailable here")
+				continue
+			}
+			b, err := os.ReadFile(filepath.Join(s.agentChat.store.Root(), agent, c.Session+".md"))
+			if err != nil {
+				missing = append(missing, "native "+c.Purpose+" conversation "+c.Session+": "+err.Error())
+				continue
+			}
+			extras = append(extras, construction.BundleExtra{Path: agent + "/" + c.Session + ".md", Content: b})
+		}
+	}
+	z, man, err := s.construction.store.ExportBundle(sub, id, construction.ExportOptions{Extras: extras, Missing: missing})
+	if err != nil {
+		constructionError(w, err)
+		return
+	}
+	w.Header().Set("Content-Type", "application/zip")
+	w.Header().Set("Content-Disposition", `attachment; filename="`+id+`-recovery.zip"`)
+	w.Header().Set("Cache-Control", "private, no-store")
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	w.Header().Set("X-Bundle-Complete", strconv.FormatBool(man.Complete))
+	_, _ = w.Write(z)
 }
 
 type constructionExportRequest struct {
