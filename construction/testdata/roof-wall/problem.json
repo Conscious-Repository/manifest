@@ -1,0 +1,7 @@
+{
+  "schemaVersion": 1,
+  "requestId": "fixture-create-roof-wall",
+  "title": "Corrugated roof to masonry wall",
+  "narrative": "SYNTHETIC FIXTURE. A sloping corrugated metal roof meets a two-wythe brick wall. Keep the exposed rafters and finish-grade timber underside; insulation and control layers go above the deck. Wall type (solid/bonded or cavity) and headwall/sidewall orientation are unknown. Every number is illustrative and test-only.",
+  "scope": {"workId": "roof"}
+}
