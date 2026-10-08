@@ -156,9 +156,9 @@ func init() {
 
 // constructionConversation creates (once per run, by request id) the native
 // conversation research steps run in, and records it on the problem.
-func (s *Server) constructionConversation(sub construction.SubjectRef, pid, runID, agent, model string) (string, string, error) {
+func (s *Server) constructionConversation(sub construction.SubjectRef, pid, runID, agent, profile, model string) (string, string, error) {
 	key := "cxconv-" + strings.TrimPrefix(runID, "run-")
-	conv, err := s.agentChat.store.CreateOnce(agent, "", "Construction research "+strings.TrimPrefix(runID, "run-")[:12], model, key)
+	conv, err := s.agentChat.store.CreateOnce(agent, profile, "Construction research "+strings.TrimPrefix(runID, "run-")[:12], model, key)
 	if err != nil {
 		return "", "", err
 	}
@@ -186,7 +186,7 @@ func (n constructionNative) Dispatch(ctx context.Context, req construction.Nativ
 	if err := s.hermesChoiceError(req.Agent.RequestedModel, req.Agent.RequestedProvider, req.Agent.Effort); err != nil {
 		return construction.NativeResult{}, &construction.NativeError{Class: "capability", Message: err.Error(), Ref: ref}
 	}
-	conv, desc, err := s.constructionConversation(req.Subject, req.ProblemID, req.RunID, agent, req.Agent.RequestedModel)
+	conv, desc, err := s.constructionConversation(req.Subject, req.ProblemID, req.RunID, agent, profile, req.Agent.RequestedModel)
 	if err != nil {
 		return construction.NativeResult{}, &construction.NativeError{Class: "storage", Message: err.Error(), Ref: ref}
 	}

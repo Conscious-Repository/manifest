@@ -79,6 +79,8 @@ func TestConstructionJourneyHomePilotExportRestore(t *testing.T) {
 			t.Fatalf("export %s %d %s", format, e.Code, e.Body)
 		}
 		exportRec[format] = e.json(t)["record"]
+		rec := exportRec[format].(map[string]any)
+		t.Logf("export %s: %s sha256=%s bytes=%v assemblyRevision=%s geometryHash=%s", format, rec["name"], rec["revision"], rec["size"], rec["assemblyRevision"], rec["geometryHash"])
 	}
 	// 5. research: cancel mid-run, then resume
 	cur := f.do(t, "GET", home+"/problems/"+id, nil).json(t)

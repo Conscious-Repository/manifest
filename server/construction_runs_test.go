@@ -225,6 +225,30 @@ func TestConstructionNativeCancelAndDrainGate(t *testing.T) {
 	if at["state"] != "cancelled" || len(sess.Deliveries) != 1 || sess.Deliveries[0].State != agentchat.DeliveryInterrupted || !sess.Deliveries[0].StopRequested {
 		t.Fatalf("running step stopped through the native store: %v %+v", at["state"], sess.Deliveries)
 	}
+	// a hanging steward request is cancelled by the shutdown helper
+	_, sid, sasm := f.createTemplate(t, fixtureBase, "create-nat-0007")
+	ask := f.do(t, "POST", fixtureBase+"/problems/"+sid+"/agent/requests", map[string]any{"schemaVersion": 1, "requestId": "hang-steward-01", "text": "Wait forever.", "assemblyId": sasm})
+	if ask.Code != 200 {
+		t.Fatalf("hang steward %d %s", ask.Code, ask.Body)
+	}
+	deadline = time.Now().Add(20 * time.Second)
+	for len(stubCalls(t, out)) < 2 {
+		if time.Now().After(deadline) {
+			t.Fatal("the steward step never reached the runner")
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	f.srv.stopAllConstructionRuns()
+	waited := make(chan struct{})
+	go func() { f.srv.WaitConstructionRuns(); close(waited) }()
+	select {
+	case <-waited:
+	case <-time.After(15 * time.Second):
+		t.Fatal("the steward goroutine was not cancelled")
+	}
+	if req := f.do(t, "GET", fixtureBase+"/problems/"+sid+"/agent/requests/hang-steward-01", nil).json(t)["request"].(map[string]any); req["state"] != "failed" {
+		t.Fatalf("a cancelled steward request reads failed: %v", req)
+	}
 	// the drain gate: a queued construction step for a run nobody owns
 	t.Setenv("CX_STUB_MODE", "normal")
 	st := f.srv.agentChat.store

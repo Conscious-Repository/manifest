@@ -472,6 +472,44 @@ and completeness per category), `construction/restore.go` (`ReadBundle` +
   the boundary are claims only the backend can prove); the stub mode of
   `construction-workbench.cjs` remains the direct `node` UI-only run.
 
+## P9.3 — post-review hardening
+
+Found by re-reading the finished code while the full suite ran (no source
+was edited mid-run):
+
+- The steward route ran a Zeck steward with an empty profile — a silent
+  default-profile substitution. It now resolves the profile and answers 503
+  "unavailable (no silent substitution)" when it cannot; research
+  conversations carry the resolved profile too.
+- A steward request's goroutine was not cancellable by
+  `stopAllConstructionRuns`; it is now tracked with the run workers
+  (test: a hanging steward step is cancelled within the bound and reads
+  `failed`).
+- Restore now validates every head document (decode by kind), the whole
+  receipt chain and every membership entry against the bundle **in memory
+  before writing**, and removes the (verified-empty) target if anything
+  fails after the store is opened. Test: a bundle consistent at the file
+  level but missing a head document's bytes is refused with nothing written.
+- The expansion-ratio guard (now 500×) applies to entries over 1 MiB, so a
+  small, legitimately compressible owner upload cannot make a backup
+  unrestorable; per-entry and total budgets still bound everything.
+- The Go journey logs its export records (observed hashes).
+
+`go test ./construction -run 'TestConstruction(RecoveryBundle|RestoreRefusals)'`,
+`go test ./cmd/construction-restore`, `go test ./server -run
+'TestConstruction(Native|Journey)'` and `go test -race ./server -run
+'TestConstruction(Native…|JourneyHomePilot)'`: pass.
+
+## Full confined suite (`go test -json ./... -count=1`)
+
+| Run | Packages pass / no tests / fail | Tests pass / skip / fail | Notes |
+|---|---|---|---|
+| Baseline (P0, base `6fa9c630`) | 71 / 31 / 1 | 3713 / 28 / 1 | the only failure: `manifest/server TestFixtureSharedChat` (loads `https://unpkg.com/react…`, refused by the network namespace) |
+| `c252c293` (after P9.2), 7m29s | 74 / 31 / 1 | 3820 / 28 / 1 | same single pre-existing failure; 3 new packages (`construction`, `cmd/construction-restore`, `tools/construction-spike`); 97 new top-level tests; no test removed; no status change for any existing test; skips unchanged (live/corpus tests) |
+
+Raw: `/tmp/manifest-construction-qa/final-go-test.jsonl`. The final HEAD run
+is recorded in the execution report.
+
 ## Decisions taken (plan-conformant defaults)
 
 1. **Subject binding (§12.1).** `subjectRef` is typed `{kind: "property"|"home", id}`

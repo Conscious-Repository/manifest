@@ -123,6 +123,11 @@ func (s *Server) handleConstructionStewardRequest(w http.ResponseWriter, r *http
 		return
 	}
 	agent := constructionAgentName(st.Problem.Steward.Agent)
+	profile, err := s.resolveAgentChat(r.Context(), agent)
+	if err != nil {
+		constructionError(w, construction.Unavailable("agent "+agent+" is unavailable here: "+err.Error()+" (no silent substitution)"))
+		return
+	}
 	capa, err := s.grantConstructionAgent(sub, pid, agent, "", 15*time.Minute)
 	if err != nil {
 		constructionError(w, err)
@@ -151,7 +156,7 @@ func (s *Server) handleConstructionStewardRequest(w http.ResponseWriter, r *http
 		constructionError(w, err)
 		return
 	}
-	conv, err := s.agentChat.store.CreateOnce(agent, "", "Construction steward "+strings.TrimPrefix(pid, "cp-")[:12], "", "cxsteward-"+strings.TrimPrefix(pid, "cp-"))
+	conv, err := s.agentChat.store.CreateOnce(agent, profile, "Construction steward "+strings.TrimPrefix(pid, "cp-")[:12], "", "cxsteward-"+strings.TrimPrefix(pid, "cp-"))
 	if err != nil {
 		constructionError(w, construction.Unavailable(err.Error()))
 		return
@@ -170,7 +175,7 @@ func (s *Server) handleConstructionStewardRequest(w http.ResponseWriter, r *http
 	}
 	t.reqs[in.RequestID] = req
 	t.mu.Unlock()
-	recipient := agentchat.Recipient{Agent: agent, Profile: "", RequestedModel: ""}
+	recipient := agentchat.Recipient{Agent: agent, Profile: profile}
 	mctx := &agentchat.MessageContext{Conversation: desc, Agent: agent, Recipient: &recipient, Construction: &agentchat.ConstructionContext{
 		Subject: sub.Kind + ":" + sub.ID, ProblemID: pid, Stage: "steward", PacketHash: hash, Capability: capa.ID, ToolScope: s.construction.opts.AgentToolsets}}
 	if _, err := s.agentChat.store.Accept(agent, conv, req.Native.RequestID, text, mctx); err != nil {
@@ -180,12 +185,22 @@ func (s *Server) handleConstructionStewardRequest(w http.ResponseWriter, r *http
 		return
 	}
 	s.startAgentChatDelivery(agent, conv)
-	s.construction.runs.wg.Add(1)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
+	key := "steward/" + in.RequestID
+	runs := &s.construction.runs
+	runs.mu.Lock()
+	runs.active[key] = cancel
+	runs.mu.Unlock()
+	runs.wg.Add(1)
 	go func() {
-		defer s.construction.runs.wg.Done()
+		defer runs.wg.Done()
 		defer s.revokeConstructionAgent(capa.ID)
-		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
-		defer cancel()
+		defer func() {
+			runs.mu.Lock()
+			delete(runs.active, key)
+			runs.mu.Unlock()
+			cancel()
+		}()
 		res, err := s.awaitConstructionDelivery(ctx, agent, conv, req.Native.RequestID, req.Native)
 		if err != nil {
 			t.update(in.RequestID, func(r *constructionStewardRequest) { r.State, r.Error = "failed", err.Error() })

@@ -32,7 +32,7 @@ const (
 	MaxBundleEntries    = 100000
 	MaxBundleEntryBytes = 64 << 20
 	MaxBundleTotalBytes = 2 << 30
-	MaxBundleRatio      = 200
+	MaxBundleRatio      = 500
 )
 
 // RestoreOptions configure a restore.
@@ -86,7 +86,7 @@ func ReadBundle(r io.ReaderAt, size int64) (*BundleManifest, map[string][]byte, 
 		if f.UncompressedSize64 > MaxBundleEntryBytes {
 			return nil, nil, restoreErr("entry %q exceeds %d bytes", f.Name, MaxBundleEntryBytes)
 		}
-		if f.CompressedSize64 > 0 && f.UncompressedSize64/f.CompressedSize64 > MaxBundleRatio {
+		if f.UncompressedSize64 > 1<<20 && f.CompressedSize64 > 0 && f.UncompressedSize64/f.CompressedSize64 > MaxBundleRatio {
 			return nil, nil, restoreErr("entry %q expands more than %d×", f.Name, MaxBundleRatio)
 		}
 		rc, err := f.Open()
@@ -214,6 +214,60 @@ func emptyTarget(root string, forbidden []string) error {
 	return nil
 }
 
+// precheckBundle verifies, in memory, that every head document decodes
+// from its bundled bytes, the receipt chain is complete, and every member
+// named by the ACL has its object and bytes in the bundle.
+func precheckBundle(head Head, files map[string][]byte, membersPath string) error {
+	blob := func(rev string) ([]byte, bool) {
+		b, ok := files["artifacts/blobs/"+rev]
+		return b, ok
+	}
+	probe := newState(head)
+	for key, ref := range head.Docs {
+		b, ok := blob(ref.Revision)
+		if !ok || Token(b) != ref.Revision {
+			return restoreErr("document %s bytes are missing from the bundle", key)
+		}
+		if docKindFor(key) != ref.Kind {
+			return restoreErr("document %s has kind %s", key, ref.Kind)
+		}
+		if err := probe.decode(key, ref.Kind, b); err != nil && !errors.Is(err, ErrNewerSchema) {
+			return restoreErr("document %s does not decode: %v", key, err)
+		}
+	}
+	tok, steps := head.Commit.Revision, 0
+	for tok != "" {
+		if steps++; steps > 1000000 {
+			return restoreErr("receipt chain does not end")
+		}
+		b, ok := blob(tok)
+		if !ok {
+			return restoreErr("receipt %s is missing from the bundle", tok[:12])
+		}
+		var rc Receipt
+		if err := DecodeStrict(b, DocReceipt, &rc); err != nil {
+			return restoreErr("receipt %s does not decode: %v", tok[:12], err)
+		}
+		tok = rc.ParentCommit
+	}
+	for _, line := range strings.Split(strings.TrimSpace(string(files[membersPath])), "\n") {
+		if line == "" {
+			continue
+		}
+		var m member
+		if err := json.Unmarshal([]byte(line), &m); err != nil || !ValidToken(m.Revision) {
+			return restoreErr("membership line is malformed")
+		}
+		if _, ok := blob(m.Revision); !ok {
+			return restoreErr("member %s@%s bytes are missing from the bundle", m.ArtifactID, m.Revision[:12])
+		}
+		if _, ok := files["artifacts/objects/"+m.ArtifactID+".json"]; !ok {
+			return restoreErr("member %s object is missing from the bundle", m.ArtifactID)
+		}
+	}
+	return nil
+}
+
 // Restore validates the bundle and restores it into an empty root.
 func Restore(r io.ReaderAt, size int64, root string, o RestoreOptions) (*RestoreReport, error) {
 	if err := emptyTarget(root, o.Forbidden); err != nil {
@@ -234,11 +288,20 @@ func Restore(r io.ReaderAt, size int64, root string, o RestoreOptions) (*Restore
 	if head.Commit.Revision != man.HeadCommit || head.Generation != man.Generation {
 		return nil, restoreErr("head does not match the manifest")
 	}
+	if err := precheckBundle(head, files, prefix+"problems/"+pid+"/members.jsonl"); err != nil {
+		return nil, err
+	}
 	s, err := Open(root, Options{Forbidden: o.Forbidden})
 	if err != nil {
 		return nil, err
 	}
-	defer s.Close()
+	ok := false
+	defer func() {
+		s.Close()
+		if !ok {
+			os.RemoveAll(root) // verified empty before; never leave half a restore
+		}
+	}()
 	if err := s.acquireWriter(); err != nil {
 		return nil, err
 	}
@@ -307,6 +370,7 @@ func Restore(r io.ReaderAt, size int64, root string, o RestoreOptions) (*Restore
 		}
 	}
 	rep.VerifiedHead = st.Head.Commit.Revision
+	ok = true
 	for p, b := range files {
 		if strings.HasPrefix(p, "native/") {
 			rep.Native[p] = b

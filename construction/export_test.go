@@ -284,6 +284,30 @@ func TestConstructionRestoreRefusals(t *testing.T) {
 	m3.Files = append(append([]BundleFile{}, man.Files...), BundleFile{Path: foreign, Bytes: 2, SHA256: Token([]byte("{}")), Kind: "store"})
 	f["manifest.json"], _ = json.Marshal(m3)
 	refuse("foreign store path", rezip(t, f, append(append([]string{}, order...), foreign), nil), "unexpected path")
+	// consistent files, but a head document's bytes are absent: refused before writing
+	f = clone()
+	var dropped string
+	for k, ref := range st.Head.Docs {
+		if k == "problem" {
+			dropped = "artifacts/blobs/" + ref.Revision
+		}
+	}
+	delete(f, dropped)
+	m4 := *man
+	m4.Files = nil
+	for _, bf := range man.Files {
+		if bf.Path != dropped {
+			m4.Files = append(m4.Files, bf)
+		}
+	}
+	f["manifest.json"], _ = json.Marshal(m4)
+	var kept []string
+	for _, p := range order {
+		if p != dropped {
+			kept = append(kept, p)
+		}
+	}
+	refuse("missing document bytes", rezip(t, f, kept, nil), "bytes are missing from the bundle")
 	// targets: populated, forbidden, relative
 	pop := t.TempDir()
 	os.WriteFile(filepath.Join(pop, "keep.txt"), []byte("x"), 0o600)
