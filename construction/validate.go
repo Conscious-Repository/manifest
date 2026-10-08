@@ -564,8 +564,15 @@ func Evaluate(in ruleInput) []finding {
 		message: "Exposed timber protection (finish, moisture at the bearing, fire) is not assessed.", observed: "not assessed", expected: "specialist review", specialist: true, inputs: []string{}})
 	// products, materials, sources
 	sheet := a.firstOf(TypeCorrugatedSheet)
+	needsProduct := map[string]bool{}
 	for _, c := range []*Component{sheet, a.firstOf(TypeApronFlashing), a.firstOf(TypeSidewallFlash), a.firstOf(TypeCounterflashing), a.firstOf(TypeThroughWall)} {
-		if c == nil || c.Applicability == "inapplicable" {
+		if c != nil {
+			needsProduct[c.ID] = true
+		}
+	}
+	for i := range a.Components {
+		c := &a.Components[i]
+		if c.Applicability == "inapplicable" || (!needsProduct[c.ID] && c.Product == nil) {
 			continue
 		}
 		if c.Product == nil {
@@ -607,6 +614,7 @@ func Evaluate(in ruleInput) []finding {
 			message: "No evidence supports this assembly's junction strategy yet.", observed: "0 supporting evidence", expected: "sourced detail / guidance", inputs: []string{"evidenceLinks"}})
 	}
 	fs = append(fs, evidenceFindings(a, in.ev, in.p, in.cat)...)
+	fs = append(fs, productFindings(a, in.cat, in.p)...)
 	illus := 0
 	for _, l := range ir.Labels {
 		if l == "illustrative" {

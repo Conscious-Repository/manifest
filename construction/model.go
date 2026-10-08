@@ -569,7 +569,8 @@ type ProductFact struct {
 	Kind       string `json:"kind"` // dimension | compatibility | installation | limit
 	Text       string `json:"text"`
 	EvidenceID string `json:"evidenceId,omitempty"`
-	Verified   bool   `json:"verified"`
+	Verified   bool   `json:"verified"` // derived from the evidence, never asserted
+	Note       string `json:"note,omitempty"`
 }
 
 type ProductDocument struct {

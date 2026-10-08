@@ -1,0 +1,50 @@
+{
+  "schemaVersion": 1,
+  "notice": "SYNTHETIC FIXTURE — fictional manufacturers and products for testing the catalog and substitution protocol only; never a real specification, price, stock or certified performance.",
+  "products": [
+    {
+      "key": "corrugated",
+      "manufacturer": "Fictional Profiles Ltd (synthetic manufacturer)",
+      "family": "corrugated-metal-roof",
+      "model": "Synthetic Corrugated 76/18",
+      "geography": "Fictional Region (synthetic)",
+      "checkedAt": "2026-10-01",
+      "materialKey": "metal-corrugated",
+      "documents": ["fixture://fictional-profiles/synthetic-corrugated-76-18-installation"],
+      "dimensions": {"profileDepth": {"value": 18, "unit": "mm"}},
+      "facts": [
+        {"kind": "limit", "text": "Minimum pitch 5 degrees with 150 mm end laps (fictional)",
+         "evidenceQuote": "Minimum roof pitch for the Synthetic Corrugated 76/18 profile is 5 degrees with end laps of 150 mm."},
+        {"kind": "installation", "text": "Apron flashing fixed at every second crest (fictional detail F3)",
+         "evidenceQuote": "Fix the apron flashing to every second crest with the fixing shown in Detail F3."}
+      ]
+    },
+    {
+      "key": "board-120",
+      "manufacturer": "Placeholder Insulation Co (fictional)",
+      "family": "insulation",
+      "model": "Placeholder Board 120 (fictional)",
+      "geography": "Fictional Region (synthetic)",
+      "checkedAt": "2026-10-01",
+      "materialKey": "insulation-rigid",
+      "documents": [],
+      "dimensions": {"thickness": {"value": 120, "unit": "mm"}},
+      "facts": [{"kind": "dimension", "text": "120 mm rigid board (no document retained, so unverified)"}]
+    },
+    {
+      "key": "board-mismatch",
+      "manufacturer": "Placeholder Insulation Co (fictional)",
+      "family": "insulation",
+      "model": "Placeholder Board 150 (fictional)",
+      "geography": "Fictional Region (synthetic)",
+      "checkedAt": "2026-10-01",
+      "materialKey": "insulation-rigid",
+      "documents": ["fixture://fictional-profiles/synthetic-corrugated-76-18-installation"],
+      "dimensions": {"thickness": {"value": 15, "unit": "cm"}},
+      "facts": [
+        {"kind": "limit", "text": "5 degree minimum pitch (quoted from another product's sheet)",
+         "evidenceQuote": "Minimum roof pitch for the Synthetic Corrugated 76/18 profile is 5 degrees with end laps of 150 mm."}
+      ]
+    }
+  ]
+}

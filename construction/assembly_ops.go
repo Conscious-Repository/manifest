@@ -318,12 +318,16 @@ func (o *SetMaterial) Apply(tx *Tx, c *ApplyContext) error {
 	return NotFound("no material " + o.MaterialID + " in this problem's catalog")
 }
 
-// SetProduct pins (or clears) a sourced product on a component. A product is
-// never followed to a newer catalog revision automatically.
+// SetProduct pins (or clears) a sourced product's current revision on a
+// component. A product is never followed to a newer catalog revision
+// automatically. ApplyDimensions also sets the part's matching dimensions
+// from the product (through SetDimension's checks), so a substitution that
+// changes, say, insulation thickness re-runs fit and fastener review.
 type SetProduct struct {
-	Op          string `json:"op"`
-	ComponentID string `json:"componentId"`
-	ProductID   string `json:"productId"` // "" clears
+	Op              string `json:"op"`
+	ComponentID     string `json:"componentId"`
+	ProductID       string `json:"productId"` // "" clears
+	ApplyDimensions bool   `json:"applyDimensions,omitempty"`
 }
 
 func (o *SetProduct) Name() string { return "SetProduct" }
@@ -347,19 +351,58 @@ func (o *SetProduct) Apply(tx *Tx, c *ApplyContext) error {
 		cp.Product = nil
 		return nil
 	}
-	for _, p := range tx.Next.Catalog.Products {
-		if p.ID == o.ProductID {
-			if p.Lifecycle == "withdrawn" {
-				return Invalid("product " + p.Model + " is withdrawn")
+	p, ok := tx.Next.Catalog.CurrentProduct(o.ProductID)
+	if !ok {
+		return NotFound("no product " + o.ProductID + " in this problem's catalog")
+	}
+	if p.Lifecycle == "withdrawn" {
+		return Invalid("product " + p.Model + " is withdrawn")
+	}
+	if cp.Material != nil && !knownFamilyForComponent(*cp, p.Family) {
+		return Invalid("product " + p.Model + " is a " + p.Family + ", which does not match this part's material")
+	}
+	rep, err := Substitution(a, tx.Next.Catalog, cp.ID, p.ID)
+	if err != nil {
+		return err
+	}
+	next := &PinRef{ID: p.ID, Revision: p.Revision}
+	tx.Record(o.Name(), cp.ID+".product", cp.Product, next)
+	tx.Record("Substitution", cp.ID, nil, rep)
+	cp.Product = next
+	id := cp.ID
+	if o.ApplyDimensions {
+		keys := make([]string, 0, len(p.Dimensions))
+		for k := range p.Dimensions {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+		for _, k := range keys {
+			tv := p.Dimensions[k]
+			if _, has := cp.Shape.Params[k]; !has || tv.Value == nil {
+				continue
 			}
-			next := &PinRef{ID: p.ID, Revision: p.Revision}
-			tx.Record(o.Name(), cp.ID+".product", cp.Product, next)
-			cp.Product = next
-			tx.Summary("product substitution on " + cp.Name)
-			return nil
+			state, prov, note := StateKnown, ProvVerifiedFact, "from "+p.Manufacturer+" "+p.Model+" (verified document)"
+			if tv.Provenance != ProvVerifiedFact {
+				state, prov, note = StateAssumed, ProvUserAssumption, "from "+p.Manufacturer+" "+p.Model+" (dimension not verified by evidence)"
+			}
+			v := *tv.Value
+			sd := &SetDimension{Op: "SetDimension", ComponentID: id, Dimension: k, Value: &v, Unit: tv.Unit, State: state, Provenance: prov, Note: note}
+			if errs := sd.Check(); len(errs) > 0 {
+				return Invalid(errs...)
+			}
+			if err := sd.Apply(tx, c); err != nil {
+				return err
+			}
+			if tv.EvidenceID != "" {
+				cp2, _ := a.component(id)
+				q := cp2.Shape.Params[k]
+				q.EvidenceIDs = []string{tv.EvidenceID}
+				cp2.Shape.Params[k] = q
+			}
 		}
 	}
-	return NotFound("no product " + o.ProductID + " in this problem's catalog")
+	tx.Summary("product substitution on " + cp.Name)
+	return nil
 }
 
 // SetAppearance changes only how a part looks (a generic appearance key);
