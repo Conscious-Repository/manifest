@@ -2,31 +2,21 @@ package server
 
 // Construction Intelligence access boundary (plan §7, §12.2).
 //
-// Construction is a local host-trust feature, not an authenticated one.
-// Manifest has no verified owner authentication, so the routes answer a
-// request only when its TCP peer (RemoteAddr, which net/http records from the
-// accepted connection) is a loopback address, its Host names loopback, and it
-// carries no proxy forwarding header. Whoever reaches the routes that way is
-// treated as the owner. That is a property of the connection, not proof of a
-// person: every local process qualifies, and so does any remote client whose
-// traffic an operator-created TCP forward or tunnel delivers onto loopback
-// (ssh -L/-R, socat, `tailscale serve --tcp`, a proxy that strips its
-// headers and rewrites Host). At the application layer such a raw forward is
-// indistinguishable from a local browser, and this code cannot detect it.
-// Remote use through any relay, proxy or tunnel is therefore unsupported. It
-// needs a verified, authenticated owner gateway, which does not exist;
-// adding one means changing this guard, with its own review.
+// Construction uses Manifest's own trust model (plan §12.2): the private
+// listener is bound to loopback, and the owner reaches it from this computer
+// or across the tailnet through `tailscale serve`. Whoever reaches the
+// private handler that way is treated as the owner, exactly as for every
+// other owner surface. A request is answered when:
 //
-// What the checks do refuse, with 403 kind "remote-disabled":
+//   - its TCP peer is loopback (the private listener; nothing in the handler
+//     chain rewrites RemoteAddr);
+//   - it carries no public-relay header (Cloudflare, Fastly, Akamai…): a
+//     public tunnel in front of this listener is refused, not trusted;
+//   - its Host is loopback, a tailnet (*.ts.net) name, or listed in
+//     construction.trustedHosts — so a DNS-rebinding page cannot pose as the
+//     owner's own origin.
 //
-//   - a non-loopback peer: direct tailnet or LAN connections;
-//   - a non-loopback Host: DNS-rebinding pages, and proxies that keep the
-//     public name;
-//   - proxy forwarding headers: HTTP reverse proxies and `tailscale serve`.
-//
-// Host, Origin, Sec-Fetch-Site, the nonce and tailnet identity headers are
-// written by the caller and are never treated as authentication. As
-// defences inside local trust, not as authentication:
+// Inside that boundary, as browser defences (not authentication):
 //
 //   - routes exist only on Server.Handler, never on the portal, deal-share or
 //     public curation listeners;
@@ -72,32 +62,27 @@ func newConstructionNonce() string {
 	return hex.EncodeToString(b)
 }
 
-// constructionRemoteMessage explains the refusal; the UI shows it as is. It
-// says why this request was refused without claiming that every remote path
-// is: a raw TCP forward onto loopback is not detectable.
-const constructionRemoteMessage = "Construction Intelligence is a local feature for this computer's own browser. " +
-	"This request did not arrive as a loopback connection to a loopback address without proxy headers, so it was refused. " +
-	"Remote use through the tailnet, the LAN or any proxy, relay or tunnel is unsupported: " +
-	"it needs a verified, authenticated owner gateway, which does not exist."
+// constructionRemoteMessage explains a refusal; the UI shows it as is.
+const constructionRemoteMessage = "Construction answers this computer and your tailnet (the way you reach the rest of Manifest). " +
+	"This request came from somewhere else, so it was refused."
 
 func constructionRemoteDisabled(reason string) error {
 	return &construction.Error{Status: http.StatusForbidden, Kind: "remote-disabled", Message: constructionRemoteMessage, Problems: []string{reason}}
 }
 
-// constructionProxyHeaders mark a request relayed by a proxy (reverse proxy,
-// CDN, `tailscale serve`, whose tailnet identity headers start "Tailscale-").
-// They are only ever grounds to refuse, never to admit.
-var constructionProxyHeaders = map[string]bool{
-	"forwarded": true, "via": true, "x-forwarded-for": true, "x-forwarded-host": true, "x-forwarded-proto": true,
-	"x-forwarded-port": true, "x-forwarded-server": true, "x-forwarded-prefix": true, "x-original-forwarded-for": true,
-	"x-real-ip": true, "x-client-ip": true, "true-client-ip": true, "cf-connecting-ip": true, "fastly-client-ip": true,
-	"x-cluster-client-ip": true,
+// constructionPublicRelayHeaders mark a request carried in from the public
+// internet by a CDN or tunnel (Cloudflare, Fastly, Akamai). `tailscale
+// serve`'s forwarding and Tailscale-* identity headers are expected: that is
+// how the owner reaches Manifest from the tailnet. Only ever grounds to
+// refuse, never to admit.
+var constructionPublicRelayHeaders = map[string]bool{
+	"cf-connecting-ip": true, "cf-ray": true, "cf-ipcountry": true, "cf-visitor": true, "cdn-loop": true,
+	"true-client-ip": true, "fastly-client-ip": true, "akamai-origin-hop": true,
 }
 
-func constructionProxied(h http.Header) bool {
+func constructionPublicRelay(h http.Header) bool {
 	for k := range h {
-		k = strings.ToLower(k)
-		if constructionProxyHeaders[k] || strings.HasPrefix(k, "tailscale-") {
+		if constructionPublicRelayHeaders[strings.ToLower(k)] {
 			return true
 		}
 	}
@@ -117,9 +102,29 @@ func loopbackPeer(remoteAddr string) bool {
 	return ip != nil && ip.IsLoopback()
 }
 
-// loopbackHost reports whether the Host header names loopback: a guard
-// against DNS rebinding and proxies that keep the public name, not
-// authentication (a caller can write any Host).
+// constructionHostAllowed: loopback, a tailnet MagicDNS name, or a host the
+// owner listed. A guard against DNS rebinding, not authentication.
+func constructionHostAllowed(hostport string, trusted []string) bool {
+	if loopbackHost(hostport) {
+		return true
+	}
+	host := strings.ToLower(strings.TrimSpace(hostport))
+	if h, _, err := net.SplitHostPort(host); err == nil {
+		host = h
+	}
+	host = strings.TrimSuffix(host, ".")
+	if strings.HasSuffix(host, ".ts.net") {
+		return true
+	}
+	for _, t := range trusted {
+		if strings.EqualFold(strings.TrimSpace(t), host) {
+			return true
+		}
+	}
+	return false
+}
+
+// loopbackHost reports whether the Host header names loopback.
 func loopbackHost(hostport string) bool {
 	host := strings.TrimSpace(hostport)
 	if h, _, err := net.SplitHostPort(host); err == nil {
@@ -147,16 +152,16 @@ func (s *Server) constructionGuard(w http.ResponseWriter, r *http.Request, mutat
 		constructionError(w, construction.Unavailable("construction is not enabled on this server"))
 		return construction.Actor{}, false
 	}
-	// loopback peer, loopback Host, no proxy headers: before anything else
-	// in the request is used
+	// the private listener, no public relay, a known Host: before anything
+	// else in the request is used
 	var remote string
 	switch {
-	case constructionProxied(r.Header):
-		remote = "the request came through a proxy (forwarding headers present)"
+	case constructionPublicRelay(r.Header):
+		remote = "the request came in through a public CDN or tunnel"
 	case !loopbackPeer(r.RemoteAddr):
-		remote = "the TCP peer is not a loopback address"
-	case !loopbackHost(r.Host):
-		remote = "the Host is not a loopback name"
+		remote = "the TCP peer is not the private listener"
+	case !constructionHostAllowed(r.Host, c.opts.TrustedHosts):
+		remote = "the Host is not this computer, a tailnet name or a trusted host"
 	}
 	if remote != "" {
 		constructionError(w, constructionRemoteDisabled(remote))

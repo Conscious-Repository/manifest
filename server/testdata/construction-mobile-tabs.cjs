@@ -65,8 +65,11 @@ const row = (page) => page.evaluate(() => {
           const list = page.getByRole('dialog', {name: 'More REAL ESTATE sections'}).getByRole('navigation', {name: 'REAL ESTATE sections'});
           await list.getByRole('link', {name, exact: true}).click();
           if (name === 'MAP') {
-            await page.getByText('Map unavailable offline — showing the list').first().waitFor();
-            await page.waitForFunction(() => location.hash === '#/properties');
+            // offline the map degrades to the list with a notice; online it renders
+            const offline = page.getByText('Map unavailable offline — showing the list').first();
+            const online = page.locator('.leaflet-container').first();
+            const which = await Promise.race([offline.waitFor().then(() => 'offline'), online.waitFor().then(() => 'online')]);
+            if (which === 'offline') await page.waitForFunction(() => location.hash === '#/properties');
             assert.ok(external.slice(before).every((u) => MAP_HOSTS.test(u)), at + ': MAP reached beyond its CDN: ' + external.slice(before).join(', '));
           } else {
             const lit = await page.waitForFunction((n) => { const t = document.querySelector('#reToggle .view-tab.on'); return t && t.textContent.trim() === n && t.getClientRects().length && !document.querySelector('.mf-sheet-wrap:not([hidden])'); }, name, {timeout: 10000}).then(() => true, () => false);

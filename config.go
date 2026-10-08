@@ -192,27 +192,22 @@ type Config struct {
 	ShareTeamFileEditEligibility bool `json:"shareTeamFileEditEligibility"`
 	// Construction configures private construction problems inside property
 	// pages and the shared Home (server/construction*.go). Records live under
-	// <dataDir>/construction, never in the vault. It is a local host-trust
-	// feature: the routes answer loopback connections with a loopback Host and
-	// no proxy headers, and treat whoever reaches them that way as the owner.
-	// Remote use through any relay, proxy or tunnel is unsupported (a raw TCP
-	// forward onto loopback cannot be detected); a verified, authenticated
-	// owner gateway is required first. Disabled turns the routes off (503).
+	// <dataDir>/construction, never in the vault. It trusts Manifest's private
+	// listener — this computer and the tailnet via `tailscale serve` — like
+	// every other owner surface. Disabled turns the routes off (503).
 	Construction ConstructionConfig `json:"construction"`
 }
 
-// ConstructionConfig is the construction feature's composition config. Its
-// only setting is Disabled: there is no remote, relay or gateway mode.
+// ConstructionConfig is the construction feature's composition config.
 type ConstructionConfig struct {
 	Disabled bool `json:"disabled"`
-	// TrustedHosts once admitted extra Host names. Host is written by the
-	// caller, so it is not authentication: a config that sets it asks for
-	// remote access and Construction refuses to start (Problem).
+	// TrustedHosts are extra Host names (beyond loopback and *.ts.net) the
+	// owner reaches Manifest by — a DNS-rebinding guard, not authentication.
 	TrustedHosts []string `json:"trustedHosts"`
-	unknown      []string // keys this build does not know (also refused)
+	unknown      []string // keys this build does not know (logged)
 }
 
-// UnmarshalJSON records keys this build does not know, so Problem can refuse
+// UnmarshalJSON records keys this build does not know, so Problem can name
 // them rather than silently ignore a setting.
 func (c *ConstructionConfig) UnmarshalJSON(b []byte) error {
 	type plain ConstructionConfig
@@ -235,19 +230,11 @@ func (c *ConstructionConfig) UnmarshalJSON(b []byte) error {
 	return nil
 }
 
-// Problem reports a construction config this build refuses to run with: one
-// that asks for remote access (trustedHosts) or carries keys it does not
-// know. Construction then stays off; it fails closed rather than start with
-// a setting it would ignore.
+// Problem names config keys this build ignores (logged at startup;
+// Construction still runs).
 func (c ConstructionConfig) Problem() error {
-	if len(c.TrustedHosts) > 0 {
-		return errors.New("construction.trustedHosts asks for remote access, which is unsupported: Construction trusts loopback connections only, " +
-			"cannot authenticate a remote owner and cannot detect a raw TCP forward onto loopback; a verified, authenticated owner gateway is required first. " +
-			"Remove trustedHosts to use Construction on this computer")
-	}
 	if len(c.unknown) > 0 {
-		return errors.New("construction config has keys this build does not know (" + strings.Join(c.unknown, ", ") +
-			"); the only setting is \"disabled\", and there is no remote, relay or gateway mode")
+		return errors.New("construction config has keys this build ignores (" + strings.Join(c.unknown, ", ") + "); the settings are \"disabled\" and \"trustedHosts\"")
 	}
 	return nil
 }

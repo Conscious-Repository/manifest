@@ -34,9 +34,9 @@ func TestConstructionRecognisedRemoteRefused(t *testing.T) {
 		t.Fatalf("loopback session: %d %s", sess.Code, sess.Body)
 	}
 	nonce := sess.json(t)["nonce"].(string)
-	if caps := sess.json(t)["capabilities"].(map[string]any); !strings.HasPrefix(sess.json(t)["boundary"].(string), "local host trust, not authentication") ||
-		caps["accessModel"] != "local-host-trust" || caps["remoteAccess"] != "unsupported" || caps["rawTcpForwardDetected"] != false {
-		t.Fatalf("the session reports the local host-trust boundary: %s", sess.Body)
+	if caps := sess.json(t)["capabilities"].(map[string]any); !strings.HasPrefix(sess.json(t)["boundary"].(string), "Manifest's private listener") ||
+		caps["accessModel"] != "private-listener" || caps["remoteAccess"] != "tailnet" {
+		t.Fatalf("the session reports the private-listener boundary: %s", sess.Body)
 	}
 	v := f.create(t, fixtureBase, "create-remote-01", "Loopback owner problem", nil)
 	id := viewProblem(v)["id"].(string)
@@ -74,8 +74,7 @@ func TestConstructionRecognisedRemoteRefused(t *testing.T) {
 			Error    string   `json:"error"`
 			Problems []string `json:"problems"`
 		}
-		if json.Unmarshal(r.Body, &e) != nil || e.Kind != "remote-disabled" || !strings.Contains(e.Error, "verified, authenticated owner gateway") ||
-			!strings.Contains(e.Error, "unsupported") || strings.Contains(e.Error, "only on this machine") || len(e.Problems) != 1 {
+		if json.Unmarshal(r.Body, &e) != nil || e.Kind != "remote-disabled" || !strings.Contains(e.Error, "tailnet") || len(e.Problems) != 1 {
 			t.Fatalf("%s: want the remote-disabled explanation, got %s", name, r.Body)
 		}
 		if strings.Contains(string(r.Body), nonce) {
@@ -105,24 +104,37 @@ func TestConstructionRecognisedRemoteRefused(t *testing.T) {
 		r.Header.Set("X-Real-IP", "127.0.0.1")
 	}))
 
-	// relayed onto loopback by a proxy (`tailscale serve`, nginx, caddy): the
-	// peer is loopback, so the Host and the forwarding headers refuse it
+	// the owner's tailnet path: `tailscale serve` relays onto the loopback
+	// listener with its forwarding and identity headers — answered, as for
+	// every other owner surface
 	tailnet := "metis.tail1234.ts.net"
+	viaTailnet := func(r *http.Request) {
+		r.Host = tailnet
+		r.Header.Set("Origin", "https://"+tailnet)
+		r.Header.Set("X-Forwarded-For", "100.101.102.103")
+		r.Header.Set("X-Forwarded-Proto", "https")
+		r.Header.Set("Tailscale-User-Login", "owner@example.com")
+	}
+	if r := f.do(t, "GET", fixtureBase+"/session", nil, viaTailnet); r.Code != http.StatusOK {
+		t.Fatalf("tailscale serve GET: %d %s", r.Code, r.Body)
+	}
+	if r := f.do(t, "POST", fixtureBase+"/problems", map[string]any{"schemaVersion": 1, "requestId": "create-tailnet-01", "title": "From the tailnet"}, viaTailnet, func(r *http.Request) {
+		r.Header.Set("Sec-Fetch-Site", "same-origin")
+		r.Header.Set("X-Construction-Nonce", nonce)
+	}); r.Code != http.StatusOK {
+		t.Fatalf("tailscale serve POST: %d %s", r.Code, r.Body)
+	}
+	// a public CDN/tunnel in front of the listener, and DNS-rebinding Hosts,
+	// are refused
 	relays := map[string]func(*http.Request){
-		"tailscale serve (public Host, identity headers)": func(r *http.Request) {
-			r.Host = tailnet
-			r.Header.Set("Origin", "https://"+tailnet)
-			r.Header.Set("X-Forwarded-For", "100.101.102.103")
-			r.Header.Set("Tailscale-User-Login", "owner@example.com")
-		},
-		"proxy rewriting Host to loopback": func(r *http.Request) { r.Header.Set("X-Forwarded-For", "100.101.102.103") },
-		"tailnet identity alone":           func(r *http.Request) { r.Header.Set("Tailscale-User-Login", "owner@example.com") },
-		"RFC 7239 Forwarded":               func(r *http.Request) { r.Header.Set("Forwarded", "for=100.101.102.103;proto=https") },
-		"Via":                              func(r *http.Request) { r.Header.Set("Via", "1.1 proxy") },
-		"non-canonical header key":         func(r *http.Request) { r.Header["x-forwarded-for"] = []string{"100.101.102.103"} },
+		"Cloudflare tunnel":                func(r *http.Request) { r.Header.Set("Cf-Connecting-Ip", "203.0.113.9") },
+		"Cloudflare ray":                   func(r *http.Request) { r.Header.Set("CF-Ray", "8a1b2c3d4e5f-ORD") },
+		"Fastly":                           func(r *http.Request) { r.Header.Set("Fastly-Client-IP", "203.0.113.9") },
+		"non-canonical header key":         func(r *http.Request) { r.Header["cf-connecting-ip"] = []string{"203.0.113.9"} },
 		"public Host only (DNS rebinding)": func(r *http.Request) { r.Host = "attacker.example:7781" },
 		"look-alike Host":                  func(r *http.Request) { r.Host = "127.0.0.1.attacker.example:7781" },
 		"localhost subdomain of attacker":  func(r *http.Request) { r.Host = "localhost.attacker.example:7781" },
+		"ts.net look-alike":                func(r *http.Request) { r.Host = "metis.ts.net.attacker.example" },
 	}
 	for name, mutate := range relays {
 		refused(name+" GET", f.do(t, "GET", fixtureBase+"/session", nil, mutate))
@@ -157,7 +169,8 @@ func TestConstructionRecognisedRemoteRefused(t *testing.T) {
 	if head() != before {
 		t.Fatal("a refused remote request changed the problem")
 	}
-	if list, err := f.srv.construction.store.List(sub); err != nil || len(list) != 1 {
+	// two problems: the loopback owner's and the one created over the tailnet
+	if list, err := f.srv.construction.store.List(sub); err != nil || len(list) != 2 {
 		t.Fatalf("a refused remote create was stored: %+v %v", list, err)
 	}
 
@@ -181,10 +194,11 @@ func TestConstructionRecognisedRemoteRefused(t *testing.T) {
 }
 
 // Through a real net/http server the peer is what the accepted connection
-// reports. A connection whose remote address is a tailnet IP is refused even
-// with the owner's Host, Origin, Fetch-Metadata and nonce; on a true loopback
-// connection the owner session works, and a relayed shape (public Host,
-// forwarding headers) is refused.
+// reports. A connection to the private handler that does not come from
+// loopback (another machine reaching a listener directly) is refused even
+// with the owner's Host, Origin, Fetch-Metadata and nonce; on a loopback
+// connection the owner session works, including `tailscale serve`'s relayed
+// shape (tailnet Host, forwarding headers).
 func TestConstructionRemoteSocketRefused(t *testing.T) {
 	f := constructionFixture(t)
 	local := httptest.NewServer(f.srv.Handler())
@@ -239,8 +253,8 @@ func TestConstructionRemoteSocketRefused(t *testing.T) {
 		}
 	}
 	relayed := map[string]string{"Origin": "https://metis.tail1234.ts.net", "Sec-Fetch-Site": "same-origin", "X-Forwarded-For": "100.101.102.103", "Tailscale-User-Login": "owner@example.com"}
-	if code, e := send(local, "GET", fixtureBase+"/session", "metis.tail1234.ts.net", relayed, ""); code != 403 || e["kind"] != "remote-disabled" {
-		t.Fatalf("relayed onto loopback: %d %v", code, e)
+	if code, e := send(local, "GET", fixtureBase+"/session", "metis.tail1234.ts.net", relayed, ""); code != 200 || e["nonce"] == nil {
+		t.Fatalf("tailscale serve onto loopback: %d %v", code, e)
 	}
 	list, err := f.srv.construction.store.List(construction.SubjectRef{Kind: "property", ID: "fixture-ooda-house"})
 	if err != nil || len(list) != 1 || list[0].Title != "Socket owner problem" {
@@ -301,13 +315,10 @@ func TestConstructionRemoteAddrNeverRewritten(t *testing.T) {
 	}
 }
 
-// The irreducible limit, pinned so that no code or doc claims otherwise. A
-// transparent TCP forward that terminates on loopback (ssh -L, socat,
-// `tailscale serve --tcp`) delivers a remote client's bytes from a loopback
-// peer, and the client behind it can write a loopback Host. net/http then
-// sees exactly what a local browser produces, so the request is answered as
-// the owner. The product marks relay deployments unsupported (session, UI,
-// config, docs) rather than claiming to detect them.
+// A transparent TCP forward that terminates on loopback delivers a client's
+// bytes from a loopback peer: like any process on the private listener's
+// side of the boundary, it is answered as the owner. The session and the
+// docs state the boundary as the private listener, not as detection.
 func TestConstructionRawTCPForwardIsIndistinguishable(t *testing.T) {
 	f := constructionFixture(t)
 	srv := httptest.NewServer(f.srv.Handler())
@@ -353,24 +364,17 @@ func TestConstructionRawTCPForwardIsIndistinguishable(t *testing.T) {
 	if res.StatusCode != 200 || sess["nonce"] == nil {
 		t.Fatalf("a request through a raw forward looks local and is answered (the documented limit): %d %v", res.StatusCode, sess)
 	}
-	// the session states the limit rather than a detection it cannot make
 	caps, _ := sess["capabilities"].(map[string]any)
-	if b, _ := sess["boundary"].(string); !strings.Contains(b, "cannot be detected") || caps["rawTcpForwardDetected"] != false || caps["remoteAccess"] != "unsupported" {
+	if b, _ := sess["boundary"].(string); !strings.Contains(b, "private listener") || caps["accessModel"] != "private-listener" || caps["remoteAccess"] != "tailnet" {
 		t.Fatalf("session boundary %q capabilities %v", sess["boundary"], caps)
 	}
-	// so does the feature documentation, without the overclaims it once made
 	doc, err := os.ReadFile(filepath.Join("..", "docs", "construction-intelligence.md"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"cannot detect a raw TCP forward", "is unsupported", "authenticated owner gateway"} {
+	for _, want := range []string{"tailscale serve", "public CDN or tunnel", "DNS-rebinding"} {
 		if !strings.Contains(string(doc), want) {
 			t.Fatalf("docs/construction-intelligence.md must state %q", want)
-		}
-	}
-	for _, claim := range []string{"made on this machine", "unusable from a phone", "deliberately disabled"} {
-		if strings.Contains(string(doc), claim) {
-			t.Fatalf("docs/construction-intelligence.md overclaims: %q", claim)
 		}
 	}
 }

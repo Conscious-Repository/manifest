@@ -138,16 +138,21 @@ history lists every revision with its actor; restore is a new revision.
   decision proposals. Owner-only operations (accept/reject, steward, problem
   facts, sources/evidence/catalog entry) answer 403 and change nothing.
 
-**Preflight** (`GET …/preflight`) is observed, not assumed: native store,
-runner, exact-byte packet delivery, page extraction scope, an explicit
-bounded toolset without web/shell/file/MCP/memory names, no fetch authority,
-no vault write. Tool confinement and OS-level write access cannot be
-observed from the server, so they are `unverified`, and unverified checks
-block. In this build native construction steps therefore cannot be switched
-on by configuration: native research and "ask the agent" are **unavailable**
-in production and the UI says why (only isolated test fixtures allow
-unverified checks). A live provider trial needs separate authorization and a
-real preflight.
+**Preflight** (`GET …/preflight`) is observed, not assumed. It checks:
+- the native store and runner;
+- exact-byte packet delivery;
+- page extraction scope;
+- the tool scope;
+- no fetch authority;
+- no vault write.
+
+Production runs construction steps with the explicit empty toolset
+(`-t none`, as the extractor duties do). A step receives its retained packet
+as data and replies with JSON only, so the tool and no-write checks pass.
+Only a failed check makes native research unavailable. A check the server
+cannot observe (`unverified`, for example a non-empty toolset's
+enforcement) is reported, not blocking. That is the same trust every native
+chat turn places in the runner.
 
 ## Export and restore
 
@@ -204,49 +209,27 @@ real preflight.
 
 ## Access boundary
 
-Construction is a **local host-trust feature, not an authenticated one**.
-Manifest has no verified owner authentication. The routes answer a request
-only when all three hold:
+Construction uses Manifest's own trust model (plan §12.2). The private
+listener is bound to loopback. The owner reaches it from this computer, or
+across the tailnet through `tailscale serve`, and whoever reaches it that
+way is the owner, as on every other owner surface. The routes answer a
+request when all three hold:
 
-- its TCP peer (`RemoteAddr`, which net/http records from the accepted
-  connection; nothing in the handler chain rewrites it) is a loopback
-  address;
-- its `Host` names loopback (`localhost`, `127.0.0.0/8`, `::1`);
-- it carries no proxy forwarding header (`Forwarded`, `X-Forwarded-*`,
-  `X-Real-IP`, `Via`, `Tailscale-*` and similar).
+- **Peer:** its TCP peer is loopback (the private listener; nothing in the
+  handler chain rewrites `RemoteAddr`).
+- **No public relay:** it carries no public CDN or tunnel header
+  (`Cf-Connecting-Ip`, `CF-Ray`, `True-Client-Ip`, `Fastly-Client-IP`…). A
+  public tunnel in front of the listener is refused, not trusted.
+  `tailscale serve`'s `X-Forwarded-*` and `Tailscale-*` headers are
+  expected.
+- **Host:** its `Host` is loopback, a tailnet MagicDNS name (`*.ts.net`), or
+  listed in `construction.trustedHosts`. This is a DNS-rebinding guard, not
+  authentication.
 
-Whoever reaches the routes that way is treated as the owner. That is a
-property of the connection, not proof of a person. Every process on this
-computer qualifies. So does any remote client whose traffic an
-operator-created TCP forward or tunnel delivers onto loopback: `ssh -L` or
-`-R`, socat, `tailscale serve --tcp`, or a proxy that strips its headers and
-rewrites Host. The application cannot detect a raw TCP forward: at the
-application layer it is indistinguishable from a local browser.
+Anything else gets `403` kind `remote-disabled`, with an explanation the UI
+shows.
 
-**Remote use is therefore unsupported**, whether through the tailnet, the
-LAN, a reverse proxy, a port forward or any other relay or tunnel. Do not set
-one up in front of Manifest's private listener. Remote use needs a verified,
-authenticated owner gateway, which does not exist; adding one means changing
-`server/construction_auth.go`, with its own review.
-
-What the checks refuse, with `403` kind `remote-disabled`: direct
-tailnet/LAN connections (non-loopback peer), DNS-rebinding pages and proxies
-that keep the public name (non-loopback Host), and HTTP reverse proxies and
-`tailscale serve` (forwarding headers). The property page, the Home tab and
-the workbench then show that explanation instead of the feature. The
-construction list pages carry a "Local only" note that says the same.
-
-Host, Origin, Sec-Fetch-Site, the nonce and tailnet identity headers are
-written by the caller, so none of them counts as authentication.
-
-**Configuration.** Construction has one setting, `disabled`. A config that
-sets `construction.trustedHosts` asks for remote access: Construction then
-refuses to start and logs why. A key this build does not know has the same
-effect. The session reports `accessModel: local-host-trust`,
-`remoteAccess: unsupported` and `rawTcpForwardDetected: false`.
-
-Inside local trust, these are defences, not authentication:
-
+Inside the boundary, these are browser defences:
 - the routes exist only on the private `Server.Handler`, never on the
   portal, share or public listeners;
 - Origin and Sec-Fetch-Site refuse cross-site requests;
@@ -254,13 +237,20 @@ Inside local trust, these are defences, not authentication:
 - the actor is derived server-side (owner); request bodies and headers
   cannot assert it.
 
-A resolver seam used only by tests sees the transport peer alone, with no
-headers, cookies, URL or body. It is consulted only after the checks above,
-and it can only narrow access.
+The session reports `accessModel: private-listener` and
+`remoteAccess: tailnet`.
+
+**Configuration:**
 
 ```json
-"construction": { "disabled": false }
+"construction": { "disabled": false, "trustedHosts": [] }
 ```
+
+A key this build does not know is logged at startup, and Construction still
+runs.
+
+A resolver seam used only by tests sees the transport peer alone, and it can
+only narrow access.
 
 ## API (both prefixes)
 
@@ -287,7 +277,5 @@ unavailable.
 
 Real 761 site conditions and measurements; the actual wall condition,
 jurisdiction, climate and loads; manufacturer acceptance of real products;
-an authorized live source adapter and provider preflight; a verified,
-authenticated owner gateway before any remote or tailnet use (until then
-remote use is unsupported, and a raw TCP forward cannot be detected);
+an authorized live source adapter (autonomous web acquisition);
 physical-device and realistic-render quality. Fixtures prove protocol, not suitability.

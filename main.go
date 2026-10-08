@@ -504,16 +504,16 @@ func main() {
 	srv.UseChatState(filepath.Join(cfg.DataDir, "chat-state"))
 	// Construction Intelligence: private problems bound to a property or the
 	// shared Home, stored under DataDir (outside the vault and every
-	// team/public tree). A local host-trust feature: it answers loopback
-	// connections only, and remote use through any relay, proxy or tunnel is
-	// unsupported (server/construction_auth.go). A config asking for remote
-	// access keeps it off.
+	// team/public tree). It trusts the private listener — this computer and
+	// the tailnet — like the rest of Manifest (server/construction_auth.go).
+	// Agent steps run as native chat turns with the explicit empty toolset.
 	if !cfg.Construction.Disabled {
 		forbidden := []string{cfg.VaultPath, cfg.RealEstate.TeamDir, cfg.AionPortal.TeamDir, cfg.Ooda.TeamDir, "/shared"}
 		if err := cfg.Construction.Problem(); err != nil {
-			log.Printf("construction disabled: %v", err)
-		} else if err := srv.UseConstruction(filepath.Join(cfg.DataDir, "construction"), server.ConstructionOptions{
-			Forbidden: forbidden}); err != nil {
+			log.Printf("construction: %v", err)
+		}
+		if err := srv.UseConstruction(filepath.Join(cfg.DataDir, "construction"), server.ConstructionOptions{
+			Forbidden: forbidden, TrustedHosts: cfg.Construction.TrustedHosts, AgentToolsets: server.ConstructionNoTools}); err != nil {
 			log.Printf("construction disabled: %v", err)
 		}
 	}

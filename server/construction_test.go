@@ -386,11 +386,19 @@ func TestConstructionBoundaryGuards(t *testing.T) {
 	if head() != before {
 		t.Fatal("a refused request changed the head")
 	}
-	// a tailnet Host is refused even from a loopback peer (no configured host
-	// admits anything); a loopback GET without Fetch-Metadata passes
-	if r := f.do(t, "GET", fixtureBase+"/session", nil, func(r *http.Request) { r.Host = "metis.example.ts.net" }); r.Code != 403 {
+	// a tailnet Host is the owner's own way in; an unknown Host is refused
+	// (DNS rebinding) unless the owner listed it in trustedHosts
+	if r := f.do(t, "GET", fixtureBase+"/session", nil, func(r *http.Request) { r.Host = "metis.example.ts.net" }); r.Code != 200 {
 		t.Fatalf("tailnet host: %d", r.Code)
 	}
+	if r := f.do(t, "GET", fixtureBase+"/session", nil, func(r *http.Request) { r.Host = "manifest.home.example" }); r.Code != 403 {
+		t.Fatalf("unknown host: %d", r.Code)
+	}
+	f.srv.construction.opts.TrustedHosts = []string{"manifest.home.example"}
+	if r := f.do(t, "GET", fixtureBase+"/session", nil, func(r *http.Request) { r.Host = "manifest.home.example" }); r.Code != 200 {
+		t.Fatalf("trusted host: %d", r.Code)
+	}
+	f.srv.construction.opts.TrustedHosts = nil
 	if r := f.do(t, "GET", fixtureBase+"/session", nil, func(r *http.Request) { r.Header.Del("Sec-Fetch-Site") }); r.Code != 200 {
 		t.Fatalf("loopback tool GET: %d", r.Code)
 	}

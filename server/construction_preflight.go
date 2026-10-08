@@ -1,14 +1,12 @@
 package server
 
-// Construction native preflight (plan §6, P8): what must be true before any
-// autonomous construction step is sent, checked from the running server —
-// never assumed from configuration names. A failed check makes native
-// research unavailable (no silent substitution, no cloud fallback); an
-// "unverified" check (a guarantee this process cannot observe, such as the
-// runner actually enforcing a tool scope) also blocks unless an isolated
-// fixture explicitly allows unverified checks. Production wiring never
-// does, so live construction agent steps stay blocked until a real,
-// authorized preflight is recorded.
+// Construction native preflight (plan §6, P8): what must be true before an
+// autonomous construction step is sent, checked from the running server. A
+// failed check makes native research unavailable (no silent substitution,
+// no cloud fallback). An "unverified" check is a guarantee this process
+// cannot observe (the runner enforcing its -t scope) — the same trust every
+// native chat turn already places in the runner — so it is reported, not
+// blocking.
 
 import (
 	"net/http"
@@ -28,6 +26,11 @@ type constructionPreflightReport struct {
 	AllowUnverified bool                `json:"allowUnverified"`
 	Checks          []constructionCheck `json:"checks"`
 }
+
+// ConstructionNoTools is the explicit empty toolset production gives
+// construction steps (-t none, as the extractor duties use): a step gets its
+// retained packet as data and replies with JSON, so it needs no tools.
+const ConstructionNoTools = "none"
 
 // toolsets that would give a construction step fetch, shell or write power.
 var constructionForbiddenTools = []string{"web", "browser", "browse", "fetch", "search", "http", "terminal", "shell", "code", "files", "file", "write", "edit", "mcp", "vault", "memory"}
@@ -62,18 +65,25 @@ func (s *Server) constructionPreflight() constructionPreflightReport {
 				}
 			}
 		}
-		if bad != "" {
+		switch {
+		case bad != "":
 			add("bounded-tools", "fail", "the construction toolset includes "+bad)
-		} else {
-			add("bounded-tools", "unverified", "toolset "+scope+" is requested per step; whether the runner enforces it is not observable from here")
+		case strings.EqualFold(scope, ConstructionNoTools):
+			add("bounded-tools", "pass", "steps run with the explicit empty toolset (-t none)")
+		default:
+			add("bounded-tools", "unverified", "toolset "+scope+" is requested per step (-t); the runner enforces it as for every native chat turn")
 		}
 	}
 	add("source-fetch", map[bool]string{true: "pass", false: "fail"}[scope != "" && !strings.Contains(strings.ToLower(scope), "web")], "construction steps receive retained text only and no fetch authority")
-	add("no-vault-write", "unverified", "the step has no write tool in its requested scope; the agent's OS-level file access cannot be verified from here")
+	if strings.EqualFold(scope, ConstructionNoTools) {
+		add("no-vault-write", "pass", "the step is granted no tools, so it has no write tool")
+	} else {
+		add("no-vault-write", "unverified", "the step has no write tool in its requested scope; the agent's OS-level file access is the runner's, as for every native chat turn")
+	}
 	out.AllowUnverified = c.opts.AllowUnverifiedNative
 	out.Ready = true
 	for _, ch := range out.Checks {
-		if ch.Status == "fail" || (ch.Status == "unverified" && !out.AllowUnverified) {
+		if ch.Status == "fail" {
 			out.Ready = false
 		}
 	}
@@ -85,14 +95,16 @@ func init() {
 		p := s.constructionPreflight()
 		if p.Ready {
 			notes := []string{}
-			if p.AllowUnverified {
-				notes = append(notes, "native steps allowed with unverified checks (isolated fixture only): tool confinement is declared, not proven")
+			for _, ch := range p.Checks {
+				if ch.Status == "unverified" {
+					notes = append(notes, ch.Name+": "+ch.Detail)
+				}
 			}
 			return true, notes
 		}
 		var why []string
 		for _, ch := range p.Checks {
-			if ch.Status == "fail" || (ch.Status == "unverified" && !p.AllowUnverified) {
+			if ch.Status == "fail" {
 				why = append(why, ch.Name+": "+ch.Detail)
 			}
 		}

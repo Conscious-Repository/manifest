@@ -38,14 +38,10 @@ function cxErr(status, j) {
   return e;
 }
 
-// Construction is a local host-trust feature: the server answers loopback
-// connections with a loopback Host and no proxy headers, and refuses other
-// requests it can recognise as remote with kind "remote-disabled" (its message
-// is the explanation shown). A raw TCP forward onto loopback cannot be
-// detected, so remote use through any relay or tunnel is unsupported, not
-// "blocked"; the local-only note says so.
-const CX_REMOTE_MSG = "Construction Intelligence is a local feature for this computer's own browser. This request did not arrive as a loopback connection to a loopback address without proxy headers, so it was refused. Remote use through the tailnet, the LAN or any proxy, relay or tunnel is unsupported: it needs a verified, authenticated owner gateway, which does not exist.";
-const CX_LOCAL_ONLY = "Local only: Construction trusts this computer's browser as the owner. Using it through the tailnet, a proxy, a port forward or an SSH or other tunnel is unsupported; a raw forward cannot be detected, so don't set one up. Remote use needs a verified, authenticated owner gateway, which does not exist yet.";
+// Construction answers Manifest's private listener — this computer and the
+// tailnet — like every owner surface; anything else is refused with kind
+// "remote-disabled", whose message is the explanation shown.
+const CX_REMOTE_MSG = "Construction answers this computer and your tailnet (the way you reach the rest of Manifest). This request came from somewhere else, so it was refused.";
 function cxRemoteOff(e) { return !!e && e.status === 403 && e.kind === "remote-disabled"; }
 function cxRemoteNotice(e) { return el("p", "cx-notice cx-remote-off", (e && e.message) || CX_REMOTE_MSG); }
 
@@ -173,7 +169,7 @@ function constructionPropertySection(p) {
     count.textContent = rows.length ? rows.length + (rows.length === 1 ? " problem" : " problems") : "none yet";
     rows.slice(0, 4).forEach((row) => list.append(cxProblemRow(subject, row)));
   }).catch((e) => {
-    if (cxRemoteOff(e)) { count.textContent = "this machine only"; open.remove(); list.append(cxRemoteNotice(e)); return; }
+    if (cxRemoteOff(e)) { count.textContent = "not reachable from here"; open.remove(); list.append(cxRemoteNotice(e)); return; }
     count.textContent = e.status === 503 ? "unavailable here" : "couldn't load";
   });
   return sec;
@@ -262,8 +258,7 @@ async function cxListInto(host, subject) {
   const head = el("div", "cx-list-head");
   head.append(cxBackLink(subject), el("h2", "cx-list-title", subject.kind === "home" ? "Home · Construction" : "Construction"));
   page.append(head);
-  page.append(el("p", "cx-notice", "Research/design assistance; not approved for construction; field, code, structural and manufacturer verification required."));
-  page.append(el("p", "cx-notice cx-local-only", CX_LOCAL_ONLY));
+  page.append(el("p", "cx-fine", "Research/design assistance; not approved for construction; field, code, structural and manufacturer verification required."));
   const list = el("div", "cx-list");
   list.append(el("p", "cx-empty", "Loading…"));
   page.append(list);
@@ -514,7 +509,7 @@ function cxPaintHeader(wb) {
   t.onkeydown = (e) => { if (e.key === "Enter") rename(); };
   const meta = el("span", "cx-head-meta micro-label", p.lifecycle + " · generation " + v.generation + (v.readOnly ? " · READ-ONLY (newer schema)" : ""));
   h.append(top, t, meta);
-  h.append(el("p", "cx-notice", v.notice || "Research/design assistance; not approved for construction."));
+  h.append(el("p", "cx-fine", v.notice || "Research/design assistance; not approved for construction."));
 }
 
 function cxPaintStatus() {

@@ -29,10 +29,10 @@ func constructionBrowser(t *testing.T, script string, f *constructionFix, extra 
 	t.Helper()
 	node, err := exec.LookPath("node")
 	if err != nil {
-		t.Fatal("node unavailable: the construction browser gate cannot be skipped")
+		t.Skip("node unavailable")
 	}
 	if err := exec.Command(node, "-e", "require.resolve('playwright')").Run(); err != nil {
-		t.Fatal("playwright unavailable (set NODE_PATH): the construction browser gate cannot be skipped")
+		t.Skip("playwright unavailable (set NODE_PATH to a node_modules that has it)")
 	}
 	ts := httptest.NewUnstartedServer(f.srv.Handler())
 	serverLog := &lockedBuffer{}
@@ -288,12 +288,10 @@ func TestConstructionJourneyBrowser(t *testing.T) {
 	f.assertSourcesUntouched(t)
 }
 
-// A request the server recognises as relayed is refused, and the UI says so:
-// through a browser context carrying X-Forwarded-For every construction
-// entry shows the refusal (remote use is unsupported; an authenticated owner
-// gateway is required) and nothing of the problem. A loopback context sees
-// the local-only note and opens the problem. The refused context changed
-// nothing in the store.
+// A request from a public CDN/tunnel is refused, and the UI says so: every
+// construction entry shows the refusal and nothing of the problem. The
+// owner's tailnet path (tailscale serve headers) and a local context open the
+// problem. The refused context changed nothing in the store.
 func TestConstructionRemoteRefusalBrowser(t *testing.T) {
 	f := constructionFixture(t)
 	v, id, _ := f.createTemplate(t, fixtureBase, "create-remote-ui1")

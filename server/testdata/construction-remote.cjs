@@ -1,19 +1,18 @@
-// The local host-trust boundary in the browser against the REAL backend
+// Construction's boundary in the browser against the REAL backend
 // (web_construction_test.go TestConstructionRemoteRefusalBrowser). A context
-// whose requests arrive relayed by a proxy (X-Forwarded-For, as `tailscale
-// serve` or a reverse proxy adds) is refused by the server, and every
-// construction entry explains that remote use is unsupported until a
-// verified owner gateway exists. A plain loopback context sees the local-only
-// note (a raw forward cannot be detected, so don't set one up) and opens the
-// same problem.
+// whose requests arrive through a public CDN/tunnel (Cf-Connecting-Ip) is
+// refused and every construction entry explains why. The owner's tailnet
+// path (`tailscale serve`: X-Forwarded-For + Tailscale-* headers) and a
+// plain local context both open the same problem, with only the fine-print
+// "not approved for construction" note.
 const {chromium} = require('playwright');
 const assert = require('node:assert/strict'), fs = require('node:fs'), path = require('node:path');
 const cfg = process.argv[2] ? JSON.parse(process.argv[2]) : null;
 if (!cfg || !cfg.url || !cfg.problemId) { console.error('construction-remote.cjs needs a real backend: go test ./server -run TestConstructionRemoteRefusalBrowser'); process.exit(2); }
 const shots = cfg.shots || '/tmp/manifest-construction-qa/shots';
 fs.mkdirSync(shots, {recursive: true});
-const EXPLAIN = /local feature for this computer's own browser\. This request did not arrive as a loopback connection.*Remote use through the tailnet, the LAN or any proxy, relay or tunnel is unsupported: it needs a verified, authenticated owner gateway/;
-const LOCAL_ONLY = /Local only: Construction trusts this computer's browser as the owner\..*a raw forward cannot be detected.*verified, authenticated owner gateway/;
+const EXPLAIN = /Construction answers this computer and your tailnet .*This request came from somewhere else, so it was refused\./;
+const FINE = /not approved for construction/;
 (async () => {
   const browser = await chromium.launch({headless: true});
   const errors = [], external = [];
@@ -22,13 +21,13 @@ const LOCAL_ONLY = /Local only: Construction trusts this computer's browser as t
     page.on('request', (r) => { if (!r.url().startsWith(cfg.url) && !r.url().startsWith('data:') && !r.url().startsWith('blob:')) external.push(r.url()); });
   };
   try {
-    // relayed: Manifest itself loads; construction is refused and explained
-    const relayed = await browser.newContext({viewport: {width: 1440, height: 900}, extraHTTPHeaders: {'X-Forwarded-For': '100.101.102.103'}});
+    // a public tunnel: Manifest itself loads; construction is refused and explained
+    const relayed = await browser.newContext({viewport: {width: 1440, height: 900}, extraHTTPHeaders: {'Cf-Connecting-Ip': '203.0.113.9'}});
     const page = await relayed.newPage();
     watch(page);
     await page.goto(cfg.url + '/#/properties/fixture-ooda-house');
     await page.getByText('CONSTRUCTION', {exact: true}).waitFor();
-    await page.getByText('this machine only', {exact: true}).waitFor();
+    await page.getByText('not reachable from here', {exact: true}).waitFor();
     await page.locator('.cx-entry .cx-remote-off').filter({hasText: EXPLAIN}).waitFor();
     assert.equal(await page.getByRole('link', {name: 'Open construction →'}).count(), 0, 'no way into a refused feature');
     await page.screenshot({path: path.join(shots, 'remote-disabled-property-1440.png')});
@@ -41,16 +40,20 @@ const LOCAL_ONLY = /Local only: Construction trusts this computer's browser as t
     await page.screenshot({path: path.join(shots, 'remote-disabled-problem-1440.png')});
     await page.goto(cfg.url + '/#/tasks/home-construction');
     await page.locator('#homeConstructionHost .cx-remote-off').filter({hasText: EXPLAIN}).waitFor();
-    // loopback: the list states the local-only model; the owner opens the problem
-    const local = await browser.newContext({viewport: {width: 1440, height: 900}});
-    const lp = await local.newPage();
-    watch(lp);
-    await lp.goto(cfg.url + '/#/properties/fixture-ooda-house/construction');
-    await lp.locator('.cx-list-page .cx-local-only').filter({hasText: LOCAL_ONLY}).waitFor();
-    await lp.screenshot({path: path.join(shots, 'local-only-list-1440.png')});
-    await lp.goto(cfg.url + '/#/properties/fixture-ooda-house/construction/' + cfg.problemId);
-    await lp.getByRole('heading', {name: cfg.title}).waitFor();
-    assert.equal(await lp.locator('.cx-remote-off').count(), 0, 'no refusal on loopback');
+    // the owner's ways in: tailscale serve, and this computer — both open the problem
+    for (const [name, headers] of [['tailnet', {'X-Forwarded-For': '100.101.102.103', 'X-Forwarded-Proto': 'https', 'Tailscale-User-Login': 'owner@example.com'}], ['local', {}]]) {
+      const ctx = await browser.newContext({viewport: {width: 1440, height: 900}, extraHTTPHeaders: headers});
+      const lp = await ctx.newPage();
+      watch(lp);
+      await lp.goto(cfg.url + '/#/properties/fixture-ooda-house/construction');
+      await lp.locator('.cx-list-page .cx-fine').filter({hasText: FINE}).waitFor();
+      assert.equal(await lp.locator('.cx-local-only').count(), 0, name + ': no local-only banner');
+      await lp.screenshot({path: path.join(shots, name + '-list-1440.png')});
+      await lp.goto(cfg.url + '/#/properties/fixture-ooda-house/construction/' + cfg.problemId);
+      await lp.getByRole('heading', {name: cfg.title}).waitFor();
+      assert.equal(await lp.locator('.cx-remote-off').count(), 0, name + ': no refusal');
+      await ctx.close();
+    }
     assert.deepEqual(errors, [], 'page errors');
     assert.deepEqual(external, [], 'requests outside the backend');
     console.log(JSON.stringify({ok: true, problemId: cfg.problemId, shots}));
