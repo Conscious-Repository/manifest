@@ -1,0 +1,262 @@
+{
+  "template": "roof-masonry-junction",
+  "components": [
+    {
+      "id": "cmp-00000000000000000000000000000001",
+      "params": {
+        "depth": 200,
+        "offset": 300,
+        "spacing": 600,
+        "width": 50
+      },
+      "role": "structure:exposed-rafters",
+      "type": "rafter-array"
+    },
+    {
+      "id": "cmp-00000000000000000000000000000002",
+      "params": {
+        "thickness": 25
+      },
+      "role": "structure:finish-deck",
+      "type": "timber-decking"
+    },
+    {
+      "id": "cmp-00000000000000000000000000000003",
+      "params": {
+        "thickness": 1
+      },
+      "role": "control:air-vapour-candidate",
+      "type": "control-layer"
+    },
+    {
+      "id": "cmp-00000000000000000000000000000004",
+      "params": {
+        "thickness": 100
+      },
+      "role": "thermal:insulation",
+      "type": "insulation-board"
+    },
+    {
+      "id": "cmp-00000000000000000000000000000005",
+      "params": {
+        "thickness": 2
+      },
+      "role": "control:water-underlayment",
+      "type": "underlayment"
+    },
+    {
+      "id": "cmp-00000000000000000000000000000006",
+      "params": {
+        "depth": 38,
+        "offset": 150,
+        "spacing": 600,
+        "width": 63
+      },
+      "role": "support:battens",
+      "type": "batten-array"
+    },
+    {
+      "id": "cmp-00000000000000000000000000000007",
+      "params": {
+        "depth": 18,
+        "overhang": 50,
+        "pitch": 76,
+        "thickness": 0.5,
+        "wallGap": 30
+      },
+      "role": "roof:corrugated-metal",
+      "type": "corrugated-sheet"
+    },
+    {
+      "id": "cmp-00000000000000000000000000000008",
+      "params": {
+        "length": 50,
+        "setback": 15,
+        "topThickness": 3
+      },
+      "role": "roof:profile-closure",
+      "type": "profile-closure"
+    },
+    {
+      "id": "cmp-00000000000000000000000000000009",
+      "params": {
+        "bendRadius": 3,
+        "leg": 150,
+        "thickness": 0.6,
+        "upstand": 150
+      },
+      "role": "flashing:base-apron",
+      "type": "apron-flashing"
+    },
+    {
+      "id": "cmp-0000000000000000000000000000000a",
+      "params": {
+        "clearance": 2,
+        "embed": 0,
+        "height": 90,
+        "lap": 75,
+        "thickness": 0.6
+      },
+      "role": "flashing:counter",
+      "type": "counterflashing"
+    },
+    {
+      "id": "cmp-0000000000000000000000000000000b",
+      "params": {
+        "size": 10
+      },
+      "role": "seal:counterflashing-to-wall",
+      "type": "sealant-bead"
+    },
+    {
+      "id": "cmp-0000000000000000000000000000000c",
+      "params": {
+        "designStack": 0,
+        "diameter": 6.3,
+        "every": 2,
+        "headDiameter": 16,
+        "length": 45,
+        "minEmbedment": 20
+      },
+      "role": "attachment:sheet-to-batten",
+      "type": "fastener-set"
+    },
+    {
+      "id": "cmp-0000000000000000000000000000000d",
+      "params": {
+        "designStack": 166,
+        "diameter": 8,
+        "every": 1,
+        "headDiameter": 14,
+        "length": 230,
+        "minEmbedment": 50
+      },
+      "role": "attachment:batten-through-stack-to-rafter",
+      "type": "fastener-set"
+    },
+    {
+      "id": "cmp-0000000000000000000000000000000e",
+      "params": {
+        "thickness": 100
+      },
+      "role": "masonry:outer-wythe",
+      "type": "masonry-wythe"
+    },
+    {
+      "id": "cmp-0000000000000000000000000000000f",
+      "params": {
+        "thickness": 100
+      },
+      "role": "masonry:inner-wythe",
+      "type": "masonry-wythe"
+    }
+  ],
+  "parameters": {
+    "depthFromWall": 1800,
+    "pitch": 10,
+    "wallDepthBelow": 450,
+    "wallHeightAbove": 700,
+    "widthAlongWall": 2400
+  },
+  "geometryHash": "99c4b4159fe1dec2d7e0b200b9d9fcd8ddf44ce1464ff45229f0ff9b3737a1fc",
+  "triangles": 13640,
+  "bounds": [
+    0,
+    -200,
+    -678.471,
+    2400,
+    1853.2125,
+    700
+  ],
+  "facts": {
+    "stackAboveDeckMm": 141,
+    "stackToRafterMm": 166,
+    "fasteners": [
+      {
+        "component": "cmp-0000000000000000000000000000000c",
+        "host": "cmp-00000000000000000000000000000006",
+        "count": 48,
+        "lengthMm": 45,
+        "embedmentMm": 26.5,
+        "minEmbedmentMm": 20,
+        "reachesHost": true,
+        "passes": [
+          "cmp-00000000000000000000000000000006"
+        ],
+        "designStackMm": 0,
+        "currentStackMm": 166,
+        "stackBased": false
+      },
+      {
+        "component": "cmp-0000000000000000000000000000000d",
+        "host": "cmp-00000000000000000000000000000001",
+        "count": 12,
+        "lengthMm": 230,
+        "embedmentMm": 64,
+        "minEmbedmentMm": 50,
+        "reachesHost": true,
+        "passes": [
+          "cmp-00000000000000000000000000000001",
+          "cmp-00000000000000000000000000000002",
+          "cmp-00000000000000000000000000000003",
+          "cmp-00000000000000000000000000000004",
+          "cmp-00000000000000000000000000000005",
+          "cmp-00000000000000000000000000000006"
+        ],
+        "designStackMm": 166,
+        "currentStackMm": 166,
+        "stackBased": true
+      }
+    ],
+    "layerGaps": [
+      {
+        "below": "cmp-00000000000000000000000000000002",
+        "above": "cmp-00000000000000000000000000000003",
+        "gapMm": 0
+      },
+      {
+        "below": "cmp-00000000000000000000000000000003",
+        "above": "cmp-00000000000000000000000000000004",
+        "gapMm": 0
+      },
+      {
+        "below": "cmp-00000000000000000000000000000004",
+        "above": "cmp-00000000000000000000000000000005",
+        "gapMm": 0
+      },
+      {
+        "below": "cmp-00000000000000000000000000000005",
+        "above": "cmp-00000000000000000000000000000006",
+        "gapMm": 0
+      }
+    ],
+    "laps": [
+      {
+        "kind": "apron-over-sheet",
+        "over": "cmp-00000000000000000000000000000009",
+        "under": "cmp-00000000000000000000000000000007",
+        "lapMm": 115.7462,
+        "clearMm": 3,
+        "ok": true
+      },
+      {
+        "kind": "counter-over-upstand",
+        "over": "cmp-0000000000000000000000000000000a",
+        "under": "cmp-00000000000000000000000000000009",
+        "lapMm": 75,
+        "clearMm": 2,
+        "ok": true
+      }
+    ],
+    "disconnected": [],
+    "wallTopNeededMm": 385.0068,
+    "wallTopMm": 700,
+    "cavityWidthMm": 0,
+    "inapplicable": []
+  },
+  "insulation150": {
+    "geometryHash": "1cb170b709bc8156ac8bb0bae16f159044c6150eaee459ef6770e7cf787c8a87",
+    "stackToRafterMm": 216,
+    "structuralEmbedmentMm": 14
+  }
+}

@@ -756,6 +756,8 @@ type Tx struct {
 	events  []LedgerEvent
 	// viewOnly marks commits that touch only views (no physical change).
 	viewOnly bool
+	// compiled holds this commit's freshly compiled assemblies (validate.go).
+	compiled map[string]compiledAssembly
 }
 
 // Record notes one applied operation with canonical before/after values.
@@ -875,11 +877,20 @@ func (s *Store) commitLocked(sub SubjectRef, id string, base *State, req CommitR
 	return s.finish(sub, id, base, tx, req)
 }
 
-func (s *Store) finish(sub SubjectRef, id string, base *State, tx *Tx, req CommitRequest) (*State, *Receipt, error) {
-	next := tx.Next
-	stamp := tx.Now.Format(time.RFC3339Nano)
-	baseDocs := base.docs()
-	nextDocs := next.docs()
+// preCommitHooks run after the transaction body and before change
+// detection (e.g. compile assemblies, refuse blocking findings);
+// postStampHooks run once every changed document has its final revision
+// token and may add derived documents keyed to those tokens (validation
+// reports). Registered by the domain files that own them.
+var (
+	preCommitHooks []func(tx *Tx) error
+	postStampHooks []func(tx *Tx, tokens map[string]string) error
+)
+
+// stampChanged marks and stamps every document whose content differs from
+// the base. Idempotent: a second call yields the same stamps.
+func stampChanged(base, next *State, tx *Tx, stamp string) (map[string]bool, []string, error) {
+	baseDocs, nextDocs := base.docs(), next.docs()
 	for key := range baseDocs {
 		if _, ok := nextDocs[key]; !ok {
 			return nil, nil, Invalid("documents are never deleted: " + key)
@@ -903,7 +914,6 @@ func (s *Store) finish(sub SubjectRef, id string, base *State, tx *Tx, req Commi
 	if changed["problem"] {
 		next.Problem.UpdatedAt = stamp
 	}
-	// stamp envelopes of changed documents
 	for _, key := range keys {
 		if !changed[key] {
 			continue
@@ -921,6 +931,45 @@ func (s *Store) finish(sub SubjectRef, id string, base *State, tx *Tx, req Commi
 			env.ParentRevision = ""
 		}
 	}
+	return changed, keys, nil
+}
+
+func (s *Store) finish(sub SubjectRef, id string, base *State, tx *Tx, req CommitRequest) (*State, *Receipt, error) {
+	next := tx.Next
+	stamp := tx.Now.Format(time.RFC3339Nano)
+	for _, h := range preCommitHooks {
+		if err := h(tx); err != nil {
+			return nil, nil, err
+		}
+	}
+	changed, keys, err := stampChanged(base, next, tx, stamp)
+	if err != nil {
+		return nil, nil, err
+	}
+	if len(postStampHooks) > 0 {
+		tokens := map[string]string{}
+		nextDocs := next.docs()
+		for _, key := range keys {
+			if changed[key] {
+				_, tok, err := TokenOf(nextDocs[key])
+				if err != nil {
+					return nil, nil, Invalid(key + ": " + err.Error())
+				}
+				tokens[key] = tok
+			} else {
+				tokens[key] = base.Head.Docs[key].Revision
+			}
+		}
+		for _, h := range postStampHooks {
+			if err := h(tx, tokens); err != nil {
+				return nil, nil, err
+			}
+		}
+		if changed, keys, err = stampChanged(base, next, tx, stamp); err != nil {
+			return nil, nil, err
+		}
+	}
+	nextDocs := next.docs()
 	for _, key := range keys {
 		if !changed[key] {
 			continue
