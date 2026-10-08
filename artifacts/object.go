@@ -225,7 +225,7 @@ func NewRegistry(pool *Store) (*Registry, error) {
 		return nil, errors.New("artifacts: registry needs a pool")
 	}
 	dir := filepath.Join(pool.dir, "objects")
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	if err := os.MkdirAll(dir, pool.dirMode); err != nil {
 		return nil, err
 	}
 	return &Registry{pool: pool, dir: dir}, nil
@@ -542,12 +542,7 @@ func (r *Registry) save(a Artifact) error {
 	if err != nil {
 		return err
 	}
-	p := r.path(a.ID)
-	tmp := p + ".tmp"
-	if err := os.WriteFile(tmp, append(b, '\n'), 0o644); err != nil {
-		return err
-	}
-	return os.Rename(tmp, p)
+	return r.pool.writeFileAtomic(r.path(a.ID), append(b, '\n'))
 }
 
 // cleanRef normalizes a harness-relative ref: slash-separated, trimmed,

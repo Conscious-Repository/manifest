@@ -77,15 +77,83 @@ type Entry struct {
 type Store struct {
 	dir string
 	mu  sync.Mutex
+	// dirMode/fileMode are what new directories and metadata files get;
+	// durable makes every write sync its file and directory before it is
+	// reported done. New keeps the shared pool's historic behaviour.
+	dirMode  os.FileMode
+	fileMode os.FileMode
+	durable  bool
 }
 
-func New(dir string) (*Store, error) {
-	for _, d := range []string{"blobs", "extracts", "index"} {
-		if err := os.MkdirAll(filepath.Join(dir, d), 0o755); err != nil {
+// Options configure a pool. The zero value is the shared pool (New).
+//
+// Private is for an owner-only domain that keeps its own pool (construction):
+// directories are created 0700 and metadata files 0600, and every blob,
+// object and index write is fsynced — file and parent directory — before it
+// returns, so a caller may build a commit protocol on top of it. Existing
+// directories keep whatever mode they already have; nothing is chmodded.
+type Options struct {
+	Private bool
+}
+
+func New(dir string) (*Store, error) { return NewWithOptions(dir, Options{}) }
+
+// NewWithOptions opens a pool with explicit filesystem policy.
+func NewWithOptions(dir string, o Options) (*Store, error) {
+	s := &Store{dir: dir, dirMode: 0o755, fileMode: 0o644}
+	if o.Private {
+		s.dirMode, s.fileMode, s.durable = 0o700, 0o600, true
+		if err := os.MkdirAll(dir, s.dirMode); err != nil {
 			return nil, err
 		}
 	}
-	return &Store{dir: dir}, nil
+	for _, d := range []string{"blobs", "extracts", "index"} {
+		if err := os.MkdirAll(filepath.Join(dir, d), s.dirMode); err != nil {
+			return nil, err
+		}
+	}
+	return s, nil
+}
+
+// Durable reports whether writes are synced before they return.
+func (s *Store) Durable() bool { return s.durable }
+
+// syncDir makes a rename or create inside dir durable (no-op unless durable).
+func (s *Store) syncDir(dir string) error {
+	if !s.durable {
+		return nil
+	}
+	d, err := os.Open(dir)
+	if err != nil {
+		return err
+	}
+	defer d.Close()
+	return d.Sync()
+}
+
+// writeFileAtomic writes name via tmp+rename with the pool's file mode,
+// syncing the file and its directory first when the pool is durable.
+func (s *Store) writeFileAtomic(name string, b []byte) error {
+	tmp := name + ".tmp"
+	f, err := os.OpenFile(tmp, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, s.fileMode)
+	if err != nil {
+		return err
+	}
+	_, err = f.Write(b)
+	if err == nil && s.durable {
+		err = f.Sync()
+	}
+	if cerr := f.Close(); err == nil {
+		err = cerr
+	}
+	if err != nil {
+		os.Remove(tmp)
+		return err
+	}
+	if err := os.Rename(tmp, name); err != nil {
+		return err
+	}
+	return s.syncDir(filepath.Dir(name))
 }
 
 // Save streams r into the pool. Returns the ref with the caller's name and the
@@ -99,6 +167,9 @@ func (s *Store) Save(r io.Reader, name, mime string) (Ref, error) {
 	defer os.Remove(tmp.Name())
 	h := sha256.New()
 	n, err := io.Copy(io.MultiWriter(tmp, h), io.LimitReader(r, MaxBlobSize+1))
+	if err == nil && s.durable {
+		err = tmp.Sync()
+	}
 	if cerr := tmp.Close(); err == nil {
 		err = cerr
 	}
@@ -113,12 +184,18 @@ func (s *Store) Save(r io.Reader, name, mime string) (Ref, error) {
 	}
 	sum := hex.EncodeToString(h.Sum(nil))
 	dir := filepath.Join(s.dir, "blobs", sum[:2])
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	if err := os.MkdirAll(dir, s.dirMode); err != nil {
+		return Ref{}, err
+	}
+	if err := s.syncDir(filepath.Join(s.dir, "blobs")); err != nil {
 		return Ref{}, err
 	}
 	dst := filepath.Join(dir, sum+SafeExt(name))
 	if _, err := os.Stat(dst); err != nil { // dedup: the bytes are already here
 		if err := os.Rename(tmp.Name(), dst); err != nil {
+			return Ref{}, err
+		}
+		if err := s.syncDir(dir); err != nil {
 			return Ref{}, err
 		}
 	}
@@ -179,11 +256,7 @@ func (s *Store) PutExtract(hash, text string) error {
 	if p == "" {
 		return errors.New("bad hash")
 	}
-	tmp := p + ".tmp"
-	if err := os.WriteFile(tmp, []byte(text), 0o644); err != nil {
-		return err
-	}
-	return os.Rename(tmp, p)
+	return s.writeFileAtomic(p, []byte(text))
 }
 
 // --- per-domain index: the artifact database AND the access list ------------
@@ -280,10 +353,5 @@ func (s *Store) save(domain string, list []Entry) error {
 	if err != nil {
 		return err
 	}
-	p := s.indexPath(domain)
-	tmp := p + ".tmp"
-	if err := os.WriteFile(tmp, append(b, '\n'), 0o644); err != nil {
-		return err
-	}
-	return os.Rename(tmp, p)
+	return s.writeFileAtomic(s.indexPath(domain), append(b, '\n'))
 }
