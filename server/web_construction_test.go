@@ -97,3 +97,32 @@ func TestConstructionWorkbenchBrowser(t *testing.T) {
 	}
 	f.assertSourcesUntouched(t)
 }
+
+// Sections and exports through the UI against the real backend; then the
+// retained derivatives are checked in the store.
+func TestConstructionSectionBrowser(t *testing.T) {
+	f := constructionFixture(t)
+	out := constructionBrowser(t, "construction-sections.cjs", f, nil)
+	t.Log(strings.TrimSpace(out))
+	sub := construction.SubjectRef{Kind: "property", ID: "fixture-ooda-house"}
+	list, err := f.srv.construction.store.List(sub)
+	if err != nil || len(list) != 1 {
+		t.Fatalf("%+v %v", list, err)
+	}
+	st, err := f.srv.construction.store.Load(sub, list[0].ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	formats := map[string]int{}
+	for _, rec := range st.Derived.Artifacts {
+		formats[rec.Format]++
+		b, err := f.srv.construction.store.Content(sub, st.Problem.ID, rec.ArtifactID, rec.Revision)
+		if err != nil || construction.Token(b) != rec.Revision {
+			t.Fatalf("derived %s not retrievable exactly: %v", rec.Name, err)
+		}
+	}
+	if formats["svg"] != 1 || formats["pdf"] != 1 || formats["package"] != 1 || formats["glb"] != 1 {
+		t.Fatalf("derived formats %v", formats)
+	}
+	f.assertSourcesUntouched(t)
+}

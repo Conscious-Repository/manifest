@@ -33,6 +33,7 @@
 .cx-narrative { min-height: 84px; resize: vertical; width: 100%; box-sizing: border-box; }
 .cx-check { font-size: var(--fs-sm); color: var(--base-60); display: flex; align-items: center; gap: var(--sp-3); }
 .cx-form-msg { font-size: var(--fs-sm); color: var(--danger); min-height: 1em; margin: 0; }
+.cx-export-msg { color: var(--base-70); }
 
 /* the workbench */
 .cx-wb { --cx-a: 300px; --cx-right: 400px; --cx-cfrac: 0.5; display: flex; flex-direction: column; gap: var(--sp-3); min-width: 0; }
@@ -195,3 +196,10 @@
   .cx-range { width: 72px; }
   .cx-num-label { width: 96px; }
 }
+
+/* P4: 2D section and exports */
+.cx-section2d { position: absolute; inset: 0; overflow: auto; background: var(--base-00); padding: var(--sp-4); display: flex; flex-direction: column; gap: var(--sp-3); z-index: 2; }
+.cx-section2d .cx-tool { align-self: flex-start; border: 1px solid var(--line); border-radius: var(--radius); }
+.cx-section-img { width: 100%; height: auto; min-width: 480px; background: var(--base-00); border: 1px solid var(--line); }
+.cx-exports { display: flex; flex-direction: column; gap: var(--sp-2); margin-top: var(--sp-4); }
+.cx-export-row { display: flex; flex-direction: column; gap: var(--sp-1); padding: var(--sp-2) 0; border-bottom: 1px solid var(--line-soft); }

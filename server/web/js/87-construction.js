@@ -224,7 +224,7 @@ function cxOpen(host, subject, problemId) {
   if (changed) {
     if (typeof cxRendererDispose === "function") cxRendererDispose();
     cx.subject = subject; cx.problemId = problemId || ""; cx.view = null; cx.error = ""; cx.selection = ""; cx.activeAssembly = ""; cx.seq++;
-    cx.vs = null; cx.renderer = null; cx.rendererFailed = false; cx.geometry = null; cx.viewID = ""; cx.redo = []; cx.tab = "problem";
+    cx.vs = null; cx.renderer = null; cx.rendererFailed = false; cx.geometry = null; cx.viewID = ""; cx.redo = []; cx.tab = "problem"; cx.exportMsg = ""; cx.section2D = false;
   }
   host.innerHTML = "";
   if (!problemId) { cxListInto(host, subject); return; }
@@ -939,7 +939,8 @@ function cxModelToolbar() {
   });
   const bms = selectEl([]); bms.className = "cx-in cx-in-sm"; bms.setAttribute("aria-label", "Camera bookmarks"); bms.dataset.role = "bookmarks";
   bms.onchange = () => { const b = (cx.vs.bookmarks || [])[Number(bms.value)]; if (b && cx.renderer) cx.renderer.setCamera(b.camera); bms.value = ""; };
-  tb.append(mode, proj, views, sec, secKind, secOff, expLab, water, att, vis, measure, bm, bms, el("span", "cx-model-note"));
+  const sec2d = cxToolBtn("2D section", "Show the true section drawing of this revision", () => cxToggleSection2D(!cx.section2D));
+  tb.append(mode, proj, views, sec, secKind, secOff, expLab, water, att, vis, measure, bm, bms, sec2d, el("span", "cx-model-note"));
   return tb;
 }
 
@@ -1412,4 +1413,91 @@ function cxPaintAgentFull(body) {
   if (typeof cxPaintResearchRun === "function") cxPaintResearchRun(body);
   else body.append(el("p", "cx-empty", "No research run yet."));
   if (rep) body.append(el("p", "cx-hint", rep.counts.critical + " critical issues remain on the open alternative."));
+}
+
+// ================= P4 — 2D section view and exports =================
+
+function cxSectionQuery() {
+  const s = cx.vs && cx.vs.section;
+  const a = cxAsm();
+  let q = "revision=" + encodeURIComponent((cx.view.revisions || {})["assembly:" + a.id]);
+  if (s && s.enabled) q += "&ox=" + s.originMm[0] + "&oy=" + s.originMm[1] + "&oz=" + s.originMm[2] + "&nx=" + s.normal[0] + "&ny=" + s.normal[1] + "&nz=" + s.normal[2] + "&ux=" + s.up[0] + "&uy=" + s.up[1] + "&uz=" + s.up[2];
+  return q + "&paper=" + encodeURIComponent(cx.exportPaper || "A3") + "&scale=" + encodeURIComponent(cx.exportScale || 5);
+}
+
+// cxToggleSection2D shows the true section of the current revision as an
+// inert image (an <img> cannot run anything inside the SVG).
+function cxToggleSection2D(on) {
+  const wrap = cx.host && cx.host.querySelector(".cx-model");
+  if (!wrap) return;
+  let panel = wrap.querySelector(".cx-section2d");
+  if (!on) { if (panel) panel.remove(); cx.section2D = false; return; }
+  cx.section2D = true;
+  if (!panel) {
+    panel = el("div", "cx-section2d");
+    panel.setAttribute("role", "region");
+    panel.setAttribute("aria-label", "2D section drawing");
+    wrap.querySelector(".cx-canvas-host").append(panel);
+  }
+  panel.innerHTML = "";
+  const a = cxAsm();
+  const img = document.createElement("img");
+  img.className = "cx-section-img";
+  img.alt = "Section drawing of " + a.name + " at revision " + (cx.view.revisions["assembly:" + a.id] || "").slice(0, 10) + (cx.vs.section && cx.vs.section.enabled ? " (current section plane)" : " (standard section through a rafter)");
+  img.src = cxBase(cx.subject) + "/problems/" + encodeURIComponent(cx.problemId) + "/assemblies/" + encodeURIComponent(a.id) + "/section?" + cxSectionQuery();
+  img.onerror = () => { panel.innerHTML = ""; panel.append(el("p", "cx-empty cx-pad", "This section cannot be drawn at the chosen paper and scale (nothing is fitted to the page). Choose a larger paper or smaller scale under Export.")); };
+  const close = cxToolBtn("Close 2D", "Back to the 3D model", () => cxToggleSection2D(false));
+  panel.append(close, img);
+}
+
+cxResearchTabs.push(["export", "Export", (b) => cxPaintExport(b)]);
+
+function cxPaintExport(b) {
+  const a = cxAsm(), v = cx.view;
+  if (!a) { b.append(el("p", "cx-empty", "No assembly to export.")); return; }
+  const rev = (v.revisions || {})["assembly:" + a.id];
+  b.append(el("p", "cx-hint", "Every export is generated from revision " + rev.slice(0, 10) + " of “" + a.name + "” and records its geometry hash. Drawings print at a true scale; nothing is fitted to the page. PNG is not generated server-side."));
+  b.append(el("p", "cx-notice", v.notice));
+  const row = el("div", "cx-row-edit");
+  const paper = selectEl(["A4", "A3", "A2"]); paper.className = "cx-in"; paper.value = cx.exportPaper || "A3"; paper.setAttribute("aria-label", "Paper size");
+  const scale = selectEl(["2", "5", "10", "20"]); scale.className = "cx-in"; scale.value = String(cx.exportScale || 5); scale.setAttribute("aria-label", "Drawing scale 1:N");
+  paper.onchange = () => { cx.exportPaper = paper.value; };
+  scale.onchange = () => { cx.exportScale = Number(scale.value); };
+  row.append(el("span", "cx-num-label", "Paper · scale"), paper, scale);
+  b.append(row);
+  const msg = el("p", "cx-form-msg cx-export-msg", cx.exportMsg || "");
+  msg.setAttribute("role", "status");
+  const btns = el("div", "cx-row-edit");
+  const go = (format, label) => {
+    const btn = pillLight(label, async () => {
+      btn.disabled = true; msg.textContent = "Exporting " + format + "…";
+      const body = { schemaVersion: 1, requestId: cxRequestId(), revision: rev, format, paper: paper.value, scale: Number(scale.value) };
+      if (cx.vs && cx.vs.section && cx.vs.section.enabled && (format === "svg" || format === "pdf" || format === "package")) body.section = { originMm: cx.vs.section.originMm, normal: cx.vs.section.normal, up: cx.vs.section.up, enabled: true };
+      try {
+        const res = await cxApi("POST", cxBase(cx.subject), "/problems/" + encodeURIComponent(cx.problemId) + "/assemblies/" + encodeURIComponent(a.id) + "/exports", body);
+        cx.exportMsg = msg.textContent = "Exported " + res.record.name + " (" + Math.round(res.record.size / 1024) + " KB, geometry " + res.record.geometryHash.slice(0, 10) + ")";
+        cx.lastExport = res;
+        const fresh = await cxApi("GET", cxBase(cx.subject), "/problems/" + encodeURIComponent(cx.problemId));
+        cxApplyView(fresh);
+      } catch (e) { cx.exportMsg = msg.textContent = "Export refused: " + e.message + (e.problems && e.problems.length ? ": " + e.problems.join("; ") : ""); }
+      finally { btn.disabled = false; }
+    });
+    btn.setAttribute("aria-label", "Export " + label);
+    return btn;
+  };
+  btns.append(go("glb", "GLB model"), go("svg", "Section SVG"), go("pdf", "Section PDF"), go("package", "Detail package"),
+    pillLight("Show 2D section", () => { cx.pane = "model"; const wb = cx.host.querySelector(".cx-wb"); if (wb) cxPaintSwitch(wb); cxToggleSection2D(true); }));
+  b.append(btns, msg);
+  const list = el("div", "cx-exports");
+  const recs = ((v.derived && v.derived.artifacts) || []).filter((r) => r.assemblyId === a.id).slice().reverse();
+  if (!recs.length) list.append(el("p", "cx-empty", "No exports yet."));
+  recs.forEach((r) => {
+    const row = el("div", "cx-export-row");
+    const link = el("a", "cx-input-name", r.name);
+    link.href = cxArtifactURL(r.artifactId, r.revision, true);
+    link.setAttribute("download", r.name);
+    row.append(link, el("span", "cx-input-meta micro-label", r.format + " · rev " + r.assemblyRevision.slice(0, 8) + " · geometry " + r.geometryHash.slice(0, 8) + (r.parameters && r.parameters.scale ? " · " + r.parameters.scale + " " + (r.parameters.paper || "") : "") + (r.assemblyRevision !== rev ? " · older revision" : "")));
+    list.append(row);
+  });
+  b.append(list);
 }
