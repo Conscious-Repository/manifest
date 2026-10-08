@@ -1,8 +1,9 @@
 /* ================= CONSTRUCTION — problems inside a property or the Home =================
    One workbench, four synchronized regions: A agent · B model (dominant) ·
    C assembly inspector · D research/comparison. Desktop shows all four with
-   keyboard-resizable dividers; 861–1099px folds A into the switch; ≤860px is
+   keyboard-resizable dividers; 861–1279px folds A into the switch; ≤860px is
    one pane at a time with an explicit Agent/Model/Assembly/Research switch.
+   (The moderate band runs to 1279px because the app rail takes ~212px.)
    Tokens only (00-core.css); both themes come through the roles. */
 
 /* mono-label group: the invariant recipe lives in .micro-label (05-primitives) */
@@ -64,7 +65,7 @@
 .cx-wb.a-collapsed .cx-divider-a { display: none; }
 
 /* moderate widths: agent folds into the switch, right column stays */
-@media (max-width: 1099px) and (min-width: 861px) {
+@media (max-width: 1279px) and (min-width: 861px) {
   .cx-switch { display: flex; }
   .cx-switch-btn[data-pane="model"] { display: none; }
   .cx-grid { grid-template-columns: minmax(320px, 1fr) 6px var(--cx-right); }
@@ -116,3 +117,81 @@
 .cx-input-name { color: var(--base-100); font-size: var(--fs-md); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .cx-input-meta { color: var(--base-60); }
 .cx-input-label { font-size: var(--fs-sm); color: var(--base-60); }
+
+/* model pane (B) */
+.cx-model { position: absolute; inset: 0; display: flex; flex-direction: column; min-height: 0; }
+.cx-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-3); padding: var(--sp-3) var(--sp-4); border-bottom: 1px solid var(--line); background: var(--surface-panel); flex: 0 0 auto; }
+.cx-seg { display: inline-flex; border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; }
+.cx-tool { font-family: var(--mono); font-size: var(--fs-2xs); text-transform: uppercase; letter-spacing: 0.4px; background: var(--surface-panel); color: var(--base-70); border: none; border-right: 1px solid var(--line); padding: var(--sp-2) var(--sp-3); cursor: pointer; min-height: var(--control-min); }
+.cx-toolbar > .cx-tool { border: 1px solid var(--line); border-radius: var(--radius); }
+.cx-seg .cx-tool:last-child { border-right: none; }
+.cx-tool:hover { background: var(--hover); }
+.cx-tool.on { background: var(--accent); color: var(--on-accent); }
+.cx-tool-check { font-size: var(--fs-sm); color: var(--base-70); display: inline-flex; align-items: center; gap: var(--sp-2); white-space: nowrap; }
+.cx-range { width: 96px; accent-color: var(--accent); }
+.cx-in-sm { min-height: var(--control-min); padding: 0 var(--sp-2); font-size: var(--fs-sm); max-width: 168px; }
+.cx-model-note { font-size: var(--fs-sm); color: var(--base-60); }
+.cx-canvas-host { position: relative; flex: 1 1 auto; min-height: 240px; background: var(--base-05); overflow: hidden; }
+.cx-canvas { display: block; outline: none; touch-action: none; }
+.cx-canvas:focus-visible { outline: var(--focus-width) solid var(--accent); outline-offset: -2px; }
+.cx-model-status { padding: var(--sp-2) var(--sp-4); border-top: 1px solid var(--line); color: var(--base-60); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: 0 0 auto; }
+.cx-fallback { position: absolute; inset: 0; overflow: auto; padding: var(--sp-6); background: var(--surface-panel); }
+.cx-fallback-msg { color: var(--warn); font-size: var(--fs-md); margin: 0 0 var(--sp-4); }
+.cx-fallback-link, .cx-link { color: var(--accent); background: none; border: none; padding: 0; font: inherit; font-size: var(--fs-sm); cursor: pointer; text-align: left; text-decoration: underline; }
+.cx-fallback-list { font-size: var(--fs-sm); color: var(--base-80); padding-left: var(--sp-7); }
+.cx-fallback-list li { cursor: pointer; padding: var(--sp-1) 0; }
+.cx-pad { padding: var(--sp-6); }
+
+/* inspector (C) */
+.cx-insp-top { display: flex; gap: var(--sp-3); align-items: center; }
+.cx-insp-top .cx-in { flex: 1 1 auto; }
+.cx-applic { font-size: var(--fs-sm); padding: var(--sp-2) var(--sp-4); border-left: 2px solid var(--line); margin: var(--sp-3) 0; color: var(--base-70); }
+.cx-applic-inapplicable { border-left-color: var(--danger); color: var(--danger); }
+.cx-applic-conditional, .cx-applic-unknown { border-left-color: var(--warn); }
+.cx-applic-applicable { border-left-color: var(--good); }
+.cx-row-edit { display: flex; flex-wrap: wrap; gap: var(--sp-3); align-items: center; }
+.cx-num-row { display: flex; align-items: center; gap: var(--sp-3); flex-wrap: wrap; }
+.cx-num-label { font-size: var(--fs-sm); color: var(--base-70); width: 112px; flex: 0 0 auto; overflow: hidden; text-overflow: ellipsis; }
+.cx-in-num { width: 84px; }
+.cx-in-unit { width: 64px; }
+.cx-unit-fixed { width: 64px; color: var(--base-60); }
+.cx-tree-group { color: var(--base-60); padding-top: var(--sp-3); }
+.cx-tree-row { display: flex; align-items: center; gap: var(--sp-3); padding: var(--sp-2) var(--sp-3); border-radius: var(--radius); cursor: pointer; font-size: var(--fs-md); }
+.cx-tree-row:hover { background: var(--hover); }
+.cx-tree-row.sel { background: var(--base-20); box-shadow: inset 2px 0 0 var(--accent); }
+.cx-tree-row.off .cx-tree-name { text-decoration: line-through; color: var(--base-40); }
+.cx-tree-name { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cx-badge { font-family: var(--mono); font-size: var(--fs-2xs); border-radius: var(--radius); padding: 0 var(--sp-2); }
+.cx-badge-crit { background: var(--status-danger-bg); color: var(--danger); }
+.cx-comp-name { font-size: var(--fs-lg); font-weight: 600; }
+.cx-handle { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-3); padding: var(--sp-3); border: 1px dashed var(--line); border-radius: var(--radius); }
+.cx-handle-state { color: var(--warn); }
+.cx-issue { display: flex; flex-wrap: wrap; gap: var(--sp-2) var(--sp-4); padding: var(--sp-3) var(--sp-4); border-left: 2px solid var(--line); margin: var(--sp-2) 0; font-size: var(--fs-sm); cursor: default; }
+.cx-issue-critical-unresolved { border-left-color: var(--danger); }
+.cx-issue-advisory { border-left-color: var(--warn); }
+.cx-issue-informational { border-left-color: var(--base-30); color: var(--base-60); }
+.cx-issue.ack { opacity: 0.85; }
+.cx-issue-sev { width: 72px; color: var(--base-60); }
+.cx-issue-msg { flex: 1 1 240px; min-width: 0; color: var(--base-80); }
+.cx-issue-meta { width: 100%; color: var(--base-60); }
+
+/* research (D) */
+.cx-compare { width: 100%; border-collapse: collapse; font-size: var(--fs-sm); }
+.cx-compare th, .cx-compare td { text-align: left; padding: var(--sp-2) var(--sp-3); border-bottom: 1px solid var(--line-soft); vertical-align: top; }
+.cx-compare th { color: var(--base-60); font-weight: normal; }
+.cx-compare tr.on td { background: var(--base-08); }
+.cx-diff { display: flex; flex-direction: column; gap: var(--sp-1); margin-top: var(--sp-4); font-size: var(--fs-sm); }
+.cx-diff-add { color: var(--good); }
+.cx-diff-del { color: var(--danger); }
+.cx-diff-chg { color: var(--base-80); }
+.cx-diff-info { color: var(--base-60); }
+.cx-history { display: flex; flex-direction: column; margin-top: var(--sp-4); }
+.cx-hist-row { display: grid; grid-template-columns: 44px 1fr auto; gap: var(--sp-1) var(--sp-4); padding: var(--sp-2) 0; border-bottom: 1px solid var(--line-soft); font-size: var(--fs-sm); }
+.cx-hist-row.view-only { color: var(--base-60); }
+.cx-hist-at { grid-column: 2 / 4; color: var(--base-60); }
+.cx-question { font-size: var(--fs-sm); color: var(--base-80); display: flex; flex-direction: column; gap: var(--sp-3); padding: var(--sp-3) 0; border-bottom: 1px solid var(--line-soft); }
+@media (max-width: 860px) {
+  .cx-model { position: static; height: 100%; }
+  .cx-range { width: 72px; }
+  .cx-num-label { width: 96px; }
+}

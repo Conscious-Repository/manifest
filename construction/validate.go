@@ -888,3 +888,17 @@ func (s *Store) Preview(sub SubjectRef, pc *ParsedCommand, actor Actor, c *Apply
 	}
 	return res, ir, nil
 }
+
+// EvaluateReport compiles an assembly and builds its validation report
+// outside a commit (fixtures, restore revalidation). prev keeps issue ids.
+func EvaluateReport(a *Assembly, cat *Catalog, ev *EvidenceBundle, p *Problem, asmToken string, prev *ValidationReport, actor Actor, now time.Time) (*ValidationReport, *GeometryIR, error) {
+	ir, err := Compile(a, cat)
+	if err != nil {
+		return nil, nil, err
+	}
+	fs := Evaluate(ruleInput{a: a, ir: ir, cat: cat, ev: ev, p: p})
+	return buildReport(a, asmToken, prev, compiledAssembly{ir: ir, findings: fs}, actor, now), ir, nil
+}
+
+// NewCatalog is the problem-local catalog a new problem starts with.
+func NewCatalog(problemID string) *Catalog { return newCatalog(problemID) }
