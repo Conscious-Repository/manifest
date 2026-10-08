@@ -1,0 +1,163 @@
+// Research runs and evidence in the workbench against a REAL Go backend
+// (web_construction_test.go, TestConstructionResearchBrowser): the synthetic
+// fixture source adapter is wired, every /api call goes to the actual
+// server with the real store and guard, and only loopback requests are
+// allowed. The Go side checks the store afterwards.
+//
+//   node server/testdata/construction-research.cjs '{"url":"http://127.0.0.1:PORT"}'
+const {chromium} = require('playwright');
+const assert = require('node:assert/strict'), fs = require('node:fs'), path = require('node:path');
+const cfg = JSON.parse(process.argv[2] || '{}');
+if (!cfg.url) { console.error('construction-research.cjs needs the real backend URL'); process.exit(2); }
+const shots = cfg.shots || '/tmp/manifest-construction-qa/shots';
+fs.mkdirSync(shots, {recursive: true});
+const evidence = {};
+
+async function pollPage(page, fn, arg, timeout = 20000) {
+  const until = Date.now() + timeout;
+  for (;;) {
+    const v = await page.evaluate(fn, arg);
+    if (v) return v;
+    if (Date.now() > until) throw new Error('pollPage timed out: ' + fn.toString().slice(0, 200));
+    await new Promise((r) => setTimeout(r, 150));
+  }
+}
+const latest = (page) => page.evaluate(() => { const r = cxLatestRun(); return r ? {id: r.id, state: r.state, epoch: r.epoch, stages: r.stages.map((s) => s.state)} : null; });
+const tab = (page, name) => page.getByRole('tab', {name, exact: true}).click();
+
+(async () => {
+  const browser = await chromium.launch({headless: true});
+  const errors = [], external = [];
+  try {
+    const ctx = await browser.newContext({viewport: {width: 1440, height: 900}});
+    const page = await ctx.newPage();
+    page.on('pageerror', (e) => errors.push(e.message));
+    page.on('request', (r) => { if (!r.url().startsWith(cfg.url) && !r.url().startsWith('data:') && !r.url().startsWith('blob:')) external.push(r.url()); });
+    await page.goto(cfg.url + '/#/properties/fixture-ooda-house/construction');
+    await page.getByLabel('Problem title').waitFor();
+    const created = await page.evaluate(async () => cxApi('POST', cxBase({kind: 'property', id: 'fixture-ooda-house'}), '/problems',
+      {schemaVersion: 1, requestId: cxRequestId(), title: 'Research fixture — corrugated roof to masonry', template: 'roof-masonry-junction'}));
+    const problemId = created.view.problem.id;
+    await page.goto(cfg.url + '/#/properties/fixture-ooda-house/construction/' + problemId);
+    await page.getByRole('heading', {name: 'Research fixture — corrugated roof to masonry'}).waitFor();
+    // observed capabilities are shown, not assumed
+    await page.getByText(/synthetic fixture sources \(test only\)/).first().waitFor();
+    await page.getByText(/PDF\/OCR page extraction is not bundled/).first().waitFor();
+    // ---- start: progress comes from the durable run record ----
+    await page.getByRole('button', {name: 'Start research', exact: true}).click();
+    await pollPage(page, () => { const r = cxLatestRun(); return r && r.state === 'running'; });
+    await page.locator('.cx-stage-running').first().waitFor();
+    await page.screenshot({path: path.join(shots, 'research-running-1440.png')});
+    await pollPage(page, () => { const r = cxLatestRun(); return r && r.state === 'completed'; }, null, 60000);
+    await pollPage(page, () => document.querySelectorAll('.cx-stage-completed').length === 8);
+    const run1 = await latest(page);
+    evidence.run1 = run1;
+    await page.getByText(/3 alternatives/).first().waitFor();
+    // ---- Research tab: every stage's retained result ----
+    await tab(page, 'Runs');
+    await page.getByText(/Acquisition · fixture/).waitFor();
+    for (const outcome of ['not-found · source', 'rate-limited · rate-limit', 'timeout · timeout', 'blocked · source', 'extraction-unavailable · capability']) {
+      await page.locator('.cx-acq td', {hasText: outcome}).first().waitFor();
+    }
+    await page.locator('.cx-rejected li', {hasText: 'quote not found on page 1'}).waitFor();
+    await page.locator('.cx-rejected li', {hasText: 'page 9 does not exist'}).waitFor();
+    await page.locator('.cx-requests li', {hasText: 'Supply the excerpt and page'}).waitFor();
+    await page.locator('.cx-notused li', {hasText: 'lead only'}).first().waitFor();
+    assert.equal(await page.locator('.cx-syn-alts li').count(), 3, 'three conditional alternatives');
+    await page.screenshot({path: path.join(shots, 'research-tab-1440.png')});
+    // ---- open the surface-counterflashing research alternative ----
+    await tab(page, 'Alternatives');
+    const row = page.locator('table.cx-compare tr', {hasText: 'Research — apron flashing + surface-held counterflashing'});
+    await row.getByRole('button', {name: 'Open'}).click();
+    await pollPage(page, () => cxAsm() && cxAsm().name.startsWith('Research — apron flashing + surface'));
+    // ---- Evidence tab: fictional sources, injection warning, contradiction, path ----
+    await tab(page, 'Evidence');
+    await page.getByText(/FICTIONAL FIXTURE/).first().waitFor();
+    await page.locator('.cx-src-warn', {hasText: 'never followed'}).first().waitFor();
+    await page.locator('.cx-claim-contradicted').first().waitFor();
+    const linkedEv = await page.evaluate(() => cxAsm().evidenceLinks.find((l) => l.relation === 'supports').evidenceId);
+    await page.locator('.cx-ev-row[data-evidence="' + linkedEv + '"]').getByRole('button', {name: 'Show path'}).click();
+    const pathRow = page.getByLabel('Evidence path').first();
+    await pathRow.waitFor();
+    const nodes = await pathRow.locator('.cx-path-node').allTextContents();
+    assert.ok(nodes.length === 5, 'Source → Evidence → Claim → Junction → Assembly: ' + JSON.stringify(nodes));
+    evidence.path = nodes;
+    // link a passage to a selected part, then follow the path back to the part
+    const asm = await page.evaluate(() => cxAsm().id);
+    const insID = await page.evaluate(() => cxAsm().components.find((c) => c.type === 'insulation-board').id);
+    await page.evaluate((id) => cxSelect(id), insID);
+    await tab(page, 'Evidence');
+    const free = await page.evaluate(() => { const linked = new Set(cxAsm().evidenceLinks.map((l) => l.evidenceId)); return cx.view.evidence.evidence.find((e) => !linked.has(e.id)).id; });
+    const expand = async (evd) => {
+      const det = page.locator('details.cx-src', {has: page.locator('.cx-ev-row[data-evidence="' + evd + '"]')});
+      if (!(await det.evaluate((d) => d.open))) await det.locator('summary').click();
+    };
+    await expand(free);
+    await page.locator('.cx-ev-row[data-evidence="' + free + '"]').getByRole('button', {name: 'Link to Above-deck insulation'}).click();
+    await pollPage(page, ([a, id, e]) => cx.view.assemblies[a].evidenceLinks.some((l) => l.target === id && l.evidenceId === e), [asm, insID, free]);
+    await page.evaluate(() => cxSelect(''));
+    await tab(page, 'Evidence');
+    await expand(free);
+    await page.locator('.cx-ev-row[data-evidence="' + free + '"]').getByRole('button', {name: 'Show path'}).click();
+    await page.getByRole('button', {name: 'Above-deck insulation'}).first().click();
+    await pollPage(page, (id) => cx.selection === id, insID);
+    evidence.selectionSync = 'evidence path → part selection';
+    // ---- owner source + passage: verified against the retained page ----
+    await tab(page, 'Problem');
+    await page.getByLabel('Choose a file').setInputFiles({name: 'owner-note.txt', mimeType: 'text/plain',
+      buffer: Buffer.from('SYNTHETIC FIXTURE owner note, page 1.\fPage 2: the apron upstand is covered by a counterflashing (fictional figure).')});
+    await page.getByLabel('Input role').selectOption('document');
+    await page.getByRole('button', {name: 'Upload'}).click();
+    await page.getByRole('link', {name: 'owner-note.txt'}).waitFor();
+    await tab(page, 'Evidence');
+    await page.getByLabel('Source title').fill('Owner note (synthetic)');
+    await page.getByLabel('Retained document').selectOption({index: 1});
+    await page.getByRole('button', {name: 'Add source'}).click();
+    await page.locator('.cx-src-title', {hasText: 'Owner note (synthetic)'}).waitFor();
+    const srcID = await page.evaluate(() => cx.view.evidence.sources.find((s) => s.title === 'Owner note (synthetic)').id);
+    await page.getByLabel('Passage source').selectOption(srcID);
+    await page.getByLabel('Page', {exact: true}).fill('2');
+    await page.getByLabel('Quote (verbatim)').fill('the apron upstand is covered by a counterflashing');
+    await page.getByLabel('Claim it supports').fill('The apron upstand is covered by a counterflashing (owner note).');
+    await page.getByRole('button', {name: 'Add passage'}).click();
+    await pollPage(page, () => cx.view.evidence.evidence.some((e) => e.quote === 'the apron upstand is covered by a counterflashing' && e.verification === 'verified'));
+    await page.getByLabel('Passage source').selectOption(srcID);
+    await page.getByLabel('Page', {exact: true}).fill('1');
+    await page.getByLabel('Quote (verbatim)').fill('the apron upstand is covered by a counterflashing');
+    await page.getByLabel('Claim it supports').fill('Wrong page.');
+    await page.getByRole('button', {name: 'Add passage'}).click();
+    await page.getByRole('alert').filter({hasText: 'nothing was added'}).waitFor();
+    // ---- cancel a running research run, then resume it ----
+    await page.getByRole('button', {name: 'Start new research'}).click();
+    await page.getByRole('button', {name: 'Cancel research'}).click();
+    await pollPage(page, () => { const r = cxLatestRun(); return r && r.state === 'cancelled'; }, null, 30000);
+    await page.getByRole('button', {name: 'Resume research'}).click();
+    await pollPage(page, () => { const r = cxLatestRun(); return r && r.state === 'completed'; }, null, 60000);
+    const run2 = await latest(page);
+    assert.equal(run2.epoch, 2, 'resume started a new epoch');
+    evidence.run2 = run2;
+    // ---- reload: the same durable runs and evidence come back; refresh starts nothing ----
+    await page.reload();
+    await page.getByRole('heading', {name: 'Research fixture — corrugated roof to masonry'}).waitFor();
+    const after = await latest(page);
+    assert.deepEqual(after, run2, 'reload shows the same durable run');
+    // ---- phone width: the research tab is reachable and nothing scrolls sideways ----
+    const phone = await browser.newContext({viewport: {width: 390, height: 800}, isMobile: true, hasTouch: true});
+    const p2 = await phone.newPage();
+    p2.on('pageerror', (e) => errors.push(e.message));
+    await p2.goto(cfg.url + '/#/properties/fixture-ooda-house/construction/' + problemId);
+    await p2.getByRole('heading', {name: 'Research fixture — corrugated roof to masonry'}).waitFor();
+    await p2.getByRole('tab', {name: 'Research', exact: true}).first().click();
+    await p2.getByRole('tab', {name: 'Evidence', exact: true}).click();
+    await p2.getByText(/FICTIONAL FIXTURE/).first().waitFor();
+    const overflow = await p2.evaluate(() => document.documentElement.scrollWidth - innerWidth);
+    assert.ok(overflow <= 1, 'no sideways scroll at 390: ' + overflow);
+    await p2.screenshot({path: path.join(shots, 'research-evidence-390.png')});
+    await phone.close();
+    assert.deepEqual(errors, [], 'page errors');
+    assert.deepEqual(external, [], 'requests outside the backend');
+    console.log(JSON.stringify({ok: true, problemId, evidence, shots}));
+  } finally {
+    await browser.close();
+  }
+})().catch((e) => { console.error(e); process.exit(1); });

@@ -8,6 +8,7 @@ package server
 // validation, commits and geometry; source records are only ever read here.
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"io"
@@ -29,6 +30,10 @@ type constructionCfg struct {
 	principal    constructionPrincipal
 	mu           sync.Mutex
 	geometry     geometryCache
+	runner       *construction.Runner
+	runs         constructionRunTracker
+	fixture      bool // the synthetic fixture source adapter is wired (tests only)
+	opts         ConstructionOptions
 }
 
 // ConstructionOptions configure the feature at composition time.
@@ -40,6 +45,11 @@ type ConstructionOptions struct {
 	Forbidden []string
 	Now       func() time.Time
 	Failpoint func(string) error
+	// FixtureSources wires the synthetic fixture source adapter from that
+	// directory (testdata/roof-wall). Tests only: production never sets it.
+	FixtureSources string
+	// MaxConcurrentRuns bounds in-process research workers (default 2).
+	MaxConcurrentRuns int
 }
 
 // UseConstruction opens the private construction store at root (outside the
@@ -60,9 +70,32 @@ func (s *Server) UseConstruction(root string, o ConstructionOptions) error {
 			hosts[h] = true
 		}
 	}
-	s.construction = &constructionCfg{store: st, trustedHosts: hosts, nonce: newConstructionNonce()}
+	runner := &construction.Runner{Store: st, Adapters: []construction.SourceAdapter{construction.ImportedAdapter{}}, Now: o.Now}
+	fixture := false
+	if o.FixtureSources != "" {
+		fx, err := construction.LoadFixtureAdapter(o.FixtureSources)
+		if err != nil {
+			st.Close()
+			return err
+		}
+		runner.Adapters = append(runner.Adapters, fx)
+		fixture = true
+	}
+	n := o.MaxConcurrentRuns
+	if n <= 0 {
+		n = 2
+	}
+	s.construction = &constructionCfg{store: st, trustedHosts: hosts, nonce: newConstructionNonce(), runner: runner, fixture: fixture, opts: o,
+		runs: constructionRunTracker{active: map[string]context.CancelFunc{}, sem: make(chan struct{}, n)}}
+	if constructionUseHook != nil {
+		constructionUseHook(s)
+	}
 	return nil
 }
+
+// constructionUseHook lets later phases (native delivery) attach to the
+// runner once the store is open.
+var constructionUseHook func(s *Server)
 
 // publishConstruction projects a commit into the daily ledger. The ledger is
 // never commit authority; with no ledger wired there is nothing to publish.
@@ -95,6 +128,8 @@ func (s *Server) registerConstructionRoutes(mux *http.ServeMux) {
 		mux.HandleFunc("GET "+p+"/problems/{id}/artifacts/{artifact}", s.handleConstructionArtifact)
 		s.registerConstructionAssemblyRoutes(mux, p)
 		s.registerConstructionExportRoutes(mux, p)
+		s.registerConstructionResearchRoutes(mux, p)
+		s.registerConstructionSourceRoutes(mux, p)
 	}
 }
 
@@ -500,10 +535,24 @@ func (s *Server) constructionView(sub construction.SubjectRef, st *construction.
 // constructionCapabilities reports what this server can actually do for
 // construction right now — observed, never assumed from configuration.
 func (s *Server) constructionCapabilities() map[string]any {
+	caps := s.constructionRunCapabilities()
 	return map[string]any{
-		"autonomousAcquisition": "unavailable",
-		"nativeAgent":           "unavailable",
-		"agentMutationTool":     "unavailable",
+		"autonomousAcquisition": caps.AutonomousAcquisition,
+		"nativeAgent":           caps.NativeAgent,
+		"pdfExtraction":         caps.PDFExtraction,
+		"notes":                 caps.Notes,
+		"fixtureSources":        s.construction.fixture,
+		"agentMutationTool":     s.constructionAgentToolState(),
 		"blender":               "absent",
 	}
+}
+
+// constructionAgentToolState reports the agent command capability (P7 seam).
+var constructionAgentToolHook func(s *Server) string
+
+func (s *Server) constructionAgentToolState() string {
+	if constructionAgentToolHook != nil {
+		return constructionAgentToolHook(s)
+	}
+	return "unavailable"
 }

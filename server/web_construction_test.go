@@ -126,3 +126,40 @@ func TestConstructionSectionBrowser(t *testing.T) {
 	}
 	f.assertSourcesUntouched(t)
 }
+
+// Research runs and evidence through the workbench against the real backend
+// with the synthetic fixture adapter (slowed so progress and cancel are
+// observable); then the durable runs and evidence are checked in the store.
+func TestConstructionResearchBrowser(t *testing.T) {
+	f := constructionFixture(t, withFixtureSources)
+	f.srv.construction.runner.Adapters[1].(*construction.FixtureAdapter).Delay = 1500 * time.Millisecond
+	out := constructionBrowser(t, "construction-research.cjs", f, nil)
+	t.Log(strings.TrimSpace(out))
+	f.srv.WaitConstructionRuns()
+	sub := construction.SubjectRef{Kind: "property", ID: "fixture-ooda-house"}
+	list, err := f.srv.construction.store.List(sub)
+	if err != nil || len(list) != 1 {
+		t.Fatalf("%+v %v", list, err)
+	}
+	st, err := f.srv.construction.store.Load(sub, list[0].ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	states := map[string]int{}
+	for _, r := range st.Runs {
+		states[r.State]++
+	}
+	if states["completed"] != 2 || len(st.Runs) != 2 {
+		t.Fatalf("two durable completed runs (one cancelled then resumed): %v", states)
+	}
+	verified := 0
+	for _, e := range st.Evidence.Evidence {
+		if e.Verification == "verified" {
+			verified++
+		}
+	}
+	if verified < 12 || len(st.Problem.Alternatives) != 7 {
+		t.Fatalf("verified passages %d, alternatives %d", verified, len(st.Problem.Alternatives))
+	}
+	f.assertSourcesUntouched(t)
+}

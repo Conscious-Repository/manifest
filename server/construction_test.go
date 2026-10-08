@@ -47,7 +47,7 @@ type constructionFix struct {
 	vaultFP map[string]string
 }
 
-func constructionFixture(t *testing.T) *constructionFix {
+func constructionFixture(t *testing.T, opts ...func(*ConstructionOptions)) *constructionFix {
 	t.Helper()
 	vault := t.TempDir()
 	write := func(rel, content string) {
@@ -111,10 +111,14 @@ func constructionFixture(t *testing.T) *constructionFix {
 	srv.UseArtifacts(pool)
 	srv.UseArtifactRegistry(reg)
 	root := filepath.Join(t.TempDir(), "data", "construction")
-	if err := srv.UseConstruction(root, ConstructionOptions{Forbidden: []string{vault}}); err != nil {
+	o := ConstructionOptions{Forbidden: []string{vault}}
+	for _, m := range opts {
+		m(&o)
+	}
+	if err := srv.UseConstruction(root, o); err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { srv.construction.store.Close() })
+	t.Cleanup(func() { srv.stopAllConstructionRuns(); srv.WaitConstructionRuns(); srv.construction.store.Close() })
 	f := &constructionFix{srv: srv, vault: vault, root: root, writes: writes, ledger: led}
 	f.vaultFP = f.fingerprint(t)
 	return f

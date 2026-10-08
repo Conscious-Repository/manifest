@@ -1388,6 +1388,9 @@ func main() {
 
 	addr := fmt.Sprintf("127.0.0.1:%d", cfg.Port)
 	fmt.Printf("manifest → http://%s  (vault: %s)\n", addr, cfg.VaultPath)
+	// construction research runs left running by a previous process are
+	// reconciled to disconnected BEFORE the agent-chat drain can dispatch
+	srv.ReconcileConstruction()
 	srv.ResumeAgentChats()
 	log.Fatal(http.ListenAndServe(addr, server.Gzip(srv.Handler())))
 }
