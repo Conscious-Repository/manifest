@@ -268,6 +268,48 @@ P5.2 (server/UI): `server/construction_research.go`,
   documents only, fixture in tests); PDF/OCR extraction is not bundled (PDFs
   retained, excerpts requested); live source review is pending.
 
+## P6 — generic materials, sourced products and substitution
+
+P6.1 (domain): `construction/catalog.go` (products, material properties,
+substitution, catalog validator), `catalog_rules.go`, `catalog_fixture.go`,
+`catalog_test.go`, `construction/testdata/roof-wall/catalog.json` (three
+visibly fictional products: a documented corrugated sheet, an undocumented
+120 mm board, and a board whose fact cites another model's sheet);
+`SetProduct` now pins the product's current revision and can apply its
+dimensions through `SetDimension`. P6.2 (server/UI):
+`server/construction_catalog.go`, `construction_catalog_test.go`,
+`web/js/87-construction-catalog.js` (Catalog tab, substitution preview in the
+inspector), research browser script extended.
+
+- `go test -v ./construction -run 'TestConstructionCatalog' -count=1`: 3 tests
+  pass. Covered: all 13 initial families present, every generic property
+  unknown (no conductivity/compatibility/capacity invented), no default
+  products; material properties need typed units and a test condition,
+  verified-fact needs verified evidence, a stated value is a new material
+  revision with the pinned revision still resolvable; product verification
+  is derived (a fact verifies only from a verified passage of the product's
+  own retained document), facts without evidence stay unverified, evidence
+  for another model is noted and flagged (`product.evidence-mismatch`),
+  15 cm is stored as 150 mm, a length in degrees and an unknown family are
+  refused; substitution report (fact diff, dimension 100 → 120 mm that applies
+  to the part, fictional note); applying it keeps the component id, sets
+  120 mm and re-runs fastener review; `product.region` (site location
+  unknown) and `product.dimension-unverified` flagged; an insulation board on
+  the roof sheet refused; UpdateProduct makes revision 2 while the pin stays
+  at 1; stale reaches the pinned component (`product.stale`), withdrawn
+  cannot be pinned; forged verification in a stored catalog is refused.
+- `go test -v ./server -run 'TestConstructionCatalog' -count=1`: pass
+  (owner product/material routes, route family refusal, substitution preview
+  writes nothing and shows fastener + product checks, apply through the
+  assembly command route, cross-project 404, agent principal 403).
+- `TestConstructionResearchBrowser` now also adds a product in the Catalog
+  tab, previews the substitution in the inspector (thickness 100 → 120 mm,
+  critical counts; model hash unchanged by the preview), applies it, marks
+  the product stale and sees `product.stale`; screenshots
+  `catalog-substitution-preview-1440.png`, `catalog-tab-1440.png`.
+- Actual manufacturer acceptance needs authorized live source review; none of
+  these fixtures is a real product.
+
 ## Decisions taken (plan-conformant defaults)
 
 1. **Subject binding (§12.1).** `subjectRef` is typed `{kind: "property"|"home", id}`

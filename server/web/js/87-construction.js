@@ -1152,12 +1152,23 @@ function cxComponentBlock(a, c, ro) {
   if (mat) blk.append(el("div", "cx-hint", "Pinned revision " + c.material.revision + " · unknown: " + ((mat.unknowns || []).join(", ") || "none") + ((mat.limits || []).length ? " · " + mat.limits.join("; ") : "")));
   const prodSel = selectEl([]); prodSel.className = "cx-in"; prodSel.setAttribute("aria-label", "Product");
   const none = document.createElement("option"); none.value = ""; none.textContent = "No product (generic)"; prodSel.append(none);
-  (cat.products || []).forEach((p) => { const o = document.createElement("option"); o.value = p.id; o.textContent = p.manufacturer + " " + p.model + (p.fictional ? " (fictional fixture)" : "") + " · " + p.lifecycle; prodSel.append(o); });
+  const current = new Map();
+  (cat.products || []).forEach((p) => { const have = current.get(p.id); if (!have || p.revision > have.revision) current.set(p.id, p); });
+  current.forEach((p) => { const o = document.createElement("option"); o.value = p.id; o.textContent = p.manufacturer + " " + p.model + (p.fictional ? " (fictional fixture)" : "") + " · " + p.lifecycle; prodSel.append(o); });
   prodSel.value = c.product ? c.product.id : "";
   prodSel.disabled = ro;
-  prodSel.onchange = () => cxCommand([{ op: "SetProduct", componentId: c.id, productId: prodSel.value }], { assembly: a.id });
+  const subBox = el("div", "cx-subst");
+  prodSel.onchange = () => {
+    if (!prodSel.value || typeof cxSubstitutionPreview !== "function") cxCommand([{ op: "SetProduct", componentId: c.id, productId: prodSel.value }], { assembly: a.id });
+    else cxSubstitutionPreview(a, c, prodSel.value, subBox, () => { prodSel.value = c.product ? c.product.id : ""; });
+  };
   const r2 = el("div", "cx-num-row"); r2.append(el("span", "cx-num-label", "Product"), prodSel);
-  blk.append(r2);
+  blk.append(r2, subBox);
+  if (c.product) {
+    const pinned = (cat.products || []).find((p) => p.id === c.product.id && p.revision === c.product.revision);
+    const head = current.get(c.product.id);
+    if (pinned) blk.append(el("div", "cx-hint", "Pinned " + pinned.manufacturer + " " + pinned.model + " revision " + pinned.revision + " · " + pinned.facts.filter((f) => f.verified).length + " of " + pinned.facts.length + " facts verified · " + pinned.lifecycle + (head && head.revision !== pinned.revision ? " · catalog has revision " + head.revision + " (not followed)" : "")));
+  }
   const apSel = selectEl(["timber-rafter", "timber-decking", "timber-batten", "membrane-avcl", "membrane-underlayment", "insulation-rigid", "metal-corrugated", "metal-standing-seam", "metal-flashing", "closure-foam", "sealant-generic", "fastener-steel", "masonry-brick", "mortar-generic", "sheathing-generic", "cavity-air"]);
   apSel.className = "cx-in"; apSel.setAttribute("aria-label", "Appearance (visual only)"); apSel.value = c.appearance || ""; apSel.disabled = ro;
   apSel.onchange = () => cxCommand([{ op: "SetAppearance", componentId: c.id, appearance: apSel.value }], { assembly: a.id });

@@ -161,5 +161,21 @@ func TestConstructionResearchBrowser(t *testing.T) {
 	if verified < 12 || len(st.Problem.Alternatives) != 7 {
 		t.Fatalf("verified passages %d, alternatives %d", verified, len(st.Problem.Alternatives))
 	}
+	if len(st.Catalog.Products) != 1 || st.Catalog.Products[0].Lifecycle != "stale" {
+		t.Fatalf("the UI-added product is durable and stale: %+v", st.Catalog.Products)
+	}
+	pinned := 0
+	for _, a := range st.Assemblies {
+		for _, c := range a.Components {
+			if c.Product != nil && c.Product.ID == st.Catalog.Products[0].ID && *c.Shape.Params["thickness"].Value == 120 {
+				pinned++
+			}
+		}
+	}
+	// the substituted alternative plus the three alternatives the second
+	// research run derived from it (variants copy the pin, never follow head)
+	if pinned != 4 {
+		t.Fatalf("the applied substitution is durable (1 + 3 derived): %d", pinned)
+	}
 	f.assertSourcesUntouched(t)
 }

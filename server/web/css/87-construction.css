@@ -239,3 +239,12 @@ button.cx-path-node { border: 1px solid var(--accent); color: var(--accent); cur
 .cx-plain { margin: 0; padding-left: var(--sp-6); font-size: var(--fs-sm); overflow-wrap: anywhere; }
 .cx-form { display: flex; flex-direction: column; gap: var(--sp-3); }
 .cx-acq td { overflow-wrap: anywhere; }
+
+/* catalog and substitution (P6) */
+.cx-subst-panel { border: 1px dashed var(--warn); border-radius: var(--radius); padding: var(--sp-3) var(--sp-4); margin: var(--sp-2) 0; background: var(--status-warn-bg); }
+.cx-subst-line { font-size: var(--fs-sm); margin: var(--sp-1) 0; color: var(--base-80); }
+.cx-subst-counts { font-family: var(--mono); font-size: var(--fs-xs); color: var(--base-80); margin: var(--sp-2) 0; }
+.cx-prod { border-top: 1px solid var(--line-soft); padding: var(--sp-3) 0; }
+.cx-prod-stale .cx-src-title, .cx-prod-withdrawn .cx-src-title { color: var(--warn); }
+.cx-claim-unverified { color: var(--warn); }
+.cx-mat-row { font-size: var(--fs-sm); color: var(--base-70); padding: var(--sp-1) 0; overflow-wrap: anywhere; }

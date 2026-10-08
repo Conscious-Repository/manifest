@@ -130,6 +130,7 @@ func (s *Server) registerConstructionRoutes(mux *http.ServeMux) {
 		s.registerConstructionExportRoutes(mux, p)
 		s.registerConstructionResearchRoutes(mux, p)
 		s.registerConstructionSourceRoutes(mux, p)
+		s.registerConstructionCatalogRoutes(mux, p)
 	}
 }
 
