@@ -256,3 +256,23 @@ func TestConstructionJourneyBrowser(t *testing.T) {
 	}
 	f.assertSourcesUntouched(t)
 }
+
+// Remote access is disabled, and the UI says so: through a relayed browser
+// context (X-Forwarded-For) every construction entry shows the loopback-only
+// explanation and nothing of the problem; a loopback context opens it. The
+// refused context changed nothing in the store.
+func TestConstructionRemoteDisabledBrowser(t *testing.T) {
+	f := constructionFixture(t)
+	v, id, _ := f.createTemplate(t, fixtureBase, "create-remote-ui1")
+	out := constructionBrowser(t, "construction-remote.cjs", f, map[string]any{"problemId": id, "title": viewProblem(v)["title"]})
+	t.Log(strings.TrimSpace(out))
+	sub := construction.SubjectRef{Kind: "property", ID: "fixture-ooda-house"}
+	st, err := f.srv.construction.store.Load(sub, id)
+	if err != nil || st.Head.Generation != int64(v["generation"].(float64)) {
+		t.Fatalf("the refused browser context changed the problem: %v", err)
+	}
+	if home, err := f.srv.construction.store.List(construction.SubjectRef{Kind: "home", ID: "home"}); err != nil || len(home) != 0 {
+		t.Fatalf("home problems %+v %v", home, err)
+	}
+	f.assertSourcesUntouched(t)
+}

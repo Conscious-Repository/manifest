@@ -38,6 +38,13 @@ function cxErr(status, j) {
   return e;
 }
 
+// The server answers construction only on this machine (loopback): remote,
+// tailnet and reverse-proxy access is deliberately disabled in this MVP and
+// refused as kind "remote-disabled". Its message is the explanation shown.
+const CX_REMOTE_MSG = "Construction Intelligence is available only on this machine (loopback). Remote, tailnet and reverse-proxy access is deliberately disabled in this MVP: it needs a verified, authenticated owner gateway, which does not exist yet.";
+function cxRemoteOff(e) { return !!e && e.status === 403 && e.kind === "remote-disabled"; }
+function cxRemoteNotice(e) { return el("p", "cx-notice cx-remote-off", (e && e.message) || CX_REMOTE_MSG); }
+
 // cxApi: JSON GET/POST. Mutations carry the session nonce; a stale nonce
 // (server restarted) refreshes once and resends the SAME body — the request
 // id makes that resend a replay, never a second edit.
@@ -135,7 +142,8 @@ async function cxLoad() {
     cxApplyView(view);
   } catch (e) {
     if (seq !== cx.seq) return;
-    cx.view = null; cx.error = e.status === 404 ? "This construction problem does not exist here." : "Couldn't load: " + e.message;
+    cx.view = null; cx.remote = cxRemoteOff(e);
+    cx.error = cx.remote ? e.message || CX_REMOTE_MSG : e.status === 404 ? "This construction problem does not exist here." : "Couldn't load: " + e.message;
     cxRender();
   }
 }
@@ -160,7 +168,10 @@ function constructionPropertySection(p) {
     const rows = (d && d.problems) || [];
     count.textContent = rows.length ? rows.length + (rows.length === 1 ? " problem" : " problems") : "none yet";
     rows.slice(0, 4).forEach((row) => list.append(cxProblemRow(subject, row)));
-  }).catch((e) => { count.textContent = e.status === 503 ? "unavailable here" : "couldn't load"; });
+  }).catch((e) => {
+    if (cxRemoteOff(e)) { count.textContent = "this machine only"; open.remove(); list.append(cxRemoteNotice(e)); return; }
+    count.textContent = e.status === 503 ? "unavailable here" : "couldn't load";
+  });
   return sec;
 }
 
@@ -223,7 +234,7 @@ function cxOpen(host, subject, problemId) {
   cx.host = host;
   if (changed) {
     if (typeof cxRendererDispose === "function") cxRendererDispose();
-    cx.subject = subject; cx.problemId = problemId || ""; cx.view = null; cx.error = ""; cx.selection = ""; cx.activeAssembly = ""; cx.seq++;
+    cx.subject = subject; cx.problemId = problemId || ""; cx.view = null; cx.error = ""; cx.remote = false; cx.selection = ""; cx.activeAssembly = ""; cx.seq++;
     cx.vs = null; cx.renderer = null; cx.rendererFailed = false; cx.geometry = null; cx.viewID = ""; cx.redo = []; cx.tab = "problem"; cx.exportMsg = ""; cx.section2D = false;
   }
   host.innerHTML = "";
@@ -263,7 +274,7 @@ async function cxListInto(host, subject) {
     if (session.subject && session.subject.title) head.querySelector(".cx-list-title").textContent = (session.subject.title || "") + " · Construction";
   } catch (e) {
     list.innerHTML = "";
-    list.append(el("p", "cx-empty", e.status === 503 ? "Construction is not enabled on this server." : "Couldn't load construction problems: " + e.message));
+    list.append(cxRemoteOff(e) ? cxRemoteNotice(e) : el("p", "cx-empty", e.status === 503 ? "Construction is not enabled on this server." : "Couldn't load construction problems: " + e.message));
     return;
   }
   page.append(cxCreateForm(subject, session));
@@ -353,7 +364,7 @@ function cxRender() {
   if (!cx.view) {
     host.innerHTML = "";
     const page = el("div", "cx-list-page");
-    page.append(cxBackLink(cx.subject), el("p", "cx-empty", cx.error || "Loading…"));
+    page.append(cxBackLink(cx.subject), el("p", cx.remote ? "cx-notice cx-remote-off" : "cx-empty", cx.error || "Loading…"));
     host.append(page);
     return;
   }

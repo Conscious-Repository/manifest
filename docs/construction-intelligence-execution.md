@@ -129,7 +129,9 @@ store), `ab6b4d70` (P1.2 server, auth guard, inputs, UI entry).
   newer schema read-only with exact bytes, unknown extensions preserved,
   tampered blob reported (not reset), symlinked head refused, 0700/0600 modes,
   cross-project 404s (including identical bytes deduplicated across projects),
-  Host/Origin/Fetch-Metadata/nonce/principal refusals, routes absent from the
+  Host/Origin/Fetch-Metadata/nonce/principal refusals (the Host rule was then
+  "loopback or a configured trusted host"; P9.4 replaced it with
+  loopback-only access), routes absent from the
   portal, deal-share and bare web handlers, generic `/api/artifacts*` routes
   blind to construction content, vault file hashes and source-writer counters
   unchanged in every server test.
@@ -500,15 +502,103 @@ was edited mid-run):
 'TestConstruction(Native|Journey)'` and `go test -race ./server -run
 'TestConstruction(Native…|JourneyHomePilot)'`: pass.
 
+## P9.4 — loopback-only access (deployment-security fix)
+
+Independent review found that the P1.2 guard treated a trusted Host, a
+same-origin Origin/Sec-Fetch-Site and the nonce served by `GET …/session` as
+owner authorization, and then defaulted to the owner. All of those are
+written by the caller. Once the private listener is reachable through the
+tailnet, `tailscale serve` or a reverse proxy, a remote caller could copy them
+and get unauthenticated owner read/write access.
+
+The fix (`server/construction_auth.go`) disables remote access. The routes
+answer only when all three hold:
+
+- the TCP peer (`RemoteAddr`) is a loopback IP;
+- the `Host` is loopback;
+- no proxy forwarding header is present (`Forwarded`, `X-Forwarded-*`,
+  `X-Real-IP`, `Via`, `Tailscale-*`, …; matched case-insensitively).
+
+Every other path gets 403 `remote-disabled`, with an explanation that remote
+access needs a verified, authenticated owner gateway, which does not exist
+yet. The property section, the list pages (property and Home) and the
+problem page show that text, and the feature's links and create form are
+removed. Further changes:
+
+- `trustedHosts` no longer exists in `ConstructionOptions`. The config field
+  is ignored, and main logs a warning if a config still sets it.
+  `config.example.json` no longer offers it.
+- The session's `boundary` now reads loopback-only, and `capabilities`
+  reports `remoteAccess: disabled`.
+- Origin, Sec-Fetch-Site and the nonce stay, but only as CSRF defences.
+
+The injected principal seam was kept only in a form that can be shown not to
+derive identity from caller headers:
+
+- it receives `constructionPeer{RemoteAddr}` and nothing else (no headers,
+  cookies, URL or body);
+- it is called only after the loopback checks pass, so it can deny or
+  present a non-owner actor, but cannot admit a remote request;
+- `TestConstructionRemoteAddrNeverRewritten` asserts that no server file or
+  `main.go` rewrites `RemoteAddr`, and nothing installs "real IP"
+  middleware.
+
+Tests (all under `confine`):
+
+- `TestConstructionRemoteAccessDisabled`: forged remote requests carry the
+  owner's exact loopback Host, Origin, Sec-Fetch-Site and the **real**
+  session nonce. They are refused on session, list, problem, history,
+  recovery export, preflight, Home list, create and commands. The peers
+  tried were tailnet IPv4/IPv6, LAN, global IPv6, unspecified, empty and
+  malformed. The refusal never carries the nonce.
+- Same test, headers: claiming loopback in `X-Forwarded-For`/`X-Real-IP`
+  does not help a remote peer. These shapes are refused even from a
+  loopback peer: `tailscale serve` (public Host + `Tailscale-User-Login`),
+  a proxy that rewrites Host, tailnet identity alone, RFC 7239 `Forwarded`,
+  `Via`, a non-canonical header key, DNS rebinding and look-alike hosts.
+- Same test, resolver: a resolver that answers "owner" to everyone is never
+  consulted for a remote request; on loopback it sees exactly the peer.
+- Same test, results: nothing reached the store. The loopback owner still
+  reads via `localhost`, `[::1]` and `127.0.0.2` and commits a command.
+- `TestConstructionRemoteSocketRefused`: through a real net/http server, a
+  connection whose accepted remote address is a tailnet IP is refused even
+  with the owner's Host, Origin and nonce. On a true loopback connection the
+  owner session and create work, and the relayed shape (public Host +
+  forwarding headers) is refused.
+- `TestConstructionRemoteDisabledBrowser`: a browser context relayed with
+  `X-Forwarded-For` sees the explanation in the property section, both list
+  pages and the problem page, and no problem data. A loopback context opens
+  the same problem. Screenshots `remote-disabled-property-1440.png` and
+  `remote-disabled-problem-1440.png`.
+- `TestConstructionBoundaryGuards` changed in one place: a tailnet Host is
+  now refused where it used to pass as a configured trusted host. The
+  fixture's requests now come from a loopback peer.
+- Mutation check (`/tmp/manifest-construction-qa/mutate-auth.sh`): six
+  mutations were each run against the focused tests, and every one made
+  them fail:
+  - peer check removed;
+  - proxy check removed;
+  - Host check removed;
+  - the `Tailscale-` prefix removed;
+  - case-insensitive header matching removed;
+  - an injected resolver allowed to admit remote requests.
+
+  The guard was restored byte-identical after each run.
+- `go test -v ./server -run '^TestConstruction' -count=1`: 36 top-level
+  tests pass (32 + 4 new), 0 skipped.
+
 ## Full confined suite (`go test -json ./... -count=1`)
 
 | Run | Packages pass / no tests / fail | Tests pass / skip / fail | Notes |
 |---|---|---|---|
 | Baseline (P0, base `6fa9c630`) | 71 / 31 / 1 | 3713 / 28 / 1 | the only failure: `manifest/server TestFixtureSharedChat` (loads `https://unpkg.com/react…`, refused by the network namespace) |
 | `c252c293` (after P9.2), 7m29s | 74 / 31 / 1 | 3820 / 28 / 1 | same single pre-existing failure; 3 new packages (`construction`, `cmd/construction-restore`, `tools/construction-spike`); 97 new top-level tests; no test removed; no status change for any existing test; skips unchanged (live/corpus tests) |
+| `f20b408c` (after P9.3), 7m28s | 74 / 31 / 1 | 3820 / 28 / 1 | same single pre-existing failure; identical test set |
+| P9.4 code (the commit's code; only docs edited after the run), 7m28s | 74 / 31 / 1 | 3824 / 28 / 1 | same single pre-existing failure; 4 new top-level tests (`TestConstructionRemote*`), all pass; none removed; no status change |
 
-Raw: `/tmp/manifest-construction-qa/final-go-test.jsonl`. The final HEAD run
-is recorded in the execution report.
+Raw: `/tmp/manifest-construction-qa/final-go-test.jsonl` (`f20b408c`) and
+`p94-go-test.jsonl` (P9.4). The final HEAD run is recorded in the execution
+report.
 
 ## Decisions taken (plan-conformant defaults)
 
@@ -524,11 +614,17 @@ is recorded in the execution report.
    (0700 directories, 0600 files, fsync). Generic artifact routes are bound
    to the global registry and cannot enumerate or read construction content;
    per-problem membership is the ACL for construction downloads.
-3. **Trusted-local-host posture (§12.2).** Construction routes are registered
-   only in `Server.Handler`, check Host against loopback plus configured
-   trusted hosts, require same-origin `Origin`/`Sec-Fetch-Site`, and require a
-   per-process mutation nonce. A hostile process with the owner's OS identity
-   is outside the MVP boundary.
+3. **Loopback-only access (§12.2, P9.4).** Construction routes are
+   registered only in `Server.Handler`. They answer only a loopback TCP peer
+   with a loopback Host and no proxy forwarding headers. Remote, tailnet and
+   reverse-proxy access is deliberately disabled, refused with 403
+   `remote-disabled` and explained in the UI. It needs a verified,
+   authenticated owner gateway, which does not exist yet. Same-origin
+   `Origin`/`Sec-Fetch-Site` and the per-process mutation nonce remain as
+   CSRF defences, not authentication. Until P9.4 the guard also admitted
+   configured trusted Hosts and treated those headers as authorization,
+   which review found spoofable. A hostile process with the owner's OS
+   identity, or a local relay onto loopback, is outside the MVP boundary.
 
 ## Commits
 

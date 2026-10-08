@@ -191,15 +191,18 @@ type Config struct {
 	ShareTeamFileEditEligibility bool `json:"shareTeamFileEditEligibility"`
 	// Construction configures private construction problems inside property
 	// pages and the shared Home (server/construction*.go). Records live under
-	// <dataDir>/construction, never in the vault. Routes accept loopback Hosts
-	// plus TrustedHosts (the owner's private entry, e.g. the tailnet name) and
-	// are refused for any other Host. Disabled turns them off (503).
+	// <dataDir>/construction, never in the vault. Routes answer only requests
+	// made on this machine (loopback connection and Host, no proxy); remote,
+	// tailnet and reverse-proxy access is refused. Disabled turns them off (503).
 	Construction ConstructionConfig `json:"construction"`
 }
 
 // ConstructionConfig is the construction feature's composition config.
 type ConstructionConfig struct {
-	Disabled     bool     `json:"disabled"`
+	Disabled bool `json:"disabled"`
+	// TrustedHosts is IGNORED. It once admitted extra Host names; Host is
+	// caller-written, so it is not authentication. It stays only so a config
+	// that still sets it is reported at startup rather than silently dropped.
 	TrustedHosts []string `json:"trustedHosts"`
 }
 

@@ -1,7 +1,6 @@
 package server
 
 import (
-	"net/http"
 	"path/filepath"
 	"testing"
 
@@ -110,7 +109,7 @@ func TestConstructionCatalogProductsEndpoints(t *testing.T) {
 		t.Fatalf("cross-project catalog %d", g.Code)
 	}
 	// a non-owner principal is refused on the owner routes
-	f.srv.construction.principal = func(*http.Request) (construction.Actor, error) {
+	f.srv.construction.principal = func(constructionPeer) (construction.Actor, error) {
 		return construction.AgentActor("alfred", "cap", ""), nil
 	}
 	if r := post("/products", "", ops["board-mismatch"]); r.Code != 403 {

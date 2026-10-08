@@ -24,25 +24,23 @@ import (
 )
 
 type constructionCfg struct {
-	store        *construction.Store
-	trustedHosts map[string]bool
-	nonce        string
-	principal    constructionPrincipal
-	mu           sync.Mutex
-	geometry     geometryCache
-	runner       *construction.Runner
-	runs         constructionRunTracker
-	fixture      bool // the synthetic fixture source adapter is wired (tests only)
-	opts         ConstructionOptions
-	agents       constructionAgentTools
-	stewards     constructionStewards
+	store     *construction.Store
+	nonce     string
+	principal constructionPrincipal // nil in production: the loopback owner (construction_auth.go)
+	mu        sync.Mutex
+	geometry  geometryCache
+	runner    *construction.Runner
+	runs      constructionRunTracker
+	fixture   bool // the synthetic fixture source adapter is wired (tests only)
+	opts      ConstructionOptions
+	agents    constructionAgentTools
+	stewards  constructionStewards
 }
 
-// ConstructionOptions configure the feature at composition time.
+// ConstructionOptions configure the feature at composition time. There is
+// deliberately no option that admits a remote host: the routes are
+// loopback-only in this MVP (construction_auth.go).
 type ConstructionOptions struct {
-	// TrustedHosts are the owner's private entry hosts (e.g. the tailnet
-	// name) accepted in the Host header besides loopback.
-	TrustedHosts []string
 	// Forbidden roots the store must not live under (vault, team/public dirs).
 	Forbidden []string
 	Now       func() time.Time
@@ -73,12 +71,6 @@ func (s *Server) UseConstruction(root string, o ConstructionOptions) error {
 	if err != nil {
 		return err
 	}
-	hosts := map[string]bool{}
-	for _, h := range o.TrustedHosts {
-		if h = strings.ToLower(strings.TrimSpace(h)); h != "" {
-			hosts[h] = true
-		}
-	}
 	runner := &construction.Runner{Store: st, Adapters: []construction.SourceAdapter{construction.ImportedAdapter{}}, Now: o.Now}
 	fixture := false
 	if o.FixtureSources != "" {
@@ -94,7 +86,7 @@ func (s *Server) UseConstruction(root string, o ConstructionOptions) error {
 	if n <= 0 {
 		n = 2
 	}
-	s.construction = &constructionCfg{store: st, trustedHosts: hosts, nonce: newConstructionNonce(), runner: runner, fixture: fixture, opts: o,
+	s.construction = &constructionCfg{store: st, nonce: newConstructionNonce(), runner: runner, fixture: fixture, opts: o,
 		runs: constructionRunTracker{active: map[string]context.CancelFunc{}, sem: make(chan struct{}, n)}}
 	if constructionUseHook != nil {
 		constructionUseHook(s)
@@ -397,7 +389,7 @@ func (s *Server) handleConstructionSession(w http.ResponseWriter, r *http.Reques
 		"operations":   construction.OperationNames(),
 		"templates":    construction.TemplateNames(),
 		"capabilities": s.constructionCapabilities(),
-		"boundary":     "trusted-local-host: loopback or configured private hosts, same-origin, per-process mutation nonce",
+		"boundary":     "loopback-only: the connection and the Host must be this machine and no proxy may relay it; remote, tailnet and reverse-proxy access is disabled (no verified owner gateway); same-origin and a per-process mutation nonce defend against CSRF",
 	})
 }
 
@@ -557,6 +549,7 @@ func (s *Server) constructionCapabilities() map[string]any {
 		"fixtureSources":        s.construction.fixture,
 		"agentMutationTool":     s.constructionAgentToolState(),
 		"blender":               "absent",
+		"remoteAccess":          "disabled",
 	}
 }
 

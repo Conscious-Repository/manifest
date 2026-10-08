@@ -173,20 +173,53 @@ real preflight.
 
 ## Access boundary
 
-Construction routes exist only on the private `Server.Handler` (never the
-portal, share or public listeners). The Host must be loopback or a
-configured trusted host; cross-site requests are refused by Origin and
-Sec-Fetch-Site; every mutation needs the per-process nonce from
-`…/session`; the actor is derived server-side (owner) — request bodies and
-headers cannot assert it. A hostile process running as the owner's OS user
-is outside this single-owner, trusted-local-host boundary; exposing Manifest
-beyond the trusted host/tailnet requires an authenticated owner gateway
-first.
+Remote, tailnet and reverse-proxy access is **deliberately disabled** in this
+MVP. It is refused, not just warned about. Construction reads and writes
+the owner's private problems, and Manifest has no verified owner
+authentication. So the routes answer only a request made on this machine:
+
+- the TCP peer (`RemoteAddr`, which net/http records from the accepted
+  connection; nothing in the handler chain rewrites it) is a loopback IP;
+- the `Host` names loopback (`localhost`, `127.0.0.0/8`, `::1`);
+- no proxy forwarding header is present (`Forwarded`, `X-Forwarded-*`,
+  `X-Real-IP`, `Via`, `Tailscale-*` and similar).
+
+Everything else gets `403` with kind `remote-disabled`: a phone or laptop on
+the tailnet, the LAN, `tailscale serve`, a reverse proxy. The property page,
+the Home tab and the workbench then show that explanation instead of the
+feature. Host, Origin, Sec-Fetch-Site, the nonce and tailnet identity headers
+are all written by the caller, so none of them counts as authentication. The
+earlier `construction.trustedHosts` setting is ignored; a config that still
+sets it logs a warning at startup. Remote access can return only behind a
+verified, authenticated owner gateway, which does not exist yet. Adding one
+means changing `server/construction_auth.go`, with its own review.
+
+Inside that boundary, these are defences, not authentication:
+
+- the routes exist only on the private `Server.Handler`, never on the
+  portal, share or public listeners;
+- the loopback Host defeats DNS-rebinding pages;
+- Origin and Sec-Fetch-Site refuse cross-site requests;
+- every mutation needs the per-process nonce from `…/session` (CSRF);
+- the actor is derived server-side (owner); request bodies and headers
+  cannot assert it.
+
+A resolver seam used only by tests sees the transport peer alone, with no
+headers, cookies, URL or body. It is consulted only after the loopback
+checks, and it can only narrow access.
+
+Anything already on this machine is inside the boundary. That includes a
+hostile process running as the owner's OS user. It also includes any local
+relay that carries remote connections onto loopback (socat,
+`tailscale serve --tcp`, SSH port forwarding), because its callers look
+local and can write a loopback Host. Do not point such a relay at the
+private listener. SSH forwarding is only as safe as the SSH account, which
+can read the store directly anyway.
 
 Configuration (`config.json`):
 
 ```json
-"construction": { "disabled": false, "trustedHosts": ["your-tailnet-name"] }
+"construction": { "disabled": false }
 ```
 
 ## API (both prefixes)
@@ -204,7 +237,8 @@ research `POST /problems/{id}/research-runs`, `GET …/{run}`, `GET …/{run}/ev
 `GET|POST /problems/{id}/decisions`, `POST /problems/{id}/agent/requests`,
 `GET /problems/{id}/agent/requests/{req}`, `GET /preflight`, `GET /problems/{id}/export`.
 
-Errors: 404 missing (no cross-project existence leaks), 403 forbidden, 409
+Errors: 404 missing (no cross-project existence leaks), 403 forbidden
+(kind `remote-disabled` for any request not made on this machine), 409
 stale (with the current revision), 413 too large, 422 invalid, 503 capability
 unavailable.
 
@@ -212,6 +246,7 @@ unavailable.
 
 Real 761 site conditions and measurements; the actual wall condition,
 jurisdiction, climate and loads; manufacturer acceptance of real products;
-an authorized live source adapter and provider preflight; the deployment
-access boundary (trusted hosts/proxy); physical-device and realistic-render
+an authorized live source adapter and provider preflight; a verified,
+authenticated owner gateway before any remote or tailnet use (until then
+remote access stays disabled); physical-device and realistic-render
 quality. Fixtures prove protocol, not suitability.

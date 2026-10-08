@@ -33,6 +33,10 @@ import (
 
 const cHost = "127.0.0.1:7781"
 
+// cPeer is the loopback TCP peer the fixture's requests come from: the routes
+// answer only this machine (construction_auth.go).
+const cPeer = "127.0.0.1:54321"
+
 // constructionFixture is a hermetic server: a temp vault holding two synthetic
 // properties and a synthetic shared Home task, a counting writer on every
 // source store, a temp ledger and a private construction root outside the
@@ -179,8 +183,8 @@ func (r cResp) json(t *testing.T) map[string]any {
 	return m
 }
 
-// do issues a same-origin request from the trusted loopback host; mutations
-// carry the session nonce.
+// do issues a same-origin request from a loopback peer to the loopback host;
+// mutations carry the session nonce.
 func (f *constructionFix) do(t *testing.T, method, path string, body any, mutate ...func(*http.Request)) cResp {
 	t.Helper()
 	var rd io.Reader
@@ -196,6 +200,7 @@ func (f *constructionFix) do(t *testing.T, method, path string, body any, mutate
 	}
 	req := httptest.NewRequest(method, "http://"+cHost+path, rd)
 	req.Host = cHost
+	req.RemoteAddr = cPeer
 	req.Header.Set("Sec-Fetch-Site", "same-origin")
 	if method != http.MethodGet {
 		req.Header.Set("Origin", "http://"+cHost)
@@ -335,8 +340,8 @@ func TestConstructionProblemHomeSubject(t *testing.T) {
 	f.assertSourcesUntouched(t)
 }
 
-// Host, Origin, Fetch-Metadata, nonce and principal checks refuse before any
-// state is read or written.
+// Loopback, Origin, Fetch-Metadata, nonce and principal checks refuse before
+// any state is read or written.
 func TestConstructionBoundaryGuards(t *testing.T) {
 	f := constructionFixture(t)
 	v := f.create(t, fixtureBase, "create-guard-01", "Guarded", nil)
@@ -349,7 +354,8 @@ func TestConstructionBoundaryGuards(t *testing.T) {
 		mutate func(*http.Request)
 		want   int
 	}{
-		{"untrusted host (DNS rebinding)", "GET", func(r *http.Request) { r.Host = "attacker.example:7781" }, 403},
+		{"non-loopback host (DNS rebinding)", "GET", func(r *http.Request) { r.Host = "attacker.example:7781" }, 403},
+		{"remote peer", "GET", func(r *http.Request) { r.RemoteAddr = "100.101.102.103:41234" }, 403},
 		{"cross-site fetch", "GET", func(r *http.Request) { r.Header.Set("Sec-Fetch-Site", "cross-site") }, 403},
 		{"foreign origin", "GET", func(r *http.Request) { r.Header.Set("Origin", "https://attacker.example") }, 403},
 		{"missing nonce", "POST", func(r *http.Request) { r.Header.Del("X-Construction-Nonce") }, 403},
@@ -380,23 +386,23 @@ func TestConstructionBoundaryGuards(t *testing.T) {
 	if head() != before {
 		t.Fatal("a refused request changed the head")
 	}
-	// configured trusted host passes; loopback GET without Origin passes
-	f.srv.construction.trustedHosts["metis.example.ts.net"] = true
-	if r := f.do(t, "GET", fixtureBase+"/session", nil, func(r *http.Request) { r.Host = "metis.example.ts.net" }); r.Code != 200 {
-		t.Fatalf("trusted host: %d", r.Code)
+	// a tailnet Host is refused even from a loopback peer (no configured host
+	// admits anything); a loopback GET without Fetch-Metadata passes
+	if r := f.do(t, "GET", fixtureBase+"/session", nil, func(r *http.Request) { r.Host = "metis.example.ts.net" }); r.Code != 403 {
+		t.Fatalf("tailnet host: %d", r.Code)
 	}
 	if r := f.do(t, "GET", fixtureBase+"/session", nil, func(r *http.Request) { r.Header.Del("Sec-Fetch-Site") }); r.Code != 200 {
 		t.Fatalf("loopback tool GET: %d", r.Code)
 	}
 	// an injected resolver can deny (unauthenticated) or present an agent,
 	// which browser routes refuse
-	f.srv.construction.principal = func(*http.Request) (construction.Actor, error) {
+	f.srv.construction.principal = func(constructionPeer) (construction.Actor, error) {
 		return construction.Actor{}, construction.Forbidden("no trusted owner session")
 	}
 	if r := f.do(t, "GET", fixtureBase+"/problems", nil); r.Code != 403 {
 		t.Fatalf("unauthenticated principal: %d", r.Code)
 	}
-	f.srv.construction.principal = func(*http.Request) (construction.Actor, error) {
+	f.srv.construction.principal = func(constructionPeer) (construction.Actor, error) {
 		return construction.AgentActor("alfred", "cap", ""), nil
 	}
 	if r := f.do(t, "POST", fixtureBase+"/problems/"+id+"/commands", cmd); r.Code != 403 {

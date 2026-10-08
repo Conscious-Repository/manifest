@@ -2,23 +2,33 @@ package server
 
 // Construction Intelligence access boundary (plan §7, §12.2).
 //
-// The private listener has no general owner-authentication middleware; it is
-// bound to 127.0.0.1 and reached through the owner's trusted private host or
-// tailnet. Construction adopts that single-owner, trusted-local-host posture
-// explicitly and adds feature-specific checks on top of it:
+// Construction reads and writes the owner's private problems, and Manifest
+// has no verified owner authentication. In this MVP the routes therefore
+// answer only a request made on this machine: the TCP peer (RemoteAddr, which
+// net/http records from the accepted connection) must be a loopback IP, the
+// Host must name loopback, and no proxy forwarding header may be present.
+// Every other path — tailnet, LAN, `tailscale serve`, any reverse proxy — is
+// refused with 403 kind "remote-disabled". Remote access is deliberately
+// disabled, not merely warned about: Host, Origin, Sec-Fetch-Site, the nonce
+// and tailnet identity headers are written by the caller and are never
+// treated as authentication. Remote access can come back only behind a
+// verified, authenticated owner gateway, which does not exist yet; adding one
+// means changing this guard, with its own review.
+//
+// On top of the loopback requirement — defences, not authentication:
 //
 //   - routes exist only on Server.Handler — never on the portal, deal-share or
 //     public curation listeners;
-//   - the Host header must be loopback or a configured trusted host, which also
-//     defeats DNS-rebinding pages that would otherwise look same-origin;
+//   - the loopback Host also defeats DNS-rebinding pages;
 //   - cross-site requests are refused by Origin and Sec-Fetch-Site;
-//   - every mutation must also carry a per-process nonce that only a
-//     same-origin page (or a trusted local process) can read from /session;
+//   - every mutation carries a per-process nonce that the same-origin page
+//     reads from /session (CSRF defence);
 //   - the actor is derived here, never read from a request body or header.
 //
-// A hostile process running as the owner's OS user is outside this boundary.
-// If Manifest is ever bound beyond the trusted host/tailnet, an authenticated
-// owner gateway must be added before these routes are exposed.
+// Anything already on this machine is inside the boundary: a hostile process
+// running as the owner's OS user, and any local relay that carries remote
+// connections onto loopback (socat, `tailscale serve --tcp`, SSH forwarding),
+// since its callers look local and can write a loopback Host themselves.
 
 import (
 	"crypto/rand"
@@ -34,10 +44,20 @@ import (
 	"manifest/construction"
 )
 
+// constructionPeer is everything a principal resolver is given: transport
+// facts net/http recorded from the accepted connection. It deliberately
+// carries no headers, cookies, URL or body, so a resolver cannot derive
+// identity from anything a caller writes into the request.
+type constructionPeer struct {
+	RemoteAddr string
+}
+
 // constructionPrincipal resolves the actor for a request that already passed
-// the transport checks. The default is the trusted private owner; tests (and
-// a future gateway) inject their own.
-type constructionPrincipal func(r *http.Request) (construction.Actor, error)
+// the loopback and same-origin checks. nil (production) means the owner. An
+// injected resolver (tests) can only narrow access — deny, or present an
+// actor the browser routes refuse. It is never consulted for a remote
+// request, so it cannot open remote access.
+type constructionPrincipal func(p constructionPeer) (construction.Actor, error)
 
 func newConstructionNonce() string {
 	b := make([]byte, 32)
@@ -47,23 +67,60 @@ func newConstructionNonce() string {
 	return hex.EncodeToString(b)
 }
 
-// trustedConstructionHost reports whether the Host header names this machine
-// (loopback) or a host the owner configured as their private entry point.
-func (c *constructionCfg) trustedHost(hostport string) bool {
-	host := strings.ToLower(strings.TrimSpace(hostport))
-	if host == "" {
+// constructionRemoteMessage explains the refusal; the UI shows it as is.
+const constructionRemoteMessage = "Construction Intelligence is available only on this machine (loopback). " +
+	"Remote, tailnet and reverse-proxy access is deliberately disabled in this MVP: " +
+	"it needs a verified, authenticated owner gateway, which does not exist yet."
+
+func constructionRemoteDisabled(reason string) error {
+	return &construction.Error{Status: http.StatusForbidden, Kind: "remote-disabled", Message: constructionRemoteMessage, Problems: []string{reason}}
+}
+
+// constructionProxyHeaders mark a request relayed by a proxy (reverse proxy,
+// CDN, `tailscale serve`, whose tailnet identity headers start "Tailscale-").
+// They are only ever grounds to refuse, never to admit.
+var constructionProxyHeaders = map[string]bool{
+	"forwarded": true, "via": true, "x-forwarded-for": true, "x-forwarded-host": true, "x-forwarded-proto": true,
+	"x-forwarded-port": true, "x-forwarded-server": true, "x-forwarded-prefix": true, "x-original-forwarded-for": true,
+	"x-real-ip": true, "x-client-ip": true, "true-client-ip": true, "cf-connecting-ip": true, "fastly-client-ip": true,
+	"x-cluster-client-ip": true,
+}
+
+func constructionProxied(h http.Header) bool {
+	for k := range h {
+		k = strings.ToLower(k)
+		if constructionProxyHeaders[k] || strings.HasPrefix(k, "tailscale-") {
+			return true
+		}
+	}
+	return false
+}
+
+// loopbackPeer reports whether the TCP peer is this machine. No handler in
+// this server rewrites RemoteAddr (TestConstructionRemoteAddrNeverRewritten).
+func loopbackPeer(remoteAddr string) bool {
+	host, _, err := net.SplitHostPort(remoteAddr)
+	if err != nil {
 		return false
 	}
-	name := host
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
+}
+
+// loopbackHost reports whether the Host header names this machine: a guard
+// against DNS rebinding and proxies that keep the public name, not
+// authentication (a caller can write any Host).
+func loopbackHost(hostport string) bool {
+	host := strings.TrimSpace(hostport)
 	if h, _, err := net.SplitHostPort(host); err == nil {
-		name = h
+		host = h
 	}
-	name = strings.Trim(name, "[]")
-	switch name {
-	case "127.0.0.1", "localhost", "::1":
+	host = strings.Trim(host, "[]")
+	if strings.EqualFold(host, "localhost") {
 		return true
 	}
-	return c.trustedHosts[host] || c.trustedHosts[name]
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
 }
 
 // sameOriginURL reports whether an Origin/Referer URL names the request host.
@@ -80,8 +137,18 @@ func (s *Server) constructionGuard(w http.ResponseWriter, r *http.Request, mutat
 		constructionError(w, construction.Unavailable("construction is not enabled on this server"))
 		return construction.Actor{}, false
 	}
-	if !c.trustedHost(r.Host) {
-		constructionError(w, construction.Forbidden("untrusted host for private construction routes"))
+	// this machine only, before anything in the request is believed
+	var remote string
+	switch {
+	case constructionProxied(r.Header):
+		remote = "the request came through a proxy (forwarding headers present)"
+	case !loopbackPeer(r.RemoteAddr):
+		remote = "the connection does not come from this machine"
+	case !loopbackHost(r.Host):
+		remote = "the request is not addressed to this machine (Host is not loopback)"
+	}
+	if remote != "" {
+		constructionError(w, constructionRemoteDisabled(remote))
 		return construction.Actor{}, false
 	}
 	site := strings.ToLower(r.Header.Get("Sec-Fetch-Site"))
@@ -104,14 +171,14 @@ func (s *Server) constructionGuard(w http.ResponseWriter, r *http.Request, mutat
 			return construction.Actor{}, false
 		}
 	}
-	resolve := c.principal
-	if resolve == nil {
-		resolve = func(*http.Request) (construction.Actor, error) { return construction.OwnerActor(), nil }
-	}
-	actor, err := resolve(r)
-	if err != nil {
-		constructionError(w, err)
-		return construction.Actor{}, false
+	actor := construction.OwnerActor()
+	if c.principal != nil {
+		a, err := c.principal(constructionPeer{RemoteAddr: r.RemoteAddr})
+		if err != nil {
+			constructionError(w, err)
+			return construction.Actor{}, false
+		}
+		actor = a
 	}
 	if actor.Kind != construction.ActorOwner {
 		// browser routes act for the owner only; agents act through their

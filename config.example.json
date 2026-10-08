@@ -36,6 +36,6 @@
     { "name": "lab", "host": "192.168.87.10", "user": "ben", "port": 22, "identity": "~/.ssh/id_lab", "agent": "" }
   ],
   "construction": {
-    "trustedHosts": []
+    "disabled": false
   }
 }
