@@ -1,0 +1,217 @@
+# Construction Intelligence
+
+Private construction research and design inside the existing Manifest
+contexts: a **construction problem** belongs to an OODA property
+(`#/properties/<slug>/construction/<id>`) or to the shared Home
+(`#/tasks/home-construction/<id>`). It holds editable millimetre assemblies,
+deterministic geometry and true sections, evidence with page-verified quotes,
+staged research runs, a problem-local evidence-pinned catalog, owner
+decisions, views, exports and a private recovery bundle.
+
+> Research/design assistance; not approved for construction; field, code,
+> structural and manufacturer verification required.
+
+That notice rides on every view, drawing and export. "Accepted for project"
+is a human project decision — never approval for construction. Geometry
+validity is not physical appropriateness, code compliance or licensed review.
+
+The first owner-facing problem is **761 N Euclid — Back Addition**, entered
+from TASKS › Home construction. Every bundled fixture is visibly synthetic;
+the historical 761 drawing is an optional owner input that the code never
+reads, and nothing about the real site is assumed.
+
+## Where things live
+
+- **Records**: `<dataDir>/construction` — outside the vault and every
+  team/public tree (`main.go` passes those as forbidden roots). Directories
+  0700, files 0600, fsync on write, a single-writer `flock`.
+- **Model**: each problem has one mutable `head.json` naming immutable,
+  content-addressed document revisions (problem, assemblies, validation
+  reports, catalog, evidence, decisions, runs, views, derived exports) in a
+  private artifact registry. Every change is one commit with a receipt
+  (operations with before/after, actor, request id, payload hash); a request
+  id replays to the same receipt. `members.jsonl` is the per-problem ACL:
+  a content hash alone grants nothing.
+- **Source records** (property, Home tasks, goals, budgets) are only read.
+  Tests prove zero writes and byte-identical vault files.
+
+## The workbench
+
+Four synchronized panes (keyboard-resizable on desktop; one at a time on a
+phone): **Agent** (steward, open questions, research runs, ask the agent),
+**Model** (pinned three.js r180 renderer with a technical fallback, picking,
+section plane, explode, measurement, views), **Assembly** (junction,
+parameters, layer stack, selected part, material/product with a previewed
+substitution) and **Research** tabs: Problem, Runs, Evidence, Catalog,
+Alternatives, Decisions, Issues, History, Export.
+
+## Assemblies, geometry, sections, exports
+
+- Canonical units are mm in the `construction-xyz-zup-mm/1` convention;
+  components have stable ids (removed ids are tombstoned, never reused).
+- Every edit is a typed command (`SetDimension`, `SetJunctionStrategy`,
+  `SetWallCondition`, `SetProduct`, …). The same command from the owner and
+  from an agent produces the same geometry hash; receipts tell them apart.
+- Deterministic validation: blocking findings refuse the commit; other
+  issues (wall condition unknown/unverified, moisture transitions, fastener
+  review, product evidence, evidence applicability…) keep stable ids.
+- Sections are true plane cuts of the compiled mesh; one drawing IR gives
+  SVG (physical units) and vector PDF at a stated paper and scale; GLB, the
+  section and the redacted **detail package** are all tied to one exact
+  assembly revision and geometry hash.
+
+## Research runs and evidence
+
+A run has eight durable stages — decompose → plan → acquire → extract/verify
+→ synthesize → compile → validate → publish — and each claim and result is
+its own commit (attempt ids, parents, epochs, input/result hashes, error
+classes, native identity). Stage results are retained artifacts; a resume
+reuses a completed stage only when its inputs still match (correcting the
+questions re-runs decomposition and planning, not acquisition).
+
+- **Quotes are verified** against the retained page text (exact, or a
+  recorded whitespace/typography normalisation). A quote not on that page,
+  or a page that does not exist, adds nothing. A URL alone is never
+  evidence: source URLs are metadata and are never fetched.
+- Source text is data: instruction-like text is recorded as a warning and
+  can change nothing (no stage has an action field it could fill).
+- Disagreement is kept, not averaged; code text from a jurisdiction the
+  site has not established is never "directly applicable"; secondary
+  discussion is a lead only. Applying evidence for another orientation, wall
+  type, product or jurisdiction raises a deterministic issue.
+- Synthesis proposes up to three **conditional** alternatives only where
+  verified evidence supports them, built from the same typed commands and
+  published (fenced by epoch and stop request) for owner review; gaps are
+  listed as missing research.
+- Cancel persists the stop first; a running stage is cancelled; a late
+  result is kept as an unselected `fenced` attempt. Retry starts a new epoch
+  and attempt with an explicit parent. On restart every running stage is
+  reconciled to `disconnected` before anything can dispatch; resume never
+  resends an agent request whose outcome is uncertain — only an explicit
+  retry does, with a new request id. Refreshing never starts work.
+
+**Acquisition today**: imported owner documents (inputs registered as
+sources). Autonomous web acquisition is not implemented (no search provider)
+and is reported unavailable; PDF/OCR page extraction is not bundled (PDFs are
+retained; excerpts are requested). Tests use a synthetic fixture adapter.
+
+## Catalog and substitution
+
+Every problem starts with generic material families whose technical
+properties are unknown until a source states them (typed units, test
+condition, provenance; verified values need verified evidence; each change
+is a new material revision). Actual products are entered from sources:
+documents pin the retained source revision, a fact verifies only from a
+passage of the product's own document, evidence for another model is
+flagged, and products carry geography, check date and lifecycle
+(active/stale/withdrawn). Pins never follow catalog head. Choosing a product
+previews the substitution — fact diff, dimension changes, re-run validation —
+before the owner applies it. No procurement, stock, price or certified
+performance exists here.
+
+## Decisions, comparison, history
+
+Anyone may propose a decision; it binds one exact assembly revision and
+keeps that revision's unresolved issues. Only the owner accepts (naming the
+exact decision revision) or rejects. Acceptance pins the problem's selected
+revision; a later edit shows the acceptance as stale while the selection
+stays put. Comparisons diff exact revisions by stable id (parameters,
+junction, parts, materials/products, issues, evidence, geometry); assembly
+history lists every revision with its actor; restore is a new revision.
+
+## Agents
+
+- Alfred is the default steward; Zeck only when explicitly chosen. Agent
+  identity is separate from provider/model; requested and observed model are
+  recorded separately, unknown stays unknown, and a mismatch blocks further
+  autonomous steps until the owner accepts it.
+- Agent steps are **real native chat deliveries** (Accept → Claim → existing
+  runner → Finish) in a run's own native conversation, carrying the exact
+  retained packet (hash-verified, as data) and only an explicit bounded tool
+  scope. Construction keeps only the native identity, never a transcript.
+- Every claim of a queued construction step passes a gate: it runs only if
+  this process owns the run on the current epoch with the attempt running
+  and no stop requested — so stops and restarts survive the startup drain;
+  unrelated chats are untouched.
+- Agent edits go through an in-process, revocable capability bound to one
+  problem: drafts/proposed alternatives, views, annotations, evidence links,
+  decision proposals. Owner-only operations (accept/reject, steward, problem
+  facts, sources/evidence/catalog entry) answer 403 and change nothing.
+
+**Preflight** (`GET …/preflight`) is observed, not assumed: native store,
+runner, exact-byte packet delivery, page extraction scope, an explicit
+bounded toolset without web/shell/file/MCP/memory names, no fetch authority,
+no vault write. Tool confinement and OS-level write access cannot be
+observed from the server, so they are `unverified`, and unverified checks
+block. In this build native construction steps therefore cannot be switched
+on by configuration: native research and "ask the agent" are **unavailable**
+in production and the UI says why (only isolated test fixtures allow
+unverified checks). A live provider trial needs separate authorization and a
+real preflight.
+
+## Export and restore
+
+- **Detail package** (Export tab): the selected revision's assembly,
+  validation, section SVG/PDF, GLB, schedule, evidence summary, README and a
+  manifest of hashes; private narrative, inputs and contacts omitted.
+- **Private recovery bundle** (`GET …/problems/{id}/export`, Export tab):
+  the problem's complete retained closure — head, membership, ledger state,
+  creation intents, every member artifact object and its exact bytes — plus
+  read-only copies of the native conversations it points at, with a manifest
+  of paths, sizes, SHA-256s, versions and completeness per category; what
+  could not be included is listed, never claimed.
+- **Restore** only into an empty, absolute root outside forbidden roots:
+
+      construction-restore -bundle problem-recovery.zip -verify-only
+      construction-restore -bundle problem-recovery.zip -target /abs/empty/dir \
+          -forbid /path/to/vault [-native-out /abs/empty/native-dir]
+
+  Every path, size and hash is checked before anything is written; artifact
+  ids and revisions must come back identical; the problem is reopened from
+  the restored bytes. Native copies are written only to an explicit empty
+  directory and are never resumed.
+
+## Access boundary
+
+Construction routes exist only on the private `Server.Handler` (never the
+portal, share or public listeners). The Host must be loopback or a
+configured trusted host; cross-site requests are refused by Origin and
+Sec-Fetch-Site; every mutation needs the per-process nonce from
+`…/session`; the actor is derived server-side (owner) — request bodies and
+headers cannot assert it. A hostile process running as the owner's OS user
+is outside this single-owner, trusted-local-host boundary; exposing Manifest
+beyond the trusted host/tailnet requires an authenticated owner gateway
+first.
+
+Configuration (`config.json`):
+
+```json
+"construction": { "disabled": false, "trustedHosts": ["your-tailnet-name"] }
+```
+
+## API (both prefixes)
+
+`/api/properties/{slug}/construction` and `/api/home/construction`:
+`GET /session`, `GET|POST /problems`, `GET /problems/{id}`,
+`POST /problems/{id}/commands`, `GET /problems/{id}/history`,
+`POST /problems/{id}/inputs`, `GET /problems/{id}/artifacts/{artifact}`,
+assembly `GET …/assemblies/{asm}[/geometry|/glb|/validation|/history|/section|/substitution]`,
+`POST …/assemblies/{asm}/commands|preview|exports`,
+research `POST /problems/{id}/research-runs`, `GET …/{run}`, `GET …/{run}/events?after=`,
+`POST …/{run}/start|cancel|retry|resume|questions`, `GET …/{run}/attempts/{attempt}/result`,
+`GET|POST /problems/{id}/sources|evidence`, `GET /problems/{id}/evidence/paths`, `GET /problems/{id}/graph`,
+`GET|POST /problems/{id}/materials|products`, `GET /problems/{id}/compare?a=&b=`,
+`GET|POST /problems/{id}/decisions`, `POST /problems/{id}/agent/requests`,
+`GET /problems/{id}/agent/requests/{req}`, `GET /preflight`, `GET /problems/{id}/export`.
+
+Errors: 404 missing (no cross-project existence leaks), 403 forbidden, 409
+stale (with the current revision), 413 too large, 422 invalid, 503 capability
+unavailable.
+
+## Pending live acceptance (not provable offline)
+
+Real 761 site conditions and measurements; the actual wall condition,
+jurisdiction, climate and loads; manufacturer acceptance of real products;
+an authorized live source adapter and provider preflight; the deployment
+access boundary (trusted hosts/proxy); physical-device and realistic-render
+quality. Fixtures prove protocol, not suitability.

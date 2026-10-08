@@ -1511,4 +1511,13 @@ function cxPaintExport(b) {
     list.append(row);
   });
   b.append(list);
+  // the private recovery bundle: the whole retained closure, for backup only
+  const bk = el("div", "cx-block cx-backup");
+  bk.append(el("div", "cx-label micro-label", "Private recovery bundle"));
+  bk.append(el("p", "cx-hint", "Every revision, input, source snapshot, run result, decision, view and export of this problem, with hashes, for backup and restore into an empty root. Private — not a sharing package."));
+  const dl = el("a", "cx-input-name cx-backup-link", "Download private recovery bundle");
+  dl.href = cxBase(cx.subject) + "/problems/" + encodeURIComponent(cx.problemId) + "/export";
+  dl.setAttribute("download", cx.problemId + "-recovery.zip");
+  bk.append(dl);
+  b.append(bk);
 }

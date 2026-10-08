@@ -1,11 +1,13 @@
 package server
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"net/http/httptest"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -209,6 +211,48 @@ func TestConstructionNativeBrowser(t *testing.T) {
 	}
 	if agentEdits != 1 {
 		t.Fatalf("one agent SetDimension receipt: %d", agentEdits)
+	}
+	f.assertSourcesUntouched(t)
+}
+
+// The integrated journey in a browser (P9): the Home pilot through edits,
+// research cancel/resume, a decision, the detail package and the private
+// recovery bundle; afterwards the downloaded bundle restores into an empty
+// root and reopens the same problem.
+func TestConstructionJourneyBrowser(t *testing.T) {
+	f := constructionFixture(t, withFixtureSources)
+	f.srv.construction.runner.Adapters[1].(*construction.FixtureAdapter).Delay = 1500 * time.Millisecond
+	out := constructionBrowser(t, "construction-journey.cjs", f, nil)
+	t.Log(strings.TrimSpace(out))
+	var res struct {
+		Shots string `json:"shots"`
+	}
+	lines := strings.Split(strings.TrimSpace(out), "\n")
+	if err := json.Unmarshal([]byte(lines[len(lines)-1]), &res); err != nil || res.Shots == "" {
+		t.Fatalf("journey output: %v", err)
+	}
+	shots := res.Shots
+	f.srv.WaitConstructionRuns()
+	home := construction.SubjectRef{Kind: "home", ID: "home"}
+	list, err := f.srv.construction.store.List(home)
+	if err != nil || len(list) != 1 || list[0].Title != "761 N Euclid — Back Addition" || list[0].Lifecycle != "owner-selected" {
+		t.Fatalf("home pilot %+v %v", list, err)
+	}
+	raw, err := os.ReadFile(filepath.Join(shots, "journey-recovery.zip"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	target := filepath.Join(t.TempDir(), "restored")
+	rep, err := construction.Restore(bytes.NewReader(raw), int64(len(raw)), target, construction.RestoreOptions{Forbidden: []string{f.vault}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	st, err := f.srv.construction.store.Load(home, list[0].ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rep.ProblemID != list[0].ID || rep.Generation > st.Head.Generation || rep.Documents == 0 {
+		t.Fatalf("the downloaded bundle restores the pilot: %+v", rep)
 	}
 	f.assertSourcesUntouched(t)
 }

@@ -413,6 +413,65 @@ card, "Ask the agent" in the agent pane, `testdata/construction-native.cjs`
 - Live provider trial: not run (needs separate authorization and a real
   preflight); the stub proves protocol only.
 
+## P9 — export/restore, journey, security, docs
+
+P9.1: `construction/export.go` (deterministic private recovery bundle: head,
+members, ledger state, creation intents, every member artifact object and
+its exact bytes, native extras, manifest with path/bytes/SHA-256, versions
+and completeness per category), `construction/restore.go` (`ReadBundle` +
+`Restore` into an empty root only), `construction/export_test.go`,
+`cmd/construction-restore/` (+ test), `GET …/problems/{id}/export` in
+`server/construction_exports.go`. P9.2: `server/construction_journey_test.go`,
+`server/construction_security_test.go`, `server/testdata/construction-journey.cjs`
++ `TestConstructionJourneyBrowser`, the Export tab's recovery-bundle link,
+`docs/construction-intelligence.md`.
+
+- `go test -v ./construction ./cmd/construction-restore -count=1`: 53
+  top-level tests pass, 0 skipped. Round trip: deterministic bundle; the
+  original root removed; restore into an empty root brings back every
+  document revision byte-for-byte (same tokens), the full receipt chain,
+  inputs, derived exports, stage results, older assembly revisions; the
+  model recompiles to the same hash and the detail package regenerates
+  byte-identically without any provider; the restored store accepts new
+  commits. Refusals (nothing written): tampered blob, `../`, absolute and
+  backslash paths, a symlink entry, duplicates, an unlisted file, an 8 MiB
+  zero bomb (ratio), a newer schema, a store path for another subject; a
+  populated target (409), a target under a forbidden root (403), a relative
+  target (422). CLI: verify-only, restore with native copies to an explicit
+  empty dir ("not resumed"), populated-target refusal, forbidden root, usage.
+- `go test -v ./server -run '^TestConstruction' -count=1`: 32 top-level tests
+  pass, 0 skipped (includes the five real-backend browser journeys).
+  `TestConstructionJourneyHomePilotExportRestore`: the 761 pilot from Home
+  with the Home task scope → synthetic stand-in drawing → junction,
+  insulation, visible timber → geometry, SVG/PDF/GLB/package → research
+  cancelled mid-run and resumed → compare → agent proposal, agent approval
+  403, owner acceptance → steward edit through the native path → recovery
+  bundle (complete, with the native conversation copy) → original root
+  removed → restore into an empty root → identical revisions, problem,
+  assemblies, evidence, decisions, views, catalog, derived records, runs and
+  history; the selected revision's geometry opens; a re-export of the same
+  revision has the same geometry hash; the original export downloads
+  byte-exact. `TestConstructionSecurityNegativeCases`: untrusted host,
+  cross-site/cross-origin/no-origin/no-nonce writes, cross-site recovery
+  export, encoded traversal paths, IDOR (input/document of A via B, another
+  property, Home), generic artifact route blind, another problem's assembly
+  and evidence, problemId mismatch, unknown op, NaN and 1e999 literals,
+  negative/excess thickness, 257 operations, >1 MiB body (413), degenerate
+  and NaN sections, URL sources incl. a redirect to the metadata address,
+  link-local, loopback and IPv6 loopback recorded with zero fetches,
+  credentialed URL refused, no HTTP client/dial/exec in construction code,
+  and A's bundle carries none of B's private documents.
+- `TestConstructionJourneyBrowser`: the pilot from TASKS › Home
+  construction, stand-in drawing, edits, research cancel → resume (epoch 2,
+  3 alternatives), decision accepted, detail package exported, the recovery
+  bundle downloaded (492,768 bytes) and then restored by the Go side into an
+  empty root; reload shows the same state; 390 px usable. Screenshots
+  `journey-decision-1440.png`, `journey-decisions-390.png`.
+- `go test -race ./construction ./agentchat ./chatstate -count=1`: pass.
+- The journey script needs the real backend URL by design (persistence and
+  the boundary are claims only the backend can prove); the stub mode of
+  `construction-workbench.cjs` remains the direct `node` UI-only run.
+
 ## Decisions taken (plan-conformant defaults)
 
 1. **Subject binding (§12.1).** `subjectRef` is typed `{kind: "property"|"home", id}`
