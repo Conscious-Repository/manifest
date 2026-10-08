@@ -1116,9 +1116,61 @@ func (o *RestoreRevision) Apply(tx *Tx, c *ApplyContext) error {
 // assemblyAt loads an earlier revision of an assembly by walking its own
 // parent chain from the current head — a token from elsewhere is refused.
 func (tx *Tx) assemblyAt(id, rev string) (*Assembly, error) {
-	tok := tx.Base.Revision("assembly:" + id)
+	return tx.store.assemblyInChain(tx.Base.Revision("assembly:"+id), id, rev)
+}
+
+// AssemblyAt returns one exact revision of a problem's assembly ("" = head),
+// found by walking that assembly's own revision chain.
+func (s *Store) AssemblyAt(sub SubjectRef, problemID, asmID, rev string) (*Assembly, string, error) {
+	st, err := s.Load(sub, problemID)
+	if err != nil {
+		return nil, "", err
+	}
+	head := st.Revision("assembly:" + asmID)
+	if head == "" {
+		return nil, "", NotFound("no such assembly in this problem")
+	}
+	if rev == "" || rev == head {
+		return st.Assemblies[asmID], head, nil
+	}
+	if !ValidToken(rev) {
+		return nil, "", NotFound("no such revision")
+	}
+	a, err := s.assemblyInChain(head, asmID, rev)
+	return a, rev, err
+}
+
+// ValidationAt returns the report written for one exact assembly revision.
+func (s *Store) ValidationAt(sub SubjectRef, problemID, asmID, asmRev string) (*ValidationReport, error) {
+	st, err := s.Load(sub, problemID)
+	if err != nil {
+		return nil, err
+	}
+	tok := st.Revision("validation:" + asmID)
 	for steps := 0; tok != "" && steps < 100000; steps++ {
-		raw, err := tx.store.docBytes(DocRef{Kind: DocAssembly, Revision: tok})
+		raw, err := s.docBytes(DocRef{Kind: DocValidation, Revision: tok})
+		if err != nil {
+			return nil, err
+		}
+		var r ValidationReport
+		if err := DecodeStrict(raw, DocValidation, &r); err != nil {
+			return nil, err
+		}
+		if r.AssemblyID != asmID {
+			return nil, corrupt("validation chain left %s", asmID)
+		}
+		if asmRev == "" || r.AssemblyRevision == asmRev {
+			return &r, nil
+		}
+		tok = r.ParentRevision
+	}
+	return nil, NotFound("no validation report for that revision")
+}
+
+func (s *Store) assemblyInChain(head, id, rev string) (*Assembly, error) {
+	tok := head
+	for steps := 0; tok != "" && steps < 100000; steps++ {
+		raw, err := s.docBytes(DocRef{Kind: DocAssembly, Revision: tok})
 		if err != nil {
 			return nil, err
 		}

@@ -28,6 +28,7 @@ type constructionCfg struct {
 	nonce        string
 	principal    constructionPrincipal
 	mu           sync.Mutex
+	geometry     geometryCache
 }
 
 // ConstructionOptions configure the feature at composition time.
@@ -92,6 +93,7 @@ func (s *Server) registerConstructionRoutes(mux *http.ServeMux) {
 		mux.HandleFunc("GET "+p+"/problems/{id}/history", s.handleConstructionHistory)
 		mux.HandleFunc("POST "+p+"/problems/{id}/inputs", s.handleConstructionInput)
 		mux.HandleFunc("GET "+p+"/problems/{id}/artifacts/{artifact}", s.handleConstructionArtifact)
+		s.registerConstructionAssemblyRoutes(mux, p)
 	}
 }
 

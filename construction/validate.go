@@ -818,3 +818,73 @@ func buildReport(a *Assembly, asmToken string, prev *ValidationReport, ca compil
 	}
 	return r
 }
+
+// PreviewFinding is one rule result of a tentative (uncommitted) change.
+type PreviewFinding struct {
+	RuleKey  string `json:"ruleKey"`
+	Target   string `json:"target"`
+	Severity string `json:"severity"`
+	Message  string `json:"message"`
+}
+
+// PreviewResult is what a change WOULD do; nothing is written. A drag
+// handle shows this as explicitly tentative; only a committed command
+// becomes the model.
+type PreviewResult struct {
+	Tentative    bool             `json:"tentative"`
+	BaseRevision string           `json:"baseRevision"`
+	GeometryHash string           `json:"geometryHash,omitempty"`
+	Triangles    int              `json:"triangles"`
+	Facts        *IRFacts         `json:"facts,omitempty"`
+	Findings     []PreviewFinding `json:"findings"`
+	Blocking     bool             `json:"blocking"`
+	Problems     []string         `json:"problems,omitempty"`
+}
+
+// Preview applies a parsed command to a copy of the problem and compiles and
+// evaluates its assembly, without staging or writing anything.
+func (s *Store) Preview(sub SubjectRef, pc *ParsedCommand, actor Actor, c *ApplyContext) (*PreviewResult, *GeometryIR, error) {
+	base, err := s.Load(sub, pc.Command.ProblemID)
+	if err != nil {
+		return nil, nil, err
+	}
+	if base.ReadOnly {
+		return nil, nil, ErrReadOnly
+	}
+	next, err := base.Clone()
+	if err != nil {
+		return nil, nil, err
+	}
+	if c == nil {
+		c = &ApplyContext{}
+	}
+	tx := &Tx{Base: base, Next: next, Actor: actor, Now: s.now().UTC(), store: s, subject: sub}
+	res := &PreviewResult{Tentative: true, BaseRevision: base.Revision("assembly:" + pc.Command.AssemblyID), Findings: []PreviewFinding{}}
+	if err := ApplyCommand(tx, c, pc); err != nil {
+		return nil, nil, err
+	}
+	a := next.Assemblies[pc.Command.AssemblyID]
+	if a == nil {
+		return nil, nil, NotFound("no such assembly in this problem")
+	}
+	if errs := ValidateAssembly(a, next.Problem.ID, next); len(errs) > 0 {
+		res.Blocking, res.Problems = true, errs
+		return res, nil, nil
+	}
+	ir, err := Compile(a, next.Catalog)
+	if err != nil {
+		if ce, ok := err.(*CompileError); ok {
+			res.Blocking, res.Problems = true, ce.Problems
+			return res, nil, nil
+		}
+		return nil, nil, err
+	}
+	res.GeometryHash, res.Triangles, res.Facts = ir.Hash, ir.Triangles, &ir.Facts
+	for _, f := range Evaluate(ruleInput{a: a, ir: ir, cat: next.Catalog, ev: next.Evidence, p: next.Problem}) {
+		res.Findings = append(res.Findings, PreviewFinding{RuleKey: f.key, Target: f.target, Severity: f.severity, Message: f.message})
+		if f.severity == SevBlocking {
+			res.Blocking = true
+		}
+	}
+	return res, ir, nil
+}
