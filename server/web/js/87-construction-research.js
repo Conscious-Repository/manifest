@@ -113,6 +113,12 @@ function cxPaintResearchRun(body) {
     blk.append(line, cxStageChips(run));
     const c = run.counts || {};
     blk.append(el("p", "cx-hint", (c.sourcesConsidered || 0) + " sources considered · " + (c.sourcesRetained || 0) + " retained · " + (c.evidenceVerified || 0) + " passages verified · " + (c.evidenceRejected || 0) + " rejected · " + (c.alternatives || 0) + " alternatives"));
+    const ex = (run.stages || []).find((sg) => sg.name === "extract");
+    const nat = ex && ex.attempts && ex.attempts.length ? ex.attempts[ex.attempts.length - 1].native : null;
+    if (nat && nat.requestId) {
+      const obs = nat.observedModel ? nat.observedModel + " (" + nat.observedSource + ")" : "unknown";
+      blk.append(el("p", "cx-hint cx-native", "Agent step: " + nat.agent + " · " + (nat.state || "") + " · requested " + (nat.requestedModel || "profile default") + " · observed " + obs + " · tools " + (nat.toolScope || "none") + " · packet " + (nat.packetHash || "").slice(0, 10)));
+    }
     const evs = (run.events || []).slice(-4).reverse();
     const list = el("ol", "cx-run-events");
     evs.forEach((e) => list.append(el("li", null, "#" + e.seq + " " + (e.message || e.state))));
@@ -142,6 +148,42 @@ function cxPaintResearchRun(body) {
   (caps.notes || []).forEach((n) => blk.append(el("p", "cx-hint cx-cap-note", n)));
   if (cxr.msg) { const m = el("p", "cx-form-msg", cxr.msg); m.setAttribute("role", "alert"); blk.append(m); }
   body.append(blk);
+  body.append(cxStewardBlock(caps));
+}
+
+// ---- ask the agent (steward request through the native path) ----------------------------
+function cxStewardBlock(caps) {
+  const box = el("div", "cx-block cx-steward");
+  box.append(el("div", "cx-label micro-label", "Ask the agent"));
+  const a = cxAsm();
+  const ok = caps.agentMutationTool && caps.agentMutationTool.startsWith("available") && a && !cx.view.readOnly;
+  const ta = el("textarea", "cx-in cx-narrative");
+  ta.setAttribute("aria-label", "Instruction for the agent");
+  ta.placeholder = ok ? "e.g. increase the insulation to 150 mm" : "unavailable here";
+  ta.disabled = !ok;
+  const status = el("p", "cx-hint cx-steward-status", cxr.steward || "");
+  status.setAttribute("role", "status");
+  const go = pillLight("Send to agent", async () => {
+    go.disabled = true;
+    try {
+      let res = await cxApi("POST", cxBase(cx.subject), "/problems/" + cxEnc(cx.problemId) + "/agent/requests", { schemaVersion: 1, requestId: cxRequestId(), text: ta.value, assemblyId: a.id });
+      let req = res.request;
+      cxr.steward = status.textContent = "Agent working…";
+      for (let i = 0; i < 600 && req.state === "pending"; i++) {
+        await new Promise((r) => setTimeout(r, 1000));
+        req = (await cxApi("GET", cxBase(cx.subject), "/problems/" + cxEnc(cx.problemId) + "/agent/requests/" + cxEnc(req.id))).request;
+      }
+      const applied = (req.results || []).filter((x) => x.status === 200).length;
+      cxr.steward = (req.state === "completed" ? "Agent: " + (req.summary || "done") + " · " + applied + " command(s) applied as the agent" : "Agent request " + req.state) + (req.error ? " · " + req.error : "");
+      const fresh = await cxApi("GET", cxBase(cx.subject), "/problems/" + cxEnc(cx.problemId));
+      cxApplyView(fresh);
+    } catch (e) { cxr.steward = "Refused: " + e.message; cxRender(); }
+    finally { go.disabled = false; }
+  });
+  go.disabled = !ok;
+  box.append(ta, go, status);
+  if (!ok) box.append(el("p", "cx-hint", "The agent can only propose typed edits to drafts through a satisfied native preflight; it can never approve. Native steps are unavailable here."));
+  return box;
 }
 
 // ---- Research tab: what each stage retained ------------------------------------------------

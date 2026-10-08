@@ -179,3 +179,36 @@ func TestConstructionResearchBrowser(t *testing.T) {
 	}
 	f.assertSourcesUntouched(t)
 }
+
+// Native agent steps through the workbench: the real agent-chat store and
+// hermes Runner (protocol stub) behind the real backend; afterwards the
+// agent's edit is in the store as an agent receipt.
+func TestConstructionNativeBrowser(t *testing.T) {
+	f, _ := nativeFixture(t)
+	out := constructionBrowser(t, "construction-native.cjs", f, nil)
+	t.Log(strings.TrimSpace(out))
+	f.srv.WaitConstructionRuns()
+	sub := construction.SubjectRef{Kind: "property", ID: "fixture-ooda-house"}
+	list, err := f.srv.construction.store.List(sub)
+	if err != nil || len(list) != 1 {
+		t.Fatalf("%+v %v", list, err)
+	}
+	hist, err := f.srv.construction.store.History(sub, list[0].ID, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	agentEdits := 0
+	for _, rc := range hist {
+		if rc.Actor.Kind == "agent" {
+			for _, op := range rc.Operations {
+				if op.Op == "SetDimension" {
+					agentEdits++
+				}
+			}
+		}
+	}
+	if agentEdits != 1 {
+		t.Fatalf("one agent SetDimension receipt: %d", agentEdits)
+	}
+	f.assertSourcesUntouched(t)
+}

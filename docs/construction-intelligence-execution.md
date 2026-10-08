@@ -352,6 +352,67 @@ server comparison, assembly revisions with restore in History).
   composed from the construction store by the native seam (P8), so no chat
   record/owned-file path carries construction data.
 
+## P8 — native delivery, preflight, cancel/retry/resume
+
+P8.1 (native seam): `agentchat/delivery.go` gains an optional
+`MessageContext.Construction` (nil and omitted for every other delivery) +
+`agentchat/construction_context_test.go`; `server/agentchat.go` gets two
+narrow hooks — every claim (first and in-loop) passes
+`gateConstructionDeliveries`, and a construction turn uses
+`constructionTurnPrompt` (exact retained packet, verified by hash, as data)
+with only its bounded tool scope instead of the chat window/MCP preamble;
+`server/construction_runs.go` (the NativeStep over Accept/Claim/runner/
+Finish, cancel through RequestStop/CancelQueued, reply read from the
+transcript, native-state reconcile), `server/construction_preflight.go`
+(observed checks + `GET …/preflight`), `server/construction_steward.go`
+("ask the agent": one native delivery, reply executed only as typed commands
+under a short-lived problem-bound capability), domain
+`Store.AttachConversation`/`RetainPacket`, protocol stub
+`server/testdata/construction-hermes-stub.py`, tests
+`server/construction_runs_test.go`. P8.2 (UI): native identity on the run
+card, "Ask the agent" in the agent pane, `testdata/construction-native.cjs`
++ `TestConstructionNativeBrowser`.
+
+- Preflight is observed, not assumed: native store, runner, exact-byte
+  packet delivery, page extraction scope, an explicit bounded toolset with no
+  web/shell/file/MCP/memory names, no fetch authority, and no vault write.
+  Tool confinement and OS-level write access are `unverified` (not
+  observable from the server), so production wiring (no `AgentToolsets`, no
+  `AllowUnverifiedNative`) keeps native research **unavailable** with the
+  reason shown; only isolated fixtures allow unverified checks.
+- `go test -v ./server -run 'TestConstructionNative' -count=3`: 4 tests pass
+  each time — one Accept per attempt in the run's own native conversation;
+  the stub re-hashes the packet it received (declared = computed = attempt
+  packet hash), sees toolset `construction-none` (not the chat's
+  `web,memory`) and no chat preamble; requested vs observed model kept apart
+  (runner-report); passages verified (1 kept, 1 fabricated rejected); the
+  problem points at the native conversation; mismatch → waiting-input,
+  resume refused until the owner accepts, then completes with no second send;
+  `zeck` (no such profile) fails as `capability` with nothing sent and no
+  substitution; without a bounded toolset native runs are 503; cancelling a
+  running step interrupts the native delivery (stop requested, process
+  killed by context) and cancels the run; the drain gate cancels a queued
+  construction step its process does not own while an unrelated queued chat
+  completes normally (a real bypass was found and fixed here: the turn loop's
+  next claim skipped the gate); receipt states map to not-sent / uncertain;
+  the steward request runs the stub's typed SetDimension as `agent:alfred`
+  with a `cxcap-` capability and gives the owner's geometry, and an
+  approving reply is refused with only the packet record committed.
+- Regression: `go test ./agentchat` pass (fingerprints of nil and
+  non-construction contexts unchanged, golden-checked); `go test ./server
+  -run 'TestAgentChat|TestChatSupervision|TestHermes|TestChat'` pass, incl.
+  `TestAgentChatPreflightFailureFinishesReceipt` and
+  `TestAgentChatRecordsDispatchedToolScope`; `go test -race ./construction
+  ./agentchat` and `go test -race ./server -run
+  'TestConstruction(Native|Research…|AgentTool|Sources|Catalog|Command)'`
+  pass.
+- `TestConstructionNativeBrowser`: native run shows "tools
+  construction-none · observed stub-model (runner-report)"; "Ask the agent"
+  applies one agent command (thickness 150); screenshot
+  `native-agent-1440.png`.
+- Live provider trial: not run (needs separate authorization and a real
+  preflight); the stub proves protocol only.
+
 ## Decisions taken (plan-conformant defaults)
 
 1. **Subject binding (§12.1).** `subjectRef` is typed `{kind: "property"|"home", id}`
