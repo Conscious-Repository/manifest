@@ -98,7 +98,7 @@ function renderTodosToolbar() {
   const choices=[['all','All active'],['next','Next actions'],['agents','With agents'],['attention','Needs attention']].map(([value,label])=>[value,label+' · '+(todosCache.rows||[]).filter(r=>todoMatches(r,value)).length]);
   renderFilterButtons(bar.querySelector('.tdo-lenses'),choices,todosLens,value=>{todosLens=value;localStorage.setItem('todosLens',value);renderTodos();});
   // Timeline: the shared Home plan's weekly view (90-home-plan.js)
-  renderFilterButtons(bar.querySelector('.tdo-layouts'),[['list','List'],['board','Board']].concat(typeof homePlanRender==='function'?[['timeline','Home timeline'],['homefeed','Home to resolve']]:[]),todosMode,value=>{todosMode=value;localStorage.setItem('todosMode',value);renderTodos();});
+  renderFilterButtons(bar.querySelector('.tdo-layouts'),[['list','List'],['board','Board']].concat(typeof homePlanRender==='function'?[['timeline','Home timeline'],['homefeed','Home to resolve']]:[]).concat(typeof homeConstructionRender==='function'?[['homeconstruction','Home construction']]:[]),todosMode,value=>{todosMode=value;localStorage.setItem('todosMode',value);renderTodos();});
 }
 
 function renderTodos() {
@@ -119,6 +119,7 @@ function renderTodos() {
   }
   if (todosMode === "timeline" && typeof homePlanRender === "function") { homePlanRender(host); return; }
   if (todosMode === "homefeed" && typeof homePlanFeedRender === "function") { homePlanFeedRender(host); return; }
+  if (todosMode === "homeconstruction" && typeof homeConstructionRender === "function") { homeConstructionRender(host); return; }
   // 1. decisions lane — always visible, never collapsed
   const issues = [];
   (todosCache.domains || []).forEach((dom) => (dom.issues || []).forEach((is) => {

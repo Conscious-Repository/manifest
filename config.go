@@ -189,6 +189,18 @@ type Config struct {
 	// consent wording and its default are an open owner decision, and no team
 	// edit route exists. Turning it on changes new share-review fingerprints.
 	ShareTeamFileEditEligibility bool `json:"shareTeamFileEditEligibility"`
+	// Construction configures private construction problems inside property
+	// pages and the shared Home (server/construction*.go). Records live under
+	// <dataDir>/construction, never in the vault. Routes accept loopback Hosts
+	// plus TrustedHosts (the owner's private entry, e.g. the tailnet name) and
+	// are refused for any other Host. Disabled turns them off (503).
+	Construction ConstructionConfig `json:"construction"`
+}
+
+// ConstructionConfig is the construction feature's composition config.
+type ConstructionConfig struct {
+	Disabled     bool     `json:"disabled"`
+	TrustedHosts []string `json:"trustedHosts"`
 }
 
 // HermesConfig configures the local Hermes Agent CLI runner (see the hermes

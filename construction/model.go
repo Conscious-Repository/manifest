@@ -13,6 +13,13 @@ const SchemaVersion = 1
 // (x, z, -y)/1000.
 const CoordinateConvention = "construction-xyz-zup-mm/1"
 
+// CompilerVersion names the geometry compiler that produced a model hash; a
+// generator-only change is visible as a different version for equal input.
+const CompilerVersion = "construction-compiler/1"
+
+// NonApprovalNotice rides on every view, drawing and export.
+const NonApprovalNotice = "Research/design assistance; not approved for construction; field, code, structural and manufacturer verification required."
+
 // Document kinds (the "kind" field). (kind, id) is a document's identity.
 const (
 	DocProblem    = "construction.problem"

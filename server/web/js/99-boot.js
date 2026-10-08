@@ -452,6 +452,8 @@ function route() {
   // drill-downs (breadcrumb + Back). Desktop-only — on the phone band the crumb
   // bar IS the top bar (☰/⌕/＋), so 07-nav.css gates the hide to ≥861px.
   els.appShell.classList.toggle("crumb-hidden", !(day || note || artifact || read));
+  // leaving a construction workbench releases its renderer and hides its host
+  if (typeof constructionLeave === "function" && !h.startsWith("#/tasks/home-construction") && !/^#\/properties\/.+\/construction(\/|$)/.test(h)) constructionLeave();
   els.contentScroll.scrollTop = 0;
   refreshFeedBadge(); // the rail's Feed count doubles as the inbox badge — keep it honest everywhere
   if (goals) {
@@ -460,6 +462,11 @@ function route() {
     const suffix = h.startsWith("#/goals/") ? decodeURIComponent(h.slice("#/goals/".length)) : "";
     if (suffix === "history") showGoalsHistory();
     else loadGoals(suffix);
+  }
+  else if (todosTab && h.startsWith("#/tasks/home-construction") && typeof showConstructionHome === "function") {
+    // a Home construction problem opens inside TASKS (87-construction.js)
+    const rest = h.slice("#/tasks/home-construction".length).replace(/^\//, "");
+    showConstructionHome(rest ? decodeURIComponent(rest) : "");
   }
   else if (todosTab) { // the third surface — `tasks.md` board (+ panel deep link)
     if (h.startsWith("#/tasks/")) todoDeepLink = decodeURIComponent(h.slice("#/tasks/".length));

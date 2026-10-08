@@ -1,6 +1,7 @@
 package construction
 
 import (
+	"sort"
 	"strings"
 	"time"
 )
@@ -61,6 +62,16 @@ func ParseCreate(raw []byte) (*CreateRequest, string, error) {
 
 // templates registered by the assembly phase (assembly.go).
 var templates = map[string]bool{}
+
+// TemplateNames lists the assembly templates this build can seed.
+func TemplateNames() []string {
+	out := []string{}
+	for k := range templates {
+		out = append(out, k)
+	}
+	sort.Strings(out)
+	return out
+}
 
 // templateSeeders build a template's first assembly inside the creating tx.
 var templateSeeders = map[string]func(tx *Tx) error{}

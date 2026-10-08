@@ -502,6 +502,17 @@ func main() {
 	srv.UsePlannerNotes("", sharedHomeRoot, "Benjamin", vw.BindAbs("shared-home"))
 	srv.UseHomePlan(sharedHomeRoot, vw.BindAbs("shared-home"))
 	srv.UseChatState(filepath.Join(cfg.DataDir, "chat-state"))
+	// Construction Intelligence: private problems bound to a property or the
+	// shared Home, stored under DataDir (outside the vault and every
+	// team/public tree). Trusted-local-host posture: loopback + configured
+	// private hosts only (server/construction_auth.go).
+	if !cfg.Construction.Disabled {
+		forbidden := []string{cfg.VaultPath, cfg.RealEstate.TeamDir, cfg.AionPortal.TeamDir, cfg.Ooda.TeamDir, "/shared"}
+		if err := srv.UseConstruction(filepath.Join(cfg.DataDir, "construction"), server.ConstructionOptions{
+			TrustedHosts: cfg.Construction.TrustedHosts, Forbidden: forbidden}); err != nil {
+			log.Printf("construction disabled: %v", err)
+		}
+	}
 	srv.UseHosts(hostsInfo(cfg)) // Settings › Hosts & paths: the read-only config projection
 	// One geocoder instance serves every feature so the provider's global rate
 	// limit cannot be exceeded by contacts and properties independently.

@@ -121,6 +121,10 @@ async function renderPropertyPage(slug) {
   }
   main.append(strip);
 
+  // CONSTRUCTION — private construction problems bound to this property
+  // (87-construction.js); a way in, not a copy of the workbench
+  if (typeof constructionPropertySection === "function") main.append(constructionPropertySection(p));
+
   if (propUWOpen) {
     const uw = el("div", "pp3-uw");
     uw.append(el("div", "pp3-uw-loading", "loading underwrite…"));

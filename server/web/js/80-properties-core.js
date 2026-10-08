@@ -23,6 +23,9 @@ function showProperties(h) {
   els.propertyBoard.hidden = true;
   if (els.propertySettings) els.propertySettings.hidden = true;
   closePropInspector();
+  // construction lives inside the property: <slug>/construction[/<problemId>]
+  const cxm = tail.match(/^(.+)\/construction(?:\/([^/]+))?$/);
+  if (!cxm && typeof constructionLeave === "function") constructionLeave();
   // legacy sub-tab routes fold into the current tabs
   if (["work", "accounting", "statements"].includes(tail)) { location.hash = "#/properties"; return; }
   if (["decisions", "intake", "outstanding"].includes(tail)) { location.hash = "#/properties"; return; } // → BACKLOG
@@ -31,7 +34,8 @@ function showProperties(h) {
   propSlug = "";
   propDealSlug = "";
   const VIEWS = ["backlog", "portfolio", "goals", "money", "contractors", "settings", "map"];
-  if (tail.startsWith("deal/") && tail.endsWith("/underwriting")) { propMode = "underwriting"; propDealSlug = tail.slice(5,-13); }
+  if (cxm) { propMode = "construction"; propSlug = cxm[1]; propCxProblem = cxm[2] || ""; }
+  else if (tail.startsWith("deal/") && tail.endsWith("/underwriting")) { propMode = "underwriting"; propDealSlug = tail.slice(5,-13); }
   else if (tail.startsWith("deal/")) { propMode = "deal"; propDealSlug = tail.slice(5); }
   else if (tail === "contract-new") { propMode = "contract-new"; }
   else if (tail.startsWith("contract/")) { propMode = "contract"; propSlug = tail.slice(9); }
@@ -49,7 +53,8 @@ function showProperties(h) {
 // the tab they open FROM lit: property/deal/contract come off PORTFOLIO, a
 // contractor record off CONTRACTORS. Without this a record page lights nothing
 // and the tab bar reads as "you are nowhere".
-const RE_TAB_OF = { page: "portfolio", deal: "portfolio", contract: "portfolio", "contract-new": "portfolio", contractor: "contractors" };
+const RE_TAB_OF = { page: "portfolio", construction: "portfolio", deal: "portfolio", contract: "portfolio", "contract-new": "portfolio", contractor: "contractors" };
+let propCxProblem = ""; // the construction problem id when propMode is "construction"
 function renderReToggle() {
   const active = RE_TAB_OF[propMode] || propMode;
   els.reToggle && els.reToggle.querySelectorAll(".view-tab").forEach((b) =>
@@ -93,6 +98,7 @@ async function renderProperties() {
   if (propMode === "map") { els.propertyMapWrap.hidden = false; renderPropertyMap(); }
   else if (propMode === "settings") renderREsettings();
   else if (propMode === "page") { els.propertyPage.hidden = false; renderPropertyPage(propSlug); }
+  else if (propMode === "construction" && typeof showConstructionProperty === "function") showConstructionProperty(propSlug, propCxProblem);
   else if (propMode === "underwriting") { els.propertyBoard.hidden = false; renderDealDiligence(els.propertyBoard, propDealSlug, {onBack:()=>{location.hash="#/properties/deal/"+encodeURIComponent(propDealSlug);}}); }
   else if (propMode === "deal") { els.propertyBoard.hidden = false; renderDealPage(propDealSlug); }
   else if (propMode === "contract") { els.propertyBoard.hidden = false; renderContractPage(propSlug); }

@@ -305,6 +305,9 @@ type Server struct {
 	// agentChat: the Hermes-family chat store (Alfred + profiles) in the
 	// primary harness tree — agent-chat plan Phase 1 (agentchat.go). Nilable.
 	agentChat *agentChatCfg
+	// construction: private construction problems bound to a property or
+	// the shared Home (construction.go). Nilable: routes answer 503.
+	construction *constructionCfg
 
 	// taskThreadReqMu serializes request-ID claims on POST /api/tasks/thread;
 	// taskThreadInflight holds the claims this process is still recording.
@@ -1072,6 +1075,10 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("PUT /api/note", s.handleNotePut)
 	mux.HandleFunc("POST /api/note/task", s.handleNoteTask)
 	mux.HandleFunc("GET /api/note/resolve", s.handleNoteResolve)
+
+	// CONSTRUCTION — private problems inside a property page or the shared
+	// Home context (construction*.go). Private listener only.
+	s.registerConstructionRoutes(mux)
 
 	mux.Handle("/", WebHandler())
 	return mux
