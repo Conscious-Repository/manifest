@@ -34,6 +34,7 @@ type constructionCfg struct {
 	runs         constructionRunTracker
 	fixture      bool // the synthetic fixture source adapter is wired (tests only)
 	opts         ConstructionOptions
+	agents       constructionAgentTools
 }
 
 // ConstructionOptions configure the feature at composition time.

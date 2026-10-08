@@ -310,6 +310,48 @@ inspector), research browser script extended.
 - Actual manufacturer acceptance needs authorized live source review; none of
   these fixtures is a real product.
 
+## P7 — human/agent command equivalence, decisions and compare
+
+P7.1 (domain): `construction/decisions.go` (ProposeDecision; owner-only
+ApproveDecision/RejectDecision binding the exact decision revision;
+`DecisionStates`), `construction/history.go` (`AssemblyHistory` from the
+revision chain annotated by receipts; `CompareAssemblies`),
+`history_test.go`. Server: `server/construction_commands.go` (assembly
+history, compare of exact revisions, decisions read + decision command
+route) + test. P7.2: `server/construction_agent_tools.go` (in-process,
+revocable, problem-bound agent command capability; strict structured reply
+parser) + test; UI `web/js/87-construction-decisions.js` (Decisions tab with
+server comparison, assembly revisions with restore in History).
+
+- `go test -v ./construction -run 'TestConstruction(CommandHumanAgent|Decisions|Compare)' -count=1`:
+  3 tests pass — the owner's SetDimension and the agent's identical command
+  give the same geometry hash (owner edit → undo → agent edit), receipts and
+  history name owner vs `agent:alfred` with its capability; a second
+  browser's undo on a stale revision is 409 naming the current revision;
+  free text, a script op and an extra field are not commands (422); a removed
+  id is never reused; an agent may propose (the decision binds the exact
+  revision and keeps its unresolved issues) but agent approval/rejection is
+  403 with the head byte-identical; the owner must name the exact decision
+  revision; acceptance sets the selection and owner-selected lifecycle; an
+  edit makes it stale while the selection stays on the accepted revision;
+  approving a proposal whose assembly moved is 409; a later acceptance
+  supersedes; comparisons match parts by stable id and diff issues.
+- `go test -v ./server -run 'TestConstruction(CommandHistory|AgentTool)' -count=1`:
+  2 tests pass — "increase insulation" as a structured agent reply and as the
+  owner's control give identical geometry; a replayed reply returns the
+  original receipt; agent approval 403 with an unchanged head; a capability
+  cannot act on another problem or perform owner-only families (sources,
+  steward, products); free text and extra fields are refused; revoked and
+  expired capabilities are refused; no HTTP route accepts a capability.
+- `TestConstructionResearchBrowser` now also proposes a decision, accepts it,
+  edits the alternative (stale shown, selection pinned), compares the
+  accepted revision with the current one and restores the accepted geometry
+  from History; screenshot `decisions-compare-1440.png`.
+- Deviation recorded: `server/chat_record_context.go` and
+  `server/chat_owned_files.go` were not edited — the construction packet is
+  composed from the construction store by the native seam (P8), so no chat
+  record/owned-file path carries construction data.
+
 ## Decisions taken (plan-conformant defaults)
 
 1. **Subject binding (§12.1).** `subjectRef` is typed `{kind: "property"|"home", id}`

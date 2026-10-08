@@ -248,3 +248,12 @@ button.cx-path-node { border: 1px solid var(--accent); color: var(--accent); cur
 .cx-prod-stale .cx-src-title, .cx-prod-withdrawn .cx-src-title { color: var(--warn); }
 .cx-claim-unverified { color: var(--warn); }
 .cx-mat-row { font-size: var(--fs-sm); color: var(--base-70); padding: var(--sp-1) 0; overflow-wrap: anywhere; }
+
+/* decisions, comparison, revisions (P7) */
+.cx-dec { border-top: 1px solid var(--line-soft); padding: var(--sp-3) 0; }
+.cx-dec-accepted-for-project .cx-run-badge { color: var(--good); }
+.cx-dec-rejected .cx-run-badge, .cx-dec-superseded .cx-run-badge { color: var(--base-60); }
+.cx-dec-stale .cx-run-badge { color: var(--warn); }
+.cx-selected { border-left: 2px solid var(--good); padding-left: var(--sp-3); }
+.cx-compare-box select { margin: var(--sp-1) var(--sp-2) var(--sp-1) 0; max-width: 100%; }
+.cx-asm-rev .cx-link { margin-left: auto; }
