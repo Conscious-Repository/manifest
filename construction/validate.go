@@ -606,6 +606,7 @@ func Evaluate(in ruleInput) []finding {
 		add(finding{key: "source.completeness", target: a.ID, severity: SevAdvisory, category: "sourcing",
 			message: "No evidence supports this assembly's junction strategy yet.", observed: "0 supporting evidence", expected: "sourced detail / guidance", inputs: []string{"evidenceLinks"}})
 	}
+	fs = append(fs, evidenceFindings(a, in.ev, in.p, in.cat)...)
 	illus := 0
 	for _, l := range ir.Labels {
 		if l == "illustrative" {

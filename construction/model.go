@@ -612,6 +612,9 @@ type Source struct {
 	Access         string      `json:"access"` // open | licensed | restricted | unknown
 	Jurisdiction   string      `json:"jurisdiction,omitempty"`
 	Edition        string      `json:"edition,omitempty"`
+	// Warnings are recorded observations about the content (e.g. text that
+	// reads like instructions to an agent). They are shown, never obeyed.
+	Warnings []string `json:"warnings,omitempty"`
 }
 
 // Extraction records how page text was obtained and how good its page map is.
@@ -635,6 +638,9 @@ type Claim struct {
 	Contradicting []string     `json:"contradicting"`
 	Author        Actor        `json:"author"`
 	Rationale     string       `json:"rationale,omitempty"`
+	// Topics name what the claim bears on: "strategy:<key>", "wall:<value>",
+	// "product:<model>", "code:<topic>", "moisture:<topic>".
+	Topics []string `json:"topics,omitempty"`
 }
 
 type ClaimValue struct {
@@ -662,6 +668,10 @@ type Evidence struct {
 	Applicability  []string `json:"applicability"`
 	Verification   string   `json:"verification"` // verified | unverified
 	Confidence     float64  `json:"confidence"`
+	// ProposedBy says who proposed the passage before verification:
+	// owner | fixture-extractor | native-agent.
+	ProposedBy string `json:"proposedBy,omitempty"`
+	Run        string `json:"run,omitempty"`
 }
 
 // Relation is a canonical graph edge kept inside the private snapshot; it is
@@ -718,6 +728,7 @@ type ResearchRun struct {
 	Envelope
 	ProblemID           string          `json:"problemId"`
 	BaseProblemRevision string          `json:"baseProblemRevision"`
+	BaseAssembly        string          `json:"baseAssembly,omitempty"`
 	Plan                RunPlan         `json:"plan"`
 	Agent               AgentChoice     `json:"agent"`
 	State               string          `json:"state"`
@@ -730,6 +741,12 @@ type ResearchRun struct {
 	Publication         *Publication    `json:"publication"`
 	Capabilities        RunCapabilities `json:"capabilities"`
 	Counts              RunCounts       `json:"counts"`
+	// Retry is set by an explicit retry: a native step may send a new
+	// request after an uncertain outcome. Resume never does.
+	Retry bool `json:"retry,omitempty"`
+	// AcceptedRuntime lists attempts whose requested/observed runtime
+	// mismatch the owner explicitly accepted.
+	AcceptedRuntime []string `json:"acceptedRuntime,omitempty"`
 }
 
 // Run/stage states (§6).
@@ -756,6 +773,7 @@ type RunPlan struct {
 	Scope          string     `json:"scope"`
 	SourceBudget   int        `json:"sourceBudget"`
 	SourcePriority []string   `json:"sourcePriority"`
+	Corrected      bool       `json:"corrected,omitempty"` // the owner corrected the questions
 }
 
 type Question struct {
@@ -834,7 +852,7 @@ type RunEvent struct {
 type Publication struct {
 	Epoch           int          `json:"epoch"`
 	Assemblies      []VersionRef `json:"assemblies"`
-	Receipt         string       `json:"receipt"` // op- id of the publishing commit
+	Receipt         string       `json:"receipt"` // request id of the publishing commit (Store.Receipt)
 	PublishedAt     string       `json:"publishedAt"`
 	MissingResearch []string     `json:"missingResearch"`
 }
