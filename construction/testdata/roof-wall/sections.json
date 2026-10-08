@@ -1,0 +1,266 @@
+{
+  "plane": {
+    "originMm": [
+      300,
+      0,
+      0
+    ],
+    "normal": [
+      1,
+      0,
+      0
+    ],
+    "up": [
+      0,
+      0,
+      1
+    ],
+    "enabled": true
+  },
+  "bounds": [
+    -200,
+    -678.471,
+    1850.1932,
+    700
+  ],
+  "parts": [
+    {
+      "component": "cmp-00000000000000000000000000000001",
+      "type": "rafter-array",
+      "loops": 1,
+      "areaMm2": 365553.585
+    },
+    {
+      "component": "cmp-00000000000000000000000000000002",
+      "type": "timber-decking",
+      "loops": 1,
+      "areaMm2": 45694.226
+    },
+    {
+      "component": "cmp-00000000000000000000000000000003",
+      "type": "control-layer",
+      "loops": 1,
+      "areaMm2": 1827.866
+    },
+    {
+      "component": "cmp-00000000000000000000000000000004",
+      "type": "insulation-board",
+      "loops": 1,
+      "areaMm2": 182776.826
+    },
+    {
+      "component": "cmp-00000000000000000000000000000005",
+      "type": "underlayment",
+      "loops": 1,
+      "areaMm2": 3655.586
+    },
+    {
+      "component": "cmp-00000000000000000000000000000006",
+      "type": "batten-array",
+      "loops": 3,
+      "areaMm2": 7181.999
+    },
+    {
+      "component": "cmp-00000000000000000000000000000007",
+      "type": "corrugated-sheet",
+      "loops": 1,
+      "areaMm2": 924.023
+    },
+    {
+      "component": "cmp-00000000000000000000000000000008",
+      "type": "profile-closure",
+      "loops": 1,
+      "areaMm2": 1019.378
+    },
+    {
+      "component": "cmp-00000000000000000000000000000009",
+      "type": "apron-flashing",
+      "loops": 1,
+      "areaMm2": 179.112
+    },
+    {
+      "component": "cmp-0000000000000000000000000000000a",
+      "type": "counterflashing",
+      "loops": 1,
+      "areaMm2": 55.56
+    },
+    {
+      "component": "cmp-0000000000000000000000000000000b",
+      "type": "sealant-bead",
+      "loops": 1,
+      "areaMm2": 100
+    },
+    {
+      "component": "cmp-0000000000000000000000000000000d",
+      "type": "fastener-set",
+      "loops": 6,
+      "areaMm2": 5688.013
+    },
+    {
+      "component": "cmp-0000000000000000000000000000000e",
+      "type": "masonry-wythe",
+      "loops": 1,
+      "areaMm2": 137847.1
+    },
+    {
+      "component": "cmp-0000000000000000000000000000000f",
+      "type": "masonry-wythe",
+      "loops": 1,
+      "areaMm2": 137847.1
+    }
+  ],
+  "chains": [
+    {
+      "name": "Roof stack (normal to slope)",
+      "from": [
+        78.26189188505909,
+        -419.9703278549228
+      ],
+      "to": [
+        234.5452517852964,
+        466.3566498560645
+      ],
+      "intervals": [
+        {
+          "component": "cmp-00000000000000000000000000000001",
+          "name": "Exposed rafters (structural host)",
+          "a": [
+            108.6503,
+            -247.629
+          ],
+          "b": [
+            143.38,
+            -50.6675
+          ],
+          "lengthMm": 200,
+          "label": "illustrative"
+        },
+        {
+          "component": "cmp-00000000000000000000000000000002",
+          "name": "Finish-grade timber decking (exposed underside)",
+          "a": [
+            143.3799,
+            -50.6675
+          ],
+          "b": [
+            147.7212,
+            -26.0472
+          ],
+          "lengthMm": 25,
+          "label": "illustrative"
+        },
+        {
+          "component": "cmp-00000000000000000000000000000003",
+          "name": "Air/vapour-control layer (candidate; climate-dependent)",
+          "a": [
+            147.7212,
+            -26.0472
+          ],
+          "b": [
+            147.8948,
+            -25.0624
+          ],
+          "lengthMm": 1,
+          "label": "illustrative"
+        },
+        {
+          "component": "cmp-00000000000000000000000000000004",
+          "name": "Above-deck insulation",
+          "a": [
+            147.8948,
+            -25.0625
+          ],
+          "b": [
+            165.2596,
+            73.4184
+          ],
+          "lengthMm": 100,
+          "label": "illustrative"
+        },
+        {
+          "component": "cmp-00000000000000000000000000000005",
+          "name": "Underlayment / waterproofing",
+          "a": [
+            165.2596,
+            73.4183
+          ],
+          "b": [
+            165.6069,
+            75.3879
+          ],
+          "lengthMm": 2,
+          "label": "illustrative"
+        },
+        {
+          "component": "cmp-00000000000000000000000000000006",
+          "name": "Support battens",
+          "a": [
+            165.6069,
+            75.388
+          ],
+          "b": [
+            172.2056,
+            112.8107
+          ],
+          "lengthMm": 38,
+          "label": "illustrative"
+        },
+        {
+          "component": "cmp-00000000000000000000000000000007",
+          "name": "Corrugated metal roof sheet",
+          "a": [
+            172.3119,
+            113.4137
+          ],
+          "b": [
+            172.3987,
+            113.9061
+          ],
+          "lengthMm": 0.5,
+          "label": "illustrative"
+        }
+      ]
+    },
+    {
+      "name": "Wall (horizontal, 150 mm below datum)",
+      "from": [
+        -600,
+        -150
+      ],
+      "to": [
+        0,
+        -150
+      ],
+      "intervals": [
+        {
+          "component": "cmp-0000000000000000000000000000000f",
+          "name": "Inner masonry wythe (nominal 100)",
+          "a": [
+            -200,
+            -150
+          ],
+          "b": [
+            -100,
+            -150
+          ],
+          "lengthMm": 100,
+          "label": "illustrative"
+        },
+        {
+          "component": "cmp-0000000000000000000000000000000e",
+          "name": "Outer masonry wythe (nominal 100)",
+          "a": [
+            -100,
+            -150
+          ],
+          "b": [
+            0,
+            -150
+          ],
+          "lengthMm": 100,
+          "label": "illustrative"
+        }
+      ]
+    }
+  ]
+}
