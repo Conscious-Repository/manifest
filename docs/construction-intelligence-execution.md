@@ -862,6 +862,57 @@ and `workbench-{w}-{theme}-more.png`.
 - `go test ./server -run '^TestConstruction'`: 38 pass.
 - The asset and CSS guards pass.
 
+## P9.8 — no handler panics behind passing browser assertions
+
+**Finding.** An independent rerun of `09fd5571` passed its assertions, but
+the server logged 28 `http: panic serving` traces. The P9.7 MORE step
+navigated to SETTINGS, whose `GET /api/realestate/entities`
+(`handleEntitiesList`, `server/realestate.go`) called `LabelBindings` on a
+nil `*ImportMemory`. Production always sets the import memory with the
+service (`UseRealestate`). The construction fixture sets only the service,
+and every other handler that reads the import memory already treats it as
+optional (`reImport == nil` → skip or 503); this one did not.
+
+**Fix (production).** `handleEntitiesList` guards the optional import
+memory: without it, the bindings are empty. Nothing is recovered, and no
+other handler changed. The fixture keeps its legitimate service-without-
+memory composition, so the browser runs now exercise that path.
+
+**Tests:**
+
+- `TestRealestateEntitiesListWithoutImportMemory` calls the handler
+  directly, so a panic is not recovered. It checks empty bindings without
+  memory and the memory's bindings with it.
+- `TestConstructionMobileTabsMoreBrowser` (`construction-mobile-tabs.cjs`)
+  covers 320 and 390 in both themes:
+  - every folded REAL ESTATE tab is visited from MORE, 16 visits in all;
+  - each opens lit and whole in the row;
+  - MAP's offline fallback, a notice and a return to the list, is checked
+    in place of a map;
+  - there are no page errors, no failed backend requests (a panic drops the
+    connection, so `net::ERR_EMPTY_RESPONSE` shows on the page), and no
+    requests beyond MAP's own CDN.
+- `constructionBrowser` now captures every real-backend run's server error
+  log. Any `panic` fails the test even when the page's assertions pass.
+
+**Evidence:**
+
+- Red, before the fix:
+  - the handler test panicked at `importmem.go:108` via
+    `realestate.go:1740`;
+  - the new browser test failed on
+    `GET /api/realestate/entities: net::ERR_EMPTY_RESPONSE`;
+  - the workbench test failed on the captured panics.
+- Mutations (`mutate-panicfix.sh`):
+  - reverting the fix fails all three tests;
+  - with the harness check also off, the workbench test passes again (the
+    original blind spot) while the new test still fails from the page side;
+  - with the page check off instead, the harness alone fails both browser
+    tests.
+- `go vet ./server .` is clean.
+- `go test ./server -run '^TestConstruction'`: 39 pass (38 + 1 new), with
+  no panic logged.
+
 ## Full confined suite (`go test -json ./... -count=1`)
 
 | Run | Packages pass / no tests / fail | Tests pass / skip / fail | Notes |

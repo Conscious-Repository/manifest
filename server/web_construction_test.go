@@ -4,11 +4,13 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"log"
 	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -19,6 +21,10 @@ import (
 // backend: the Go server (embedded assets, real store, real auth guard) on an
 // httptest loopback listener. In-memory API stubs cannot prove persistence or
 // the access boundary, so the journey checks the store afterwards.
+//
+// A handler panic fails the test even when the page's own assertions pass:
+// net/http recovers it, logs it to the server's error log (captured here) and
+// drops the connection, which a page can easily survive unnoticed.
 func constructionBrowser(t *testing.T, script string, f *constructionFix, extra map[string]any) string {
 	t.Helper()
 	node, err := exec.LookPath("node")
@@ -28,7 +34,10 @@ func constructionBrowser(t *testing.T, script string, f *constructionFix, extra 
 	if err := exec.Command(node, "-e", "require.resolve('playwright')").Run(); err != nil {
 		t.Fatal("playwright unavailable (set NODE_PATH): the construction browser gate cannot be skipped")
 	}
-	ts := httptest.NewServer(f.srv.Handler())
+	ts := httptest.NewUnstartedServer(f.srv.Handler())
+	serverLog := &lockedBuffer{}
+	ts.Config.ErrorLog = log.New(serverLog, "", 0)
+	ts.Start()
 	defer ts.Close()
 	cfg := map[string]any{"url": ts.URL, "shots": os.Getenv("CONSTRUCTION_SHOTS")}
 	for k, v := range extra {
@@ -39,9 +48,31 @@ func constructionBrowser(t *testing.T, script string, f *constructionFix, extra 
 	defer cancel()
 	out, err := exec.CommandContext(ctx, node, "testdata/"+script, string(raw)).CombinedOutput()
 	if err != nil {
-		t.Fatalf("%s: %v\n%s", script, err, out)
+		t.Fatalf("%s: %v\n%s\nserver log:\n%s", script, err, out, serverLog.String())
+	}
+	if l := serverLog.String(); strings.Contains(l, "panic") {
+		t.Fatalf("%s: the backend panicked while the page ran:\n%s", script, l)
 	}
 	return string(out)
+}
+
+// lockedBuffer collects the test server's error log, written from handler
+// goroutines.
+type lockedBuffer struct {
+	mu sync.Mutex
+	b  bytes.Buffer
+}
+
+func (l *lockedBuffer) Write(p []byte) (int, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.b.Write(p)
+}
+
+func (l *lockedBuffer) String() string {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.b.String()
 }
 
 // The P1 journey in a browser against the real backend: open Construction
@@ -275,6 +306,39 @@ func TestConstructionRemoteRefusalBrowser(t *testing.T) {
 	}
 	if home, err := f.srv.construction.store.List(construction.SubjectRef{Kind: "home", ID: "home"}); err != nil || len(home) != 0 {
 		t.Fatalf("home problems %+v %v", home, err)
+	}
+	f.assertSourcesUntouched(t)
+}
+
+// Every REAL ESTATE tab folded under MORE on a phone opens from MORE, in both
+// themes, with no page error, no dropped backend request and (checked by the
+// harness) no handler panic. The workbench run's MORE step once reached
+// SETTINGS, whose entities list dereferenced the absent import memory: 28
+// panics behind passing assertions.
+func TestConstructionMobileTabsMoreBrowser(t *testing.T) {
+	f := constructionFixture(t)
+	v, id, _ := f.createTemplate(t, fixtureBase, "create-tabs-0001")
+	out := constructionBrowser(t, "construction-mobile-tabs.cjs", f, map[string]any{"problemId": id, "title": viewProblem(v)["title"]})
+	t.Log(strings.TrimSpace(out))
+	lines := strings.Split(strings.TrimSpace(out), "\n")
+	var res struct {
+		Visited []string `json:"visited"`
+	}
+	if err := json.Unmarshal([]byte(lines[len(lines)-1]), &res); err != nil {
+		t.Fatalf("script output: %v", err)
+	}
+	for _, at := range []string{"320 (default)", "390 (default)", "320 (jarvis)", "390 (jarvis)"} {
+		seen := map[string]bool{}
+		for _, v := range res.Visited {
+			if name, ok := strings.CutPrefix(v, at+" "); ok {
+				seen[name] = true
+			}
+		}
+		for _, name := range []string{"CONTRACTORS", "MAP", "SETTINGS"} {
+			if !seen[name] {
+				t.Fatalf("%s: %s was not visited from MORE (visited %v)", at, name, res.Visited)
+			}
+		}
 	}
 	f.assertSourcesUntouched(t)
 }

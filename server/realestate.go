@@ -1731,13 +1731,19 @@ func (s *Server) handleEntitiesList(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, map[string]any{"entities": []any{}, "contractors": []any{}})
 		return
 	}
+	// the statement import memory is optional here as in every other handler
+	// that reads it; without it there are no label bindings
+	bindings := map[string]string{}
+	if s.reImport != nil {
+		bindings = s.reImport.LabelBindings()
+	}
 	writeJSON(w, map[string]any{
 		"entities":    s.realestate.Entities(),
 		"partners":    s.realestate.Registry("partner"),
 		"lenders":     s.realestate.Registry("lender"),
 		"tenants":     s.realestate.Registry("tenant"),
 		"contractors": s.realestate.Contractors(),
-		"bindings":    s.reImport.LabelBindings(),
+		"bindings":    bindings,
 	})
 }
 
