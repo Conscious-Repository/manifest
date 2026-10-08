@@ -50,13 +50,46 @@ func TestConstructionWorkbenchBrowser(t *testing.T) {
 	f := constructionFixture(t)
 	out := constructionBrowser(t, "construction-workbench.cjs", f, nil)
 	t.Log(strings.TrimSpace(out))
-	list, err := f.srv.construction.store.List(construction.SubjectRef{Kind: "property", ID: "fixture-ooda-house"})
-	if err != nil || len(list) != 1 || list[0].Inputs != 1 {
-		t.Fatalf("property problems after the browser journey: %+v %v", list, err)
+	sub := construction.SubjectRef{Kind: "property", ID: "fixture-ooda-house"}
+	list, err := f.srv.construction.store.List(sub)
+	if err != nil || len(list) != 2 {
+		t.Fatalf("property problems after the browser journey (main + race fixture): %+v %v", list, err)
 	}
-	st, err := f.srv.construction.store.Load(construction.SubjectRef{Kind: "property", ID: "fixture-ooda-house"}, list[0].ID)
+	var mainID string
+	for _, row := range list {
+		if row.Title == "Corrugated roof to masonry wall" && row.Inputs == 1 {
+			mainID = row.ID
+		}
+	}
+	st, err := f.srv.construction.store.Load(sub, mainID)
 	if err != nil || len(st.Problem.Existing) != 1 || st.Problem.Inputs[0].Role != "photo" {
 		t.Fatalf("durable problem: %+v %v", st.Problem, err)
+	}
+	asm := st.Problem.Alternatives[0]
+	ins := st.Assemblies[asm].Components[3]
+	if ins.Type != construction.TypeInsulation || *ins.Shape.Params["thickness"].Value != 180 {
+		t.Fatalf("the committed handle value must be durable: %+v", ins.Shape.Params["thickness"])
+	}
+	v := st.Views[st.Problem.LatestView]
+	if v == nil || v.Mode != "realistic" || v.Section == nil || !v.Section.Enabled || len(v.Selection) != 1 {
+		t.Fatalf("the working view persisted: %+v", v)
+	}
+	hist, err := f.srv.construction.store.History(sub, mainID, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ops := map[string]int{}
+	viewOnly := 0
+	for _, rc := range hist {
+		for _, op := range rc.Operations {
+			ops[op.Op]++
+		}
+		if rc.ViewOnly {
+			viewOnly++
+		}
+	}
+	if ops["SetDimension"] < 2 || ops["RestoreRevision"] != 2 || viewOnly == 0 {
+		t.Fatalf("receipts for edit, undo, redo, handle and view saves: %v (view-only %d)", ops, viewOnly)
 	}
 	home, err := f.srv.construction.store.List(construction.SubjectRef{Kind: "home", ID: "home"})
 	if err != nil || len(home) != 1 || home[0].Title != "761 N Euclid — Back Addition" {
