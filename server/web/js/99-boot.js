@@ -282,6 +282,8 @@ function renderCrumbs(h) {
         .forEach((s) => parts.push({ label: decodeURIComponent(s) }));
     }
   }
+  // the whole path, also where a phone shows only its last segment
+  host.title = parts.map((p) => p.label).join(" / ");
   parts.forEach((p, i) => {
     if (i) host.append(el("span", "crumb-sep", "/"));
     const last = i === parts.length - 1;

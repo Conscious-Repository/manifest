@@ -117,6 +117,75 @@
   const revealTab = () => { if (!mqPhone.matches) return; setTimeout(() => document.querySelectorAll(".view-tab.on").forEach((tab) => { if (tab.offsetParent) tab.scrollIntoView({ inline: "center", block: "nearest" }); }), 80); };
   window.addEventListener("hashchange", revealTab); revealTab();
 
+  // A row that still does not fit showed a tab cut at the edge ("CON…",
+  // 2026-10-08 review). On a phone it now shows whole tabs only, the lit one
+  // always among them, and folds the rest, in order, under MORE, which lists
+  // them in a sheet (rule 1: folded, never dropped). Rows that fit and the
+  // desktop are untouched.
+  const tabsName = (nav) => (nav.closest(".agent-head")?.querySelector(".agent-title")?.textContent || "section").trim();
+  const foldTabs = (nav) => {
+    const tabs = [...nav.querySelectorAll(":scope > .view-tab:not(.mf-tabs-more)")];
+    let more = nav.querySelector(":scope > .mf-tabs-more");
+    tabs.forEach((t) => t.classList.remove("mf-tab-folded"));
+    if (more) more.hidden = true;
+    if (!mqPhone.matches || !nav.offsetParent || nav.scrollWidth <= nav.clientWidth + 1) return;
+    if (!more) {
+      more = document.createElement("button");
+      more.type = "button";
+      more.className = "view-tab mf-tabs-more";
+      more.textContent = "MORE ▾";
+      more.setAttribute("aria-haspopup", "dialog");
+      more.setAttribute("aria-expanded", "false");
+      more.addEventListener("click", () => openTabsMore(nav, more));
+      nav.append(more);
+    }
+    more.hidden = false;
+    const lit = tabs.find((t) => t.classList.contains("on"));
+    for (let i = tabs.length - 1; i >= 0 && nav.scrollWidth > nav.clientWidth + 1; i--) {
+      if (tabs[i] !== lit) tabs[i].classList.add("mf-tab-folded");
+    }
+    const folded = tabs.filter((t) => t.classList.contains("mf-tab-folded"));
+    more.setAttribute("aria-label", "More " + tabsName(nav) + " sections: " + folded.map((t) => t.textContent.trim()).join(", "));
+  };
+  // the sheet holds a labelled dialog (what MORE announces) whose list's
+  // first row names the section, then one row per folded tab; it is not
+  // aria-modal, since the sheet does not trap focus
+  const openTabsMore = (nav, more) => {
+    const name = tabsName(nav);
+    more.setAttribute("aria-expanded", "true");
+    mfSheet.open((body) => {
+      const dialog = document.createElement("div");
+      dialog.setAttribute("role", "dialog");
+      dialog.setAttribute("aria-label", "More " + name + " sections");
+      const list = document.createElement("nav");
+      list.className = "mf-assign mf-tabs-sheet";
+      list.setAttribute("aria-label", name + " sections");
+      list.append(el("div", "mf-tabs-sheet-head micro-label", name));
+      nav.querySelectorAll(":scope > .view-tab.mf-tab-folded").forEach((t) => {
+        const a = document.createElement("a");
+        a.className = "mf-opt";
+        a.href = t.getAttribute("href");
+        a.textContent = t.textContent;
+        a.addEventListener("click", () => { more.setAttribute("aria-expanded", "false"); mfSheet.close({ silent: true }); });
+        list.append(a);
+      });
+      dialog.append(list);
+      body.append(dialog);
+      requestAnimationFrame(() => list.querySelector("a")?.focus());
+    }, { key: "tabs-more", onClose: () => { more.setAttribute("aria-expanded", "false"); more.focus({ preventScroll: true }); } });
+  };
+  // refold when the row changes size (a section showing counts as one) or
+  // its lit tab changes; folding itself never changes which tab is lit
+  document.querySelectorAll(".view-tabs").forEach((nav) => {
+    let frame = 0;
+    const queue = () => { if (!frame) frame = requestAnimationFrame(() => { frame = 0; foldTabs(nav); }); };
+    new ResizeObserver(queue).observe(nav);
+    new MutationObserver((records) => {
+      if (records.some((r) => r.target !== nav && (r.oldValue || "").split(/\s+/).includes("on") !== r.target.classList.contains("on"))) queue();
+    }).observe(nav, { subtree: true, attributes: true, attributeFilter: ["class"], attributeOldValue: true });
+    mqPhone.addEventListener("change", queue);
+  });
+
   // ---- scrim (shared by the drawer; the sheet has its own) ----
   const scrim = document.createElement("div");
   scrim.className = "mf-scrim";

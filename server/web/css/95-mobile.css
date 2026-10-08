@@ -22,6 +22,7 @@
 
 /* ---- default state of mobile-only chrome: invisible on desktop ---- */
 .mf-topbar-btn { display: none; }
+.mf-tabs-more { display: none; }
 .mf-scrim { display: none; }
 .mf-sheet-wrap { display: none; }
 /* the conversation head's back-to-chats and the ··· menu's Workspace entry
@@ -157,8 +158,12 @@
     grid-area: 1 / 4;
     background: var(--accent); color: var(--on-accent); border-radius: 22px; font-size: var(--fs-2xl);
   }
-  /* title = the LAST crumb segment only, over the meta line */
-  .crumb-bar .crumb-path { grid-area: 1 / 2; font-size: var(--fs-lg); }
+  /* title = the LAST crumb segment only, over the meta line: one line that
+     ends in an ellipsis inside its cell, before ⌕ and ＋ (a 32-hex problem id
+     wrapped and ran under them); the full path is its title (renderCrumbs).
+     The path is inline-flex, so the visible segment carries the ellipsis. */
+  .crumb-bar .crumb-path { grid-area: 1 / 2; font-size: var(--fs-lg); min-width: 0; overflow: hidden; white-space: nowrap; }
+  .crumb-bar .crumb-path .crumb-seg:last-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .crumb-bar .crumb-path .crumb-seg:not(:last-child),
   .crumb-bar .crumb-path .crumb-sep { display: none; }
   .crumb-bar .crumb-right {
@@ -625,8 +630,9 @@
      not fit pushed the row past the viewport and the WHOLE content column
      panned sideways — measured scrollWidth 497 (TASKS), 698 (AION), 705
      (REAL ESTATE), 564 (CONTACTS) in a 390 viewport. Shape now: the title
-     stays one line; tabs/chips/search take the rest of the row and scroll in
-     place; meta + trailing buttons wrap to a second, right-aligned line. ---- */
+     stays one line; tabs/chips/search take the rest of the row (chips scroll
+     in place; a tab row that cannot fit folds under MORE, below); meta +
+     trailing buttons wrap to a second, right-aligned line. ---- */
   .agent-head { row-gap: var(--sp-3); }
   .agent-title { white-space: nowrap; flex: none; }
   .agent-actions {
@@ -635,6 +641,12 @@
   }
   .agent-actions > .view-tabs, .agent-actions > .feed-filters { flex: 1 1 100%; min-width: 0; }
   .agent-actions > .view-tabs { margin-bottom: 0; }
+  /* a tab row that still cannot fit shows whole tabs and folds the rest under
+     MORE (98-mobile.js foldTabs), never a tab cut at the edge */
+  .view-tab.mf-tab-folded, .view-tabs > .mf-tabs-more[hidden] { display: none; }
+  .view-tabs > .mf-tabs-more:not([hidden]) { display: inline-flex; margin-left: auto; flex: none; white-space: nowrap; }
+  .mf-tabs-sheet-head { color: var(--base-60); padding: 0 var(--sp-1) var(--sp-3); }
+  .mf-tabs-sheet .mf-opt { text-decoration: none; }
   /* CONTACTS: the search shares the title line (its 220px floor lifts so it
      can shrink beside the title); the three pills wrap beneath */
   .agent-actions > .contact-search { flex: 1 1 auto; min-width: 0; width: auto; }

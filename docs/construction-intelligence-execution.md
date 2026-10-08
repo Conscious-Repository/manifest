@@ -808,6 +808,60 @@ restore; the direct test catches it.
 - `go test ./server -run '^TestConstruction'`: 38 pass.
 - The race run passes.
 
+## P9.7 — phone and tablet chrome (visual QA)
+
+A real-backend Playwright review at 320, 390 and 768 px passed the existing
+no-sideways-scroll checks but found three visual defects.
+
+**1. Top bar.** The 35-character problem id wrapped and ran under ⌕ and ＋.
+The phone title is the crumb path's last segment. The path is `inline-flex`,
+so an ellipsis set on the path does nothing; the visible segment now carries
+it (`min-width: 0`, `overflow: hidden`, `text-overflow: ellipsis`, one line).
+The path's `title` holds the full crumb.
+
+**2. Section tabs.** A row that could not fit scrolled sideways with a tab cut
+at the edge ("CON…"). On a phone it now shows whole tabs only, the lit tab
+always among them (`98-mobile.js` `foldTabs`). The rest fold, in order, under
+a MORE control (`aria-haspopup="dialog"`, `aria-expanded`, and an
+`aria-label` naming the folded tabs). MORE opens the existing bottom sheet
+holding a labelled `dialog` ("More <SECTION> sections"; not `aria-modal`,
+since the sheet does not trap focus). Its navigation list starts with a row
+naming the section, then one link per folded tab. Focus moves into the sheet, and Escape returns it to
+MORE. Rows that fit, and the desktop, are unchanged.
+
+**3. Construction crumb.** At 768 it was clipped mid-word. A flex container
+again ignored its own ellipsis. The crumb is now `role="status"`, with the
+full "problem › alternative › part" as its `aria-label` and `title`. Each
+level is its own span that ellipsizes independently: the problem title,
+which the heading already shows, gives way first and the selected part last.
+
+**Tests.** `construction-workbench.cjs` measures every phone/tablet width in
+both themes (`phoneChrome`):
+
+- the top-bar title stays inside its cell, before ⌕ and ＋;
+- the element holding the text is a block container that clips with an
+  ellipsis, and at 320 the ellipsis case must actually occur;
+- no tab is cut, the lit tab is shown, and every folded tab is named by an
+  accessible MORE;
+- the crumb is reachable as `status` by its full name, and its segments
+  ellipsize rather than clip.
+
+`tabsMore` opens MORE, checks that it lists exactly the folded tabs, and
+checks focus in and back. It then navigates to a folded tab from MORE and
+requires it to show, lit, in the row. Screenshots: `workbench-{w}-{theme}.png`
+and `workbench-{w}-{theme}-more.png`.
+
+**Evidence.**
+
+- The red run on the old UI listed all three defects
+  (`/tmp/manifest-construction-qa/mobile-red.txt`).
+- Nine mutations each fail the test (`mutate-mobile.sh`).
+- The browser fixture suite (84 tests) is unchanged from the baseline: 83
+  pass, plus the pre-existing `TestFixtureSharedChat` network failure.
+- `go vet ./server .` is clean.
+- `go test ./server -run '^TestConstruction'`: 38 pass.
+- The asset and CSS guards pass.
+
 ## Full confined suite (`go test -json ./... -count=1`)
 
 | Run | Packages pass / no tests / fail | Tests pass / skip / fail | Notes |

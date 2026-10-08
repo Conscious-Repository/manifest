@@ -411,6 +411,7 @@ function cxWorkbenchShell() {
     sw.append(b);
   }
   const crumb = el("div", "cx-crumb micro-label");
+  crumb.setAttribute("role", "status");
   crumb.setAttribute("aria-live", "polite");
   const grid = el("div", "cx-grid");
   const pane = (cls, title, key) => {
@@ -749,11 +750,18 @@ function cxSelect(componentId) {
   if (cx.tab === "issues" || cx.tab === "evidence") cxPaintResearch(wb.querySelector(".cx-pane-d .cx-pane-body"));
   cxQueueViewSave();
 }
+// cxPaintCrumb: problem › alternative › selected part. Each level ellipsizes
+// on its own where the line is short; the whole path is the crumb's name and
+// title.
 function cxPaintCrumb() {
   const wb = cx.host && cx.host.querySelector(".cx-wb");
   if (!wb) return;
   const a = cxAsm(), c = cxComp(cx.selection);
-  wb.querySelector(".cx-crumb").textContent = [cx.view && cx.view.problem.title, a && a.name, c ? c.name : "no part selected"].filter(Boolean).join(" › ");
+  const parts = [cx.view && cx.view.problem.title, a && a.name, c ? c.name : "no part selected"].filter(Boolean);
+  const crumb = wb.querySelector(".cx-crumb"), full = parts.join(" › ");
+  crumb.replaceChildren(...parts.flatMap((p, i) => (i ? [el("span", "cx-crumb-sep", " › ")] : []).concat(el("span", "cx-crumb-seg", p))));
+  crumb.title = full;
+  crumb.setAttribute("aria-label", full);
 }
 
 // ---- working view: restored on open, saved (debounced) as view commits ----

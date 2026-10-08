@@ -48,7 +48,13 @@
 .cx-switch { display: none; gap: var(--sp-2); }
 .cx-switch-btn { flex: 1 1 0; font-family: var(--mono); font-size: var(--fs-xs); text-transform: uppercase; letter-spacing: 0.4px; padding: var(--sp-3) var(--sp-2); border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface-panel); color: var(--base-60); cursor: pointer; min-height: var(--control-height); }
 .cx-switch-btn.on { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
-.cx-crumb { display: none; color: var(--base-60); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cx-crumb { display: none; color: var(--base-60); min-width: 0; overflow: hidden; white-space: nowrap; }
+/* each level ellipsizes on its own; the problem title (the page heading
+   already shows it) gives way first, the selected part last */
+.cx-crumb-seg { flex: 0 1 auto; min-width: 2.5em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cx-crumb-seg:first-child { flex-shrink: 3; }
+.cx-crumb-seg:last-child { flex-shrink: 0.35; }
+.cx-crumb-sep { flex: none; white-space: pre; }
 
 .cx-grid { display: grid; grid-template-columns: var(--cx-a) 6px minmax(320px, 1fr) 6px var(--cx-right); height: calc(100vh - 210px); min-height: 520px; border: 1px solid var(--line); border-radius: var(--radius-lg); overflow: hidden; background: var(--surface-panel); }
 .cx-wb.a-collapsed .cx-grid { grid-template-columns: 36px 0 minmax(320px, 1fr) 6px var(--cx-right); }
