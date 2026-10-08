@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"regexp"
 	"strings"
@@ -148,18 +149,30 @@ func DecodeStrict(raw []byte, kind string, v any) error {
 	return nil
 }
 
-// decodeRequest decodes a client body strictly (unknown fields refused).
+// decodeRequest decodes a client body strictly: unknown fields refused and
+// exactly one JSON value (decodeOne).
 func decodeRequest(raw []byte, v any) error {
 	if len(raw) > MaxCommandBytes {
 		return ErrTooLarge
 	}
+	if err := decodeOne(raw, v); err != nil {
+		return Invalid("body: " + err.Error())
+	}
+	return nil
+}
+
+// decodeOne decodes exactly one JSON value with unknown fields refused. A
+// second Decode must reach io.EOF, so a second complete document or any
+// trailing bytes make the input invalid. (Decoder.More is not enough: at top
+// level it reports false for a stray ']' or '}', and so for anything after it.)
+func decodeOne(raw []byte, v any) error {
 	d := json.NewDecoder(bytes.NewReader(raw))
 	d.DisallowUnknownFields()
 	if err := d.Decode(v); err != nil {
-		return Invalid("body: " + err.Error())
+		return err
 	}
-	if d.More() {
-		return Invalid("body: trailing data")
+	if err := d.Decode(new(json.RawMessage)); err != io.EOF {
+		return errors.New("trailing data after the JSON value")
 	}
 	return nil
 }

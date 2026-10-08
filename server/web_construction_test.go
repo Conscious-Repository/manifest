@@ -242,7 +242,7 @@ func TestConstructionJourneyBrowser(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	target := filepath.Join(t.TempDir(), "restored")
+	target := filepath.Join(privateTestDir(t), "restored")
 	rep, err := construction.Restore(bytes.NewReader(raw), int64(len(raw)), target, construction.RestoreOptions{Forbidden: []string{f.vault}})
 	if err != nil {
 		t.Fatal(err)
@@ -257,11 +257,13 @@ func TestConstructionJourneyBrowser(t *testing.T) {
 	f.assertSourcesUntouched(t)
 }
 
-// Remote access is disabled, and the UI says so: through a relayed browser
-// context (X-Forwarded-For) every construction entry shows the loopback-only
-// explanation and nothing of the problem; a loopback context opens it. The
-// refused context changed nothing in the store.
-func TestConstructionRemoteDisabledBrowser(t *testing.T) {
+// A request the server recognises as relayed is refused, and the UI says so:
+// through a browser context carrying X-Forwarded-For every construction
+// entry shows the refusal (remote use is unsupported; an authenticated owner
+// gateway is required) and nothing of the problem. A loopback context sees
+// the local-only note and opens the problem. The refused context changed
+// nothing in the store.
+func TestConstructionRemoteRefusalBrowser(t *testing.T) {
 	f := constructionFixture(t)
 	v, id, _ := f.createTemplate(t, fixtureBase, "create-remote-ui1")
 	out := constructionBrowser(t, "construction-remote.cjs", f, map[string]any{"problemId": id, "title": viewProblem(v)["title"]})

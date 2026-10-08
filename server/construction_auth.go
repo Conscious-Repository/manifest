@@ -2,33 +2,38 @@ package server
 
 // Construction Intelligence access boundary (plan §7, §12.2).
 //
-// Construction reads and writes the owner's private problems, and Manifest
-// has no verified owner authentication. In this MVP the routes therefore
-// answer only a request made on this machine: the TCP peer (RemoteAddr, which
-// net/http records from the accepted connection) must be a loopback IP, the
-// Host must name loopback, and no proxy forwarding header may be present.
-// Every other path — tailnet, LAN, `tailscale serve`, any reverse proxy — is
-// refused with 403 kind "remote-disabled". Remote access is deliberately
-// disabled, not merely warned about: Host, Origin, Sec-Fetch-Site, the nonce
-// and tailnet identity headers are written by the caller and are never
-// treated as authentication. Remote access can come back only behind a
-// verified, authenticated owner gateway, which does not exist yet; adding one
-// means changing this guard, with its own review.
+// Construction is a local host-trust feature, not an authenticated one.
+// Manifest has no verified owner authentication, so the routes answer a
+// request only when its TCP peer (RemoteAddr, which net/http records from the
+// accepted connection) is a loopback address, its Host names loopback, and it
+// carries no proxy forwarding header. Whoever reaches the routes that way is
+// treated as the owner. That is a property of the connection, not proof of a
+// person: every local process qualifies, and so does any remote client whose
+// traffic an operator-created TCP forward or tunnel delivers onto loopback
+// (ssh -L/-R, socat, `tailscale serve --tcp`, a proxy that strips its
+// headers and rewrites Host). At the application layer such a raw forward is
+// indistinguishable from a local browser, and this code cannot detect it.
+// Remote use through any relay, proxy or tunnel is therefore unsupported. It
+// needs a verified, authenticated owner gateway, which does not exist;
+// adding one means changing this guard, with its own review.
 //
-// On top of the loopback requirement — defences, not authentication:
+// What the checks do refuse, with 403 kind "remote-disabled":
 //
-//   - routes exist only on Server.Handler — never on the portal, deal-share or
+//   - a non-loopback peer: direct tailnet or LAN connections;
+//   - a non-loopback Host: DNS-rebinding pages, and proxies that keep the
+//     public name;
+//   - proxy forwarding headers: HTTP reverse proxies and `tailscale serve`.
+//
+// Host, Origin, Sec-Fetch-Site, the nonce and tailnet identity headers are
+// written by the caller and are never treated as authentication. As
+// defences inside local trust, not as authentication:
+//
+//   - routes exist only on Server.Handler, never on the portal, deal-share or
 //     public curation listeners;
-//   - the loopback Host also defeats DNS-rebinding pages;
 //   - cross-site requests are refused by Origin and Sec-Fetch-Site;
 //   - every mutation carries a per-process nonce that the same-origin page
 //     reads from /session (CSRF defence);
 //   - the actor is derived here, never read from a request body or header.
-//
-// Anything already on this machine is inside the boundary: a hostile process
-// running as the owner's OS user, and any local relay that carries remote
-// connections onto loopback (socat, `tailscale serve --tcp`, SSH forwarding),
-// since its callers look local and can write a loopback Host themselves.
 
 import (
 	"crypto/rand"
@@ -67,10 +72,13 @@ func newConstructionNonce() string {
 	return hex.EncodeToString(b)
 }
 
-// constructionRemoteMessage explains the refusal; the UI shows it as is.
-const constructionRemoteMessage = "Construction Intelligence is available only on this machine (loopback). " +
-	"Remote, tailnet and reverse-proxy access is deliberately disabled in this MVP: " +
-	"it needs a verified, authenticated owner gateway, which does not exist yet."
+// constructionRemoteMessage explains the refusal; the UI shows it as is. It
+// says why this request was refused without claiming that every remote path
+// is: a raw TCP forward onto loopback is not detectable.
+const constructionRemoteMessage = "Construction Intelligence is a local feature for this computer's own browser. " +
+	"This request did not arrive as a loopback connection to a loopback address without proxy headers, so it was refused. " +
+	"Remote use through the tailnet, the LAN or any proxy, relay or tunnel is unsupported: " +
+	"it needs a verified, authenticated owner gateway, which does not exist."
 
 func constructionRemoteDisabled(reason string) error {
 	return &construction.Error{Status: http.StatusForbidden, Kind: "remote-disabled", Message: constructionRemoteMessage, Problems: []string{reason}}
@@ -96,8 +104,10 @@ func constructionProxied(h http.Header) bool {
 	return false
 }
 
-// loopbackPeer reports whether the TCP peer is this machine. No handler in
-// this server rewrites RemoteAddr (TestConstructionRemoteAddrNeverRewritten).
+// loopbackPeer reports whether the TCP peer address is loopback: a local
+// process, or a local relay carrying someone else's connection; the two
+// cannot be told apart here. No handler in this server rewrites RemoteAddr
+// (TestConstructionRemoteAddrNeverRewritten).
 func loopbackPeer(remoteAddr string) bool {
 	host, _, err := net.SplitHostPort(remoteAddr)
 	if err != nil {
@@ -107,7 +117,7 @@ func loopbackPeer(remoteAddr string) bool {
 	return ip != nil && ip.IsLoopback()
 }
 
-// loopbackHost reports whether the Host header names this machine: a guard
+// loopbackHost reports whether the Host header names loopback: a guard
 // against DNS rebinding and proxies that keep the public name, not
 // authentication (a caller can write any Host).
 func loopbackHost(hostport string) bool {
@@ -137,15 +147,16 @@ func (s *Server) constructionGuard(w http.ResponseWriter, r *http.Request, mutat
 		constructionError(w, construction.Unavailable("construction is not enabled on this server"))
 		return construction.Actor{}, false
 	}
-	// this machine only, before anything in the request is believed
+	// loopback peer, loopback Host, no proxy headers: before anything else
+	// in the request is used
 	var remote string
 	switch {
 	case constructionProxied(r.Header):
 		remote = "the request came through a proxy (forwarding headers present)"
 	case !loopbackPeer(r.RemoteAddr):
-		remote = "the connection does not come from this machine"
+		remote = "the TCP peer is not a loopback address"
 	case !loopbackHost(r.Host):
-		remote = "the request is not addressed to this machine (Host is not loopback)"
+		remote = "the Host is not a loopback name"
 	}
 	if remote != "" {
 		constructionError(w, constructionRemoteDisabled(remote))

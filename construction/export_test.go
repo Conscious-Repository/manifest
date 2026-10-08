@@ -106,7 +106,7 @@ func TestConstructionRecoveryBundleRoundTrip(t *testing.T) {
 	if err := os.RemoveAll(root); err != nil {
 		t.Fatal(err)
 	}
-	target := filepath.Join(t.TempDir(), "restored")
+	target := filepath.Join(privateDir(t), "restored")
 	rep, err := Restore(bytes.NewReader(z1), int64(len(z1)), target, RestoreOptions{})
 	if err != nil {
 		t.Fatal(err)
@@ -228,7 +228,7 @@ func TestConstructionRestoreRefusals(t *testing.T) {
 	}
 	refuse := func(name string, bundle []byte, want string) {
 		t.Helper()
-		target := filepath.Join(t.TempDir(), "r")
+		target := filepath.Join(privateDir(t), "r")
 		_, err := Restore(bytes.NewReader(bundle), int64(len(bundle)), target, RestoreOptions{})
 		if err == nil || !strings.Contains(err.Error(), want) {
 			t.Fatalf("%s: expected refusal containing %q, got %v", name, want, err)
@@ -308,13 +308,13 @@ func TestConstructionRestoreRefusals(t *testing.T) {
 		}
 	}
 	refuse("missing document bytes", rezip(t, f, kept, nil), "bytes are missing from the bundle")
-	// targets: populated, forbidden, relative
+	// targets: populated, forbidden, relative (CheckNewDir has its own test)
 	pop := t.TempDir()
 	os.WriteFile(filepath.Join(pop, "keep.txt"), []byte("x"), 0o600)
 	if _, err := Restore(bytes.NewReader(z), int64(len(z)), pop, RestoreOptions{}); StatusOf(err) != 409 {
 		t.Fatalf("a populated target is refused: %v", err)
 	}
-	vault := t.TempDir()
+	vault := privateDir(t)
 	if _, err := Restore(bytes.NewReader(z), int64(len(z)), filepath.Join(vault, "c"), RestoreOptions{Forbidden: []string{vault}}); StatusOf(err) != 403 {
 		t.Fatalf("a target under a forbidden root is refused: %v", err)
 	}

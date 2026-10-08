@@ -180,7 +180,7 @@ func TestConstructionJourneyHomePilotExportRestore(t *testing.T) {
 	if err := os.RemoveAll(f.root); err != nil {
 		t.Fatal(err)
 	}
-	target := filepath.Join(t.TempDir(), "restored-construction")
+	target := filepath.Join(privateTestDir(t), "restored-construction")
 	rep, err := construction.Restore(bytes.NewReader(ex.Body), int64(len(ex.Body)), target, construction.RestoreOptions{Forbidden: []string{f.vault}})
 	if err != nil {
 		t.Fatal(err)
@@ -232,4 +232,16 @@ func TestConstructionJourneyHomePilotExportRestore(t *testing.T) {
 func (f *constructionFix) waitRunAt(t *testing.T, base, id, runID string, settled ...string) map[string]any {
 	t.Helper()
 	return f.waitRun(t, base, id, runID, settled...)
+}
+
+// privateTestDir is a 0700 directory to restore beneath: a restore refuses a
+// parent that other accounts could write, and t.TempDir's numbered
+// directories follow the umask.
+func privateTestDir(t *testing.T) string {
+	t.Helper()
+	d := t.TempDir()
+	if err := os.Chmod(d, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	return d
 }

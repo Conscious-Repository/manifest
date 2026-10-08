@@ -174,10 +174,29 @@ func (s *Store) ExportBundle(sub SubjectRef, id string, o ExportOptions) ([]byte
 		natives++
 	}
 	st, _ := s.Load(sub, id)
+	// what a restore will accept: refuse here rather than write a backup
+	// that cannot be restored
+	var total int64
+	for p, b := range files {
+		if int64(len(b)) > MaxBundleEntryBytes {
+			return nil, nil, &Error{Status: 413, Kind: "too-large", Message: fmt.Sprintf("%s is %d bytes; a restore accepts at most %d per entry", p, len(b), MaxBundleEntryBytes)}
+		}
+		total += int64(len(b))
+	}
+	const allowance = 1 << 20 // README and manifest
+	if len(files)+2 > MaxBundleEntries || total+allowance > HardMaxBundleTotalBytes {
+		return nil, nil, &Error{Status: 413, Kind: "too-large", Message: fmt.Sprintf("the recovery bundle would hold %d entries and %d bytes; a restore accepts at most %d entries and %d bytes",
+			len(files)+2, total, MaxBundleEntries, int64(HardMaxBundleTotalBytes))}
+	}
+	budget := ""
+	if total+allowance > DefaultBundleTotalBytes {
+		budget = fmt.Sprintf("This bundle decompresses to about %d MiB, more than the default restore budget (%d MiB). Restore it with -max-total-mb %d.\n\n",
+			total>>20, DefaultBundleTotalBytes>>20, (total+allowance)>>20+1)
+	}
 	readme := fmt.Sprintf("# Construction recovery bundle (private)\n\n%s\n\nProblem %s (%s:%s), generation %d.\n\nThis is a PRIVATE backup of one construction problem's complete retained closure. "+
-		"It is not a sharing package (see the detail package for that).\n\nRestore only into an EMPTY directory outside the vault:\n\n    construction-restore -bundle <this.zip> -target <empty dir>\n\n"+
+		"It is not a sharing package (see the detail package for that).\n\nRestore only into a NEW directory (it must not exist yet; its parent must) outside the vault:\n\n    construction-restore -bundle <this.zip> -target <new dir>\n\n%s"+
 		"The restore verifies every path, size and SHA-256 before writing, recreates the exact artifact ids and revisions, and reopens the problem read from the restored bytes. "+
-		"Native conversations listed under native/ are reference copies; a restore never starts or resumes an agent.\n", NonApprovalNotice, id, sub.Kind, sub.ID, h.Generation)
+		"Native conversations listed under native/ are reference copies; a restore never starts or resumes an agent.\n", NonApprovalNotice, id, sub.Kind, sub.ID, h.Generation, budget)
 	put("README.md", "readme", []byte(readme))
 	man := &BundleManifest{Format: BundleFormat, SchemaVersion: SchemaVersion, Compiler: CompilerVersion, Convention: CoordinateConvention, RuleSet: RuleSet,
 		Subject: sub, ProblemID: id, Generation: h.Generation, HeadCommit: h.Commit.Revision, CreatedAt: now.UTC().Format(time.RFC3339),
@@ -220,26 +239,58 @@ func (s *Store) ExportBundle(sub SubjectRef, id string, o ExportOptions) ([]byte
 	if err != nil {
 		return nil, nil, err
 	}
+	order := append([]string{"manifest.json"}, paths...)
+	content := func(p string) []byte {
+		if p == "manifest.json" {
+			return mb
+		}
+		return files[p]
+	}
+	out, err := zipBundle(order, content, zip.Deflate)
+	if err != nil {
+		return nil, nil, err
+	}
+	zr, err := zip.NewReader(bytes.NewReader(out), int64(len(out)))
+	if err != nil || ratioProblem(zr.File, int64(len(out))) != "" {
+		// content compressible beyond a restore's ratio budgets is stored
+		// uncompressed instead, so the backup stays restorable
+		if out, err = zipBundle(order, content, zip.Store); err != nil {
+			return nil, nil, err
+		}
+		if zr, err = zip.NewReader(bytes.NewReader(out), int64(len(out))); err != nil {
+			return nil, nil, err
+		}
+	}
+	// the restore's own header checks, at the budget this bundle needs
+	need := max(int64(DefaultBundleTotalBytes), total+int64(len(mb))+int64(len(files["README.md"])))
+	if err := checkArchive(zr.File, int64(len(out)), need); err != nil {
+		return nil, nil, fmt.Errorf("the recovery bundle would not pass a restore's checks: %w", err)
+	}
+	if int64(len(out)) > MaxBundleArchiveBytes(need) {
+		return nil, nil, &Error{Status: 413, Kind: "too-large", Message: fmt.Sprintf("the recovery bundle is %d bytes, more than a restore accepts", len(out))}
+	}
+	return out, man, nil
+}
+
+// zipBundle writes the entries in order with one compression method and a
+// fixed timestamp, so the same closure gives the same bytes.
+func zipBundle(order []string, content func(string) []byte, method uint16) ([]byte, error) {
 	var buf bytes.Buffer
 	zw := zip.NewWriter(&buf)
 	stamp := time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC)
-	for _, p := range append([]string{"manifest.json"}, paths...) {
-		b := mb
-		if p != "manifest.json" {
-			b = files[p]
-		}
-		w, err := zw.CreateHeader(&zip.FileHeader{Name: p, Method: zip.Deflate, Modified: stamp})
+	for _, p := range order {
+		w, err := zw.CreateHeader(&zip.FileHeader{Name: p, Method: method, Modified: stamp})
 		if err != nil {
-			return nil, nil, err
+			return nil, err
 		}
-		if _, err := w.Write(b); err != nil {
-			return nil, nil, err
+		if _, err := w.Write(content(p)); err != nil {
+			return nil, err
 		}
 	}
 	if err := zw.Close(); err != nil {
-		return nil, nil, err
+		return nil, err
 	}
-	return buf.Bytes(), man, nil
+	return buf.Bytes(), nil
 }
 
 // checkBundlePath refuses anything that is not a clean relative path.

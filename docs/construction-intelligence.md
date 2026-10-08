@@ -160,63 +160,103 @@ real preflight.
   read-only copies of the native conversations it points at, with a manifest
   of paths, sizes, SHA-256s, versions and completeness per category; what
   could not be included is listed, never claimed.
-- **Restore** only into an empty, absolute root outside forbidden roots:
+- **Restore** only into a NEW directory outside forbidden roots:
 
       construction-restore -bundle problem-recovery.zip -verify-only
-      construction-restore -bundle problem-recovery.zip -target /abs/empty/dir \
-          -forbid /path/to/vault [-native-out /abs/empty/native-dir]
+      construction-restore -bundle problem-recovery.zip -target /abs/new/dir \
+          -forbid /path/to/vault [-native-out /abs/new/native-dir] [-max-total-mb N]
 
-  Every path, size and hash is checked before anything is written; artifact
-  ids and revisions must come back identical; the problem is reopened from
-  the restored bytes. Native copies are written only to an explicit empty
-  directory and are never resumed.
+  - **Target rules.** The target must not exist in any form, including an
+    empty directory or a dangling symlink. Its parent must be an existing
+    real directory with no symlink anywhere in its path. Every directory up
+    to `/` must be owned by root or by you, and none may be writable by
+    group or others unless it has the sticky bit (as `/tmp` does).
+    `-native-out` follows the same rules and is checked before the restore
+    starts.
+  - **Validation in memory first.** The bundle is read from the file, not
+    loaded whole, and checked in memory before anything is written:
+    - A header pass, before any entry is decompressed, refuses too many
+      entries (over 50,000), an entry over 32 MiB, and a decompressed total
+      over the budget (256 MiB by default). It also refuses an entry over
+      1 MiB that expands more than 500×, and an archive that decompresses to
+      more than 100× its size (once the total passes 16 MiB).
+    - Then every path, size and hash is checked.
+    - `-max-total-mb` raises the budget for your own larger bundle (at most
+      2048) and never lifts a ratio check.
+  - **Staging.** The store is rebuilt and verified in a private staging
+    directory beside the target. Artifact ids and revisions must come back
+    identical, and the problem is reopened from the restored bytes. Only
+    then is the target name created exclusively (0700) and the stage renamed
+    onto it, and the problem is verified again from there. A refused restore
+    leaves no target and no stage.
+  - **Native copies** are written only to the explicit new directory,
+    through an `os.Root` anchored on it (names cannot leave it, and files
+    are created exclusively). They are never resumed.
+  - **Limits of the target checks.** The store writes use path names. The
+    rules refuse unsafe targets rather than anchor every write to a
+    directory descriptor, so they protect against other OS accounts, not
+    against a process running as you. The restore does not claim to prevent
+    every race on path names.
+  - **Export side.** The export refuses a bundle a restore would refuse. It
+    stores entries uncompressed when compression would exceed a ratio
+    budget. When a bundle needs more than the default budget, its
+    `README.md` gives the `-max-total-mb` to use.
 
 ## Access boundary
 
-Remote, tailnet and reverse-proxy access is **deliberately disabled** in this
-MVP. It is refused, not just warned about. Construction reads and writes
-the owner's private problems, and Manifest has no verified owner
-authentication. So the routes answer only a request made on this machine:
+Construction is a **local host-trust feature, not an authenticated one**.
+Manifest has no verified owner authentication. The routes answer a request
+only when all three hold:
 
-- the TCP peer (`RemoteAddr`, which net/http records from the accepted
-  connection; nothing in the handler chain rewrites it) is a loopback IP;
-- the `Host` names loopback (`localhost`, `127.0.0.0/8`, `::1`);
-- no proxy forwarding header is present (`Forwarded`, `X-Forwarded-*`,
+- its TCP peer (`RemoteAddr`, which net/http records from the accepted
+  connection; nothing in the handler chain rewrites it) is a loopback
+  address;
+- its `Host` names loopback (`localhost`, `127.0.0.0/8`, `::1`);
+- it carries no proxy forwarding header (`Forwarded`, `X-Forwarded-*`,
   `X-Real-IP`, `Via`, `Tailscale-*` and similar).
 
-Everything else gets `403` with kind `remote-disabled`: a phone or laptop on
-the tailnet, the LAN, `tailscale serve`, a reverse proxy. The property page,
-the Home tab and the workbench then show that explanation instead of the
-feature. Host, Origin, Sec-Fetch-Site, the nonce and tailnet identity headers
-are all written by the caller, so none of them counts as authentication. The
-earlier `construction.trustedHosts` setting is ignored; a config that still
-sets it logs a warning at startup. Remote access can return only behind a
-verified, authenticated owner gateway, which does not exist yet. Adding one
-means changing `server/construction_auth.go`, with its own review.
+Whoever reaches the routes that way is treated as the owner. That is a
+property of the connection, not proof of a person. Every process on this
+computer qualifies. So does any remote client whose traffic an
+operator-created TCP forward or tunnel delivers onto loopback: `ssh -L` or
+`-R`, socat, `tailscale serve --tcp`, or a proxy that strips its headers and
+rewrites Host. The application cannot detect a raw TCP forward: at the
+application layer it is indistinguishable from a local browser.
 
-Inside that boundary, these are defences, not authentication:
+**Remote use is therefore unsupported**, whether through the tailnet, the
+LAN, a reverse proxy, a port forward or any other relay or tunnel. Do not set
+one up in front of Manifest's private listener. Remote use needs a verified,
+authenticated owner gateway, which does not exist; adding one means changing
+`server/construction_auth.go`, with its own review.
+
+What the checks refuse, with `403` kind `remote-disabled`: direct
+tailnet/LAN connections (non-loopback peer), DNS-rebinding pages and proxies
+that keep the public name (non-loopback Host), and HTTP reverse proxies and
+`tailscale serve` (forwarding headers). The property page, the Home tab and
+the workbench then show that explanation instead of the feature. The
+construction list pages carry a "Local only" note that says the same.
+
+Host, Origin, Sec-Fetch-Site, the nonce and tailnet identity headers are
+written by the caller, so none of them counts as authentication.
+
+**Configuration.** Construction has one setting, `disabled`. A config that
+sets `construction.trustedHosts` asks for remote access: Construction then
+refuses to start and logs why. A key this build does not know has the same
+effect. The session reports `accessModel: local-host-trust`,
+`remoteAccess: unsupported` and `rawTcpForwardDetected: false`.
+
+Inside local trust, these are defences, not authentication:
 
 - the routes exist only on the private `Server.Handler`, never on the
   portal, share or public listeners;
-- the loopback Host defeats DNS-rebinding pages;
 - Origin and Sec-Fetch-Site refuse cross-site requests;
 - every mutation needs the per-process nonce from `…/session` (CSRF);
 - the actor is derived server-side (owner); request bodies and headers
   cannot assert it.
 
 A resolver seam used only by tests sees the transport peer alone, with no
-headers, cookies, URL or body. It is consulted only after the loopback
-checks, and it can only narrow access.
-
-Anything already on this machine is inside the boundary. That includes a
-hostile process running as the owner's OS user. It also includes any local
-relay that carries remote connections onto loopback (socat,
-`tailscale serve --tcp`, SSH port forwarding), because its callers look
-local and can write a loopback Host. Do not point such a relay at the
-private listener. SSH forwarding is only as safe as the SSH account, which
-can read the store directly anyway.
-
-Configuration (`config.json`):
+headers, cookies, URL or body. It is consulted only after the checks above,
+and it can only narrow access.
 
 ```json
 "construction": { "disabled": false }
@@ -238,7 +278,8 @@ research `POST /problems/{id}/research-runs`, `GET …/{run}`, `GET …/{run}/ev
 `GET /problems/{id}/agent/requests/{req}`, `GET /preflight`, `GET /problems/{id}/export`.
 
 Errors: 404 missing (no cross-project existence leaks), 403 forbidden
-(kind `remote-disabled` for any request not made on this machine), 409
+(kind `remote-disabled` for a request recognisably not local: a
+non-loopback peer or Host, or proxy forwarding headers), 409
 stale (with the current revision), 413 too large, 422 invalid, 503 capability
 unavailable.
 
@@ -248,5 +289,5 @@ Real 761 site conditions and measurements; the actual wall condition,
 jurisdiction, climate and loads; manufacturer acceptance of real products;
 an authorized live source adapter and provider preflight; a verified,
 authenticated owner gateway before any remote or tailnet use (until then
-remote access stays disabled); physical-device and realistic-render
-quality. Fixtures prove protocol, not suitability.
+remote use is unsupported, and a raw TCP forward cannot be detected);
+physical-device and realistic-render quality. Fixtures prove protocol, not suitability.

@@ -16,13 +16,17 @@ import (
 	"manifest/construction"
 )
 
-// The deployment boundary (construction_auth.go): Construction answers only
-// requests made on this machine. A remote caller that copies everything the
-// owner's page sends — loopback Host, same-origin Origin and Fetch-Metadata,
-// the real session nonce — is refused on every route; proxy and tailnet
-// headers cannot widen access; an injected resolver is never consulted for a
-// remote request. The loopback same-origin owner session keeps working.
-func TestConstructionRemoteAccessDisabled(t *testing.T) {
+// The deployment boundary (construction_auth.go) is local host trust: the
+// routes answer loopback connections with a loopback Host and no proxy
+// headers. A caller the server can recognise as remote — a non-loopback
+// peer that copies everything the owner's page sends (loopback Host,
+// same-origin Origin and Fetch-Metadata, the real session nonce), or a
+// request carrying proxy/tailnet headers or a non-loopback Host — is refused
+// on every route. Headers cannot widen access, and an injected resolver is
+// never consulted for a refused request. The loopback same-origin owner
+// session keeps working. (A raw TCP forward onto loopback is not
+// recognisable; TestConstructionRawTCPForwardIsIndistinguishable pins that.)
+func TestConstructionRecognisedRemoteRefused(t *testing.T) {
 	f := constructionFixture(t)
 	// the loopback owner session: /session, create, read
 	sess := f.do(t, "GET", fixtureBase+"/session", nil)
@@ -30,8 +34,9 @@ func TestConstructionRemoteAccessDisabled(t *testing.T) {
 		t.Fatalf("loopback session: %d %s", sess.Code, sess.Body)
 	}
 	nonce := sess.json(t)["nonce"].(string)
-	if !strings.HasPrefix(sess.json(t)["boundary"].(string), "loopback-only") || sess.json(t)["capabilities"].(map[string]any)["remoteAccess"] != "disabled" {
-		t.Fatalf("the session reports the loopback-only boundary: %s", sess.Body)
+	if caps := sess.json(t)["capabilities"].(map[string]any); !strings.HasPrefix(sess.json(t)["boundary"].(string), "local host trust, not authentication") ||
+		caps["accessModel"] != "local-host-trust" || caps["remoteAccess"] != "unsupported" || caps["rawTcpForwardDetected"] != false {
+		t.Fatalf("the session reports the local host-trust boundary: %s", sess.Body)
 	}
 	v := f.create(t, fixtureBase, "create-remote-01", "Loopback owner problem", nil)
 	id := viewProblem(v)["id"].(string)
@@ -69,7 +74,8 @@ func TestConstructionRemoteAccessDisabled(t *testing.T) {
 			Error    string   `json:"error"`
 			Problems []string `json:"problems"`
 		}
-		if json.Unmarshal(r.Body, &e) != nil || e.Kind != "remote-disabled" || !strings.Contains(e.Error, "verified, authenticated owner gateway") || len(e.Problems) != 1 {
+		if json.Unmarshal(r.Body, &e) != nil || e.Kind != "remote-disabled" || !strings.Contains(e.Error, "verified, authenticated owner gateway") ||
+			!strings.Contains(e.Error, "unsupported") || strings.Contains(e.Error, "only on this machine") || len(e.Problems) != 1 {
 			t.Fatalf("%s: want the remote-disabled explanation, got %s", name, r.Body)
 		}
 		if strings.Contains(string(r.Body), nonce) {
@@ -292,5 +298,79 @@ func TestConstructionRemoteAddrNeverRewritten(t *testing.T) {
 	}
 	if scanned < 10 {
 		t.Fatalf("scanned only %d files", scanned)
+	}
+}
+
+// The irreducible limit, pinned so that no code or doc claims otherwise. A
+// transparent TCP forward that terminates on loopback (ssh -L, socat,
+// `tailscale serve --tcp`) delivers a remote client's bytes from a loopback
+// peer, and the client behind it can write a loopback Host. net/http then
+// sees exactly what a local browser produces, so the request is answered as
+// the owner. The product marks relay deployments unsupported (session, UI,
+// config, docs) rather than claiming to detect them.
+func TestConstructionRawTCPForwardIsIndistinguishable(t *testing.T) {
+	f := constructionFixture(t)
+	srv := httptest.NewServer(f.srv.Handler())
+	defer srv.Close()
+	upstream := strings.TrimPrefix(srv.URL, "http://")
+	relay, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer relay.Close()
+	go func() {
+		for {
+			c, err := relay.Accept()
+			if err != nil {
+				return
+			}
+			go func(c net.Conn) {
+				defer c.Close()
+				up, err := net.Dial("tcp", upstream)
+				if err != nil {
+					return
+				}
+				defer up.Close()
+				go io.Copy(up, c)
+				io.Copy(c, up)
+			}(c)
+		}
+	}()
+	client := &http.Client{Transport: &http.Transport{}}
+	defer client.CloseIdleConnections()
+	req, err := http.NewRequest("GET", "http://"+relay.Addr().String()+fixtureBase+"/session", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Host = upstream // the client behind the forward names loopback
+	res, err := client.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer res.Body.Close()
+	var sess map[string]any
+	_ = json.NewDecoder(res.Body).Decode(&sess)
+	if res.StatusCode != 200 || sess["nonce"] == nil {
+		t.Fatalf("a request through a raw forward looks local and is answered (the documented limit): %d %v", res.StatusCode, sess)
+	}
+	// the session states the limit rather than a detection it cannot make
+	caps, _ := sess["capabilities"].(map[string]any)
+	if b, _ := sess["boundary"].(string); !strings.Contains(b, "cannot be detected") || caps["rawTcpForwardDetected"] != false || caps["remoteAccess"] != "unsupported" {
+		t.Fatalf("session boundary %q capabilities %v", sess["boundary"], caps)
+	}
+	// so does the feature documentation, without the overclaims it once made
+	doc, err := os.ReadFile(filepath.Join("..", "docs", "construction-intelligence.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"cannot detect a raw TCP forward", "is unsupported", "authenticated owner gateway"} {
+		if !strings.Contains(string(doc), want) {
+			t.Fatalf("docs/construction-intelligence.md must state %q", want)
+		}
+	}
+	for _, claim := range []string{"made on this machine", "unusable from a phone", "deliberately disabled"} {
+		if strings.Contains(string(doc), claim) {
+			t.Fatalf("docs/construction-intelligence.md overclaims: %q", claim)
+		}
 	}
 }

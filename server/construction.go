@@ -26,7 +26,7 @@ import (
 type constructionCfg struct {
 	store     *construction.Store
 	nonce     string
-	principal constructionPrincipal // nil in production: the loopback owner (construction_auth.go)
+	principal constructionPrincipal // nil in production: the owner, by local host trust (construction_auth.go)
 	mu        sync.Mutex
 	geometry  geometryCache
 	runner    *construction.Runner
@@ -38,8 +38,8 @@ type constructionCfg struct {
 }
 
 // ConstructionOptions configure the feature at composition time. There is
-// deliberately no option that admits a remote host: the routes are
-// loopback-only in this MVP (construction_auth.go).
+// deliberately no option that admits a remote host: the routes trust
+// loopback connections only, and remote use is unsupported (construction_auth.go).
 type ConstructionOptions struct {
 	// Forbidden roots the store must not live under (vault, team/public dirs).
 	Forbidden []string
@@ -389,7 +389,7 @@ func (s *Server) handleConstructionSession(w http.ResponseWriter, r *http.Reques
 		"operations":   construction.OperationNames(),
 		"templates":    construction.TemplateNames(),
 		"capabilities": s.constructionCapabilities(),
-		"boundary":     "loopback-only: the connection and the Host must be this machine and no proxy may relay it; remote, tailnet and reverse-proxy access is disabled (no verified owner gateway); same-origin and a per-process mutation nonce defend against CSRF",
+		"boundary":     "local host trust, not authentication: answers loopback connections with a loopback Host and no proxy forwarding headers, and treats whoever reaches it that way as the owner, including a remote client behind an operator-created TCP forward or tunnel, which cannot be detected here; remote use through any relay, proxy or tunnel is unsupported until a verified, authenticated owner gateway exists; same-origin checks and a per-process mutation nonce defend against CSRF",
 	})
 }
 
@@ -549,7 +549,9 @@ func (s *Server) constructionCapabilities() map[string]any {
 		"fixtureSources":        s.construction.fixture,
 		"agentMutationTool":     s.constructionAgentToolState(),
 		"blender":               "absent",
-		"remoteAccess":          "disabled",
+		"accessModel":           "local-host-trust",
+		"remoteAccess":          "unsupported",
+		"rawTcpForwardDetected": false,
 	}
 }
 

@@ -504,14 +504,15 @@ func main() {
 	srv.UseChatState(filepath.Join(cfg.DataDir, "chat-state"))
 	// Construction Intelligence: private problems bound to a property or the
 	// shared Home, stored under DataDir (outside the vault and every
-	// team/public tree). Loopback-only: remote, tailnet and reverse-proxy
-	// access is refused (server/construction_auth.go).
+	// team/public tree). A local host-trust feature: it answers loopback
+	// connections only, and remote use through any relay, proxy or tunnel is
+	// unsupported (server/construction_auth.go). A config asking for remote
+	// access keeps it off.
 	if !cfg.Construction.Disabled {
-		if len(cfg.Construction.TrustedHosts) > 0 {
-			log.Printf("construction: config construction.trustedHosts is ignored — Construction Intelligence is loopback-only; remote and tailnet access stays disabled until a verified owner gateway exists")
-		}
 		forbidden := []string{cfg.VaultPath, cfg.RealEstate.TeamDir, cfg.AionPortal.TeamDir, cfg.Ooda.TeamDir, "/shared"}
-		if err := srv.UseConstruction(filepath.Join(cfg.DataDir, "construction"), server.ConstructionOptions{
+		if err := cfg.Construction.Problem(); err != nil {
+			log.Printf("construction disabled: %v", err)
+		} else if err := srv.UseConstruction(filepath.Join(cfg.DataDir, "construction"), server.ConstructionOptions{
 			Forbidden: forbidden}); err != nil {
 			log.Printf("construction disabled: %v", err)
 		}

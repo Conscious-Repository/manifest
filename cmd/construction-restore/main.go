@@ -1,16 +1,20 @@
 // Command construction-restore verifies a construction recovery bundle and
-// restores it into an EMPTY directory outside every forbidden root (plan §9,
-// P9). It never merges into a populated root, never touches the vault and
-// never starts or resumes an agent: native conversation copies are written
-// only to an explicit, empty -native-out directory, otherwise reported as
-// not rebound.
+// restores it into a NEW directory outside every forbidden root (plan §9,
+// P9). The target must not exist; its parent must be an existing real
+// directory that no other account can rename or replace. The restore never
+// writes into an existing directory, never touches the vault and never
+// starts or resumes an agent. Native conversation copies are written only
+// to an explicit, new -native-out directory (checked the same way, written
+// through an os.Root anchored on it); otherwise they are reported as not
+// rebound. The bundle is read from the file, not loaded whole, within a
+// decompressed budget (-max-total-mb; raise it only for your own larger
+// bundle).
 //
-//	construction-restore -bundle FILE -verify-only
-//	construction-restore -bundle FILE -target DIR [-forbid PATH]... [-native-out DIR]
+//	construction-restore -bundle FILE -verify-only [-max-total-mb N]
+//	construction-restore -bundle FILE -target DIR [-forbid PATH]... [-native-out DIR] [-max-total-mb N]
 package main
 
 import (
-	"bytes"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -36,27 +40,39 @@ func run(args []string, stdout, stderr io.Writer) int {
 	fs := flag.NewFlagSet("construction-restore", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	bundle := fs.String("bundle", "", "recovery bundle (.zip) to read")
-	target := fs.String("target", "", "EMPTY absolute directory to restore into")
-	native := fs.String("native-out", "", "optional EMPTY absolute directory for native conversation copies (never resumed)")
+	target := fs.String("target", "", "NEW absolute directory to restore into (must not exist; its parent must)")
+	native := fs.String("native-out", "", "optional NEW absolute directory for native conversation copies (never resumed)")
 	verify := fs.Bool("verify-only", false, "validate the bundle and print its manifest; write nothing")
+	maxMB := fs.Int64("max-total-mb", construction.DefaultBundleTotalBytes>>20,
+		fmt.Sprintf("decompressed budget in MiB, held in memory while checking (raise only for your own larger bundle; at most %d)", construction.HardMaxBundleTotalBytes>>20))
 	var forbid multiFlag
 	fs.Var(&forbid, "forbid", "a root the target must not lie under (repeatable; e.g. the vault)")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
 	if *bundle == "" || (!*verify && *target == "") {
-		fmt.Fprintln(stderr, "usage: construction-restore -bundle FILE (-verify-only | -target DIR [-forbid PATH]... [-native-out DIR])")
+		fmt.Fprintln(stderr, "usage: construction-restore -bundle FILE (-verify-only | -target DIR [-forbid PATH]... [-native-out DIR]) [-max-total-mb N]")
 		return 2
 	}
-	raw, err := os.ReadFile(*bundle)
+	if *maxMB < 1 || *maxMB > construction.HardMaxBundleTotalBytes>>20 {
+		fmt.Fprintf(stderr, "-max-total-mb must be 1–%d\n", construction.HardMaxBundleTotalBytes>>20)
+		return 2
+	}
+	if *native != "" && *native == *target {
+		fmt.Fprintln(stderr, "-native-out must be a different directory from -target")
+		return 2
+	}
+	maxTotal := *maxMB << 20
+	f, size, err := openBundle(*bundle, maxTotal)
 	if err != nil {
-		fmt.Fprintln(stderr, "read bundle:", err)
+		fmt.Fprintln(stderr, "bundle:", err)
 		return 1
 	}
+	defer f.Close()
 	enc := json.NewEncoder(stdout)
 	enc.SetIndent("", "  ")
 	if *verify {
-		man, files, err := construction.ReadBundle(bytes.NewReader(raw), int64(len(raw)))
+		man, files, err := construction.ReadBundleWithin(f, size, maxTotal)
 		if err != nil {
 			fmt.Fprintln(stderr, err)
 			return 1
@@ -66,12 +82,13 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return 0
 	}
 	if *native != "" {
-		if err := emptyDir(*native); err != nil {
+		// checked before the restore, so a bad -native-out writes nothing
+		if _, err := construction.CheckNewDir(*native, forbid); err != nil {
 			fmt.Fprintln(stderr, "native-out:", err)
 			return 1
 		}
 	}
-	rep, err := construction.Restore(bytes.NewReader(raw), int64(len(raw)), *target, construction.RestoreOptions{Forbidden: forbid})
+	rep, err := construction.Restore(f, size, *target, construction.RestoreOptions{Forbidden: forbid, MaxTotalBytes: maxTotal})
 	if err != nil {
 		fmt.Fprintln(stderr, err)
 		return 1
@@ -80,22 +97,9 @@ func run(args []string, stdout, stderr io.Writer) int {
 	if len(rep.NativeFiles) > 0 {
 		nativeState = "not rebound (no -native-out given); a restore never resumes an agent"
 		if *native != "" {
-			names := append([]string{}, rep.NativeFiles...)
-			sort.Strings(names)
-			for _, p := range names {
-				dst := filepath.Join(*native, filepath.FromSlash(strings.TrimPrefix(p, "native/")))
-				if !strings.HasPrefix(dst, filepath.Clean(*native)+string(os.PathSeparator)) {
-					fmt.Fprintln(stderr, "native path escapes -native-out:", p)
-					return 1
-				}
-				if err := os.MkdirAll(filepath.Dir(dst), 0o700); err != nil {
-					fmt.Fprintln(stderr, err)
-					return 1
-				}
-				if err := os.WriteFile(dst, rep.Native[p], 0o600); err != nil {
-					fmt.Fprintln(stderr, err)
-					return 1
-				}
+			if err := writeNative(*native, forbid, rep); err != nil {
+				fmt.Fprintf(stderr, "the store was restored at %s, but the native copies were not written: %v\n", *target, err)
+				return 1
 			}
 			nativeState = "copied for explicit owner rebinding; not resumed"
 		}
@@ -104,26 +108,72 @@ func run(args []string, stdout, stderr io.Writer) int {
 	return 0
 }
 
-func emptyDir(p string) error {
-	if !filepath.IsAbs(p) || filepath.Clean(p) != p {
-		return errors.New("must be an absolute clean path")
+// openBundle opens a regular file no larger than a bundle within the budget
+// can be. It is read through ReaderAt, never loaded whole; the restore
+// decides only on the checked copies it reads into memory.
+func openBundle(p string, maxTotal int64) (*os.File, int64, error) {
+	fi, err := os.Stat(p)
+	if err != nil {
+		return nil, 0, err
 	}
-	fi, err := os.Lstat(p)
-	if errors.Is(err, os.ErrNotExist) {
-		return nil
+	if !fi.Mode().IsRegular() {
+		return nil, 0, errors.New("not a regular file")
 	}
+	if limit := construction.MaxBundleArchiveBytes(maxTotal); fi.Size() > limit {
+		return nil, 0, fmt.Errorf("%d bytes; a bundle within the %d MiB budget is at most %d", fi.Size(), maxTotal>>20, limit)
+	}
+	f, err := os.Open(p)
+	if err != nil {
+		return nil, 0, err
+	}
+	if now, err := f.Stat(); err != nil || !os.SameFile(fi, now) {
+		f.Close()
+		return nil, 0, errors.New("the file changed while it was opened")
+	}
+	return f, fi.Size(), nil
+}
+
+// writeNative creates dir (new, checked like a restore target) and writes
+// the native copies through an os.Root anchored on it: every name resolves
+// beneath dir (no symlink or ".." leaves it) and every file is created
+// exclusively. On failure the directory it created is removed.
+func writeNative(dir string, forbid []string, rep *construction.RestoreReport) (err error) {
+	if _, err := construction.CheckNewDir(dir, forbid); err != nil {
+		return err
+	}
+	if err := os.Mkdir(dir, 0o700); err != nil {
+		return err
+	}
+	defer func() {
+		if err != nil {
+			os.RemoveAll(dir)
+		}
+	}()
+	root, err := os.OpenRoot(dir)
 	if err != nil {
 		return err
 	}
-	if fi.Mode()&os.ModeSymlink != 0 || !fi.IsDir() {
-		return errors.New("must be a real directory")
-	}
-	ents, err := os.ReadDir(p)
-	if err != nil {
-		return err
-	}
-	if len(ents) > 0 {
-		return errors.New("must be empty")
+	defer root.Close()
+	names := append([]string{}, rep.NativeFiles...)
+	sort.Strings(names)
+	for _, p := range names {
+		rel := filepath.FromSlash(strings.TrimPrefix(p, "native/"))
+		if d := filepath.Dir(rel); d != "." {
+			if err := root.MkdirAll(d, 0o700); err != nil {
+				return err
+			}
+		}
+		out, err := root.OpenFile(rel, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+		if err != nil {
+			return err
+		}
+		_, werr := out.Write(rep.Native[p])
+		if cerr := out.Close(); werr == nil {
+			werr = cerr
+		}
+		if werr != nil {
+			return werr
+		}
 	}
 	return nil
 }

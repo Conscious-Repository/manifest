@@ -511,25 +511,30 @@ written by the caller. Once the private listener is reachable through the
 tailnet, `tailscale serve` or a reverse proxy, a remote caller could copy them
 and get unauthenticated owner read/write access.
 
-The fix (`server/construction_auth.go`) disables remote access. The routes
-answer only when all three hold:
+The fix (`server/construction_auth.go`) refuses every remote request the
+server can recognise. (P9.5 correction: this text first said it "disables
+remote access". It cannot: a raw TCP forward onto loopback is
+indistinguishable from a local browser and is answered. See P9.5.) The
+routes answer only when all three hold:
 
 - the TCP peer (`RemoteAddr`) is a loopback IP;
 - the `Host` is loopback;
 - no proxy forwarding header is present (`Forwarded`, `X-Forwarded-*`,
   `X-Real-IP`, `Via`, `Tailscale-*`, …; matched case-insensitively).
 
-Every other path gets 403 `remote-disabled`, with an explanation that remote
-access needs a verified, authenticated owner gateway, which does not exist
-yet. The property section, the list pages (property and Home) and the
+Every other recognisable path gets 403 `remote-disabled`, with an
+explanation that remote access needs a verified, authenticated owner gateway,
+which does not exist yet. The property section, the list pages (property and Home) and the
 problem page show that text, and the feature's links and create form are
 removed. Further changes:
 
 - `trustedHosts` no longer exists in `ConstructionOptions`. The config field
   is ignored, and main logs a warning if a config still sets it.
-  `config.example.json` no longer offers it.
+  `config.example.json` no longer offers it. (P9.5: such a config now keeps
+  Construction off.)
 - The session's `boundary` now reads loopback-only, and `capabilities`
-  reports `remoteAccess: disabled`.
+  reports `remoteAccess: disabled`. (P9.5: replaced by local-host-trust
+  wording and `remoteAccess: unsupported`.)
 - Origin, Sec-Fetch-Site and the nonce stay, but only as CSRF defences.
 
 The injected principal seam was kept only in a form that can be shown not to
@@ -545,7 +550,9 @@ derive identity from caller headers:
 
 Tests (all under `confine`):
 
-- `TestConstructionRemoteAccessDisabled`: forged remote requests carry the
+- `TestConstructionRemoteAccessDisabled` (renamed
+  `TestConstructionRecognisedRemoteRefused` in P9.5, since the old name
+  overstated what it proves): forged remote requests carry the
   owner's exact loopback Host, Origin, Sec-Fetch-Site and the **real**
   session nonce. They are refused on session, list, problem, history,
   recovery export, preflight, Home list, create and commands. The peers
@@ -565,7 +572,8 @@ Tests (all under `confine`):
   with the owner's Host, Origin and nonce. On a true loopback connection the
   owner session and create work, and the relayed shape (public Host +
   forwarding headers) is refused.
-- `TestConstructionRemoteDisabledBrowser`: a browser context relayed with
+- `TestConstructionRemoteDisabledBrowser` (renamed
+  `TestConstructionRemoteRefusalBrowser` in P9.5): a browser context relayed with
   `X-Forwarded-For` sees the explanation in the property section, both list
   pages and the problem page, and no problem data. A loopback context opens
   the same problem. Screenshots `remote-disabled-property-1440.png` and
@@ -587,6 +595,165 @@ Tests (all under `confine`):
 - `go test -v ./server -run '^TestConstruction' -count=1`: 36 top-level
   tests pass (32 + 4 new), 0 skipped.
 
+## P9.5 — QA remediation: strict bodies, restore hardening, honest access model
+
+An independent QA audit raised three findings. Each was reproduced or
+reasoned through, then fixed with tests that fail without the fix.
+
+**A. The strict JSON decoder accepted trailing top-level values.**
+
+- *Cause.* `decodeRequest` checked `Decoder.More()` after the first value.
+  At top level `More` reports false for a stray `]` or `}`, so bodies like
+  `{…}]`, `{…}}` and `{…}]{…}` decoded as the first value.
+- *Impact.* Commands, creates, research runs and run actions also hash the
+  body with `CanonicalizeJSON`, which did refuse trailing data. The steward
+  request route and the export route did not.
+- *Reproduced (red run).* The new route test got 200 for
+  `POST …/agent/requests` with a trailing `]`, and a native steward run was
+  dispatched (`"state":"dispatched"`).
+- *Fix.* `decodeOne` requires a second `Decode` to reach `io.EOF`.
+  `decodeRequest` uses it, and so does restore for a bundle's manifest and
+  head (the other untrusted JSON input).
+- *Tests.*
+  - `TestDecodeRequestExactlyOneValue`: 15 trailing-value shapes, plus
+    empty, unknown-field and oversize bodies.
+  - `TestParsersRefuseTrailingValues`: create, command and run parsers.
+  - `TestConstructionConcatenatedBodiesRefused`: steward request, export
+    and command with 8 shapes each, using the native stub fixture. Each is
+    422, with no steward record, no stub call, no receipt and no derived
+    artifact. The same request ids with clean bodies then succeed.
+
+**B. Restore budgets and destination races.**
+
+- *Budgets.* The defaults drop from 2 GiB decompressed and 64 MiB per entry
+  to 256 MiB and 32 MiB, and from 100,000 to 50,000 entries. The archive
+  itself is capped at budget + 12.5%.
+- *Header pass.* Count, paths, modes, duplicates, entry sizes, the
+  decompressed total, the per-entry ratio (500×, entries over 1 MiB) and a
+  new aggregate ratio (100× the archive, totals over 16 MiB) are all checked
+  before any entry is decompressed. Each read is held to its declared size.
+- *Explicit raise.* `-max-total-mb` / `RestoreOptions.MaxTotalBytes` raises
+  the budget for the owner's own bundle, at most 2 GiB, and never lifts a
+  ratio check.
+- *Export side.* The export refuses what a restore refuses. When
+  compression would exceed a ratio budget it stores entries uncompressed,
+  and its README names the budget a larger bundle needs.
+- *Destination.* The target must not exist. Its parent must be an existing
+  real directory whose whole chain has no symlink, is owned by root, this
+  user or the owner of `/`, and is not group- or world-writable unless
+  sticky (`CheckNewDir`).
+- *Staging.* Everything is validated in memory first. The store is rebuilt
+  and verified in a private sibling stage. Then the target is created
+  exclusively (0700) and the stage is moved onto it with a raw `rename(2)`,
+  which replaces only an empty directory; `os.Rename` refuses any existing
+  directory. The problem is verified again at the target. A failure leaves
+  no target and no stage.
+- *Native output.* `-native-out` gets the same checks before the restore,
+  and is written through an `os.Root` anchored on the new directory with
+  `O_EXCL` files.
+- *Not anchored.* The store write path stays pathname-based, so the
+  guarantee is against other OS accounts, not same-user processes, and no
+  perfect TOCTOU prevention is claimed.
+- *CLI input.* The CLI reads the bundle through `ReaderAt`, never whole, and
+  refuses a non-regular or oversized file before reading it.
+- *Existing tests.* They now restore beneath a 0700 parent:
+  `t.TempDir()`'s numbered directories are 0775 under umask 0002, and the new
+  rule refuses them.
+- *New tests.*
+  - `TestConstructionRestoreBudgets`: raw-header archives carrying garbage
+    data, so a budget refusal proves nothing was decompressed. Covers the
+    40 × 1 MiB aggregate bomb (also with a 1 GiB budget), a 279 MiB declared
+    total, a raised budget that still hits the per-entry ratio, an
+    oversized entry, a header that understates its content, 50,001
+    entries, an oversized archive refused from its size without a read,
+    and out-of-range budgets.
+  - `TestConstructionRestoreTargetRules`: an existing empty target, a
+    dangling symlink (not followed), a symlinked parent and ancestor
+    (nothing written through them), a missing parent, 0777 and 0770
+    parents, an accepted 1777 parent (only the 0700 target remains), a
+    target appearing between the last check and the claim (refused by the
+    exclusive `mkdir`, their directory untouched), and a re-retain
+    collision after staging began (no target, no stage).
+  - `TestConstructionRestoreUnsafeDir`: ownership and modes, with fake
+    FileInfo.
+  - `TestConstructionExportStaysRestorable`: a 6 MiB single-character
+    document is stored uncompressed and restores; a 32 MiB + 1 extra is a
+    413 at export.
+  - `TestConstructionRestoreCLIRefusals`: existing and unsafe
+    `-native-out` (refused before the target is written), `-native-out`
+    equal to `-target`, budget bounds, a directory as the bundle, a sparse
+    oversized bundle, and a raised budget.
+
+**C. The access model, stated honestly.**
+
+- *The finding.* P9.4's code, UI and docs said the routes answer "only a
+  request made on this machine", that remote access is "disabled", and (in
+  the report) that Construction is "unusable from a phone". A transparent
+  TCP forward or tunnel that ends on localhost (`ssh -L`, socat,
+  `tailscale serve --tcp`) is indistinguishable from a local browser, so
+  those claims were stronger than the code.
+- *Code and docs.* The guard comments, refusal message, session `boundary`,
+  UI notices, config comments and docs now describe **local host trust, not
+  authentication**. Anything reaching the routes over loopback acts as the
+  owner, and a raw TCP forward cannot be detected. Remote use through any
+  relay, proxy or tunnel is unsupported until a verified, authenticated
+  owner gateway exists.
+- *Unchanged.* The checks themselves (loopback peer, loopback Host, no
+  forwarding headers) are unchanged. They refuse what is recognisable.
+- *Configuration fails closed.* A `construction` block with `trustedHosts`
+  or any key other than `disabled` keeps Construction off, with the reason
+  logged (`ConstructionConfig.Problem`).
+- *Session.* It reports `accessModel: local-host-trust`,
+  `remoteAccess: unsupported` and `rawTcpForwardDetected: false`.
+- *UI.* The list pages carry a "Local only" note: don't set up a forward,
+  it can't be detected.
+- *Not added.* No token or header scheme, and no listener.
+- *Tests.*
+  - `TestConstructionRawTCPForwardIsIndistinguishable` pins the limit: a
+    request through an in-test TCP relay on loopback is answered as the
+    owner. The test asserts that the session says this cannot be detected,
+    that the feature doc states it, and that the doc no longer contains the
+    earlier overclaims.
+  - `TestConstructionConfigRefusesRemoteAccess` covers the config refusal.
+  - The P9.4 tests now assert the new wording. Two were renamed because
+    their names overstated what they prove:
+    `TestConstructionRemoteAccessDisabled` is now
+    `TestConstructionRecognisedRemoteRefused`, and
+    `TestConstructionRemoteDisabledBrowser` is now
+    `TestConstructionRemoteRefusalBrowser`.
+
+**Mutation check** (`/tmp/manifest-construction-qa/mutate-qa.sh`). Fifteen
+mutations were each run against the focused tests, and every one made them
+fail. The tree was byte-identical afterwards (diff hash compared).
+
+- A:
+  - `More()` instead of the second `Decode`, at unit level;
+  - the same mutation, at route level.
+- B:
+  - no aggregate ratio;
+  - the header total not budgeted;
+  - an existing target accepted;
+  - no exclusive claim;
+  - group- or world-writable parents accepted;
+  - another owner accepted;
+  - the stage kept on failure;
+  - no uncompressed fallback;
+  - `-native-out` not checked first.
+- C:
+  - `trustedHosts` accepted;
+  - unknown keys ignored;
+  - the session claiming detection;
+  - the refusal claiming machine-only.
+
+Targeted commands (all under `confine`, results in
+`/tmp/manifest-construction-qa/qa-targeted.txt`): `gofmt` clean;
+`go vet . ./construction ./cmd/construction-restore ./server` exit 0;
+`go test -v ./construction ./cmd/construction-restore` 60 top-level pass;
+`go test -v ./server -run '^TestConstruction'` 38 pass;
+`go test -v . -run '^TestConstructionConfigRefusesRemoteAccess$'` pass;
+`go test -race ./construction -run '^TestConstruction(Restore|Export)|TestDecodeRequest'`
+pass. No test was skipped.
+
 ## Full confined suite (`go test -json ./... -count=1`)
 
 | Run | Packages pass / no tests / fail | Tests pass / skip / fail | Notes |
@@ -595,9 +762,10 @@ Tests (all under `confine`):
 | `c252c293` (after P9.2), 7m29s | 74 / 31 / 1 | 3820 / 28 / 1 | same single pre-existing failure; 3 new packages (`construction`, `cmd/construction-restore`, `tools/construction-spike`); 97 new top-level tests; no test removed; no status change for any existing test; skips unchanged (live/corpus tests) |
 | `f20b408c` (after P9.3), 7m28s | 74 / 31 / 1 | 3820 / 28 / 1 | same single pre-existing failure; identical test set |
 | P9.4 code (the commit's code; only docs edited after the run), 7m28s | 74 / 31 / 1 | 3824 / 28 / 1 | same single pre-existing failure; 4 new top-level tests (`TestConstructionRemote*`), all pass; none removed; no status change |
+| P9.5 code (the commit's code; only docs edited after the run), 7m28s | 74 / 31 / 1 | 3834 / 28 / 1 | same single pre-existing failure; vs P9.4: 10 new top-level tests, all pass, and 2 renamed (`TestConstructionRemoteAccessDisabled` → `TestConstructionRecognisedRemoteRefused`, `TestConstructionRemoteDisabledBrowser` → `TestConstructionRemoteRefusalBrowser`, both pass); no other test removed; no status change |
 
-Raw: `/tmp/manifest-construction-qa/final-go-test.jsonl` (`f20b408c`) and
-`p94-go-test.jsonl` (P9.4). The final HEAD run is recorded in the execution
+Raw: `/tmp/manifest-construction-qa/final-go-test.jsonl` (`f20b408c`),
+`p94-go-test.jsonl` (P9.4) and `qa2-go-test.jsonl` (P9.5). The final HEAD run is recorded in the execution
 report.
 
 ## Decisions taken (plan-conformant defaults)
@@ -614,17 +782,25 @@ report.
    (0700 directories, 0600 files, fsync). Generic artifact routes are bound
    to the global registry and cannot enumerate or read construction content;
    per-problem membership is the ACL for construction downloads.
-3. **Loopback-only access (§12.2, P9.4).** Construction routes are
-   registered only in `Server.Handler`. They answer only a loopback TCP peer
-   with a loopback Host and no proxy forwarding headers. Remote, tailnet and
-   reverse-proxy access is deliberately disabled, refused with 403
-   `remote-disabled` and explained in the UI. It needs a verified,
-   authenticated owner gateway, which does not exist yet. Same-origin
-   `Origin`/`Sec-Fetch-Site` and the per-process mutation nonce remain as
-   CSRF defences, not authentication. Until P9.4 the guard also admitted
-   configured trusted Hosts and treated those headers as authorization,
-   which review found spoofable. A hostile process with the owner's OS
-   identity, or a local relay onto loopback, is outside the MVP boundary.
+3. **Local host trust, not authentication (§12.2; P9.4, corrected in
+   P9.5).**
+   - Construction routes are registered only in `Server.Handler`.
+   - They answer loopback TCP peers with a loopback Host and no proxy
+     forwarding headers, and treat whoever reaches them that way as the
+     owner. That includes any local process and any remote client behind an
+     operator-created TCP forward or tunnel onto loopback; the application
+     cannot detect such a forward.
+   - Requests recognisably not local (non-loopback peer or Host, proxy
+     headers) are refused with 403 `remote-disabled`, explained in the UI.
+   - Remote use through any relay, proxy or tunnel is unsupported, and a
+     config asking for it keeps Construction off. It needs a verified,
+     authenticated owner gateway, which does not exist.
+   - Same-origin `Origin`/`Sec-Fetch-Site` and the per-process mutation
+     nonce remain as CSRF defences, not authentication.
+   - History: until P9.4 the guard also admitted configured trusted Hosts
+     and treated those headers as authorization, which review found
+     spoofable. Until P9.5 the docs overstated the result as "remote access
+     disabled".
 
 ## Commits
 

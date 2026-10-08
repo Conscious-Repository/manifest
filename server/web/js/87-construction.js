@@ -38,10 +38,14 @@ function cxErr(status, j) {
   return e;
 }
 
-// The server answers construction only on this machine (loopback): remote,
-// tailnet and reverse-proxy access is deliberately disabled in this MVP and
-// refused as kind "remote-disabled". Its message is the explanation shown.
-const CX_REMOTE_MSG = "Construction Intelligence is available only on this machine (loopback). Remote, tailnet and reverse-proxy access is deliberately disabled in this MVP: it needs a verified, authenticated owner gateway, which does not exist yet.";
+// Construction is a local host-trust feature: the server answers loopback
+// connections with a loopback Host and no proxy headers, and refuses other
+// requests it can recognise as remote with kind "remote-disabled" (its message
+// is the explanation shown). A raw TCP forward onto loopback cannot be
+// detected, so remote use through any relay or tunnel is unsupported, not
+// "blocked"; the local-only note says so.
+const CX_REMOTE_MSG = "Construction Intelligence is a local feature for this computer's own browser. This request did not arrive as a loopback connection to a loopback address without proxy headers, so it was refused. Remote use through the tailnet, the LAN or any proxy, relay or tunnel is unsupported: it needs a verified, authenticated owner gateway, which does not exist.";
+const CX_LOCAL_ONLY = "Local only: Construction trusts this computer's browser as the owner. Using it through the tailnet, a proxy, a port forward or an SSH or other tunnel is unsupported; a raw forward cannot be detected, so don't set one up. Remote use needs a verified, authenticated owner gateway, which does not exist yet.";
 function cxRemoteOff(e) { return !!e && e.status === 403 && e.kind === "remote-disabled"; }
 function cxRemoteNotice(e) { return el("p", "cx-notice cx-remote-off", (e && e.message) || CX_REMOTE_MSG); }
 
@@ -259,6 +263,7 @@ async function cxListInto(host, subject) {
   head.append(cxBackLink(subject), el("h2", "cx-list-title", subject.kind === "home" ? "Home · Construction" : "Construction"));
   page.append(head);
   page.append(el("p", "cx-notice", "Research/design assistance; not approved for construction; field, code, structural and manufacturer verification required."));
+  page.append(el("p", "cx-notice cx-local-only", CX_LOCAL_ONLY));
   const list = el("div", "cx-list");
   list.append(el("p", "cx-empty", "Loading…"));
   page.append(list);
