@@ -46,7 +46,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 	maxMB := fs.Int64("max-total-mb", construction.DefaultBundleTotalBytes>>20,
 		fmt.Sprintf("decompressed budget in MiB, held in memory while checking (raise only for your own larger bundle; at most %d)", construction.HardMaxBundleTotalBytes>>20))
 	var forbid multiFlag
-	fs.Var(&forbid, "forbid", "a root the target must not lie under (repeatable; e.g. the vault)")
+	fs.Var(&forbid, "forbid", "a root the target must not lie under (repeatable; e.g. the vault; a relative path is taken from the working directory, and / forbids everything)")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}

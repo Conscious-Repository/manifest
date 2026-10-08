@@ -126,17 +126,10 @@ func Open(root string, o Options) (*Store, error) {
 	if err != nil {
 		return nil, err
 	}
-	for _, f := range o.Forbidden {
-		if f == "" {
-			continue
-		}
-		rf, err := filepath.EvalSymlinks(f)
-		if err != nil {
-			rf = filepath.Clean(f)
-		}
-		if resolved == rf || strings.HasPrefix(resolved, rf+string(os.PathSeparator)) {
-			return nil, fmt.Errorf("construction: store root %s lies under forbidden root %s", root, f)
-		}
+	if f, err := forbiddenRootOf(resolved, o.Forbidden); err != nil {
+		return nil, fmt.Errorf("construction: forbidden root %s cannot be resolved: %w", f, err)
+	} else if f != "" {
+		return nil, fmt.Errorf("construction: store root %s lies under forbidden root %s", root, f)
 	}
 	pool, err := artifacts.NewWithOptions(filepath.Join(root, "artifacts"), artifacts.Options{Private: true})
 	if err != nil {

@@ -132,6 +132,13 @@ func TestConstructionRestoreCLIRefusals(t *testing.T) {
 	if _, err := os.Lstat(target); !os.IsNotExist(err) {
 		t.Fatal("a refused -native-out must refuse before the restore writes anything")
 	}
+	// every forbidden root holds, "/" included
+	if code, msg := exit("-bundle", file, "-target", target, "-forbid", "/"); code != 1 || !strings.Contains(msg, "forbidden root") {
+		t.Fatalf("-forbid /: %d %s", code, msg)
+	}
+	if _, err := os.Lstat(target); !os.IsNotExist(err) {
+		t.Fatal("a target under a forbidden root must not be created")
+	}
 	if code, _ := exit("-bundle", file, "-target", target, "-native-out", target); code != 2 {
 		t.Fatalf("-native-out equal to -target: %d", code)
 	}

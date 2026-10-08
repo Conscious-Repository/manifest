@@ -341,3 +341,79 @@ func TestConstructionExportStaysRestorable(t *testing.T) {
 		t.Fatalf("an over-limit entry is refused at export: %v", err)
 	}
 }
+
+// Every forbidden root holds however it is written: "/" (which contains
+// every path), trailing or doubled separators, "." and ".." segments, a
+// path relative to the working directory, a symlink to the root, and a root
+// that does not exist yet beneath a symlinked ancestor. Exact and nested
+// targets are refused, by the restore check and by the store-root check
+// that Restore also passes through. Valid targets keep working: a sibling
+// whose name merely starts with the root's, the root's parent, and a
+// "..x"-named entry beside it.
+func TestConstructionForbiddenRootContainment(t *testing.T) {
+	base := privateDir(t)
+	vault := filepath.Join(base, "vault")
+	if err := os.MkdirAll(filepath.Join(vault, "deep", "er"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	links := privateDir(t)
+	os.Symlink(vault, filepath.Join(links, "to-vault"))
+	os.Symlink(base, filepath.Join(links, "to-base"))
+	refused := func(name, target string, forbidden ...string) {
+		t.Helper()
+		if _, err := CheckNewDir(target, forbidden); StatusOf(err) != 403 {
+			t.Errorf("%s: %s with forbidden %q must be refused, got %v", name, target, forbidden, err)
+		}
+	}
+	allowed := func(name, target string, forbidden ...string) {
+		t.Helper()
+		if _, err := CheckNewDir(target, forbidden); err != nil {
+			t.Errorf("%s: %s with forbidden %q must pass, got %v", name, target, forbidden, err)
+		}
+	}
+	refused("root /", filepath.Join(base, "r"), "/")
+	refused("root / after others", filepath.Join(base, "r"), "", filepath.Join(links, "elsewhere"), "/")
+	refused("nested", filepath.Join(vault, "c"), vault)
+	refused("deeply nested", filepath.Join(vault, "deep", "er", "c"), vault)
+	refused("exact (root not created yet)", filepath.Join(base, "future"), filepath.Join(base, "future"))
+	refused("trailing separator", filepath.Join(vault, "c"), vault+"/")
+	refused("doubled separators", filepath.Join(vault, "c"), "/"+vault+"//")
+	refused("dot segments", filepath.Join(vault, "c"), vault+"/./deep/../")
+	refused("..x-named entry inside", filepath.Join(vault, "..x"), vault)
+	refused("symlink to the root", filepath.Join(vault, "c"), filepath.Join(links, "to-vault"))
+	refused("missing root below a symlinked ancestor", filepath.Join(base, "later"), filepath.Join(links, "to-base", "later"))
+	allowed("sibling sharing a prefix", filepath.Join(base, "vault2"), vault)
+	allowed("the root's parent", filepath.Join(base, "x"), vault)
+	allowed("..x-named entry beside the root", filepath.Join(base, "..vault"), vault)
+	allowed("no forbidden roots", filepath.Join(base, "x"), "")
+	// relative roots are taken from the working directory
+	t.Chdir(base)
+	refused("relative", filepath.Join(vault, "c"), "vault")
+	refused("relative with dot segments", filepath.Join(vault, "c"), "./vault/deep/../")
+	refused("relative dot", filepath.Join(vault, "c"), ".")
+	allowed("relative sibling", filepath.Join(base, "vault2"), "vault")
+	// the store-root check (which Restore applies to its stage and target)
+	for _, f := range []string{"/", "vault/", "."} {
+		if _, err := Open(filepath.Join(vault, "store-"+strings.Trim(f, "/.")), Options{Forbidden: []string{f}}); err == nil || !strings.Contains(err.Error(), "forbidden root") {
+			t.Errorf("store root under forbidden %q: %v", f, err)
+		}
+	}
+	s, err := Open(filepath.Join(base, "store-ok"), Options{Forbidden: []string{"vault", "/" + vault + "/"}})
+	if err != nil {
+		t.Fatalf("a store root outside every forbidden root opens: %v", err)
+	}
+	s.Close()
+	// end to end: forbidding "/" refuses any restore, writing nothing
+	src, st, _ := templateProblem(t)
+	z, _, err := src.ExportBundle(fixtureProperty, st.Problem.ID, ExportOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	parent := privateDir(t)
+	if _, err := Restore(bytes.NewReader(z), int64(len(z)), filepath.Join(parent, "r"), RestoreOptions{Forbidden: []string{"/"}}); StatusOf(err) != 403 {
+		t.Fatalf("a restore with / forbidden: %v", err)
+	}
+	if ents, _ := os.ReadDir(parent); len(ents) != 0 {
+		t.Fatalf("a refused restore wrote %d entries", len(ents))
+	}
+}

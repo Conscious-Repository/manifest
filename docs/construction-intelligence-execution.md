@@ -754,6 +754,60 @@ Targeted commands (all under `confine`, results in
 `go test -race ./construction -run '^TestConstruction(Restore|Export)|TestDecodeRequest'`
 pass. No test was skipped.
 
+## P9.6 — forbidden-root containment (post-remediation audit)
+
+A fresh audit found that `CheckNewDir` tested containment as
+`dir == rf || HasPrefix(dir, rf+"/")`. For the forbidden root `/` that
+prefix is `//`, so every target passed. `Store.Open`, which Restore also
+runs on its stage and target, used the same construction.
+
+The red run (`/tmp/manifest-construction-qa/rootfix-red.txt`) found ten
+violations:
+
+- `/` as a forbidden root;
+- a missing root beneath a symlinked ancestor;
+- relative roots (`vault`, `./vault/deep/../`, `.`), which were compared
+  literally and never matched;
+- the store-root check with `/` and relative roots;
+- a full `Restore` with `/` forbidden, which succeeded;
+- `construction-restore -forbid /`, which restored and exited 0.
+
+**Fix** (`construction/paths.go`):
+
+- `canonicalPath` makes each root absolute and clean. A relative root is
+  taken from the working directory. Symlinks are resolved in the longest
+  existing prefix, so a root that does not exist yet still compares
+  correctly.
+- `pathWithin` compares whole path elements with `filepath.Rel`, so `/`
+  contains everything, `/a` does not contain `/ab`, and `..x` is an ordinary
+  name. If no relative path exists, it counts as contained.
+- `forbiddenRootOf` refuses when a root cannot be resolved.
+- Both `CheckNewDir` and `Store.Open` use it.
+- The `-forbid` help now says how relative paths and `/` behave.
+
+**Tests:**
+
+- `TestPathWithin`, `TestCanonicalPath`.
+- `TestConstructionForbiddenRootContainment`:
+  - refused: `/`, nested and exact targets, trailing or doubled
+    separators, dot segments, symlinked and missing-under-symlink roots,
+    relative roots, the store-root check, and a full restore;
+  - allowed: a prefix-sharing sibling, the root's parent, and a `..`-named
+    neighbour.
+- The CLI test covers `-forbid /`.
+
+**Mutation check** (`mutate-rootfix.sh`): all 5 mutations make the focused
+tests fail. With either check bypassed alone, the other still stops the
+restore; the direct test catches it.
+
+**Results under confine:**
+
+- `go vet ./construction ./cmd/construction-restore ./server .`: exit 0.
+- `go test ./construction ./cmd/construction-restore`: 63 top-level tests
+  pass (60 + 3 new).
+- `go test ./server -run '^TestConstruction'`: 38 pass.
+- The race run passes.
+
 ## Full confined suite (`go test -json ./... -count=1`)
 
 | Run | Packages pass / no tests / fail | Tests pass / skip / fail | Notes |

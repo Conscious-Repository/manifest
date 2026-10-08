@@ -285,17 +285,10 @@ func CheckNewDir(dir string, forbidden []string) (string, error) {
 		return "", err
 	}
 	// the chain holds no symlink, so dir is its own resolved path
-	for _, f := range forbidden {
-		if f == "" {
-			continue
-		}
-		rf, err := filepath.EvalSymlinks(f)
-		if err != nil {
-			rf = filepath.Clean(f)
-		}
-		if dir == rf || strings.HasPrefix(dir, rf+string(os.PathSeparator)) {
-			return "", Forbidden("the target lies under a forbidden root")
-		}
+	if f, err := forbiddenRootOf(dir, forbidden); err != nil {
+		return "", Forbidden("forbidden root " + f + " cannot be resolved (" + err.Error() + "); refusing")
+	} else if f != "" {
+		return "", Forbidden("the target lies under a forbidden root")
 	}
 	return parent, nil
 }
