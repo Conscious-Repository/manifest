@@ -14,6 +14,7 @@ package server
 // so every applied change is a revision with the owner as actor.
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -125,9 +126,10 @@ func (s *Server) handleConstructionChatGet(w http.ResponseWriter, r *http.Reques
 }
 
 type constructionChatBody struct {
-	SchemaVersion int    `json:"schemaVersion"`
-	RequestID     string `json:"requestId"`
-	Text          string `json:"text"`
+	SchemaVersion int                     `json:"schemaVersion"`
+	RequestID     string                  `json:"requestId"`
+	Text          string                  `json:"text"`
+	Images        []constructionChatImage `json:"images,omitempty"` // pictures of the model ("Check this model")
 }
 
 func (s *Server) handleConstructionChatPost(w http.ResponseWriter, r *http.Request) {
@@ -135,13 +137,17 @@ func (s *Server) handleConstructionChatPost(w http.ResponseWriter, r *http.Reque
 	if !ok {
 		return
 	}
-	raw, ok := readConstructionBody(w, r, 64<<10)
+	raw, ok := readConstructionBody(w, r, 48<<20)
 	if !ok {
 		return
 	}
 	var in constructionChatBody
-	if err := construction.DecodeRequest(raw, &in); err != nil {
-		constructionError(w, err)
+	// a message with pictures is larger than a command: decode it here,
+	// still refusing unknown fields
+	dec := json.NewDecoder(bytes.NewReader(raw))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&in); err != nil {
+		constructionError(w, construction.Invalid("body: "+err.Error()))
 		return
 	}
 	text := strings.TrimSpace(in.Text)
@@ -175,6 +181,13 @@ func (s *Server) handleConstructionChatPost(w http.ResponseWriter, r *http.Reque
 		constructionError(w, err)
 		return
 	}
+	go s.constructionInputFiles(sub, st) // render the drawing sheets now, not on Alfred's clock
+	tokens, err := s.constructionAttachImages(agent, conv, in.Images)
+	if err != nil {
+		constructionError(w, err)
+		return
+	}
+	text += tokens
 	recipient := agentchat.Recipient{Agent: agent, Profile: profile}
 	if set, _ := s.constructionSettingsNow(); set.Model != "" {
 		// the workspace's chosen model, per message, not Alfred's profile default
@@ -208,7 +221,7 @@ func (s *Server) constructionChatBrief(sess agentchat.Session) string {
 		if err != nil {
 			return ""
 		}
-		return constructionBriefText(st)
+		return constructionBriefText(st) + s.constructionInputsBrief(ref.Subject, st)
 	}
 	return ""
 }

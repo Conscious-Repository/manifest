@@ -46,7 +46,9 @@ if out_dir:
     with open(os.path.join(out_dir, "received-%03d.json" % n), "w") as fh:
         json.dump({"declared": declared, "computed": computed, "toolsets": opts.get("-t", ""), "model": opts.get("-m", ""), "kind": kind,
                    "mode": mode, "chatPreamble": "Manifest MCP" in prompt,
-                   "brief": "CONSTRUCTION PROBLEM — you are the steward" in prompt}, fh)
+                   "brief": "CONSTRUCTION PROBLEM — you are the steward" in prompt,
+                   "attached": prompt.count("Attached reference file"), "sheets": prompt.count("whole sheet:"),
+                   "sheetA313": "sheet A3.13" in prompt}, fh)
 
 if mode == "hang":
     time.sleep(120)

@@ -1,8 +1,12 @@
 package server
 
 import (
+	"bytes"
+	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -448,5 +452,72 @@ func TestConstructionWorkspaceModel(t *testing.T) {
 	calls := stubCalls(t, out)
 	if len(calls) != 1 || calls[0].Model != "claude-fable-5-1" {
 		t.Fatalf("the chat turn runs with the workspace model: %+v", calls)
+	}
+}
+
+// tinyPDF is a one-page PDF whose title block (bottom right) reads sheet.
+func tinyPDF(sheet string) []byte {
+	stream := "BT /F1 10 Tf 40 560 Td (SECTION AT HEADWALL - see A4.10) Tj ET BT /F1 24 Tf 680 30 Td (" + sheet + ") Tj ET"
+	objs := []string{
+		"<< /Type /Catalog /Pages 2 0 R >>",
+		"<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+		"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 792 612] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>",
+		fmt.Sprintf("<< /Length %d >>\nstream\n%s\nendstream", len(stream), stream),
+		"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
+	}
+	var b bytes.Buffer
+	b.WriteString("%PDF-1.4\n")
+	offs := []int{}
+	for i, o := range objs {
+		offs = append(offs, b.Len())
+		fmt.Fprintf(&b, "%d 0 obj\n%s\nendobj\n", i+1, o)
+	}
+	x := b.Len()
+	fmt.Fprintf(&b, "xref\n0 %d\n0000000000 65535 f \n", len(objs)+1)
+	for _, o := range offs {
+		fmt.Fprintf(&b, "%010d 00000 n \n", o)
+	}
+	fmt.Fprintf(&b, "trailer\n<< /Size %d /Root 1 0 R >>\nstartxref\n%d\n%%%%EOF\n", len(objs)+1, x)
+	return b.Bytes()
+}
+
+// What Alfred can look at: the problem's drawing as named sheet images in
+// the brief, and pictures sent with a message as this chat's files.
+func TestConstructionChatSeesDrawingsAndPictures(t *testing.T) {
+	if _, err := exec.LookPath("pdftoppm"); err != nil {
+		t.Skip("poppler is not installed")
+	}
+	f, out := nativeFixture(t)
+	f.srv.UseChatState(t.TempDir())
+	v, id, _ := f.createTemplate(t, fixtureBase, "create-nat-draw")
+	f.upload(t, fixtureBase, id, viewRev(v, "problem"), "up-draw-0001", "set.pdf", tinyPDF("A3.13"), "drawing")
+	png := []byte("\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01\x08\x06\x00\x00\x00\x1f\x15\xc4\x89\x00\x00\x00\rIDATx\x9cc\xf8\x0f\x00\x00\x01\x01\x00\x05\x18\xd8N\x00\x00\x00\x00IEND\xaeB`\x82")
+	r := f.do(t, "POST", fixtureBase+"/problems/"+id+"/chat", map[string]any{"schemaVersion": 1, "requestId": cReqID("pics"), "text": "Check this model",
+		"images": []any{map[string]any{"name": "overall.png", "data": base64.StdEncoding.EncodeToString(png)}, map[string]any{"name": "section.png", "data": base64.StdEncoding.EncodeToString(png)}}})
+	if r.Code != 200 {
+		t.Fatalf("chat %d %s", r.Code, r.Body)
+	}
+	if r := f.do(t, "POST", fixtureBase+"/problems/"+id+"/chat", map[string]any{"schemaVersion": 1, "requestId": cReqID("bad"), "text": "x",
+		"images": []any{map[string]any{"name": "x.png", "data": base64.StdEncoding.EncodeToString([]byte("<svg/>"))}}}); r.Code != 422 {
+		t.Fatalf("a non-image is refused: %d %s", r.Code, r.Body)
+	}
+	deadline := time.Now().Add(60 * time.Second)
+	for len(stubCalls(t, out)) == 0 && time.Now().Before(deadline) {
+		time.Sleep(100 * time.Millisecond)
+	}
+	var got struct {
+		Attached  int  `json:"attached"`
+		Sheets    int  `json:"sheets"`
+		SheetA313 bool `json:"sheetA313"`
+	}
+	raw, _ := os.ReadFile(filepath.Join(out, "received-000.json"))
+	_ = json.Unmarshal(raw, &got)
+	if got.Attached != 2 || got.Sheets != 1 || !got.SheetA313 {
+		t.Fatalf("the turn sees 2 pictures and sheet A3.13: %+v (%s)", got, raw)
+	}
+	c := f.do(t, "GET", fixtureBase+"/problems/"+id+"/chat", nil).json(t)["chat"].(map[string]any)
+	first := c["turns"].([]any)[0].(map[string]any)["text"].(string)
+	if strings.Count(first, "[context-file:: ") != 2 {
+		t.Fatalf("the message carries its pictures: %q", first)
 	}
 }

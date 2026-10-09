@@ -503,6 +503,9 @@ async function cxRendererCreate(host, opts) {
       }
       return out;
     },
+    // the frame as it is now (the drawing buffer is preserved), as a data URL
+    snapshot(type = "image/png") { renderNow(); return canvas.toDataURL(type); },
+    canvasEl() { return canvas; },
     // a world point on screen, in canvas pixels; null when behind or outside
     toScreen(p) {
       camera.updateMatrixWorld();

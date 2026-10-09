@@ -307,7 +307,8 @@ function cxApproachCard(id) {
   more.append(fig);
   c.append(fold, more);
   const acts = el("div", "cx-dp-acts");
-  acts.append(pillLight(on && !cxPhone() ? "In the model →" : "Show model", () => cxShowApproach(id)));
+  if (on && !v.readOnly) { const chk = pillLight("Check it against the drawings", () => cxCheckModel()); chk.classList.add("cx-ask"); acts.append(chk); }
+  else acts.append(pillLight("Show model", () => cxShowApproach(id)));
   if (!chosen && !v.readOnly) acts.append(pillLight("Choose this one", () => cxChooseApproach(id)));
   c.append(acts);
   return c;
@@ -369,17 +370,19 @@ function cxChatRepaint() {
   if (card && cx.view) card.replaceWith(cxNextCard()); // the next step follows the conversation
   if (focused) { const t = next.querySelector(".cx-chat-in"); t.focus(); t.selectionStart = t.selectionEnd = t.value.length; }
 }
-async function cxChatSend(text) {
+async function cxChatSend(text, images) {
   text = (text || "").trim();
   if (!text || cxp.sending) return;
   cxp.sending = true; cxp.msg = "";
   if (cx.pane !== "agent") { cx.pane = "agent"; cxRender(); }
   // show the message at once, honestly marked as sending
-  if (cxp.chat) cxp.chat.turns.push({ n: 0, who: "user", at: "", text, sending: true });
+  if (cxp.chat) cxp.chat.turns.push({ n: 0, who: "user", at: "", text: text + (images && images.length ? "\n\n(" + images.length + " pictures of the model attached)" : ""), sending: true });
   cxp.draft = "";
   cxChatRepaint();
   try {
-    const res = await cxApi("POST", cxBase(cx.subject), cxChatPath(), { schemaVersion: 1, requestId: cxRequestId(), text });
+    const body = { schemaVersion: 1, requestId: cxRequestId(), text };
+    if (images && images.length) body.images = images;
+    const res = await cxApi("POST", cxBase(cx.subject), cxChatPath(), body);
     cxp.chat = res.chat;
   } catch (e) {
     cxp.msg = "Not sent: " + e.message;
@@ -415,12 +418,13 @@ function cxSuggestions() {
   return {
     describe: [],
     research: ["Research this properly"],
-    approaches: ["Give me other approaches", "What are the main risks?"],
-    decide: ["What should I decide first?", "Which would you choose, and why?", "What could go wrong with each?"],
+    approaches: ["Check the model against the drawings", "Give me other approaches", "What are the main risks?"],
+    decide: ["What should I decide first?", "Check the model against the drawings", "Which would you choose, and why?"],
     specifics: ["What exactly should I buy?", "What sizes and fasteners?", "What order do we build it in?"],
   }[next] || ["What's left to settle?", "Make a materials list"];
 }
 const CX_SUGGESTION_TEXT = { "Research this properly": () => cxKickoff() };
+const CX_SUGGESTION_ACTION = { "Check the model against the drawings": () => cxCheckModel() };
 
 function cxChatBlock() {
   const box = el("section", "cx-block cx-chat");
@@ -452,7 +456,7 @@ function cxChatBlock() {
   const sugg = cxSuggestions();
   if (sugg.length && !cx.view.readOnly) {
     const chips = el("div", "cx-chips");
-    sugg.forEach((t) => { const b = el("button", "cx-chip-btn", t); b.type = "button"; b.onclick = () => cxChatSend(CX_SUGGESTION_TEXT[t] ? CX_SUGGESTION_TEXT[t]() : t); chips.append(b); });
+    sugg.forEach((t) => { const b = el("button", "cx-chip-btn", t); b.type = "button"; b.onclick = () => CX_SUGGESTION_ACTION[t] ? CX_SUGGESTION_ACTION[t]() : cxChatSend(CX_SUGGESTION_TEXT[t] ? CX_SUGGESTION_TEXT[t]() : t); chips.append(b); });
     dock.append(chips);
   }
   const form = el("div", "cx-chat-form");
@@ -482,6 +486,8 @@ function cxChatTurn(t) {
   const mine = t.who === "user";
   const row = el("div", "cx-turn " + (mine ? "is-mine" : t.who === "system" ? "is-system" : "is-agent") + (t.sending ? " is-sending" : ""));
   let text = t.text || "", i = 0;
+  const files = [...text.matchAll(/^\[context-file:: ([a-f0-9]{32})\]$/gm)].map((m) => m[1]);
+  text = text.replace(/^\[context-file:: [a-f0-9]{32}\]$/gm, "").trim();
   const props = [];
   text = text.replace(CX_PROPOSAL_RE, (m, json) => { props.push(json); return "\n"; });
   const bubble = el("div", "cx-turn-text");
@@ -500,6 +506,11 @@ function cxChatTurn(t) {
     row.append(b);
   }
   props.forEach((json) => row.append(cxProposalCard(json, (cxp.chat.session || "") + ":" + t.n + ":" + (i++))));
+  if (files.length) {
+    const strip = el("div", "cx-turn-files");
+    files.forEach((id) => { const a = el("a", "cx-turn-file"); a.href = "/api/chat/files/" + id; a.target = "_blank"; a.rel = "noopener"; const im = document.createElement("img"); im.loading = "lazy"; im.alt = "attached picture"; im.src = "/api/chat/files/" + id; im.onerror = () => a.remove(); a.append(im); strip.append(a); });
+    row.append(strip);
+  }
   if (t.sending) row.append(el("span", "cx-turn-meta micro-label", "sending…"));
   return row;
 }
@@ -1129,4 +1140,103 @@ async function cxSettingsBlock(subject) {
     const form = page.querySelector(".cx-create, form");
     if (form) form.before(blk); else page.append(blk);
   };
+}
+
+// ---- "Check this model": pictures of the model for Alfred -------------------------
+// The model's own views, labelled the way you see them, plus the true section
+// drawing, sent with one message asking Alfred (on the workspace model) to
+// compare them with the drawing sheets and the code. What he finds comes
+// back as an ordinary suggestion to apply or skip.
+const cxWait = (ms) => new Promise((r) => setTimeout(r, ms));
+function cxLabelledFrame(title) {
+  const src = cx.renderer.canvasEl(), host = src.parentElement;
+  const W = src.width, H = src.height, k = W / Math.max(1, src.clientWidth);
+  const c = document.createElement("canvas");
+  c.width = W; c.height = H;
+  const g = c.getContext("2d");
+  g.fillStyle = "#f3f2ee"; g.fillRect(0, 0, W, H);
+  g.drawImage(src, 0, 0);
+  // the same callouts the page shows: a dot on the part, a line, the name in a column
+  const a = cxAsm(), names = new Map();
+  for (const [role, name] of CX_PART_LABELS) { const comp = (a.components || []).find((x) => (x.role || "").startsWith(role)); if (comp) names.set(comp.id, name); }
+  const anchors = cx.renderer.labelAnchors([...names.keys()]);
+  const shown = [];
+  for (const [id, name] of names) { const wp = anchors[id], p = wp && cx.renderer.toScreen(wp); if (p) shown.push({ name, x: p.x * k, y: p.y * k, side: p.x * k < W / 2 ? "l" : "r" }); }
+  const fs = Math.round(13 * k), gap = fs * 2;
+  g.font = "600 " + fs + "px system-ui, sans-serif"; g.textBaseline = "middle";
+  for (const side of ["l", "r"]) {
+    let next = fs * 3;
+    shown.filter((s) => s.side === side).sort((m, n) => m.y - n.y).forEach((s) => { s.ty = Math.max(s.y, next); next = s.ty + gap; });
+  }
+  shown.forEach((s) => {
+    const tw = g.measureText(s.name).width + fs, th = fs * 1.6;
+    const tx = s.side === "l" ? 8 * k : W - 8 * k - tw;
+    const ex = s.side === "l" ? tx + tw : tx;
+    g.strokeStyle = "#111"; g.lineWidth = 1.5 * k;
+    g.beginPath(); g.moveTo(ex, s.ty); g.lineTo(s.x, s.y); g.stroke();
+    g.fillStyle = "#fff"; g.beginPath(); g.arc(s.x, s.y, 3.5 * k, 0, Math.PI * 2); g.fill(); g.stroke();
+    g.fillStyle = "rgba(15,23,32,0.9)"; g.fillRect(tx, s.ty - th / 2, tw, th);
+    g.fillStyle = "#fff"; g.fillText(s.name, tx + fs / 2, s.ty);
+  });
+  g.fillStyle = "#111"; g.font = "700 " + Math.round(15 * k) + "px system-ui, sans-serif"; g.textBaseline = "top";
+  g.fillText(title, 10 * k, 8 * k);
+  return c.toDataURL("image/jpeg", 0.88).split(",")[1]; // shaded views: a fraction of the PNG's size on a phone connection
+}
+async function cxSectionPNG(a) {
+  const img = new Image();
+  img.src = cxBase(cx.subject) + "/problems/" + encodeURIComponent(cx.problemId) + "/assemblies/" + encodeURIComponent(a.id) + "/section?revision=" + encodeURIComponent((cx.view.revisions || {})["assembly:" + a.id] || "") + "&paper=A3&scale=5";
+  await new Promise((ok, no) => { img.onload = ok; img.onerror = no; });
+  const w = 2400, h = Math.round(w * (img.naturalHeight || 1) / (img.naturalWidth || 1));
+  const c = document.createElement("canvas");
+  c.width = w; c.height = h;
+  const g = c.getContext("2d");
+  g.fillStyle = "#fff"; g.fillRect(0, 0, w, h);
+  g.drawImage(img, 0, 0, w, h);
+  return c.toDataURL("image/png").split(",")[1];
+}
+async function cxCaptureModel() {
+  const a = cxAsm();
+  if (!a || !cx.renderer) throw new Error("open the approach in the model first");
+  const wb = cx.host.querySelector(".cx-wb"), pane = cx.pane;
+  if (cxPhone() && pane !== "model") { cx.pane = "model"; cxPaintSwitch(wb); await cxWait(600); }
+  // a fixed, generous stage for the pictures, whatever the pane's size
+  const host = cx.host.querySelector(".cx-canvas-host");
+  host.classList.add("cx-capturing");
+  await cxWait(400);
+  const cam = cx.renderer.getCamera(), vs = { exploded: cx.vs.exploded, section: cx.vs.section, hidden: cx.vs.hidden, isolated: cx.vs.isolated };
+  cx.vs.exploded = 0; cx.vs.section = null; cx.vs.hidden = []; cx.vs.isolated = [];
+  cx.renderer.setState({ exploded: 0, section: null, hidden: [], isolated: [] });
+  const out = [];
+  try {
+    const shots = [
+      ["overall", "Overall", () => cx.renderer.view("iso")],
+      ["junction", "Where the roof meets the wall", () => { const b = cx.host.querySelector('[aria-label="Zoom in on where the roof meets the wall"]'); if (b) b.click(); }],
+      ["side", "From the side", () => cx.renderer.view("side")],
+    ];
+    for (const [key, label, go] of shots) {
+      go();
+      await cxWait(700);
+      out.push({ name: a.name.slice(0, 40) + " — " + key + ".jpg", data: cxLabelledFrame(a.name + " — " + label) });
+    }
+    try { out.push({ name: a.name.slice(0, 40) + " — section.png", data: await cxSectionPNG(a) }); } catch (e) {}
+  } finally {
+    cx.vs.exploded = vs.exploded; cx.vs.section = vs.section; cx.vs.hidden = vs.hidden; cx.vs.isolated = vs.isolated;
+    cxApplyVS();
+    host.classList.remove("cx-capturing");
+    await cxWait(100);
+    cx.renderer.setCamera(cam);
+    if (cx.pane !== pane) { cx.pane = pane; cxPaintSwitch(wb); }
+  }
+  return out;
+}
+async function cxCheckModel() {
+  const a = cxAsm();
+  if (!a || cxp.sending) return;
+  cxp.msg = "Taking pictures of the model…";
+  cxChatRepaint();
+  let images;
+  try { images = await cxCaptureModel(); }
+  catch (e) { cxp.msg = "Couldn't picture the model: " + e.message; cxChatRepaint(); return; }
+  cxp.msg = "";
+  await cxChatSend("Check this model: “" + a.name + "”. Attached are three labelled views of it as the model draws it now and its true section drawing. Compare them with the drawing sheets in your brief (open the sheets that show this junction — sections and elevations — and read their dimensions) and with the code and the makers' instructions. Tell me plainly what's wrong, missing or out of proportion, citing the sheet or source for each point. Propose the fixes the model can take as one construction block (SetPitch, SetDimension, SetMaterial…), and say what it can't show at all.", images);
 }

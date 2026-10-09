@@ -62,7 +62,14 @@ chosen on the Home construction list. It is sent per message as the chat
 recipient, so Alfred's profile default no longer decides. The model never
 draws: geometry is compiled deterministically from the approach's typed
 parts and measurements (`construction/geometry.go`); the model proposes
-those. A problem always opens assembled (a saved Explode is not restored),
+those. What the model can look at: the problem's inputs, listed in the
+brief with local paths it opens with `vision_analyze` — photos as they are,
+each drawing PDF rendered once (cached by content revision under
+`<construction root>/chat-files/`) as one overview image per sheet plus
+four sharper quarters, each named by the sheet number in its title block;
+and pictures sent with a message ("Check it against the drawings": three
+labelled 3D views on a fixed 1600×1000 stage plus the true section),
+stored as that conversation's chat files. A problem always opens assembled (a saved Explode is not restored),
 and pulled-apart, cut-open or hidden-parts states show as chips on the model.
 
 The way of working is five stages shown under the header: describe → research

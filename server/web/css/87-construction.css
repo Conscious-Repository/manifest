@@ -504,3 +504,7 @@ button.cx-path-node { border: 1px solid var(--accent); color: var(--accent); cur
 .cx-settings-row .cx-about-label { grid-column: 1 / -1; }
 .cx-chat-model { margin-left: var(--sp-2); font-weight: 400; font-size: var(--fs-xs); color: var(--base-60); }
 @media (max-width: 860px) { .cx-settings-row { grid-template-columns: 1fr; } }
+.cx-turn-files { display: flex; flex-wrap: wrap; gap: 6px; justify-content: flex-end; margin-top: var(--sp-2); }
+.cx-turn-file img { display: block; width: 84px; height: 60px; object-fit: cover; border: 1px solid var(--line); border-radius: var(--radius); background: #fff; }
+.cx-canvas-host.cx-capturing { position: fixed !important; left: 0; top: 0; width: 1600px !important; height: 1000px !important; max-width: none; z-index: 10000; }
+.cx-canvas-host.cx-capturing .cx-labels, .cx-canvas-host.cx-capturing .cx-state-chips { display: none; }
