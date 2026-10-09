@@ -1,0 +1,5 @@
+/* the "Manifest has been updated" bar (js/99-update.js) */
+.app-update { position: fixed; left: 50%; bottom: calc(16px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); z-index: 9999; display: flex; align-items: center; gap: 12px; width: max-content; max-width: calc(100vw - 32px); padding: 8px 8px 8px 16px; border-radius: 999px; background: var(--text, #111); color: var(--bg, #fff); box-shadow: 0 4px 18px rgba(0, 0, 0, 0.35); font-size: 14px; }
+.app-update-go { min-height: 36px; padding: 0 16px; border: none; border-radius: 999px; background: var(--accent, #265acc); color: var(--on-accent, #fff); font: inherit; font-weight: 600; cursor: pointer; }
+.app-update-x { min-width: 36px; min-height: 36px; border: none; background: none; color: inherit; opacity: 0.7; font: inherit; cursor: pointer; }
+.app-update > span { white-space: nowrap; }
