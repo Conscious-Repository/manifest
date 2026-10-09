@@ -51,6 +51,65 @@ type DrawFill struct {
 	Component string         `json:"component"`
 	Hatch     string         `json:"hatch"` // solid-dark | masonry | insulation | timber | membrane | void | metal | foam | fastener
 	Loops     [][][2]float64 `json:"loops"`
+	// Edges is the region's outline: its loops' edges less the seams where
+	// two pieces of the same part meet (a wythe split around a cut joint is
+	// one wall, not three blocks). Stroke these; fill the loops.
+	Edges [][2][2]float64 `json:"edges,omitempty"`
+}
+
+// outlineEdges drops the stretches of edge two loops of one region share.
+func outlineEdges(loops [][][2]float64) [][2][2]float64 {
+	type seg struct{ a, b [2]float64 }
+	var segs []seg
+	for _, l := range loops {
+		for i := range l {
+			segs = append(segs, seg{l[i], l[(i+1)%len(l)]})
+		}
+	}
+	const eps = 1e-4
+	var out [][2][2]float64
+	for i, s := range segs {
+		d := [2]float64{s.b[0] - s.a[0], s.b[1] - s.a[1]}
+		L2 := d[0]*d[0] + d[1]*d[1]
+		if L2 < eps*eps {
+			continue
+		}
+		L := math.Sqrt(L2)
+		// intervals of s (parameter 0..1) covered by another collinear segment
+		var cov [][2]float64
+		for j, t := range segs {
+			if i == j {
+				continue
+			}
+			cross := func(p [2]float64) float64 { return (d[0]*(p[1]-s.a[1]) - d[1]*(p[0]-s.a[0])) / L }
+			if math.Abs(cross(t.a)) > eps || math.Abs(cross(t.b)) > eps {
+				continue
+			}
+			ta := ((t.a[0]-s.a[0])*d[0] + (t.a[1]-s.a[1])*d[1]) / L2
+			tb := ((t.b[0]-s.a[0])*d[0] + (t.b[1]-s.a[1])*d[1]) / L2
+			lo, hi := math.Max(0, math.Min(ta, tb)), math.Min(1, math.Max(ta, tb))
+			if hi-lo > eps/L {
+				cov = append(cov, [2]float64{lo, hi})
+			}
+		}
+		sort.Slice(cov, func(a, b int) bool { return cov[a][0] < cov[b][0] })
+		at := 0.0
+		emit := func(u0, u1 float64) {
+			if (u1-u0)*L > eps {
+				out = append(out, [2][2]float64{{s.a[0] + d[0]*u0, s.a[1] + d[1]*u0}, {s.a[0] + d[0]*u1, s.a[1] + d[1]*u1}})
+			}
+		}
+		for _, c := range cov {
+			if c[0] > at {
+				emit(at, c[0])
+			}
+			at = math.Max(at, c[1])
+		}
+		if at < 1 {
+			emit(at, 1)
+		}
+	}
+	return out
 }
 
 type DrawLine struct {
@@ -169,6 +228,7 @@ func LayoutDrawing(sec *SectionResult, meta DrawingMeta, opt DrawingOptions) (*D
 			f.Loops = append(f.Loops, pl)
 		}
 		if len(f.Loops) > 0 {
+			f.Edges = outlineEdges(f.Loops)
 			d.Fills = append(d.Fills, f)
 		}
 	}

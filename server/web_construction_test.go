@@ -274,6 +274,13 @@ func TestConstructionPlanBrowser(t *testing.T) {
 	}
 }
 
+// Suggestions survive malformed replies, other browsers, later edits and
+// undo-then-apply (QA, 2026-10-09).
+func TestConstructionPlanQABrowser(t *testing.T) {
+	f, _ := nativeFixture(t)
+	t.Log(strings.TrimSpace(constructionBrowser(t, "construction-plan-qa.cjs", f, nil)))
+}
+
 // The integrated journey in a browser (P9): the Home pilot through edits,
 // research cancel/resume, a decision, the detail package and the private
 // recovery bundle; afterwards the downloaded bundle restores into an empty

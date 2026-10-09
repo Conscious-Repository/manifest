@@ -22,9 +22,11 @@ import (
 )
 
 type constructionSettings struct {
-	Model    string `json:"model,omitempty"`
-	Provider string `json:"provider,omitempty"`
-	Effort   string `json:"effort,omitempty"`
+	// ProfileDefault: the owner chose to follow Alfred's own default model
+	ProfileDefault bool   `json:"profileDefault,omitempty"`
+	Model          string `json:"model,omitempty"`
+	Provider       string `json:"provider,omitempty"`
+	Effort         string `json:"effort,omitempty"`
 }
 
 // the starting choice when nothing is saved: Astra on high through the Codex
@@ -43,8 +45,13 @@ func (s *Server) constructionSettingsNow() (constructionSettings, bool) {
 	constructionSettingsMu.Lock()
 	defer constructionSettingsMu.Unlock()
 	var cur constructionSettings
-	if b, err := os.ReadFile(s.constructionSettingsPath()); err == nil && json.Unmarshal(b, &cur) == nil && cur.Model != "" {
-		return cur, true
+	if b, err := os.ReadFile(s.constructionSettingsPath()); err == nil && json.Unmarshal(b, &cur) == nil {
+		if cur.ProfileDefault {
+			return constructionSettings{}, true
+		}
+		if cur.Model != "" {
+			return cur, true
+		}
 	}
 	d := constructionDefaultModel
 	if s.hermesChoiceError(d.Model, d.Provider, d.Effort) == nil {
@@ -87,11 +94,12 @@ func (s *Server) handleConstructionSettingsPut(w http.ResponseWriter, r *http.Re
 		return
 	}
 	in.Model, in.Provider, in.Effort = strings.TrimSpace(in.Model), strings.TrimSpace(in.Provider), strings.TrimSpace(in.Effort)
-	if in.Model == "" || in.Provider == "" {
+	if in.Model == "" && in.Provider == "" {
+		in = constructionSettings{ProfileDefault: true}
+	} else if in.Model == "" || in.Provider == "" {
 		constructionError(w, construction.Invalid("choose a model and its provider"))
 		return
-	}
-	if err := s.hermesChoiceError(in.Model, in.Provider, in.Effort); err != nil {
+	} else if err := s.hermesChoiceError(in.Model, in.Provider, in.Effort); err != nil {
 		constructionError(w, construction.Invalid(err.Error()))
 		return
 	}

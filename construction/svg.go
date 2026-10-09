@@ -90,7 +90,14 @@ func (d *Drawing) SVG(title string) []byte {
 		if fill == "" {
 			fill = svgFills["solid-dark"]
 		}
-		fmt.Fprintf(&b, `<path d="%s" %s fill-rule="evenodd" data-component="%s" data-hatch="%s"/>`+"\n", strings.TrimSpace(path.String()), fill, xmlEscape(f.Component), f.Hatch)
+		fmt.Fprintf(&b, `<path d="%s" %s fill-rule="evenodd" stroke="none" data-component="%s" data-hatch="%s"/>`+"\n", strings.TrimSpace(path.String()), fill, xmlEscape(f.Component), f.Hatch)
+		var edges strings.Builder
+		for _, e := range f.Edges {
+			edges.WriteString("M" + f3(e[0][0]) + " " + f3(e[0][1]) + " L" + f3(e[1][0]) + " " + f3(e[1][1]) + " ")
+		}
+		if edges.Len() > 0 {
+			fmt.Fprintf(&b, `<path d="%s" fill="none" data-outline="%s"/>`+"\n", strings.TrimSpace(edges.String()), xmlEscape(f.Component))
+		}
 	}
 	b.WriteString("</g>\n<g id=\"annotation\" stroke=\"#111111\" fill=\"none\">\n")
 	for _, l := range d.Lines {

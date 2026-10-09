@@ -521,3 +521,18 @@ func TestConstructionChatSeesDrawingsAndPictures(t *testing.T) {
 		t.Fatalf("the message carries its pictures: %q", first)
 	}
 }
+
+// Back to Alfred's own default, by choice.
+func TestConstructionWorkspaceModelProfileDefault(t *testing.T) {
+	home := t.TempDir()
+	os.WriteFile(filepath.Join(home, "provider_models_cache.json"), []byte(`{"openai-codex":{"models":["gpt-6-astra"]}}`), 0o644)
+	t.Setenv("HERMES_HOME", home)
+	f, _ := nativeFixture(t)
+	if r := f.do(t, "PUT", fixtureBase+"/settings", map[string]any{"model": "", "provider": ""}); r.Code != 200 {
+		t.Fatalf("%d %s", r.Code, r.Body)
+	}
+	g := f.do(t, "GET", fixtureBase+"/settings", nil).json(t)
+	if set := g["settings"].(map[string]any); set["model"] != nil || g["saved"] != true {
+		t.Fatalf("profile default chosen: %v", g)
+	}
+}

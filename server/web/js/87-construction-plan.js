@@ -505,7 +505,11 @@ function cxChatTurn(t) {
     b.onclick = () => { cxp.open[k] = !cxp.open[k]; cxChatRepaint(); };
     row.append(b);
   }
-  props.forEach((json) => row.append(cxProposalCard(json, (cxp.chat.session || "") + ":" + t.n + ":" + (i++))));
+  props.forEach((json) => {
+    const key = (cxp.chat.session || "") + ":" + t.n + ":" + (i++);
+    try { row.append(cxProposalCard(json, key)); }
+    catch (e) { row.append(el("p", "cx-form-msg", "Alfred's suggestion couldn't be shown (" + e.message + "). Ask him to send it again.")); }
+  });
   if (files.length) {
     const strip = el("div", "cx-turn-files");
     files.forEach((id) => { const a = el("a", "cx-turn-file"); a.href = "/api/chat/files/" + id; a.target = "_blank"; a.rel = "noopener"; const im = document.createElement("img"); im.loading = "lazy"; im.alt = "attached picture"; im.src = "/api/chat/files/" + id; im.onerror = () => a.remove(); a.append(im); strip.append(a); });
@@ -578,7 +582,23 @@ function cxOpPlain(op, asmId) {
   }
 }
 
-function cxParseProposal(json) { try { const p = JSON.parse(json); return Array.isArray(p.changes) ? cxRepairIds(p) : null; } catch (e) { return null; } }
+function cxParseProposal(json) { try { return cxNormalizeProposal(cxRepairIds(JSON.parse(json))); } catch (e) { return null; } }
+// A reply is model output: anything off-shape is dropped or coerced here, so
+// one malformed block can't break the pane that renders it.
+function cxNormalizeProposal(p) {
+  if (!p || typeof p !== "object" || !Array.isArray(p.changes)) return null;
+  const str = (v) => (typeof v === "string" ? v : v == null ? "" : String(v));
+  const changes = p.changes.filter((c) => c && typeof c === "object").map((c) => ({
+    assemblyId: typeof c.assemblyId === "string" ? c.assemblyId : undefined,
+    operations: (Array.isArray(c.operations) ? c.operations : []).filter((o) => o && typeof o === "object" && typeof o.op === "string").map((o) => {
+      const x = { ...o };
+      if ("options" in x) x.options = Array.isArray(x.options) ? x.options.filter((v) => typeof v === "string") : typeof x.options === "string" ? x.options.split(/\s*[\/,]\s*/).filter(Boolean) : [];
+      for (const k of ["text", "name", "title", "answer", "summary", "proposal", "why"]) if (k in x) x[k] = str(x[k]);
+      return x;
+    }),
+  })).filter((c) => c.operations.length);
+  return changes.length ? { summary: str(p.summary), changes } : null;
+}
 // models miscount hex: an id with the wrong number of digits is completed
 // the same way every time (so a re-read, a retry or an undo agrees), and
 // every mention of it in the suggestion follows
@@ -605,12 +625,38 @@ function cxLatestProposal() {
     const blocks = [...(t.text || "").matchAll(CX_PROPOSAL_RE)];
     for (let i = blocks.length - 1; i >= 0; i--) {
       const key = (cxp.chat.session || "") + ":" + t.n + ":" + i, p = cxParseProposal(blocks[i][1]);
-      if (p && !cxp.applied[key]) return { key, count: p.changes.reduce((n, c) => n + (c.operations || []).length, 0) };
-      if (p && cxp.applied[key].msg && !cxp.applied[key].ok && !cxp.applied[key].undone) return { key, partial: true, count: 0 };
+      if (p && !cxp.applied[key] && !cxAppliedElsewhere(p.changes)) return { key, count: p.changes.reduce((n, c) => n + (c.operations || []).length, 0) };
+      if (p && cxp.applied[key] && cxp.applied[key].msg && !cxp.applied[key].ok && !cxp.applied[key].undone && !cxp.applied[key].blocked) return { key, partial: true, count: 0 };
     }
     if (blocks.length) return null;
   }
   return null;
+}
+
+// A suggestion applied on another device (or before this browser's memory)
+// is recognised from the problem itself: every record it would create —
+// questions, notes, approaches, custom parts — already exists.
+function cxCreatedIds(changes) {
+  const ids = [];
+  changes.forEach((ch) => (ch.operations || []).forEach((o) => {
+    if (o.op === "AddQuestion" || o.op === "AddFact") ids.push(["rec", o.id]);
+    if (o.op === "CreateVariant") ids.push(["asm", o.newAssemblyId]);
+    if (o.op === "AddProfiledPart") ids.push(["cmp", o.newComponentId]);
+    if (o.op === "ProposeDecision") ids.push(["dec", o.decisionId]);
+  }));
+  return ids;
+}
+function cxExists(kind, id) {
+  const v = cx.view, p = v.problem;
+  if (kind === "rec") return cxQuestions().some((q) => q.id === id) || [...(p.existing || []), ...(p.proposed || [])].some((f) => f.id === id);
+  if (kind === "asm") return !!(v.assemblies || {})[id];
+  if (kind === "dec") return !!(v.decisions || {})[id];
+  return Object.values(v.assemblies || {}).some((a) => (a.components || []).some((c) => c.id === id));
+}
+function cxAppliedElsewhere(changes) {
+  if (cxp.applying) return false;
+  const ids = cxCreatedIds(changes);
+  return ids.length > 0 && ids.every(([k, id]) => cxExists(k, id));
 }
 
 function cxProposalCard(json, key) {
@@ -618,9 +664,11 @@ function cxProposalCard(json, key) {
   card.dataset.key = key;
   const prop = cxParseProposal(json);
   if (!prop) { card.append(el("p", "cx-form-msg", "Alfred's suggestion couldn't be read. Ask him to send it again.")); return card; }
-  const changes = prop.changes, st = cxp.applied[key], ro = !!cx.view.readOnly;
+  const changes = prop.changes, ro = !!cx.view.readOnly;
+  let st = cxp.applied[key];
+  if (!st && cxAppliedElsewhere(changes)) st = { ok: true, elsewhere: true };
   const n = changes.reduce((k, c) => k + (c.operations || []).length, 0);
-  card.append(el("div", "cx-proposal-kicker micro-label", st && st.ok ? "Applied" : st && st.undone ? "Undone" : st && st.skipped ? "Skipped" : st && st.msg ? "Partly applied" : "Alfred suggests " + n + " change" + (n === 1 ? "" : "s")));
+  card.append(el("div", "cx-proposal-kicker micro-label", st && (st.ok || st.blocked) ? "Applied" : st && st.undone ? "Undone" : st && st.skipped ? "Skipped" : st && st.msg ? "Partly applied" : "Alfred suggests " + n + " change" + (n === 1 ? "" : "s")));
   if (prop.summary) card.append(el("p", "cx-proposal-sum", prop.summary));
   const ul = cxProposalBody(changes, key);
   const acts = el("div", "cx-dp-acts");
@@ -631,12 +679,17 @@ function cxProposalCard(json, key) {
     const go = btn("Apply", () => cxApplyProposal(changes, key, go));
     go.classList.add("cx-primary");
     btn("Not now", () => { cxp.applied[key] = { skipped: true }; cxAppliedSave(); cxRender(); });
+  } else if (st.blocked) {
+    card.classList.add("is-applied");
+    card.append(el("p", "cx-proposal-state", st.msg));
+    btn("Open History", () => cxGo("research", "history"));
   } else if (st.ok) {
     card.classList.add("is-applied");
     const det = el("details", "");
     det.append(el("summary", "", "What changed"), ul);
     card.append(det);
     if (st.undo && st.undo.length) btn("Undo", () => cxUndoProposal(key));
+    else if (st.elsewhere) card.append(el("p", "cx-proposal-state", "Applied on another device — to undo, use Details › History."));
   } else if (st.skipped || st.undone) {
     card.classList.add("is-quiet");
     const det = el("details", "");
@@ -764,7 +817,10 @@ function cxInverse(op, asmId) {
     case "AnswerQuestion": case "SetQuestionState": {
       const q = cxQuestions().find((x) => x.id === op.id);
       if (!q) return null;
-      return { ops: [q.state === "answered" ? { op: "AnswerQuestion", id: q.id, answer: q.answer } : { op: "SetQuestionState", id: q.id, state: q.state === "dropped" ? "dropped" : "open" }] };
+      const back = { op: "AnswerQuestion", id: q.id, answer: q.answer };
+      if (q.note) back.note = q.note;
+      if (q.provenance) back.provenance = q.provenance;
+      return { ops: [q.state === "answered" ? back : { op: "SetQuestionState", id: q.id, state: q.state === "dropped" ? "dropped" : "open" }] };
     }
     case "AddFact": return { ops: [{ op: "RemoveFact", id: op.id }] };
     case "SetContext": { const f = p[op.field] || {}; return { ops: [{ op: "SetContext", field: op.field, text: f.text || "", state: f.state || "unknown", provenance: f.provenance || "unknown" }] }; }
@@ -781,11 +837,20 @@ function cxInverse(op, asmId) {
 // what ran is kept so the whole suggestion can be undone in one tap.
 async function cxApplyProposal(changes, key, btn) {
   if (btn) btn.disabled = true;
+  cxp.applying = key;
+  try { await cxApplyProposalNow(changes, key); } finally { cxp.applying = ""; cxRender(); }
+}
+async function cxApplyProposalNow(changes, key) {
   const prior = cxp.applied[key] && cxp.applied[key].done ? cxp.applied[key] : { done: 0, undo: [] };
   const undo = prior.undo || [];
   let n = 0, msg = "";
   for (const ch of changes) {
     if (n++ < (prior.done || 0)) continue;
+    for (const o of ch.operations || []) {
+      const back = o.op === "CreateVariant" && (cx.view.assemblies || {})[o.newAssemblyId];
+      if (back && back.lifecycle === "superseded" && await cxCommand([{ op: "SetAssemblyLifecycle", lifecycle: "draft" }], { assembly: back.id, label: "Bring back" }))
+        undo.push({ assembly: back.id, ops: [{ op: "SetAssemblyLifecycle", lifecycle: "superseded" }] });
+    }
     const ops = cxReapplicable(ch.operations || []);
     const dec = ops.filter((o) => o.op === "ProposeDecision");
     const prob = ops.filter((o) => CX_PROBLEM_OPS.has(o.op));
@@ -828,7 +893,9 @@ async function cxApplyProposal(changes, key, btn) {
     }
     if (!ok) { msg = cx.error || "refused"; n--; break; }
   }
-  cxp.applied[key] = msg ? { ok: false, done: n, msg, undo } : { ok: true, done: changes.length, undo };
+  const after = {};
+  undo.forEach((u) => { if (u.assembly) after[u.assembly] = (cx.view.revisions || {})["assembly:" + u.assembly]; });
+  cxp.applied[key] = msg ? { ok: false, done: n, msg, undo, after } : { ok: true, done: changes.length, undo, after };
   cxAppliedSave();
   cxRender();
 }
@@ -841,6 +908,8 @@ function cxReapplicable(ops) {
   return ops.flatMap((o) => {
     if (o.op === "AddQuestion") { const q = cxQuestions().find((x) => x.id === o.id); if (q) return q.state === "dropped" ? [{ op: "SetQuestionState", id: o.id, state: "open" }] : []; }
     if (o.op === "AddFact" && facts.has(o.id)) return [];
+    if (o.op === "AddProfiledPart" && cxExists("cmp", o.newComponentId)) return [];
+    if (o.op === "CreateVariant" && cxExists("asm", o.newAssemblyId)) return [];
     return [o];
   });
 }
@@ -849,6 +918,15 @@ function cxReapplicable(ops) {
 async function cxUndoProposal(key) {
   const st = cxp.applied[key];
   if (!st || !st.undo) return;
+  // an approach changed since (by hand or by another suggestion): restoring
+  // it would silently take those changes away too — say so instead
+  const moved = Object.entries(st.after || {}).filter(([id, rev]) => rev && (cx.view.revisions || {})["assembly:" + id] !== rev);
+  if (moved.length) {
+    st.msg = "“" + moved.map(([id]) => cxAsmName(id)).join("”, “") + "” changed after this was applied, so undoing it here would also undo those later changes. Use Details › History to go back to a version.";
+    st.ok = false; st.blocked = true;
+    cxAppliedSave(); cxRender();
+    return;
+  }
   const steps = st.undo.slice().reverse();
   for (const u of steps) {
     let ok = true;
@@ -1115,7 +1193,7 @@ async function cxSettingsBlock(subject) {
     if (!groups.has(g)) { const og = document.createElement("optgroup"); og.label = g; groups.set(g, og); sel.append(og); }
     const o = document.createElement("option"); o.value = m.provider + "|" + m.id; o.textContent = m.label || m.id; groups.get(g).append(o);
   });
-  if (!cur.model) { const o = document.createElement("option"); o.value = ""; o.textContent = "Alfred's profile default"; sel.prepend(o); }
+  { const o = document.createElement("option"); o.value = ""; o.textContent = "Alfred's own default (follows his profile)"; sel.prepend(o); }
   sel.value = cur.model ? cur.provider + "|" + cur.model : "";
   const eff = document.createElement("select");
   eff.className = "cx-in"; eff.setAttribute("aria-label", "Reasoning effort");
@@ -1123,10 +1201,12 @@ async function cxSettingsBlock(subject) {
   eff.value = cur.effort || "high";
   const msg = el("span", "cx-hint", d.saved ? "" : cur.model ? "Default — not saved yet" : "");
   const save = pillLight("Save", async () => {
-    const [provider, model] = sel.value.split("|");
-    if (!model) return;
+    const [provider, model] = sel.value ? sel.value.split("|") : ["", ""];
     save.disabled = true;
-    try { await cxApi("PUT", cxBase(subject), "/settings", { model, provider, effort: eff.value }); msg.textContent = "Saved — Alfred uses " + model + " · " + eff.value + " from his next message"; }
+    try {
+      await cxApi("PUT", cxBase(subject), "/settings", model ? { model, provider, effort: eff.value } : { model: "", provider: "" });
+      msg.textContent = model ? "Saved — Alfred uses " + model + " · " + eff.value + " from his next message" : "Saved — Alfred uses his own default model";
+    }
     catch (e) { msg.textContent = "Not saved: " + e.message; }
     finally { save.disabled = false; }
   });

@@ -116,7 +116,11 @@ func (d *Drawing) PDF(title string) []byte {
 		if f.Hatch == "void" {
 			dash = "[1 0.7] 0 d "
 		}
-		fmt.Fprintf(&c, "%s0.25 w 0.07 G\n%sS [] 0 d\n", dash, path)
+		var edges strings.Builder
+		for _, e := range f.Edges {
+			fmt.Fprintf(&edges, "%s %s m %s %s l\n", pnum(X(e[0][0])), pnum(Y(e[0][1])), pnum(X(e[1][0])), pnum(Y(e[1][1])))
+		}
+		fmt.Fprintf(&c, "%s0.25 w 0.07 G\n%sS [] 0 d\n", dash, edges.String())
 	}
 	for _, l := range d.Lines {
 		dash := ""

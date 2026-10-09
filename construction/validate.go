@@ -556,6 +556,26 @@ func Evaluate(in ruleInput) []finding {
 				missing = append(missing, v)
 			}
 		}
+		// a transition made by custom parts holds only if one of them was
+		// measured lapping the upstand
+		if len(missing) == 0 && len(t.Via) > 0 && t.Kind == "water" {
+			allCustom, lapped := true, false
+			for _, v := range t.Via {
+				if c, _ := a.component(v); c == nil || c.Type != TypeProfiledFlashing {
+					allCustom = false
+				}
+			}
+			for _, l := range ir.Facts.Laps {
+				if l.Kind == "custom-over-upstand" && l.OK && contains(t.Via, l.Over) {
+					lapped = true
+				}
+			}
+			if allCustom && !lapped {
+				add(finding{key: "moisture.transition.water", target: fmt.Sprintf("%s:%d", j.ID, i), severity: SevCritical, category: "moisture",
+					message: "Required water transition is not made: no custom part reaches down outside the base flashing's upstand, below its top", observed: "no measured lap", expected: "a custom part lapping the upstand", comps: t.Via, inputs: []string{"profile"}})
+				continue
+			}
+		}
 		if len(missing) > 0 || len(t.Via) == 0 {
 			add(finding{key: "moisture.transition." + t.Kind, target: fmt.Sprintf("%s:%d", j.ID, i), severity: SevCritical, category: "moisture",
 				message: "Required " + t.Kind + " transition is not made: " + t.Note, observed: strings.Join(missing, ","), expected: "continuous " + t.Kind + " control", inputs: []string{"junction.transitions"}})

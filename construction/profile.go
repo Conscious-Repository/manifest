@@ -202,6 +202,7 @@ func (o *SetProfile) Apply(tx *Tx, c *ApplyContext) error {
 		cp.Shape.Params = map[string]Quantity{"thickness": {Value: &t, Unit: "mm", State: StateAssumed, Provenance: ProvInference}}
 	}
 	tx.Record(o.Name(), cp.ID+".shape", before, cp.Shape)
+	refreshJunction(a)
 	return nil
 }
 
@@ -261,11 +262,15 @@ func (c *compiler) profiledParts(g sheetGeom) {
 					mid := (lo + hi) / 2
 					lo, hi = mid-5, mid+5
 				}
+				// this part's own cut is what it reports; the wall's groove is
+				// the union of every cut (a reglet's, other custom parts')
+				own := WallCut{Component: comp.ID, Depth: round4(deep), Height: round4(hi - lo), Above: round4(lo - c.jg.datum)}
+				glo, ghi, gdeep := lo, hi, deep+0.5
 				if c.jg.embed > 0 {
-					lo, hi, deep = math.Min(lo, c.jg.grooveLo), math.Max(hi, c.jg.grooveHi), math.Max(deep, c.jg.embed)
+					glo, ghi, gdeep = math.Min(glo, c.jg.grooveLo), math.Max(ghi, c.jg.grooveHi), math.Max(gdeep, c.jg.embed)
 				}
-				c.jg.grooveLo, c.jg.grooveHi, c.jg.embed = lo, hi, deep+0.5
-				c.facts.WallCuts = append(c.facts.WallCuts, WallCut{Component: comp.ID, Depth: round4(deep), Height: round4(hi - lo), Above: round4(lo - c.jg.datum)})
+				c.jg.grooveLo, c.jg.grooveHi, c.jg.embed = glo, ghi, gdeep
+				c.facts.WallCuts = append(c.facts.WallCuts, own)
 			}
 		}
 	}

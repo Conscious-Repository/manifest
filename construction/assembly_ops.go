@@ -664,7 +664,7 @@ func refreshJunction(a *Assembly) {
 	for _, c := range a.Components {
 		switch c.Type {
 		case TypeCorrugatedSheet, TypeApronFlashing, TypeSidewallFlash, TypeCounterflashing, TypeSealant, TypeThroughWall,
-			TypeWeepSet, TypeEndDams, TypeMasonryWythe, TypeCavitySpace, TypeUnderlayment:
+			TypeWeepSet, TypeEndDams, TypeMasonryWythe, TypeCavitySpace, TypeUnderlayment, TypeProfiledFlashing:
 			if c.Applicability != "inapplicable" {
 				parts = append(parts, c.ID)
 			}
@@ -676,6 +676,12 @@ func refreshJunction(a *Assembly) {
 	closure := a.firstOf(TypeProfileClosure)
 	counter, sealant := a.firstOf(TypeCounterflashing), a.firstOf(TypeSealant)
 	tw, outer, inner, avcl := a.firstOf(TypeThroughWall), a.byRole("masonry:outer"), a.byRole("masonry:inner"), a.firstOf(TypeControlLayer)
+	var custom []string
+	for _, c := range a.Components {
+		if c.Type == TypeProfiledFlashing && c.Applicability != "inapplicable" {
+			custom = append(custom, c.ID)
+		}
+	}
 	var tr []Transition
 	if ul != nil && base != nil {
 		via := []string{}
@@ -696,6 +702,10 @@ func refreshJunction(a *Assembly) {
 				via = append(via, sealant.ID)
 			}
 			tr = append(tr, Transition{Kind: "water", From: base.ID, To: outer.ID, Via: via, Required: true, Note: "counterflashing laps the upstand; wall attachment depends on wall type"})
+		case len(custom) > 0:
+			// whether a custom part really covers the upstand is measured in
+			// the geometry (validate checks its lap fact)
+			tr = append(tr, Transition{Kind: "water", From: base.ID, To: outer.ID, Via: custom, Required: true, Note: "a custom part laps the upstand"})
 		default:
 			tr = append(tr, Transition{Kind: "water", From: base.ID, To: outer.ID, Via: []string{}, Required: true, Note: "no counterflashing or tray covers the upstand"})
 		}

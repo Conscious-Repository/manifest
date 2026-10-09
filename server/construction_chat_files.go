@@ -61,49 +61,75 @@ var cxSheetRE = regexp.MustCompile(`\b([A-Z]{1,2}-?\d{1,2}\.\d{1,2}[A-Z]?)\b`)
 const cxMaxSheets = 80
 
 // constructionInputFiles materialises the problem's inputs where the agent
-// can open them, rendering each PDF's pages once.
-func (s *Server) constructionInputFiles(sub construction.SubjectRef, st *construction.State) []cxInputFile {
+// can open them, rendering each PDF's pages once. The cache holds only what
+// rendering produced (keyed by content), never an input's name or role, and
+// only a complete render is cached — a failed one is tried again next time.
+// wait bounds how long a caller waits for a render another request started:
+// the turn's brief must not hold the model up for minutes.
+func (s *Server) constructionInputFiles(sub construction.SubjectRef, st *construction.State, wait time.Duration) []cxInputFile {
 	var out []cxInputFile
 	for _, in := range st.Problem.Inputs {
-		dir := filepath.Join(s.construction.store.Root(), "chat-files", in.Revision)
 		f := cxInputFile{Name: in.Name, Role: in.Role, Label: in.Label, Verification: in.Verification}
-		lk, _ := cxRenderLocks.LoadOrStore(in.Revision, &sync.Mutex{})
-		mu := lk.(*sync.Mutex)
-		mu.Lock()
-		func() {
-			defer mu.Unlock()
-			idx := filepath.Join(dir, "index.json")
-			if b, err := os.ReadFile(idx); err == nil && json.Unmarshal(b, &f) == nil && f.Path != "" {
-				return
-			}
-			data, err := s.construction.store.Content(sub, st.Problem.ID, in.ArtifactID, in.Revision)
-			if err != nil {
-				f.Note = "unreadable: " + err.Error()
-				return
-			}
-			if err := os.MkdirAll(dir, 0o700); err != nil {
-				f.Note = err.Error()
-				return
-			}
-			ext := strings.ToLower(filepath.Ext(in.Name))
-			if ext == "" {
-				ext = map[bool]string{true: ".pdf", false: ".bin"}[strings.Contains(in.Mime, "pdf")]
-			}
-			f.Path = filepath.Join(dir, "original"+ext)
-			if err := os.WriteFile(f.Path, data, 0o600); err != nil {
-				f.Note = err.Error()
-				return
-			}
-			if strings.Contains(in.Mime, "pdf") {
-				f.Sheets, f.Note = renderPDFSheets(f.Path, dir)
-			}
-			if b, err := json.Marshal(f); err == nil {
-				_ = os.WriteFile(idx, b, 0o600)
-			}
-		}()
+		r, ok := s.constructionRender(sub, st.Problem.ID, in, wait)
+		if !ok {
+			f.Note = "the drawing sheets are still being prepared; ask again in a minute to have them"
+		}
+		f.Path, f.Sheets = r.Path, r.Sheets
+		if r.Note != "" {
+			f.Note = r.Note
+		}
 		out = append(out, f)
 	}
 	return out
+}
+
+type cxRendered struct {
+	Path   string    `json:"path"`
+	Sheets []cxSheet `json:"sheets,omitempty"`
+	Note   string    `json:"note,omitempty"`
+}
+
+func (s *Server) constructionRender(sub construction.SubjectRef, pid string, in construction.InputRef, wait time.Duration) (cxRendered, bool) {
+	var r cxRendered
+	dir := filepath.Join(s.construction.store.Root(), "chat-files", in.Revision)
+	idx := filepath.Join(dir, "index.json")
+	lk, _ := cxRenderLocks.LoadOrStore(in.Revision, &sync.Mutex{})
+	mu := lk.(*sync.Mutex)
+	deadline := time.Now().Add(wait)
+	for !mu.TryLock() {
+		if time.Now().After(deadline) {
+			return r, false
+		}
+		time.Sleep(250 * time.Millisecond)
+	}
+	defer mu.Unlock()
+	if b, err := os.ReadFile(idx); err == nil && json.Unmarshal(b, &r) == nil && r.Path != "" {
+		return r, true
+	}
+	data, err := s.construction.store.Content(sub, pid, in.ArtifactID, in.Revision)
+	if err != nil {
+		return cxRendered{Note: "unreadable: " + err.Error()}, true
+	}
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return cxRendered{Note: err.Error()}, true
+	}
+	ext := strings.ToLower(filepath.Ext(in.Name))
+	if ext == "" || len(ext) > 6 {
+		ext = map[bool]string{true: ".pdf", false: ".bin"}[strings.Contains(in.Mime, "pdf")]
+	}
+	r.Path = filepath.Join(dir, "original"+ext)
+	if err := os.WriteFile(r.Path, data, 0o600); err != nil {
+		return cxRendered{Note: err.Error()}, true
+	}
+	if strings.Contains(in.Mime, "pdf") {
+		r.Sheets, r.Note = renderPDFSheets(r.Path, dir)
+	}
+	if r.Note == "" {
+		if b, err := json.Marshal(r); err == nil {
+			_ = os.WriteFile(idx, b, 0o600)
+		}
+	}
+	return r, true
 }
 
 // renderPDFSheets renders each page (up to cxMaxSheets) twice over: a whole
@@ -120,11 +146,21 @@ func renderPDFSheets(pdf, dir string) ([]cxSheet, string) {
 	}
 	type pg struct{ w, h float64 }
 	var pages []pg
+	rot := map[int]int{}
 	for _, line := range strings.Split(string(info), "\n") {
-		var n int
+		var n, deg int
 		var w, h float64
-		if _, err := fmt.Sscanf(strings.TrimSpace(line), "Page %d size: %f x %f", &n, &w, &h); err == nil && w > 0 {
+		t := strings.TrimSpace(line)
+		if _, err := fmt.Sscanf(t, "Page %d size: %f x %f", &n, &w, &h); err == nil && w > 0 {
 			pages = append(pages, pg{w, h})
+		} else if _, err := fmt.Sscanf(t, "Page %d rot: %d", &n, &deg); err == nil && len(pages) > 0 {
+			rot[len(pages)-1] = deg // pdfinfo prints a page's rot after its size
+		}
+	}
+	// pdftoppm renders a rotated page upright: crop it as rendered
+	for i := range pages {
+		if d := rot[i] % 180; d == 90 || d == -90 {
+			pages[i].w, pages[i].h = pages[i].h, pages[i].w
 		}
 	}
 	if len(pages) == 0 {
@@ -195,7 +231,7 @@ func cxMostFrequent(xs []string) string {
 }
 
 func (s *Server) constructionInputsBrief(sub construction.SubjectRef, st *construction.State) string {
-	files := s.constructionInputFiles(sub, st)
+	files := s.constructionInputFiles(sub, st, 90*time.Second) // a render already under way gets a minute and a half
 	if len(files) == 0 {
 		return ""
 	}

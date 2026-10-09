@@ -21,6 +21,7 @@ import (
 	"reflect"
 	"sort"
 	"strings"
+	"time"
 
 	"manifest/agentchat"
 	"manifest/construction"
@@ -181,7 +182,7 @@ func (s *Server) handleConstructionChatPost(w http.ResponseWriter, r *http.Reque
 		constructionError(w, err)
 		return
 	}
-	go s.constructionInputFiles(sub, st) // render the drawing sheets now, not on Alfred's clock
+	go s.constructionInputFiles(sub, st, 10*time.Minute) // render the drawing sheets now, not on Alfred's clock
 	tokens, err := s.constructionAttachImages(agent, conv, in.Images)
 	if err != nil {
 		constructionError(w, err)

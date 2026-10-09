@@ -87,3 +87,46 @@ func TestProfiledPartIsBuiltAndMeasured(t *testing.T) {
 		t.Fatalf("a crossing profile is refused with where: %v", err)
 	}
 }
+
+// Each custom part reports its own cut, even when another one cuts deeper.
+func TestProfiledPartsReportTheirOwnCuts(t *testing.T) {
+	s, st, asmID := templateProblem(t)
+	a1, a2 := NewID(KindComponent), NewID(KindComponent)
+	st = mustExec(t, s, st, asmID,
+		map[string]any{"op": "AddProfiledPart", "newComponentId": a1, "name": "deep", "points": [][2]float64{{-40, 300}, {0, 300}, {0, 200}}},
+		map[string]any{"op": "AddProfiledPart", "newComponentId": a2, "name": "shallow", "points": [][2]float64{{-10, 240}, {0, 240}, {0, 180}}})
+	ir := compile(t, st, asmID)
+	got := map[string]float64{}
+	for _, w := range ir.Facts.WallCuts {
+		got[w.Component] = w.Depth
+	}
+	if got[a1] != 40 || got[a2] != 10 {
+		t.Fatalf("own depths: %v", got)
+	}
+}
+
+// A custom part that laps the upstand makes the roof-to-wall water
+// transition; one that stops short doesn't.
+func TestProfiledPartMakesTheWaterTransition(t *testing.T) {
+	s, st, asmID := templateProblem(t)
+	cf := st.Assemblies[asmID].firstOf(TypeCounterflashing)
+	st = mustExec(t, s, st, asmID, map[string]any{"op": "SetJunctionStrategy", "orientation": "headwall", "strategy": "apron-surface-counterflashing", "newComponentIds": map[string]string{"apron": NewID(KindComponent)}})
+	id := NewID(KindComponent)
+	st = mustExec(t, s, st, asmID, map[string]any{"op": "AddProfiledPart", "newComponentId": id, "name": "receiver", "replaces": cf.ID,
+		"points": [][2]float64{{-20, 235}, {0, 235}, {0, 160}, {12, 140}, {12, 100}}})
+	water := func() bool {
+		for _, is := range st.Validation[asmID].Issues {
+			if is.Status != "resolved" && is.RuleKey == "moisture.transition.water" {
+				return true
+			}
+		}
+		return false
+	}
+	if water() {
+		t.Fatal("a lapping custom part makes the water transition")
+	}
+	st = mustExec(t, s, st, asmID, map[string]any{"op": "SetProfile", "componentId": id, "points": [][2]float64{{-20, 235}, {0, 235}, {0, 170}}})
+	if !water() {
+		t.Fatal("a custom part that stops above the upstand doesn't")
+	}
+}
