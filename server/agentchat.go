@@ -861,6 +861,9 @@ func (s *Server) runAgentChatTurnContext(ctx context.Context, agent, id, request
 		}
 		prompt, omitted, toolsets = p, 0, scope
 	}
+	if receipt, ok := st.Receipt(agent, id, requestID); !ok || receipt.Context == nil || receipt.Context.Construction == nil {
+		prompt += s.constructionChatBrief(executionSession) // "" unless this is a construction problem chat
+	}
 	if err := st.RecordHistoryOmission(agent, id, requestID, omitted); err != nil {
 		return err
 	}

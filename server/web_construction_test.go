@@ -246,6 +246,34 @@ func TestConstructionNativeBrowser(t *testing.T) {
 	f.assertSourcesUntouched(t)
 }
 
+// The Plan pane in a browser: ask Alfred from the pane, apply his proposal,
+// answer the decision point; every change is an owner receipt.
+func TestConstructionPlanBrowser(t *testing.T) {
+	f, _ := nativeFixture(t)
+	out := constructionBrowser(t, "construction-plan.cjs", f, nil)
+	t.Log(strings.TrimSpace(out))
+	sub := construction.SubjectRef{Kind: "property", ID: "fixture-ooda-house"}
+	list, err := f.srv.construction.store.List(sub)
+	if err != nil || len(list) != 2 {
+		t.Fatalf("%+v %v", list, err)
+	}
+	for _, p := range list {
+		hist, err := f.srv.construction.store.History(sub, p.ID, 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		seen := map[string]string{}
+		for _, rc := range hist {
+			for _, op := range rc.Operations {
+				seen[op.Op] = rc.Actor.Kind
+			}
+		}
+		if seen["AddQuestion"] != "owner" || seen["AnswerQuestion"] != "owner" {
+			t.Fatalf("the owner applied and answered: %v", seen)
+		}
+	}
+}
+
 // The integrated journey in a browser (P9): the Home pilot through edits,
 // research cancel/resume, a decision, the detail package and the private
 // recovery bundle; afterwards the downloaded bundle restores into an empty

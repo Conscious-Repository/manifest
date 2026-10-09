@@ -186,6 +186,7 @@ type Problem struct {
 	ActiveAssembly   string            `json:"activeAssembly,omitempty"`
 	SelectedAssembly *VersionRef       `json:"selectedAssembly"`
 	Decisions        []string          `json:"decisions"`
+	Questions        []DecisionPoint   `json:"questions,omitempty"`
 	Links            Links             `json:"links"`
 	LatestRun        string            `json:"latestRun,omitempty"`
 	LatestView       string            `json:"latestView,omitempty"`

@@ -38,12 +38,41 @@ reads, and nothing about the real site is assumed.
 ## The workbench
 
 Four synchronized panes (keyboard-resizable on desktop; one at a time on a
-phone): **Agent** (steward, open questions, research runs, ask the agent),
+phone): **Plan** (decisions to make, approaches, the conversation with the
+steward; steward, research runs and undo folded below — see "Plan pane"),
 **Model** (pinned three.js r180 renderer with a technical fallback, picking,
 section plane, explode, measurement, views), **Assembly** (junction,
 parameters, layer stack, selected part, material/product with a previewed
 substitution) and **Research** tabs: Problem, Runs, Evidence, Catalog,
-Alternatives, Decisions, Issues, History, Export.
+Approaches, Decisions, Issues, History, Export. Part names float over the
+model as callouts (Labels toggle), pinned to the part you can actually see.
+
+## Plan pane: steer in chat, keep the answers here
+
+The way of working is five stages shown under the header: describe → research
+→ approaches → decide → specifics.
+- **Conversation.** Each problem has one ordinary steward conversation
+  (`GET|POST /problems/{id}/chat`, session created once per problem with the
+  request id `cxchat-<problem hex>`, also openable in the Chat app). It is a
+  normal chat turn — history window and the chat's read-only tools, web search
+  included — plus a brief of the problem's current state appended to the
+  prompt (`constructionChatBrief`). This is separate from construction
+  *steps* (research-run extraction, "Ask the agent"), which stay packet-only
+  with no tools.
+- **Proposals, not edits.** The steward cannot change the problem from chat.
+  A reply may end with one ```` ```construction ```` block
+  (`{summary, changes:[{assemblyId?, operations}]}`); the pane shows it in
+  plain words and **Apply** sends each change as an ordinary owner command,
+  so every applied change is a revision with the owner as actor.
+- **Decision points** are problem records (`problem.questions`, `dq-` ids):
+  `AddQuestion` (owner or steward), `AnswerQuestion` and `SetQuestionState`
+  (owner; open | dropped). Each has a stage (approach | specifics), optional
+  answer options and why it matters. The pane lists them with the model's own
+  open checks (wall unknown, orientation, climate) and proposed decisions;
+  each offers its answers, "Ask Alfred", and a free answer.
+- **Approaches** are the alternatives as cards with the server's section
+  drawing; "Choose this one" proposes and accepts a decision bound to that
+  exact revision.
 
 ## Assemblies, geometry, sections, exports
 
@@ -265,7 +294,7 @@ research `POST /problems/{id}/research-runs`, `GET …/{run}`, `GET …/{run}/ev
 `GET|POST /problems/{id}/sources|evidence`, `GET /problems/{id}/evidence/paths`, `GET /problems/{id}/graph`,
 `GET|POST /problems/{id}/materials|products`, `GET /problems/{id}/compare?a=&b=`,
 `GET|POST /problems/{id}/decisions`, `POST /problems/{id}/agent/requests`,
-`GET /problems/{id}/agent/requests/{req}`, `GET /preflight`, `GET /problems/{id}/export`.
+`GET /problems/{id}/agent/requests/{req}`, `GET|POST /problems/{id}/chat`, `GET /preflight`, `GET /problems/{id}/export`.
 
 Errors: 404 missing (no cross-project existence leaks), 403 forbidden
 (kind `remote-disabled` for a request recognisably not local: a

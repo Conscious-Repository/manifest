@@ -32,6 +32,7 @@ async function pollPage(page, fn, arg, timeout = 30000) {
     const id = created.view.problem.id;
     await page.goto(cfg.url + '/#/properties/fixture-ooda-house/construction/' + id);
     await page.getByRole('heading', {name: 'Native fixture'}).waitFor();
+    await page.evaluate(() => { cxp.open.more = true; cxRender(); }); // the Plan pane folds runs and steward under one summary
     await page.getByText(/bounded-tools: .*the runner enforces it as for every native chat turn/).first().waitFor();
     await page.getByRole('button', {name: 'Start research with the native agent'}).click();
     await pollPage(page, () => { const r = cxLatestRun(); return r && r.state === 'completed'; }, null, 60000);

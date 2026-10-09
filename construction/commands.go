@@ -58,6 +58,17 @@ func registerOp(name string, target Target, ownerOnly bool, mk func() Operation)
 	opRegistry[name] = opSpec{target: target, ownerOnly: ownerOnly, make: mk}
 }
 
+// EmptyOperation is a zero-valued operation of the named kind (its JSON
+// shows the fields the operation takes).
+func EmptyOperation(name string) (Operation, error) {
+	spec, ok := opRegistry[name]
+	if !ok {
+		return nil, Invalid("unknown operation " + name)
+	}
+	op := spec.make()
+	return op, nil
+}
+
 // OperationNames lists every accepted operation kind (sorted).
 func OperationNames() []string {
 	out := make([]string, 0, len(opRegistry))

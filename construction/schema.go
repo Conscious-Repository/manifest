@@ -391,6 +391,7 @@ func ValidateProblem(p *Problem) error {
 			out = append(out, "decisions must be dec- ids")
 		}
 	}
+	out = append(out, checkQuestions(p.Questions)...)
 	for _, r := range append(append([]ExternalRef{}, p.Links.Tasks...), p.Links.Decisions...) {
 		if !scopeIDRE.MatchString(r.ID) {
 			out = append(out, "links must carry exact record ids")

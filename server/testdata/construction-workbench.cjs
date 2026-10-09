@@ -170,6 +170,7 @@ async function backendRun(browser) {
   await page.getByRole('button', {name: 'Upload'}).click();
   await page.getByRole('link', {name: 'synthetic-site-photo.png'}).waitFor();
   assert.equal(await page.locator('img.cx-thumb').evaluate((img) => img.complete && img.naturalWidth === 1), true, 'retained photo renders from its private URL');
+  await page.evaluate(() => { cxp.open.more = true; cxRender(); }); // the Plan pane folds runs and steward under one summary
   await page.getByLabel('Steward agent').selectOption('zeck');
   await page.getByText('Zeck was explicitly selected as the real-estate specialist.').waitFor();
   await page.getByText('No research run yet.').waitFor();
@@ -341,7 +342,8 @@ async function backendRun(browser) {
       } else {
         await waitModel(tab);
         if (width < 1280) {
-          await tab.getByRole('tab', {name: 'Agent', exact: true}).click();
+          await tab.getByRole('tab', {name: 'Plan', exact: true}).click();
+          await tab.evaluate(() => { cxp.open.more = true; cxRender(); });
           await tab.getByLabel('Steward agent').waitFor();
           await tab.getByRole('tab', {name: 'Assembly', exact: true}).click();
         }

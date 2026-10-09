@@ -61,6 +61,7 @@ const tab = (page, name) => page.getByRole('tab', {name, exact: true}).click();
     await page.locator('.cx-comp').getByLabel('thickness', {exact: true}).press('Enter');
     await pollPage(page, ([a, id]) => cx.view.assemblies[a].components.find((c) => c.id === id).shape.params.thickness.value === 120, [base, ins]);
     // ---- research: cancel mid-run, resume ----
+    await page.evaluate(() => { cxp.open.more = true; cxRender(); }); // the Plan pane folds runs and steward under one summary
     await page.getByRole('button', {name: 'Start research', exact: true}).click();
     await page.getByRole('button', {name: 'Cancel research'}).click();
     await pollPage(page, () => { const r = cxLatestRun(); return r && r.state === 'cancelled'; });
@@ -68,8 +69,8 @@ const tab = (page, name) => page.getByRole('tab', {name, exact: true}).click();
     await pollPage(page, () => { const r = cxLatestRun(); return r && r.state === 'completed'; }, null, 60000);
     evidence.run = await page.evaluate(() => { const r = cxLatestRun(); return {state: r.state, epoch: r.epoch, alternatives: r.publication.assemblies.length}; });
     // ---- open a research alternative; decide ----
-    await tab(page, 'Alternatives');
-    await page.locator('table.cx-compare tr', {hasText: 'Research — apron flashing + surface-held counterflashing'}).getByRole('button', {name: 'Open'}).click();
+    await tab(page, 'Approaches');
+    await page.locator('.cx-pane-d .cx-approach', {hasText: 'Research — apron flashing + surface-held counterflashing'}).getByRole('button', {name: 'Show model'}).click();
     await tab(page, 'Decisions');
     await page.getByText(/^Propose a decision for/).click();
     await page.getByLabel('Decision proposal').fill('Working detail for review; every open issue stays open.');

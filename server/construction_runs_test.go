@@ -350,3 +350,71 @@ func TestConstructionNativeStewardRequest(t *testing.T) {
 	}
 	f.assertSourcesUntouched(t)
 }
+
+// The problem chat is an ordinary Alfred conversation: chat tools, the
+// conversation history, and a brief of the problem appended; the reply's
+// proposal block is only text until the owner applies it.
+func TestConstructionProblemChat(t *testing.T) {
+	f, out := nativeFixture(t)
+	_, id, _ := f.createTemplate(t, fixtureBase, "create-nat-chat")
+	base := fixtureBase + "/problems/" + id + "/chat"
+	if c := f.do(t, "GET", base, nil).json(t)["chat"].(map[string]any); c["session"] != nil || len(c["turns"].([]any)) != 0 {
+		t.Fatalf("no chat yet: %v", c)
+	}
+	sub := construction.SubjectRef{Kind: "property", ID: "fixture-ooda-house"}
+	before, _ := f.srv.construction.store.ReadHead(sub, id)
+	r := f.do(t, "POST", base, map[string]any{"schemaVersion": 1, "requestId": cReqID("chat"), "text": "How do we flash the roof into the brick?"})
+	if r.Code != 200 {
+		t.Fatalf("chat %d %s", r.Code, r.Body)
+	}
+	var c map[string]any
+	deadline := time.Now().Add(30 * time.Second)
+	for {
+		c = f.do(t, "GET", base, nil).json(t)["chat"].(map[string]any)
+		if !c["pending"].(bool) && len(c["turns"].([]any)) >= 2 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("chat reply did not land: %v", c)
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	turns := c["turns"].([]any)
+	reply := turns[len(turns)-1].(map[string]any)["text"].(string)
+	if !strings.Contains(reply, "```construction") || !strings.HasPrefix(c["href"].(string), "#/chat/a/alfred/") {
+		t.Fatalf("reply %q href %v", reply, c["href"])
+	}
+	calls := stubCalls(t, out)
+	if len(calls) != 1 || calls[0].Toolsets != "web,memory" || calls[0].Kind != "" {
+		t.Fatalf("a problem chat runs as a chat turn with the chat tools: %+v", calls)
+	}
+	var brief struct {
+		Brief bool `json:"brief"`
+	}
+	raw, _ := os.ReadFile(filepath.Join(out, "received-000.json"))
+	_ = json.Unmarshal(raw, &brief)
+	if !brief.Brief {
+		t.Fatal("the turn carries the problem brief")
+	}
+	after, _ := f.srv.construction.store.ReadHead(sub, id)
+	if after.Generation != before.Generation+1 { // the conversation link only
+		t.Fatalf("chatting changes nothing but the conversation link: %d → %d", before.Generation, after.Generation)
+	}
+	// a second message reuses the conversation
+	f.do(t, "POST", base, map[string]any{"schemaVersion": 1, "requestId": cReqID("chat2"), "text": "And the roof?"})
+	if c2 := f.do(t, "GET", base, nil).json(t)["chat"].(map[string]any); c2["session"] != c["session"] {
+		t.Fatalf("one conversation per problem: %v vs %v", c2["session"], c["session"])
+	}
+	// the owner applies the proposed question as an ordinary command
+	cur := f.do(t, "GET", fixtureBase+"/problems/"+id, nil).json(t)
+	q := construction.NewID(construction.KindQuestion)
+	r = f.do(t, "POST", fixtureBase+"/problems/"+id+"/commands", map[string]any{"schemaVersion": 1, "requestId": cReqID("q"), "problemId": id,
+		"expectedProblemRevision": viewRev(cur, "problem"), "operations": []any{map[string]any{"op": "AddQuestion", "id": q, "text": "Solid or cavity?", "options": []string{"solid", "cavity"}}}})
+	if r.Code != 200 {
+		t.Fatalf("add question %d %s", r.Code, r.Body)
+	}
+	qs := r.json(t)["view"].(map[string]any)["problem"].(map[string]any)["questions"].([]any)
+	if len(qs) != 1 || qs[0].(map[string]any)["state"] != "open" {
+		t.Fatalf("questions %v", qs)
+	}
+}

@@ -36,13 +36,14 @@ const (
 	KindOperation  = "op"
 	KindView       = "view"
 	KindAnnotation = "ann"
+	KindQuestion   = "dq"
 )
 
 var idKinds = map[string]bool{
 	KindProblem: true, KindAssembly: true, KindComponent: true, KindJunction: true,
 	KindMaterial: true, KindProduct: true, KindSource: true, KindClaim: true,
 	KindEvidence: true, KindDecision: true, KindIssue: true, KindRun: true,
-	KindOperation: true, KindView: true, KindAnnotation: true,
+	KindOperation: true, KindView: true, KindAnnotation: true, KindQuestion: true,
 }
 
 var idRE = regexp.MustCompile(`^([a-z]{2,4})-([0-9a-f]{32})$`)

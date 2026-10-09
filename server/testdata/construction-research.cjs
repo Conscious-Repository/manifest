@@ -41,6 +41,7 @@ const tab = (page, name) => page.getByRole('tab', {name, exact: true}).click();
     await page.goto(cfg.url + '/#/properties/fixture-ooda-house/construction/' + problemId);
     await page.getByRole('heading', {name: 'Research fixture — corrugated roof to masonry'}).waitFor();
     // observed capabilities are shown, not assumed
+    await page.evaluate(() => { cxp.open.more = true; cxRender(); }); // the Plan pane folds runs and steward under one summary
     await page.getByText(/synthetic fixture sources \(test only\)/).first().waitFor();
     await page.getByText(/PDF\/OCR page extraction is not bundled/).first().waitFor();
     // ---- start: progress comes from the durable run record ----
@@ -66,9 +67,9 @@ const tab = (page, name) => page.getByRole('tab', {name, exact: true}).click();
     assert.equal(await page.locator('.cx-syn-alts li').count(), 3, 'three conditional alternatives');
     await page.screenshot({path: path.join(shots, 'research-tab-1440.png')});
     // ---- open the surface-counterflashing research alternative ----
-    await tab(page, 'Alternatives');
-    const row = page.locator('table.cx-compare tr', {hasText: 'Research — apron flashing + surface-held counterflashing'});
-    await row.getByRole('button', {name: 'Open'}).click();
+    await tab(page, 'Approaches');
+    const row = page.locator('.cx-pane-d .cx-approach', {hasText: 'Research — apron flashing + surface-held counterflashing'});
+    await row.getByRole('button', {name: 'Show model'}).click();
     await pollPage(page, () => cxAsm() && cxAsm().name.startsWith('Research — apron flashing + surface'));
     // ---- Evidence tab: fictional sources, injection warning, contradiction, path ----
     await tab(page, 'Evidence');

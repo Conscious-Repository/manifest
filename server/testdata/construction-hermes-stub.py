@@ -45,7 +45,8 @@ if out_dir:
     n = len([f for f in os.listdir(out_dir) if f.startswith("received-")])
     with open(os.path.join(out_dir, "received-%03d.json" % n), "w") as fh:
         json.dump({"declared": declared, "computed": computed, "toolsets": opts.get("-t", ""), "model": opts.get("-m", ""), "kind": kind,
-                   "mode": mode, "chatPreamble": "Manifest MCP" in prompt}, fh)
+                   "mode": mode, "chatPreamble": "Manifest MCP" in prompt,
+                   "brief": "CONSTRUCTION PROBLEM — you are the steward" in prompt}, fh)
 
 if mode == "hang":
     time.sleep(120)
@@ -76,10 +77,17 @@ elif kind == "construction-steward-packet/1":
         cmds = [{"schemaVersion": 1, "requestId": "stub-approve-" + computed[:12], "problemId": data.get("problemId"),
                  "operations": [{"op": "ApproveDecision", "decisionId": "dec-" + "0" * 32, "expectedDecisionRevision": "0" * 64}]}]
     reply = {"summary": "increase the insulation to 150 mm (stub)", "commands": cmds}
+elif "CONSTRUCTION PROBLEM — you are the steward" in prompt:
+    # a problem chat: plain words, then one proposal block
+    prop = {"summary": "one decision point", "changes": [{"operations": [{"op": "AddQuestion", "id": "dq-" + computed[:32],
+            "text": "Is the wall solid brick or a cavity wall?", "options": ["solid", "cavity"], "why": "a cavity needs a through-wall flashing"}]}]}
+    reply = None
+    print("Two approaches fit; first we need to know the wall.\n\n```construction\n" + json.dumps(prop) + "\n```")
 else:
     reply = {"summary": "no construction packet", "commands": []}
 
-print(json.dumps(reply))
+if reply is not None:
+    print(json.dumps(reply))
 usage = opts.get("--usage-file")
 if usage:
     with open(usage, "w") as fh:
