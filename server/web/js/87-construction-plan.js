@@ -607,19 +607,7 @@ function cxProposalCard(json, key) {
   const n = changes.reduce((k, c) => k + (c.operations || []).length, 0);
   card.append(el("div", "cx-proposal-kicker micro-label", st && st.ok ? "Applied" : st && st.undone ? "Undone" : st && st.skipped ? "Skipped" : st && st.msg ? "Partly applied" : "Alfred suggests " + n + " change" + (n === 1 ? "" : "s")));
   if (prop.summary) card.append(el("p", "cx-proposal-sum", prop.summary));
-  const ul = el("ul", "cx-proposal-ops");
-  const lines = [];
-  changes.forEach((ch) => (ch.operations || []).forEach((op) => lines.push(cxOpPlain(op, ch.assemblyId))));
-  const showAll = !!cxp.open["prop:" + key] || lines.length <= 6;
-  (showAll ? lines : lines.slice(0, 5)).forEach((t) => ul.append(el("li", "", t)));
-  if (!showAll) {
-    const li = el("li", "cx-proposal-more");
-    const b = el("button", "cx-link", "Show all " + lines.length);
-    b.type = "button";
-    b.onclick = () => { cxp.open["prop:" + key] = true; cxChatRepaint(); };
-    li.append(b);
-    ul.append(li);
-  }
+  const ul = cxProposalBody(changes, key);
   const acts = el("div", "cx-dp-acts");
   const btn = (label, fn) => { const b = pillLight(label, fn); b.disabled = ro; acts.append(b); return b; };
   if (!st) {
@@ -653,6 +641,102 @@ function cxProposalCard(json, key) {
   }
   card.append(acts);
   return card;
+}
+
+// A suggestion, grouped the way a person reads it: the decisions it adds,
+// one line per approach (new or changed, with its flashing method), and
+// notes cut to their first sentence with their sources as small links.
+// Every line opens to its full text.
+function cxSourcesOf(text) {
+  const urls = [...String(text).matchAll(/https?:\/\/[^\s,;)<>\]]+/g)].map((m) => m[0].replace(/[.,]+$/, ""));
+  const prose = String(text).replace(/\s*\(?https?:\/\/[^\s,;)<>\]]+\)?[.,;]?/g, "").replace(/\s*Sources?:\s*/i, " — ").replace(/[\s—,;]+$/, "").trim();
+  return { urls: [...new Set(urls)], prose };
+}
+function cxFirstSentence(t, max = 140) {
+  const m = String(t).match(/^(.{20,}?[.;:])\s/);
+  let s = m ? m[1] : String(t);
+  if (s.length > max) s = s.slice(0, max - 1).replace(/\s+\S*$/, "") + "…";
+  return s;
+}
+function cxSourceChips(urls) {
+  const w = el("span", "cx-src-chips");
+  urls.forEach((u) => {
+    let host = u;
+    try { host = new URL(u).hostname.replace(/^www\./, ""); } catch (e) {}
+    const a = el("a", "cx-src-chip", host); a.href = u; a.target = "_blank"; a.rel = "noopener noreferrer"; a.title = u;
+    a.onclick = (e) => e.stopPropagation();
+    w.append(a);
+  });
+  return w;
+}
+// one line that opens to its full text on tap
+function cxLine(short, full, extra) {
+  const li = el("li", "cx-pline");
+  const head = el("div", "cx-pline-short", short);
+  li.append(head);
+  if (extra) li.append(extra);
+  if (full && full !== short) {
+    const body = el("div", "cx-pline-full");
+    body.hidden = true;
+    cxRichText(body, full);
+    li.append(body);
+    li.classList.add("is-openable");
+    li.onclick = () => { body.hidden = !body.hidden; li.classList.toggle("is-open", !body.hidden); };
+  }
+  return li;
+}
+function cxProposalBody(changes, key) {
+  const v = cx.view, wrap = el("div", "cx-proposal-body");
+  const qs = [], notes = [], other = [], asms = new Map();
+  const asmEntry = (id) => { if (!asms.has(id)) asms.set(id, { id, isNew: false, name: (v.assemblies[id] || {}).name || "", summary: "", bits: [], renamed: false }); return asms.get(id); };
+  changes.forEach((ch) => (ch.operations || []).forEach((op) => {
+    switch (op.op) {
+      case "AddQuestion": qs.push(op); break;
+      case "AddFact": notes.push(op); break;
+      case "CreateVariant": { const e = asmEntry(op.newAssemblyId); e.isNew = true; e.name = op.name || e.name; e.summary = op.summary || e.summary; break; }
+      case "SetAssemblyText": { const e = asmEntry(ch.assemblyId || cx.activeAssembly); if (op.name && op.name !== e.name) { e.renamed = !e.isNew; e.from = e.name; e.name = op.name; } if (op.summary) e.summary = op.summary; break; }
+      case "SetJunctionStrategy": { const e = asmEntry(ch.assemblyId || cx.activeAssembly); e.strategy = op.strategy; e.bits.push("Flashing: " + ((CX_PLAIN_STRAT[op.strategy] || {}).label || op.strategy)); break; }
+      case "SetWallCondition": { const e = asmEntry(ch.assemblyId || cx.activeAssembly); e.wall = op.value; e.bits.push("Wall: " + (({ "solid-bonded": "solid brick", cavity: "cavity wall" })[op.value] || op.value)); break; }
+      default: other.push(cxOpPlain(op, ch.assemblyId));
+    }
+  }));
+  const group = (title, n, items) => {
+    if (!n) return;
+    const g = el("section", "cx-pgroup");
+    g.append(el("h4", "cx-pgroup-h", title + " · " + n));
+    const ul = el("ul", "cx-pgroup-list");
+    const all = !!cxp.open["prop:" + key + ":" + title] || items.length <= 5;
+    (all ? items : items.slice(0, 4)).forEach((li) => ul.append(li));
+    if (!all) {
+      const b = el("button", "cx-link", "Show all " + items.length);
+      b.type = "button";
+      b.onclick = () => { cxp.open["prop:" + key + ":" + title] = true; cxChatRepaint(); };
+      const li = el("li", "cx-pline-more"); li.append(b); ul.append(li);
+    }
+    g.append(ul);
+    wrap.append(g);
+  };
+  group("Decisions to make", qs.length, qs.map((q) => cxLine(q.text, [q.why, (q.options || []).length ? "Options: " + q.options.join(" / ") : ""].filter(Boolean).join("\n\n"))));
+  group("Approaches", asms.size, [...asms.values()].map((e) => {
+    const tag = e.isNew ? "New" : e.renamed ? "Renamed" : "Updated";
+    const extra = el("div", "cx-pline-meta");
+    extra.append(el("span", "cx-chip" + (e.isNew ? " cx-chip-ok" : ""), tag));
+    e.bits.forEach((b) => extra.append(el("span", "cx-pline-bit", b)));
+    // say up front what the model will refuse
+    const src = v.assemblies[e.id] || v.assemblies[cx.activeAssembly];
+    const wall = e.wall || (src && src.junction.wallCondition.value);
+    if (e.strategy === "apron-through-wall-flashing" && wall !== "cavity") extra.append(el("span", "cx-pline-warn", "The model can't show through-wall flashing in a solid wall — this part won't apply"));
+    return cxLine(e.name, [e.renamed && e.from ? "Was: " + e.from : "", e.summary].filter(Boolean).join("\n\n"), extra);
+  }));
+  group("Notes", notes.length, notes.map((f) => {
+    const { urls, prose } = cxSourcesOf(f.text);
+    const extra = el("div", "cx-pline-meta");
+    extra.append(el("span", "cx-pline-bit", f.list === "existing" ? "about the house" : "about the plan"));
+    if (urls.length) extra.append(cxSourceChips(urls));
+    return cxLine(cxFirstSentence(prose), prose, extra);
+  }));
+  group("Other changes", other.length, other.map((t) => cxLine(cxFirstSentence(t), t)));
+  return wrap;
 }
 
 // the inverse of one operation, read from the state before it ran

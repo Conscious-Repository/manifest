@@ -41,7 +41,7 @@ fs.mkdirSync(shots, {recursive: true});
       await page.locator('.cx-next', {hasText: /Alfred suggests 1 change/}).waitFor({timeout: 30000});
       const card = page.locator('.cx-proposal');
       await card.waitFor({timeout: 30000});
-      assert.match(await card.innerText(), /Decision to make: Is the wall solid brick or a cavity wall\?/);
+      assert.match(await card.innerText(), /Decisions to make · 1[\s\S]*Is the wall solid brick or a cavity wall\?/i);
       assert.equal(await page.locator('.cx-pane-a select, .cx-steward').count(), 0, 'no steward picker or direct agent box in the Plan');
       await page.getByRole('link', {name: 'Open in Chat'}).waitFor();
       await card.getByRole('button', {name: 'Apply'}).click();
