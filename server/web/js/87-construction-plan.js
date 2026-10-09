@@ -53,9 +53,10 @@ function cxStages() {
   const p = cx.view.problem, alts = (p.alternatives || []).length;
   const appQ = cxOpenQs("approach").length + cxBuiltinQs().length, specQ = cxOpenQs("specifics").length;
   const chosen = !!p.selectedAssembly;
+  const described = !!(p.narrative || "").trim() || !!(cxp.chat && cxp.chat.turns.some((t) => t.who === "user"));
   const ran = cxAlfredSpoke() || (cx.view.runs && Object.keys(cx.view.runs).length > 0);
   return [
-    { key: "describe", title: "Describe it", done: !!(p.narrative || "").trim(), now: (p.narrative || "").trim() ? "Described" : "Say what the problem is, in your own words" },
+    { key: "describe", title: "Describe it", done: described, now: described ? "Described" : "Say what the problem is, in your own words" },
     { key: "research", title: "Research", done: ran, now: ran ? "Alfred has looked into it" : "Ask Alfred to research it" },
     { key: "approaches", title: "Approaches", done: alts >= 2, now: alts + " approach" + (alts === 1 ? "" : "es") + " modelled" },
     { key: "decide", title: "Decide", done: chosen, now: chosen ? "Chosen: " + cxAsmName(p.selectedAssembly.id) : appQ ? appQ + " decision" + (appQ === 1 ? "" : "s") + " to make" : "Choose an approach" },
@@ -63,37 +64,51 @@ function cxStages() {
   ];
 }
 
-// The guide under the header becomes the five stages (glossary kept).
-cxGuideBlock = function () {
-  const st = cxStages(), next = st.find((s) => !s.done);
-  const box = el("details", "cx-guide");
-  box.open = cxGuideOpen;
-  box.ontoggle = () => { cxGuideOpen = box.open; try { localStorage.setItem("cx.guide.open", box.open ? "1" : "0"); } catch (e) {} };
-  const sum = el("summary", "cx-guide-sum");
-  const n = next ? st.indexOf(next) + 1 : st.length;
-  sum.append(el("span", "cx-guide-kicker micro-label", "Step " + n + " of " + st.length), el("span", "cx-guide-next", next ? next.title + " — " + next.now.charAt(0).toLowerCase() + next.now.slice(1) : "Every stage has an answer — review the specifics."));
-  box.append(sum);
-  const body = el("div", "cx-guide-body");
-  const ol = el("ol", "cx-guide-steps cx-stages");
+// The header carries only the title: where things stand and what to do next
+// is the first thing in the Plan.
+cxGuideBlock = function () { return document.createDocumentFragment(); };
+
+// cxNextStep: the one thing to do now, with its button
+function cxNextStep() {
+  const st = cxStages(), next = st.find((s) => !s.done), p = cx.view.problem;
+  const pending = cxp.chat && cxp.chat.pending;
+  const prop = cxLatestProposal();
+  const focusChat = () => { const ta = cx.host && cx.host.querySelector(".cx-chat-in"); if (ta) { ta.scrollIntoView({ block: "center", behavior: "smooth" }); ta.focus(); } };
+  const scrollTo = (sel) => () => { const n = cx.host && cx.host.querySelector(sel); if (n) n.scrollIntoView({ block: "start", behavior: "smooth" }); };
+  if (pending) return { text: "Alfred is working on it. Research can take a few minutes — you can leave this page and come back." };
+  if (prop) return { text: "Alfred suggests " + prop.count + " change" + (prop.count === 1 ? "" : "s") + ". Review them, then apply or skip.", label: "Review", go: scrollTo(".cx-proposal.is-new") };
+  switch (next && next.key) {
+    case "describe": return { text: "Start by telling Alfred what's going on, in your own words — what you're building and what worries you.", label: "Describe it", go: focusChat };
+    case "research": return { text: "Have Alfred research this properly: the code, the makers' instructions, how trades usually do it. He'll come back with approaches and the decisions to make.", label: "Research this", go: () => cxChatSend(cxKickoff()) };
+    case "approaches": return { text: "There's only one approach so far. Ask Alfred for others to compare.", label: "Get more approaches", go: () => cxChatSend("Propose two or three other approaches to this problem, each as its own model, and say in plain words what each one is good at and what to watch.") };
+    case "decide": {
+      const n = cxOpenQs("approach").length + cxBuiltinQs().length;
+      if (n) return { text: n + " decision" + (n === 1 ? "" : "s") + " will narrow it down. Answer what you know; ask Alfred about the rest.", label: "Decide", go: scrollTo(".cx-dps") };
+      return { text: "Pick the approach to go with — or ask Alfred which he'd choose and why.", label: "Ask for a recommendation", go: () => cxChatSend("Which approach would you choose for us, and why? Be plain about the trade-offs and anything we'd still need to check.") };
+    }
+    case "specifics": return { text: "Chosen: " + cxAsmName(p.selectedAssembly.id) + ". Now the specifics — exact materials, products and sizes.", label: "Work out the specifics", go: () => cxChatSend("We've chosen " + cxAsmName(p.selectedAssembly.id) + ". Work out the specifics: exact materials and products (with where to buy), sizes and fasteners. Raise the remaining questions as specifics decisions and propose the material and dimension changes.") };
+    default: return { text: "Every stage has an answer. Ask Alfred for a materials and build list when you're ready.", label: "Make a build list", go: () => cxChatSend("Make us a materials and build-order list for the chosen approach, with quantities where you can estimate them.") };
+  }
+}
+function cxNextCard() {
+  const st = cxStages(), next = st.find((s) => !s.done), step = cxNextStep();
+  const card = el("section", "cx-next");
+  const dots = el("ol", "cx-progress");
+  dots.setAttribute("aria-label", "Progress");
   st.forEach((s) => {
-    const li = el("li", "cx-guide-step" + (s.done ? " is-done" : "") + (s === next ? " is-next" : ""));
-    const b = el("button", "cx-guide-step-btn");
-    b.type = "button";
-    b.append(el("span", "cx-guide-tick", s.done ? "✓" : ""), el("span", "cx-guide-title", s.title), el("span", "cx-guide-now", s.now));
-    b.onclick = () => cxPlanGo(s.key);
-    li.append(b);
-    ol.append(li);
+    const li = el("li", (s.done ? "is-done" : "") + (s === next ? " is-now" : ""), s.title);
+    li.title = s.now;
+    dots.append(li);
   });
-  body.append(ol);
-  const words = el("details", "cx-guide-words");
-  words.append(el("summary", "", "Words you'll see"));
-  const dl = el("dl", "");
-  CX_GLOSSARY.forEach(([t, d]) => dl.append(el("dt", "", t), el("dd", "", d)));
-  words.append(dl);
-  body.append(words);
-  box.append(body);
-  return box;
-};
+  card.append(dots, el("p", "cx-next-text", step.text));
+  if (step.label && !cx.view.readOnly) {
+    const b = el("button", "cx-next-btn", step.label);
+    b.type = "button";
+    b.onclick = step.go;
+    card.append(b);
+  }
+  return card;
+}
 
 function cxPlanGo(stage) {
   if (stage === "describe") { cx.pane = "research"; cx.tab = "problem"; cxRender(); return; }
@@ -117,7 +132,11 @@ cxPaintAgentFull = function (body) {
   body.innerHTML = "";
   body.classList.add("cx-plan");
   if (cxp.chatFor !== cx.problemId) { cxp.chat = null; cxp.chatFor = cx.problemId; cxp.applied = cxAppliedLoad(); cxChatLoad(); }
-  body.append(cxDecisionPoints(), cxApproaches(), cxChatBlock(), cxPlanMore());
+  body.append(cxNextCard());
+  const dps = cxDecisionPoints(), apps = cxApproaches();
+  if (dps) body.append(dps);
+  if (apps) body.append(apps);
+  body.append(cxChatBlock());
 };
 // the pane is the Plan now (phone tab and pane title)
 {
@@ -128,6 +147,15 @@ cxPaintAgentFull = function (body) {
     if (b) b.textContent = "Plan";
     const t = wb.querySelector(".cx-pane-a .cx-pane-title");
     if (t) t.textContent = "Plan";
+    const asm = wb.querySelector('.cx-switch-btn[data-pane="assembly"]');
+    if (asm) asm.classList.add("cx-switch-merged"); // its pane rides under the model on a phone
+    const r = wb.querySelector('.cx-switch-btn[data-pane="research"]');
+    if (r) r.textContent = "Details";
+    const ct = wb.querySelector(".cx-pane-c .cx-pane-title"), dt = wb.querySelector(".cx-pane-d .cx-pane-title");
+    if (ct) ct.textContent = "Selected part";
+    if (dt) dt.textContent = "Details";
+    wb.querySelector(".cx-pane-c").setAttribute("aria-label", "Selected part");
+    wb.querySelector(".cx-pane-d").setAttribute("aria-label", "Details");
     return wb;
   };
 }
@@ -139,11 +167,11 @@ function cxDecisionPoints() {
   const ro = !!cx.view.readOnly;
   const builtin = cxBuiltinQs(), open = cxOpenQs(), p = cx.view.problem;
   const props = (p.decisions || []).map((id) => (cx.view.decisions || {})[id]).filter((d) => d && d.status === "proposed");
-  if (!builtin.length && !open.length && !props.length) box.append(el("p", "cx-empty", (p.alternatives || []).length > 1 ? "Nothing open. Ask Alfred what's left to decide, or choose an approach below." : "Nothing open yet. Ask Alfred to research the problem — he'll raise the decisions that matter."));
+  const done = cxQuestions().filter((q) => q.state !== "open");
+  if (!builtin.length && !open.length && !props.length && !done.length) return null;
   builtin.forEach((q) => box.append(cxDpCard(q)));
   open.filter((q) => q.stage === "approach").concat(open.filter((q) => q.stage === "specifics")).forEach((q) => box.append(cxDpCard(cxStoredQ(q, ro))));
   props.forEach((d) => box.append(cxProposedDecisionCard(d, ro)));
-  const done = cxQuestions().filter((q) => q.state !== "open");
   if (done.length) {
     const det = el("details", "cx-dp-done");
     det.append(el("summary", "micro-label", done.length + " settled"));
@@ -154,14 +182,6 @@ function cxDecisionPoints() {
       det.append(r);
     });
     box.append(det);
-  }
-  if (!ro) {
-    const add = el("details", "cx-dp-add");
-    add.append(el("summary", "cx-link", "＋ Add a question of your own"));
-    const inp = el("input", "cx-in"); inp.placeholder = "e.g. Can we keep the old gutter?"; inp.setAttribute("aria-label", "Your question");
-    const go = pillLight("Add", () => { const t = inp.value.trim(); if (t) cxCommand([{ op: "AddQuestion", id: cxNewId("dq"), text: t }], { label: "Add question" }); });
-    add.append(inp, go);
-    box.append(add);
   }
   return box;
 }
@@ -184,21 +204,30 @@ function cxDpCard(q) {
   const acts = el("div", "cx-dp-acts");
   (q.options || []).forEach(([label, fn]) => { const b = pillLight(label, fn); b.disabled = q.ro; acts.append(b); });
   if (q.go) acts.append(pillLight(q.go[0], q.go[1]));
-  const ask = pillLight("Ask Alfred", () => cxChatSend("Help me decide this: " + q.text + (q.why ? " (" + q.why + ")" : "") + " Research it, lay out the options in plain words with what each one changes, and recommend one."));
-  ask.classList.add("cx-ask");
-  ask.disabled = q.ro;
-  acts.append(ask);
-  c.append(acts);
+  // a free answer: shown at once when there are no options, else behind "Other…"
+  let other = null;
   if (q.answer) {
-    const row = el("div", "cx-dp-other");
-    const inp = el("input", "cx-in"); inp.placeholder = q.text1 || ((q.options || []).length ? "Or say something else…" : "Your answer"); inp.setAttribute("aria-label", "Answer: " + q.text); inp.disabled = q.ro;
+    other = el("div", "cx-dp-other");
+    const inp = el("input", "cx-in"); inp.placeholder = q.text1 || "Your answer"; inp.setAttribute("aria-label", "Answer: " + q.text); inp.disabled = q.ro;
     const save = pillLight("Save", () => { const v = inp.value.trim(); if (v) q.answer(v); });
     save.disabled = q.ro;
     inp.onkeydown = (e) => { if (e.key === "Enter") save.click(); };
-    row.append(inp, save);
-    if (q.drop && !q.ro) { const d = el("button", "cx-link", "Not relevant"); d.type = "button"; d.onclick = q.drop; row.append(d); }
-    c.append(row);
+    other.append(inp, save);
+    if (q.drop && !q.ro) { const d = el("button", "cx-link", "Not relevant"); d.type = "button"; d.onclick = q.drop; other.append(d); }
+    if ((q.options || []).length) {
+      other.hidden = true;
+      const o = pillLight("Other…", () => { other.hidden = false; o.remove(); inp.focus(); });
+      o.disabled = q.ro;
+      acts.append(o);
+    }
   }
+  const ask = el("button", "cx-link cx-dp-ask", "Ask Alfred");
+  ask.type = "button";
+  ask.disabled = q.ro;
+  ask.onclick = () => cxChatSend("Help me decide this: " + q.text + (q.why ? " (" + q.why + ")" : "") + " Research it, lay out the options in plain words with what each one changes, and recommend one.");
+  acts.append(ask);
+  c.append(acts);
+  if (other) c.append(other);
   return c;
 }
 
@@ -224,9 +253,9 @@ function cxPlainApproach(a) {
   const s = CX_PLAIN_STRAT[j.strategy];
   return s ? s.label : j.strategy;
 }
-function cxApproachCard(id, compact) {
+function cxApproachCard(id) {
   const v = cx.view, a = v.assemblies[id];
-  const f = cxAltFacts(id), on = id === cx.activeAssembly, chosen = v.problem.selectedAssembly && v.problem.selectedAssembly.id === id;
+  const on = id === cx.activeAssembly, chosen = v.problem.selectedAssembly && v.problem.selectedAssembly.id === id;
   const c = el("article", "cx-approach" + (on ? " is-open" : "") + (chosen ? " is-chosen" : ""));
   c.dataset.assembly = id;
   const head = el("div", "cx-approach-head");
@@ -235,17 +264,25 @@ function cxApproachCard(id, compact) {
   else if (on) head.append(el("span", "cx-chip", "in the model"));
   c.append(head);
   c.append(el("p", "cx-approach-how", cxPlainApproach(a)));
-  if (a.summary && !compact) c.append(el("p", "cx-approach-sum", a.summary));
+  if (a.summary) c.append(el("p", "cx-approach-sum", a.summary));
   const s = CX_PLAIN_STRAT[a.junction.strategy];
-  if (s && s.good && !compact) {
+  if (s && s.good) {
     const pc = el("ul", "cx-approach-pc");
     pc.append(el("li", "is-good", s.good), el("li", "is-watch", s.watch));
     c.append(pc);
   }
-  const facts = [];
-  facts.push(f.critical ? f.critical + " thing" + (f.critical === 1 ? "" : "s") + " still to settle" : "nothing critical open");
-  facts.push(CX_PLAIN_WALL[a.junction.wallCondition.value] ? "wall: " + (a.junction.wallCondition.value === "unknown" ? "not known yet" : a.junction.wallCondition.value === "solid-bonded" ? "solid brick" : a.junction.wallCondition.value) : "");
-  c.append(el("p", "cx-approach-facts", facts.filter(Boolean).join(" · ")));
+  // what's still open on this approach, in plain words
+  const rep = (v.validation || {})[id];
+  const open = ((rep && rep.issues) || []).filter((i) => i.severity === "critical-unresolved" && i.status !== "resolved" && i.status !== "acknowledged");
+  const plain = [...new Set(open.map((i) => (typeof cxIssuePlain === "function" && cxIssuePlain(i)) || i.message))];
+  if (plain.length) {
+    const det = el("details", "cx-approach-open");
+    det.append(el("summary", "", plain.length + " thing" + (plain.length === 1 ? "" : "s") + " to check before building"));
+    const ul = el("ul", "");
+    plain.forEach((t) => ul.append(el("li", "", t)));
+    det.append(ul);
+    c.append(det);
+  } else c.append(el("p", "cx-approach-facts", "Nothing critical left open"));
   // the true section of this revision, drawn by the server (an inert image)
   const fig = el("button", "cx-approach-fig");
   fig.type = "button";
@@ -259,7 +296,7 @@ function cxApproachCard(id, compact) {
   fig.onclick = () => cxShowApproach(id);
   c.append(fig);
   const acts = el("div", "cx-dp-acts");
-  if (!on) acts.append(pillLight("Show model", () => cxShowApproach(id)));
+  acts.append(pillLight(on && !cxPhone() ? "In the model →" : "Show model", () => cxShowApproach(id)));
   if (!chosen && !v.readOnly) acts.append(pillLight("Choose this one", () => cxChooseApproach(id)));
   c.append(acts);
   return c;
@@ -278,43 +315,19 @@ async function cxChooseApproach(id) {
   if (rev) await cxDecisionCommand({ op: "ApproveDecision", decisionId, expectedDecisionRevision: rev });
 }
 function cxApproaches() {
+  const v = cx.view;
+  const all = (v.problem.alternatives || []).filter((id) => v.assemblies[id]);
+  if (!all.length) return null;
+  const live = all.filter((id) => v.assemblies[id].lifecycle !== "superseded");
   const box = el("section", "cx-block cx-approaches");
-  const ids = cx.view.problem.alternatives || [];
-  box.append(el("h3", "cx-plan-h", "Approaches" + (ids.length ? " · " + ids.length : "")));
+  box.append(el("h3", "cx-plan-h", "Approaches" + (live.length > 1 ? " · " + live.length : "")));
   if (cxd.msg) { const m = el("p", "cx-form-msg", cxd.msg); m.setAttribute("role", "alert"); box.append(m); }
-  if (!ids.length) box.append(el("p", "cx-empty", "No approaches yet — Alfred proposes them after researching."));
   const list = el("div", "cx-approach-list");
-  ids.forEach((id) => { if (cx.view.assemblies[id]) list.append(cxApproachCard(id, true)); });
+  live.forEach((id) => list.append(cxApproachCard(id)));
   box.append(list);
-  if (ids.length === 1 && !cx.view.readOnly) box.append(pillLight("Ask Alfred for other approaches", () => cxChatSend("Propose two or three other approaches to this problem, each as its own model, and say in plain words what each one is good at and what to watch.")));
+  const gone = all.length - live.length;
+  if (gone) box.append(el("p", "cx-hint", gone + " set aside (see Details › History)"));
   return box;
-}
-
-// Research › Alternatives becomes the same cards, with more detail and the
-// side-by-side difference kept below.
-cxPaintAlternatives = function (b) {
-  const v = cx.view, ids = v.problem.alternatives || [];
-  if (!ids.length) { b.append(el("p", "cx-empty", "No approaches yet.")); return; }
-  const list = el("div", "cx-approach-list is-wide");
-  ids.forEach((id) => { if (v.assemblies[id]) list.append(cxApproachCard(id, false)); });
-  b.append(list);
-  const others = ids.filter((id) => id !== cx.activeAssembly);
-  if (others.length && cxAsm()) {
-    const det = el("details", "cx-block");
-    det.append(el("summary", "cx-label micro-label", "What's different from “" + cxAsm().name + "”"));
-    const pick = selectEl([]); pick.className = "cx-in"; pick.setAttribute("aria-label", "Compare the open approach with");
-    others.forEach((id) => { const o = document.createElement("option"); o.value = id; o.textContent = "Compare with " + v.assemblies[id].name; pick.append(o); });
-    const out = el("div", "cx-diff");
-    const run = () => { out.innerHTML = ""; cxDiffList(v.assemblies[pick.value], cxAsm()).forEach((line) => out.append(el("div", "cx-diff-line cx-diff-" + line.kind, line.text))); };
-    pick.onchange = run;
-    det.append(pick, out);
-    run();
-    b.append(det);
-  }
-};
-{
-  const t = cxResearchTabs.find(([k]) => k === "alternatives");
-  if (t) t[1] = "Approaches";
 }
 
 // ---- the conversation -------------------------------------------------------------------
@@ -341,6 +354,8 @@ function cxChatRepaint() {
   if (ta) cxp.draft = ta.value;
   const next = cxChatBlock();
   old.replaceWith(next);
+  const card = cx.host.querySelector(".cx-next");
+  if (card && cx.view) card.replaceWith(cxNextCard()); // the next step follows the conversation
   if (focused) { const t = next.querySelector(".cx-chat-in"); t.focus(); t.selectionStart = t.selectionEnd = t.value.length; }
 }
 async function cxChatSend(text) {
@@ -371,44 +386,68 @@ function cxKickoff() {
   return "Please research this problem properly: " + p.title + (p.narrative ? " — " + p.narrative : "") + "\n\nLook up the building code, the panel and flashing makers' installation instructions and trade guidance; tell me in plain words what you found (with sources), propose two to four approaches as separate models, and raise the decision points I need to settle to choose between them.";
 }
 
+// what to say next, by stage: a tap sends it
+function cxSuggestions() {
+  const next = (cxStages().find((x) => !x.done) || {}).key;
+  if (!cxp.chat || cxp.chat.pending || !cxp.chat.turns.length) return [];
+  return {
+    describe: [],
+    research: ["Research this properly"],
+    approaches: ["Give me other approaches", "What are the main risks?"],
+    decide: ["What should I decide first?", "Which would you choose, and why?", "What could go wrong with each?"],
+    specifics: ["What exactly should I buy?", "What sizes and fasteners?", "What order do we build it in?"],
+  }[next] || ["What's left to settle?", "Make a materials list"];
+}
+const CX_SUGGESTION_TEXT = { "Research this properly": () => cxKickoff() };
+
 function cxChatBlock() {
   const box = el("section", "cx-block cx-chat");
   const head = el("div", "cx-chat-head");
-  head.append(el("h3", "cx-plan-h", "Talk it through with " + (cx.view.problem.steward.agent === "zeck" ? "Zeck" : "Alfred")));
-  if (cxp.chat && cxp.chat.href) { const a = el("a", "cx-link", "Open in Chat"); a.href = cxp.chat.href; a.title = "The same conversation in the Chat app"; head.append(a); }
+  head.append(el("h3", "cx-plan-h", cx.view.problem.steward.agent === "zeck" ? "Zeck" : "Alfred"));
+  if (cxp.chat && cxp.chat.href) { const a = el("a", "cx-link", "Open in Chat"); a.href = cxp.chat.href; a.title = "The same conversation, full screen, in the Chat app"; head.append(a); }
   box.append(head);
   const thread = el("div", "cx-chat-thread");
   thread.setAttribute("aria-live", "polite");
   const turns = (cxp.chat && cxp.chat.turns) || [];
   if (!cxp.chat) thread.append(el("p", "cx-empty", "Loading…"));
-  else if (!turns.length) {
-    thread.append(el("p", "cx-chat-intro", "Tell Alfred what's going on, or have him start with a proper research pass. He can search the web; what he proposes shows up here for you to apply."));
-    const k = pillLight("Have Alfred research this problem", () => cxChatSend(cxKickoff()));
-    k.classList.add("cx-ask");
-    k.disabled = !!cx.view.readOnly;
-    thread.append(k);
+  else if (!turns.length) thread.append(el("p", "cx-chat-intro", "Talk to Alfred here. He can search the web; what he suggests appears as changes you apply with one tap — and can undo."));
+  const keep = cxp.open.all ? turns.length : 4;
+  const shown = turns.slice(-keep);
+  if (turns.length > shown.length) {
+    const more = el("button", "cx-link cx-chat-earlier", "Show " + (turns.length - shown.length) + " earlier");
+    more.type = "button";
+    more.onclick = () => { cxp.open.all = true; cxChatRepaint(); };
+    thread.append(more);
   }
-  const shown = turns.slice(-12);
-  if (turns.length > shown.length) thread.append(el("p", "cx-hint", (turns.length - shown.length) + " earlier messages — Open in Chat to see them."));
   shown.forEach((t) => thread.append(cxChatTurn(t)));
-  if (cxp.chat && cxp.chat.pending) thread.append(el("p", "cx-chat-wait", "Alfred is working on it… (research can take a few minutes; you can leave this page)"));
+  if (cxp.chat && cxp.chat.pending) thread.append(el("p", "cx-chat-wait", "Alfred is working on it…"));
   if (cxp.chat && cxp.chat.error && !cxp.chat.pending) thread.append(el("p", "cx-form-msg", "The last reply failed: " + cxp.chat.error));
   box.append(thread);
   if (cxp.msg) { const m = el("p", "cx-form-msg", cxp.msg); m.setAttribute("role", "alert"); box.append(m); }
+  const dock = el("div", "cx-chat-dock");
+  const sugg = cxSuggestions();
+  if (sugg.length && !cx.view.readOnly) {
+    const chips = el("div", "cx-chips");
+    sugg.forEach((t) => { const b = el("button", "cx-chip-btn", t); b.type = "button"; b.onclick = () => cxChatSend(CX_SUGGESTION_TEXT[t] ? CX_SUGGESTION_TEXT[t]() : t); chips.append(b); });
+    dock.append(chips);
+  }
   const form = el("div", "cx-chat-form");
   const ta = el("textarea", "cx-in cx-chat-in");
-  ta.rows = 2;
-  ta.placeholder = "Describe the issue, ask a question, or tell Alfred what you decided…";
+  ta.rows = 1;
+  ta.placeholder = turns.length ? "Message Alfred…" : "What's the problem? Say it in your own words…";
   ta.setAttribute("aria-label", "Message to Alfred");
   ta.value = cxp.draft || "";
   ta.disabled = !!cx.view.readOnly;
-  ta.oninput = () => { cxp.draft = ta.value; };
+  const grow = () => { ta.style.height = "auto"; ta.style.height = Math.min(ta.scrollHeight, 180) + "px"; };
+  ta.oninput = () => { cxp.draft = ta.value; grow(); };
   ta.onkeydown = (e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); cxChatSend(ta.value); } };
+  requestAnimationFrame(grow);
   const send = pillLight(cxp.sending ? "Sending…" : "Send", () => cxChatSend(ta.value));
   send.classList.add("cx-chat-send");
   send.disabled = cxp.sending || !!cx.view.readOnly;
   form.append(ta, send);
-  box.append(form);
+  dock.append(form);
+  box.append(dock);
   return box;
 }
 
@@ -479,86 +518,204 @@ function cxOpPlain(op, asmId) {
   }
 }
 
+function cxParseProposal(json) { try { const p = JSON.parse(json); return Array.isArray(p.changes) ? p : null; } catch (e) { return null; } }
+// the newest proposal still waiting for the owner, if any
+function cxLatestProposal() {
+  const turns = (cxp.chat && cxp.chat.turns) || [];
+  for (let k = turns.length - 1; k >= 0; k--) {
+    const t = turns[k];
+    if (t.who === "user") return null; // the owner has spoken since
+    const blocks = [...(t.text || "").matchAll(CX_PROPOSAL_RE)];
+    for (let i = blocks.length - 1; i >= 0; i--) {
+      const key = (cxp.chat.session || "") + ":" + t.n + ":" + i, p = cxParseProposal(blocks[i][1]);
+      if (p && !cxp.applied[key]) return { key, count: p.changes.reduce((n, c) => n + (c.operations || []).length, 0) };
+    }
+    if (blocks.length) return null;
+  }
+  return null;
+}
+
 function cxProposalCard(json, key) {
   const card = el("div", "cx-proposal");
-  let prop;
-  try { prop = JSON.parse(json); } catch (e) { card.append(el("p", "cx-form-msg", "Alfred's proposal couldn't be read (not valid JSON).")); return card; }
-  const changes = Array.isArray(prop.changes) ? prop.changes : [];
-  card.append(el("div", "cx-proposal-kicker micro-label", "Alfred proposes"));
+  card.dataset.key = key;
+  const prop = cxParseProposal(json);
+  if (!prop) { card.append(el("p", "cx-form-msg", "Alfred's suggestion couldn't be read. Ask him to send it again.")); return card; }
+  const changes = prop.changes, st = cxp.applied[key], ro = !!cx.view.readOnly;
+  const n = changes.reduce((k, c) => k + (c.operations || []).length, 0);
+  card.append(el("div", "cx-proposal-kicker micro-label", st && st.ok ? "Applied" : st && st.undone ? "Undone" : st && st.skipped ? "Skipped" : "Alfred suggests " + n + " change" + (n === 1 ? "" : "s")));
   if (prop.summary) card.append(el("p", "cx-proposal-sum", prop.summary));
   const ul = el("ul", "cx-proposal-ops");
   changes.forEach((ch) => (ch.operations || []).forEach((op) => ul.append(el("li", "", cxOpPlain(op, ch.assemblyId)))));
-  card.append(ul);
-  const done = cxp.applied[key];
-  if (done) {
-    card.classList.add(done.ok ? "is-applied" : "is-partial");
-    card.append(el("p", "cx-proposal-state micro-label", done.ok ? "Applied · undo from History" : "Partly applied: " + done.msg));
+  const acts = el("div", "cx-dp-acts");
+  const btn = (label, fn) => { const b = pillLight(label, fn); b.disabled = ro; acts.append(b); return b; };
+  if (!st) {
+    card.classList.add("is-new");
+    card.append(ul);
+    const go = btn("Apply", () => cxApplyProposal(changes, key, go));
+    go.classList.add("cx-primary");
+    btn("Not now", () => { cxp.applied[key] = { skipped: true }; cxAppliedSave(); cxRender(); });
+  } else if (st.ok) {
+    card.classList.add("is-applied");
+    const det = el("details", "");
+    det.append(el("summary", "", "What changed"), ul);
+    card.append(det);
+    if (st.undo && st.undo.length) btn("Undo", () => cxUndoProposal(key));
+  } else if (st.skipped || st.undone) {
+    card.classList.add("is-quiet");
+    const det = el("details", "");
+    det.append(el("summary", "", "What it was"), ul);
+    card.append(det);
+    const again = btn("Apply", () => cxApplyProposal(changes, key, again));
+  } else {
+    card.classList.add("is-partial");
+    card.append(ul, el("p", "cx-proposal-state", "Partly applied — " + st.msg));
+    const again = btn("Try the rest", () => cxApplyProposal(changes, key, again));
+    if (st.undo && st.undo.length) btn("Undo what was applied", () => cxUndoProposal(key));
   }
-  if (!done || !done.ok) {
-    const acts = el("div", "cx-dp-acts");
-    const go = pillLight(done ? "Try the rest again" : "Apply", () => cxApplyProposal(changes, key, go));
-    go.disabled = !!cx.view.readOnly;
-    acts.append(go);
-    card.append(acts);
-  }
+  card.append(acts);
   return card;
+}
+
+// the inverse of one operation, read from the state before it ran
+function cxInverse(op, asmId) {
+  const p = cx.view.problem;
+  switch (op.op) {
+    case "AddQuestion": return { ops: [{ op: "SetQuestionState", id: op.id, state: "dropped" }] };
+    case "AnswerQuestion": case "SetQuestionState": {
+      const q = cxQuestions().find((x) => x.id === op.id);
+      if (!q) return null;
+      return { ops: [q.state === "answered" ? { op: "AnswerQuestion", id: q.id, answer: q.answer } : { op: "SetQuestionState", id: q.id, state: q.state === "dropped" ? "dropped" : "open" }] };
+    }
+    case "AddFact": return { ops: [{ op: "RemoveFact", id: op.id }] };
+    case "SetContext": { const f = p[op.field] || {}; return { ops: [{ op: "SetContext", field: op.field, text: f.text || "", state: f.state || "unknown", provenance: f.provenance || "unknown" }] }; }
+    case "SetProblemText": return { ops: [{ op: "SetProblemText", title: p.title, narrative: p.narrative }] };
+    case "CreateVariant": return { assembly: op.newAssemblyId, ops: [{ op: "SetAssemblyLifecycle", lifecycle: "superseded" }] };
+    case "ProposeDecision": return { decision: op.decisionId };
+    default: return null;
+  }
 }
 
 // apply each change as an ordinary owner command, in order; problem-level
 // operations, assembly operations and decision proposals go to their own
-// endpoints. A refused change stops the rest and says why.
+// endpoints. A refused change stops the rest and says why. The inverse of
+// what ran is kept so the whole suggestion can be undone in one tap.
 async function cxApplyProposal(changes, key, btn) {
   if (btn) btn.disabled = true;
-  const prior = cxp.applied[key] || { done: 0 };
+  const prior = cxp.applied[key] && cxp.applied[key].done ? cxp.applied[key] : { done: 0, undo: [] };
+  const undo = prior.undo || [];
   let n = 0, msg = "";
   for (const ch of changes) {
     if (n++ < (prior.done || 0)) continue;
-    const ops = ch.operations || [];
+    const ops = cxReapplicable(ch.operations || []);
     const dec = ops.filter((o) => o.op === "ProposeDecision");
     const prob = ops.filter((o) => CX_PROBLEM_OPS.has(o.op));
     const asm = ops.filter((o) => o.op !== "ProposeDecision" && !CX_PROBLEM_OPS.has(o.op));
     let ok = true;
-    if (prob.length) ok = !!(await cxCommand(prob, { label: "Alfred's proposal" }));
+    if (prob.length) {
+      const inv = prob.map((o) => cxInverse(o)).filter(Boolean).reverse();
+      ok = !!(await cxCommand(prob, { label: "Alfred's suggestion" }));
+      if (ok) inv.forEach((x) => undo.push(x));
+    }
     if (ok && asm.length) {
       const target = ch.assemblyId || cx.activeAssembly;
-      if (!cx.view.assemblies[target]) { ok = false; cx.error = "the proposal names an approach that doesn't exist (yet)"; }
-      else ok = !!(await cxCommand(asm, { assembly: target, label: "Alfred's proposal" }));
+      if (!cx.view.assemblies[target]) { ok = false; cx.error = "it names an approach that doesn't exist (yet)"; }
+      else {
+        const before = (cx.view.revisions || {})["assembly:" + target];
+        const variants = asm.filter((o) => o.op === "CreateVariant").map((o) => cxInverse(o));
+        ok = !!(await cxCommand(asm, { assembly: target, label: "Alfred's suggestion" }));
+        if (ok) {
+          if (asm.some((o) => o.op !== "CreateVariant") && before) undo.push({ assembly: target, ops: [{ op: "RestoreRevision", revision: before }] });
+          variants.forEach((x) => undo.push(x));
+        }
+      }
     }
     for (const d of dec) {
       if (!ok) break;
-      const v = cx.view;
-      await cxDecisionCommand({ ...d, assemblyRevision: (v.revisions || {})["assembly:" + d.assemblyId] });
+      await cxDecisionCommand({ ...d, assemblyRevision: (cx.view.revisions || {})["assembly:" + d.assemblyId] });
       ok = !cxd.msg;
-      if (!ok) cx.error = cxd.msg;
+      if (ok) undo.push({ decision: d.decisionId }); else cx.error = cxd.msg;
     }
     if (!ok) { msg = cx.error || "refused"; n--; break; }
   }
-  cxp.applied[key] = msg ? { ok: false, done: n, msg } : { ok: true, done: changes.length };
+  cxp.applied[key] = msg ? { ok: false, done: n, msg, undo } : { ok: true, done: changes.length, undo };
   cxAppliedSave();
   cxRender();
 }
 
-// ---- what's below the fold: history and the older research tools -------------------
-function cxPlanMore() {
-  const det = el("details", "cx-block cx-plan-more");
-  det.open = !!cxp.open.more;
-  det.ontoggle = () => { cxp.open.more = det.open; };
-  det.append(el("summary", "cx-label micro-label", "Changes, steward and research runs"));
-  const a = cxAsm();
-  const row = el("div", "cx-row-edit");
-  row.append(el("span", "cx-hint", "Every change is saved as a new version. "));
-  if (a && !cx.view.readOnly) { const u = pillLight("Undo last model change", () => cxUndo(a)); u.disabled = !a.parentRevision; row.append(u); }
-  row.append(pillLight("See all changes", () => cxGo("research", "history")));
-  det.append(row);
-  const p = cx.view.problem, ro = !!cx.view.readOnly;
-  const srow = el("div", "cx-field");
-  srow.append(el("span", "cx-label micro-label", "Steward"));
-  const sel = selectEl(["alfred", "zeck"]);
-  sel.value = p.steward.agent; sel.className = "cx-in"; sel.setAttribute("aria-label", "Steward agent"); sel.disabled = ro;
-  sel.onchange = () => cxCommand([{ op: "SetSteward", agent: sel.value }]);
-  srow.append(sel);
-  det.append(srow, el("p", "cx-hint", p.steward.agent === "alfred" ? "Alfred is the default steward." : "Zeck was explicitly selected as the real-estate specialist."));
-  det.append(el("p", "cx-hint", "Research runs read only the documents you've added (no web) and check every quote against them; the conversation above can search the web."));
-  if (typeof cxPaintResearchRun === "function") cxPaintResearchRun(det);
-  return det;
+// after an undo the records are set aside, not deleted: applying again
+// brings them back instead of colliding with their ids
+function cxReapplicable(ops) {
+  const v = cx.view, p = v.problem;
+  const facts = new Set([...(p.existing || []), ...(p.proposed || [])].map((f) => f.id));
+  return ops.flatMap((o) => {
+    if (o.op === "AddQuestion") { const q = cxQuestions().find((x) => x.id === o.id); if (q) return q.state === "dropped" ? [{ op: "SetQuestionState", id: o.id, state: "open" }] : []; }
+    if (o.op === "AddFact" && facts.has(o.id)) return [];
+    return [o];
+  });
+}
+
+// undo runs the inverses newest first, each as its own revision
+async function cxUndoProposal(key) {
+  const st = cxp.applied[key];
+  if (!st || !st.undo) return;
+  const steps = st.undo.slice().reverse();
+  for (const u of steps) {
+    let ok = true;
+    if (u.decision) {
+      const rev = (cx.view.revisions || {})["decision:" + u.decision];
+      const d = (cx.view.decisions || {})[u.decision];
+      if (rev && d && d.status === "proposed") { await cxDecisionCommand({ op: "RejectDecision", decisionId: u.decision, expectedDecisionRevision: rev }); ok = !cxd.msg; }
+    } else ok = !!(await cxCommand(u.ops, { assembly: u.assembly, label: "Undo" }));
+    if (!ok) { st.msg = "undo stopped: " + (cx.error || cxd.msg || "refused"); cxAppliedSave(); cxRender(); return; }
+  }
+  cxp.applied[key] = { undone: true };
+  cxAppliedSave();
+  cxRender();
+}
+
+// ---- Details: About · Sources · Materials · History · Export ----------------------
+// Approaches and decisions live in the Plan; open issues ride on each
+// approach; research runs (your imported documents, checked quote by quote)
+// sit under Sources. Nothing here is needed for the main flow.
+{
+  const byKey = Object.fromEntries(cxResearchTabs.map((t) => [t[0], t[2]]));
+  const about = (b) => {
+    byKey.problem(b);
+    const words = el("details", "cx-block cx-guide-words");
+    words.append(el("summary", "cx-label micro-label", "Words you'll see"));
+    const dl = el("dl", "");
+    CX_GLOSSARY.forEach(([t, d]) => dl.append(el("dt", "", t), el("dd", "", d)));
+    words.append(dl);
+    b.append(words);
+  };
+  const sources = async (b) => {
+    b.append(el("p", "cx-hint", "Alfred's research in the Plan searches the web. Here you can add your own documents (drawings, makers' instructions) and run a check that reads only them, quote by quote."));
+    byKey.evidence(b);
+    const runs = el("details", "cx-block cx-runs");
+    runs.append(el("summary", "cx-label micro-label", "Check against your documents"));
+    if (typeof cxPaintResearchRun === "function") { cxPaintResearchRun(runs); runs.querySelectorAll(".cx-steward").forEach((n) => n.remove()); }
+    runs.open = !!cxp.open.runs;
+    runs.ontoggle = () => { cxp.open.runs = runs.open; };
+    b.append(runs);
+    if (cxLatestRun()) { const d = el("div", ""); runs.append(d); await byKey.research(d); }
+  };
+  // History is the record: decisions (with staleness and compare), then every change
+  const history = async (b) => {
+    const dec = el("div", "cx-history-decisions");
+    if (byKey.decisions) byKey.decisions(dec);
+    b.append(dec);
+    const ch = el("div", "");
+    ch.append(el("h3", "cx-plan-h", "Changes"));
+    b.append(ch);
+    await byKey.history(ch);
+  };
+  const list = [["problem", "About", about], ["evidence", "Sources", sources], ["catalog", "Materials", byKey.catalog], ["history", "History", history], ["export", "Export", byKey.export]];
+  cxResearchTabs.length = 0;
+  list.forEach((t) => { if (t[2]) cxResearchTabs.push(t); });
+}
+// panes named for what they hold; on a phone the part inspector rides
+// under the model, so "assembly" means the Model tab there
+{
+  const go = cxGo;
+  cxGo = function (pane, tab) { go(pane === "assembly" && cxPhone() ? "model" : pane, tab); };
 }

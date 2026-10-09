@@ -41,7 +41,7 @@ const tab = (page, name) => page.getByRole('tab', {name, exact: true}).click();
     await page.goto(cfg.url + '/#/properties/fixture-ooda-house/construction/' + problemId);
     await page.getByRole('heading', {name: 'Research fixture — corrugated roof to masonry'}).waitFor();
     // observed capabilities are shown, not assumed
-    await page.evaluate(() => { cxp.open.more = true; cxRender(); }); // the Plan pane folds runs and steward under one summary
+    await page.evaluate(() => { cx.pane = 'research'; cx.tab = 'evidence'; cxp.open.runs = true; cxRender(); }); // research runs live under Details › Sources
     await page.getByText(/synthetic fixture sources \(test only\)/).first().waitFor();
     await page.getByText(/PDF\/OCR page extraction is not bundled/).first().waitFor();
     // ---- start: progress comes from the durable run record ----
@@ -55,7 +55,7 @@ const tab = (page, name) => page.getByRole('tab', {name, exact: true}).click();
     evidence.run1 = run1;
     await page.getByText(/3 alternatives/).first().waitFor();
     // ---- Research tab: every stage's retained result ----
-    await tab(page, 'Runs');
+    await tab(page, 'Sources');
     await page.getByText(/Acquisition · fixture/).waitFor();
     for (const outcome of ['not-found · source', 'rate-limited · rate-limit', 'timeout · timeout', 'blocked · source', 'extraction-unavailable · capability']) {
       await page.locator('.cx-acq td', {hasText: outcome}).first().waitFor();
@@ -67,12 +67,11 @@ const tab = (page, name) => page.getByRole('tab', {name, exact: true}).click();
     assert.equal(await page.locator('.cx-syn-alts li').count(), 3, 'three conditional alternatives');
     await page.screenshot({path: path.join(shots, 'research-tab-1440.png')});
     // ---- open the surface-counterflashing research alternative ----
-    await tab(page, 'Approaches');
-    const row = page.locator('.cx-pane-d .cx-approach', {hasText: 'Research — apron flashing + surface-held counterflashing'});
+    const row = page.locator('.cx-pane-a .cx-approach', {hasText: 'Research — apron flashing + surface-held counterflashing'});
     await row.getByRole('button', {name: 'Show model'}).click();
     await pollPage(page, () => cxAsm() && cxAsm().name.startsWith('Research — apron flashing + surface'));
     // ---- Evidence tab: fictional sources, injection warning, contradiction, path ----
-    await tab(page, 'Evidence');
+    await tab(page, 'Sources');
     await page.getByText(/FICTIONAL FIXTURE/).first().waitFor();
     await page.locator('.cx-src-warn', {hasText: 'never followed'}).first().waitFor();
     await page.locator('.cx-claim-contradicted').first().waitFor();
@@ -87,7 +86,7 @@ const tab = (page, name) => page.getByRole('tab', {name, exact: true}).click();
     const asm = await page.evaluate(() => cxAsm().id);
     const insID = await page.evaluate(() => cxAsm().components.find((c) => c.type === 'insulation-board').id);
     await page.evaluate((id) => cxSelect(id), insID);
-    await tab(page, 'Evidence');
+    await tab(page, 'Sources');
     const free = await page.evaluate(() => { const linked = new Set(cxAsm().evidenceLinks.map((l) => l.evidenceId)); return cx.view.evidence.evidence.find((e) => !linked.has(e.id)).id; });
     const expand = async (evd) => {
       const det = page.locator('details.cx-src', {has: page.locator('.cx-ev-row[data-evidence="' + evd + '"]')});
@@ -97,20 +96,20 @@ const tab = (page, name) => page.getByRole('tab', {name, exact: true}).click();
     await page.locator('.cx-ev-row[data-evidence="' + free + '"]').getByRole('button', {name: 'Link to Above-deck insulation'}).click();
     await pollPage(page, ([a, id, e]) => cx.view.assemblies[a].evidenceLinks.some((l) => l.target === id && l.evidenceId === e), [asm, insID, free]);
     await page.evaluate(() => cxSelect(''));
-    await tab(page, 'Evidence');
+    await tab(page, 'Sources');
     await expand(free);
     await page.locator('.cx-ev-row[data-evidence="' + free + '"]').getByRole('button', {name: 'Show path'}).click();
     await page.getByRole('button', {name: 'Above-deck insulation'}).first().click();
     await pollPage(page, (id) => cx.selection === id, insID);
     evidence.selectionSync = 'evidence path → part selection';
     // ---- owner source + passage: verified against the retained page ----
-    await tab(page, 'Problem');
+    await tab(page, 'About');
     await page.getByLabel('Choose a file').setInputFiles({name: 'owner-note.txt', mimeType: 'text/plain',
       buffer: Buffer.from('SYNTHETIC FIXTURE owner note, page 1.\fPage 2: the apron upstand is covered by a counterflashing (fictional figure).')});
     await page.getByLabel('Input role').selectOption('document');
     await page.getByRole('button', {name: 'Upload'}).click();
     await page.getByRole('link', {name: 'owner-note.txt'}).waitFor();
-    await tab(page, 'Evidence');
+    await tab(page, 'Sources');
     await page.getByLabel('Source title').fill('Owner note (synthetic)');
     await page.getByLabel('Retained document').selectOption({index: 1});
     await page.getByRole('button', {name: 'Add source'}).click();
@@ -129,7 +128,7 @@ const tab = (page, name) => page.getByRole('tab', {name, exact: true}).click();
     await page.getByRole('button', {name: 'Add passage'}).click();
     await page.getByRole('alert').filter({hasText: 'nothing was added'}).waitFor();
     // ---- P6 catalog: generic families with unknowns, a sourced product, a previewed substitution ----
-    await tab(page, 'Catalog');
+    await tab(page, 'Materials');
     await page.getByText('No products. Generic materials only until a sourced product is added.').waitFor();
     await page.getByText(/Materials \(16 · generic families with explicit unknowns\)/).waitFor();
     await page.getByText('Add a sourced product').click();
@@ -155,13 +154,13 @@ const tab = (page, name) => page.getByRole('tab', {name, exact: true}).click();
     await panel.getByRole('button', {name: 'Apply substitution'}).click();
     await pollPage(page, ([id, h]) => { const a = cx.view.assemblies[cx.activeAssembly]; const c = a.components.find((x) => x.id === id); return a.modelHash !== h && c.product && c.shape.params.thickness.value === 120; }, [insID, hashBefore]);
     await pollPage(page, () => (cx.view.validation[cx.activeAssembly].issues || []).some((i) => i.ruleKey === 'product.dimension-unverified' && i.status !== 'resolved'));
-    await tab(page, 'Catalog');
+    await tab(page, 'Materials');
     await page.locator('.cx-prod[data-product="' + prodID + '"]').getByRole('button', {name: 'Mark stale'}).click();
     await pollPage(page, () => (cx.view.validation[cx.activeAssembly].issues || []).some((i) => i.ruleKey === 'product.stale' && i.status !== 'resolved'));
     await page.screenshot({path: path.join(shots, 'catalog-tab-1440.png')});
     evidence.catalog = {product: prodID, substitution: 'previewed then applied; thickness 120 mm on the same component; stale flagged'};
     // ---- P7 decisions: propose, owner accepts the exact revision, an edit stales it, compare, restore ----
-    await tab(page, 'Decisions');
+    await tab(page, 'History');
     await page.getByText(/^Propose a decision for/).click();
     await page.getByLabel('Decision proposal').fill('Working detail for the synthetic fixture, conditional on its open issues.');
     await page.getByRole('button', {name: 'Propose decision'}).click();
@@ -176,7 +175,7 @@ const tab = (page, name) => page.getByRole('tab', {name, exact: true}).click();
     await page.locator('.cx-comp').getByLabel('thickness', {exact: true}).fill('130');
     await page.locator('.cx-comp').getByLabel('thickness', {exact: true}).press('Enter');
     await pollPage(page, (h) => cx.view.assemblies[cx.activeAssembly].modelHash !== h, accepted.hash);
-    await tab(page, 'Decisions');
+    await tab(page, 'History');
     await page.locator('.cx-dec-stale').first().waitFor();
     await page.getByText(/the selection stays on this revision/).waitFor();
     assert.equal(await page.evaluate(() => cx.view.problem.selectedAssembly.revision), accepted.rev, 'the selection never follows the head');
@@ -191,6 +190,7 @@ const tab = (page, name) => page.getByRole('tab', {name, exact: true}).click();
     await pollPage(page, (h) => cx.view.assemblies[cx.activeAssembly].modelHash === h, accepted.hash);
     evidence.decisions = {accepted: accepted.rev.slice(0, 12), stale: 'edit staled the acceptance; selection pinned; compare shows thickness; restore returned the accepted geometry'};
     // ---- cancel a running research run, then resume it ----
+    await tab(page, 'Sources');
     await page.getByRole('button', {name: 'Start new research'}).click();
     await page.getByRole('button', {name: 'Cancel research'}).click();
     await pollPage(page, () => { const r = cxLatestRun(); return r && r.state === 'cancelled'; }, null, 30000);
@@ -210,8 +210,8 @@ const tab = (page, name) => page.getByRole('tab', {name, exact: true}).click();
     p2.on('pageerror', (e) => errors.push(e.message));
     await p2.goto(cfg.url + '/#/properties/fixture-ooda-house/construction/' + problemId);
     await p2.getByRole('heading', {name: 'Research fixture — corrugated roof to masonry'}).waitFor();
-    await p2.getByRole('tab', {name: 'Research', exact: true}).first().click();
-    await p2.getByRole('tab', {name: 'Evidence', exact: true}).click();
+    await p2.getByRole('tab', {name: 'Details', exact: true}).first().click();
+    await p2.getByRole('tab', {name: 'Sources', exact: true}).click();
     await p2.getByText(/FICTIONAL FIXTURE/).first().waitFor();
     const overflow = await p2.evaluate(() => document.documentElement.scrollWidth - innerWidth);
     assert.ok(overflow <= 1, 'no sideways scroll at 390: ' + overflow);

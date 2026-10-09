@@ -33,23 +33,34 @@ fs.mkdirSync(shots, {recursive: true});
       await page.getByRole('heading', {name: 'Decisions to make'}).waitFor();
       // the model's own open question is answerable here
       await page.locator('.cx-dp[data-q="wall"]').waitFor();
-      await page.getByRole('button', {name: 'Have Alfred research this problem'}).click();
+      // one next step at a time: describe it, in the chat
+      assert.match(await page.locator('.cx-next').innerText(), /Describe it/);
+      await page.locator('.cx-next').getByRole('button', {name: 'Describe it'}).click();
+      await page.getByLabel('Message to Alfred').fill('The new roof meets the old brick wall at its high edge. How do we flash it?');
+      await page.getByRole('button', {name: 'Send', exact: true}).click();
+      await page.locator('.cx-next', {hasText: /Alfred suggests 1 change/}).waitFor({timeout: 30000});
       const card = page.locator('.cx-proposal');
       await card.waitFor({timeout: 30000});
       assert.match(await card.innerText(), /Decision to make: Is the wall solid brick or a cavity wall\?/);
+      assert.equal(await page.locator('.cx-pane-a select, .cx-steward').count(), 0, 'no steward picker or direct agent box in the Plan');
       await page.getByRole('link', {name: 'Open in Chat'}).waitFor();
       await card.getByRole('button', {name: 'Apply'}).click();
       await page.waitForFunction(() => (cx.view.problem.questions || []).length === 1);
       await page.locator('.cx-proposal.is-applied').waitFor();
+      // one tap undoes the whole suggestion, and it can be applied again
+      await page.locator('.cx-proposal.is-applied').getByRole('button', {name: 'Undo'}).click();
+      await page.waitForFunction(() => cx.view.problem.questions[0].state === 'dropped');
+      await page.locator('.cx-proposal.is-quiet').getByRole('button', {name: 'Apply'}).click();
+      await page.waitForFunction(() => cx.view.problem.questions.length === 1 && cx.view.problem.questions[0].state === 'open');
       const q = page.locator('.cx-dp', {hasText: 'Is the wall solid brick or a cavity wall?'}).filter({has: page.getByRole('button', {name: 'cavity', exact: true})});
       await q.getByRole('button', {name: 'solid', exact: true}).click();
       await page.waitForFunction(() => cx.view.problem.questions[0].state === 'answered' && cx.view.problem.questions[0].answer === 'solid');
       await page.locator('.cx-dp-done summary', {hasText: '1 settled'}).waitFor();
       assert.equal(await page.evaluate(() => cx.error), '', 'no refusal');
-      // the guide reads as stages; research is done once Alfred replied
-      const guide = await page.locator('.cx-guide-sum').innerText();
-      assert.match(guide, /Step \d of 5/i);
-      assert.ok(await page.locator('.cx-stages .is-done', {hasText: 'Research'}).count() === 1, 'research stage done');
+      // progress reads as five stages; describe and research are done once Alfred replied
+      assert.equal(await page.locator('.cx-progress li').count(), 5);
+      assert.equal(await page.locator('.cx-progress li.is-done', {hasText: 'Research'}).count(), 1, 'research stage done');
+      assert.equal(await page.locator('.cx-guide').count(), 0, 'the header carries no second guide');
       const pan = await page.evaluate(() => document.documentElement.scrollWidth - innerWidth);
       assert.ok(pan <= 1, 'no sideways pan at ' + width + ': ' + pan);
       await page.screenshot({path: path.join(shots, 'plan-' + width + '.png')});

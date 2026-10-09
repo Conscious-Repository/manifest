@@ -37,15 +37,20 @@ reads, and nothing about the real site is assumed.
 
 ## The workbench
 
-Four synchronized panes (keyboard-resizable on desktop; one at a time on a
-phone): **Plan** (decisions to make, approaches, the conversation with the
-steward; steward, research runs and undo folded below — see "Plan pane"),
-**Model** (pinned three.js r180 renderer with a technical fallback, picking,
-section plane, explode, measurement, views), **Assembly** (junction,
-parameters, layer stack, selected part, material/product with a previewed
-substitution) and **Research** tabs: Problem, Runs, Evidence, Catalog,
-Approaches, Decisions, Issues, History, Export. Part names float over the
-model as callouts (Labels toggle), pinned to the part you can actually see.
+Three places, named for what they hold (one at a time on a phone: Plan ·
+Model · Details):
+- **Plan** — the next step (one sentence, one button, five-stage progress:
+  describe → research → approaches → decide → specifics), the decisions to
+  make, the approaches as cards, and the conversation with Alfred with its
+  composer docked at the bottom. No steward or model picker here: Alfred
+  answers with his default; "Open in Chat" has the full chat.
+- **Model** — the 3D model with plain part labels; views, Labels and (on a
+  laptop) Rotate/Move in one row, everything else under "More tools". The
+  selected-part inspector sits beside it (under it on a phone).
+- **Details** — About (narrative, facts, context, inputs, glossary), Sources
+  (evidence; "Check against your documents" research runs), Materials
+  (catalog), History (decisions with staleness and compare, then every
+  change and revision restore), Export.
 
 ## Plan pane: steer in chat, keep the answers here
 
@@ -62,8 +67,11 @@ The way of working is five stages shown under the header: describe → research
 - **Proposals, not edits.** The steward cannot change the problem from chat.
   A reply may end with one ```` ```construction ```` block
   (`{summary, changes:[{assemblyId?, operations}]}`); the pane shows it in
-  plain words and **Apply** sends each change as an ordinary owner command,
-  so every applied change is a revision with the owner as actor.
+  plain words with **Apply** / **Not now**; Apply sends each change as an
+  ordinary owner command (every applied change is a revision with the owner
+  as actor) and keeps the inverses, so **Undo** reverses the whole
+  suggestion in one tap (questions dropped, facts removed, assemblies
+  restored, new approaches set aside, proposed decisions rejected).
 - **Decision points** are problem records (`problem.questions`, `dq-` ids):
   `AddQuestion` (owner or steward), `AnswerQuestion` and `SetQuestionState`
   (owner; open | dropped). Each has a stage (approach | specifics), optional

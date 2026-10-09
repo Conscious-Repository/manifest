@@ -61,7 +61,7 @@ const tab = (page, name) => page.getByRole('tab', {name, exact: true}).click();
     await page.locator('.cx-comp').getByLabel('thickness', {exact: true}).press('Enter');
     await pollPage(page, ([a, id]) => cx.view.assemblies[a].components.find((c) => c.id === id).shape.params.thickness.value === 120, [base, ins]);
     // ---- research: cancel mid-run, resume ----
-    await page.evaluate(() => { cxp.open.more = true; cxRender(); }); // the Plan pane folds runs and steward under one summary
+    await page.evaluate(() => { cx.pane = 'research'; cx.tab = 'evidence'; cxp.open.runs = true; cxRender(); }); // research runs live under Details › Sources
     await page.getByRole('button', {name: 'Start research', exact: true}).click();
     await page.getByRole('button', {name: 'Cancel research'}).click();
     await pollPage(page, () => { const r = cxLatestRun(); return r && r.state === 'cancelled'; });
@@ -69,9 +69,8 @@ const tab = (page, name) => page.getByRole('tab', {name, exact: true}).click();
     await pollPage(page, () => { const r = cxLatestRun(); return r && r.state === 'completed'; }, null, 60000);
     evidence.run = await page.evaluate(() => { const r = cxLatestRun(); return {state: r.state, epoch: r.epoch, alternatives: r.publication.assemblies.length}; });
     // ---- open a research alternative; decide ----
-    await tab(page, 'Approaches');
-    await page.locator('.cx-pane-d .cx-approach', {hasText: 'Research — apron flashing + surface-held counterflashing'}).getByRole('button', {name: 'Show model'}).click();
-    await tab(page, 'Decisions');
+    await page.locator('.cx-pane-a .cx-approach', {hasText: 'Research — apron flashing + surface-held counterflashing'}).getByRole('button', {name: 'Show model'}).click();
+    await tab(page, 'History');
     await page.getByText(/^Propose a decision for/).click();
     await page.getByLabel('Decision proposal').fill('Working detail for review; every open issue stays open.');
     await page.getByRole('button', {name: 'Propose decision'}).click();
@@ -105,8 +104,8 @@ const tab = (page, name) => page.getByRole('tab', {name, exact: true}).click();
     await p2.goto(cfg.url + '/#/tasks/home-construction/' + problemId);
     await p2.getByRole('heading', {name: '761 N Euclid — Back Addition'}).waitFor();
     await p2.waitForFunction(() => !document.querySelector('.hud-boot'), null, {timeout: 5000});
-    await p2.getByRole('tab', {name: 'Research', exact: true}).first().click();
-    await p2.getByRole('tab', {name: 'Decisions', exact: true}).click();
+    await p2.getByRole('tab', {name: 'Details', exact: true}).first().click();
+    await p2.getByRole('tab', {name: 'History', exact: true}).click();
     await p2.getByText(/^Selected for the project:/).waitFor();
     const overflow = await p2.evaluate(() => document.documentElement.scrollWidth - innerWidth);
     assert.ok(overflow <= 1, 'no sideways scroll at 390: ' + overflow);

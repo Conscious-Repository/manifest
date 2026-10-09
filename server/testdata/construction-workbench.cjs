@@ -170,9 +170,7 @@ async function backendRun(browser) {
   await page.getByRole('button', {name: 'Upload'}).click();
   await page.getByRole('link', {name: 'synthetic-site-photo.png'}).waitFor();
   assert.equal(await page.locator('img.cx-thumb').evaluate((img) => img.complete && img.naturalWidth === 1), true, 'retained photo renders from its private URL');
-  await page.evaluate(() => { cxp.open.more = true; cxRender(); }); // the Plan pane folds runs and steward under one summary
-  await page.getByLabel('Steward agent').selectOption('zeck');
-  await page.getByText('Zeck was explicitly selected as the real-estate specialist.').waitFor();
+  await page.evaluate(() => { cx.tab = 'evidence'; cxp.open.runs = true; cxRender(); }); // research runs live under Details › Sources
   await page.getByText('No research run yet.').waitFor();
   await waitModel(page);
   await page.screenshot({path: path.join(shots, 'workbench-1440-default.png')});
@@ -225,6 +223,7 @@ async function backendRun(browser) {
   // ---- hide / isolate / show all, explode, canonical measurement ---------------------
   const sealant = compOf(v, asm, 'sealant-bead').id;
   await page.locator('.cx-tree-row[data-component="' + sealant + '"]').click();
+  await page.evaluate(() => { document.querySelector('.cx-more-tools').open = true; }); // the model's second row of tools
   await page.getByRole('button', {name: 'Hide the selected part'}).click();
   assert.equal(await page.evaluate((id) => __cxRenderer.visibleParts().includes(id), sealant), false, 'hidden');
   await page.getByRole('button', {name: 'Show only the selected part'}).click();
@@ -332,20 +331,22 @@ async function backendRun(browser) {
       if (width <= 860) {
         await tab.getByRole('tab', {name: 'Model', exact: true}).click();
         await waitModel(tab);
-        await tab.getByRole('tab', {name: 'Assembly', exact: true}).click();
+        // the part inspector rides under the model on a phone
         await tab.getByLabel('Pitch').waitFor();
         assert.equal(await tab.getByLabel('Pitch').isEditable(), true, 'parameters are editable at ' + width);
-        await tab.getByRole('tab', {name: 'Research', exact: true}).click();
-        await tab.getByRole('tab', {name: 'Issues'}).click();
-        await tab.getByText(/Rule set construction-rules\/1/).waitFor();
+        await tab.getByRole('tab', {name: 'Plan', exact: true}).click();
+        await tab.getByText(/things? to check before building/).first().waitFor();
+        await tab.getByRole('tab', {name: 'Details', exact: true}).click();
+        await tab.getByRole('tab', {name: 'History', exact: true}).waitFor();
+        await tab.getByRole('tab', {name: 'Model', exact: true}).click(); // the part breadcrumb belongs to the model
         assert.ok(await tab.locator('.cx-crumb').textContent(), 'selection breadcrumb present');
       } else {
         await waitModel(tab);
         if (width < 1280) {
           await tab.getByRole('tab', {name: 'Plan', exact: true}).click();
-          await tab.evaluate(() => { cxp.open.more = true; cxRender(); });
-          await tab.getByLabel('Steward agent').waitFor();
-          await tab.getByRole('tab', {name: 'Assembly', exact: true}).click();
+          await tab.getByLabel('Message to Alfred').waitFor();
+          await tab.getByRole('tab', {name: 'Details', exact: true}).click();
+          await tab.getByLabel('Pitch').waitFor(); // the part inspector shares the column with Details
         }
       }
       const overflow = await tab.evaluate(() => document.documentElement.scrollWidth - innerWidth);

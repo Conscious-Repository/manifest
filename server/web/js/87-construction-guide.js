@@ -109,6 +109,7 @@ function cxIssuePlain(is) {
 // ---- the guide ------------------------------------------------------------------
 // open by default on a wide screen, folded to its "Next:" line on a phone,
 // until the owner chooses
+let cxMoreTools = false; // the model toolbar's second row, open once asked for
 const cxPhone = () => matchMedia("(max-width: 860px)").matches;
 let cxGuideOpen = (() => { try { const v = localStorage.getItem("cx.guide.open"); return v === null ? !cxPhone() : v !== "0"; } catch (e) { return !cxPhone(); } })();
 function cxGo(pane, tab) {
@@ -309,16 +310,20 @@ cxProblemRow = function (subject, row) {
   const base = cxModelToolbar;
   cxModelToolbar = function () {
     const tb = base();
-    if (!cxPhone()) return tb;
     const segs = [...tb.querySelectorAll(":scope > .cx-seg")];
     const keep = new Set(segs.filter((s) => s.querySelector("[data-drag]") || /Junction/.test(s.textContent)));
     const more = el("details", "cx-more-tools");
+    more.open = cxMoreTools;
+    more.ontoggle = () => { cxMoreTools = more.open; };
     more.append(el("summary", "", "More tools"));
     const inner = el("div", "cx-more-body");
     [...tb.children].forEach((n) => { if (!keep.has(n) && !n.classList.contains("cx-model-note")) inner.append(n); });
     more.append(inner);
     const hint = inner.querySelector(".cx-model-hint");
-    if (hint) { hint.textContent = "One finger rotates (Move: one finger moves) · two fingers pinch to zoom and drag to move · double-tap zooms in on a spot"; tb.append(hint); }
+    if (hint) {
+      if (cxPhone()) hint.textContent = "Drag to turn · pinch to zoom · two fingers to move · double-tap to look closer";
+      tb.append(hint);
+    }
     tb.append(more);
     return tb;
   };

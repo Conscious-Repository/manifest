@@ -32,7 +32,7 @@ async function pollPage(page, fn, arg, timeout = 30000) {
     const id = created.view.problem.id;
     await page.goto(cfg.url + '/#/properties/fixture-ooda-house/construction/' + id);
     await page.getByRole('heading', {name: 'Native fixture'}).waitFor();
-    await page.evaluate(() => { cxp.open.more = true; cxRender(); }); // the Plan pane folds runs and steward under one summary
+    await page.evaluate(() => { cx.pane = 'research'; cx.tab = 'evidence'; cxp.open.runs = true; cxRender(); }); // research runs live under Details › Sources
     await page.getByText(/bounded-tools: .*the runner enforces it as for every native chat turn/).first().waitFor();
     await page.getByRole('button', {name: 'Start research with the native agent'}).click();
     await pollPage(page, () => { const r = cxLatestRun(); return r && r.state === 'completed'; }, null, 60000);
@@ -41,9 +41,9 @@ async function pollPage(page, fn, arg, timeout = 30000) {
     assert.ok(/observed stub-model \(runner-report\)/.test(nat), 'observed runtime shown: ' + nat);
     const asm = await page.evaluate(() => cx.activeAssembly);
     const before = await page.evaluate(() => cx.view.assemblies[cx.activeAssembly].modelHash);
-    await page.getByLabel('Instruction for the agent').fill('Increase the insulation to 150 mm.');
-    await page.getByRole('button', {name: 'Send to agent'}).click();
-    await page.getByText(/1 command\(s\) applied as the agent/).waitFor({timeout: 30000});
+    // the direct steward request has no button any more (the Plan's chat replaces it); its API still holds
+    const req = await page.evaluate(async (a) => (await cxApi('POST', cxBase(cx.subject), '/problems/' + cx.problemId + '/agent/requests', {schemaVersion: 1, requestId: cxRequestId(), text: 'Increase the insulation to 150 mm.', assemblyId: a})).request, asm);
+    await pollPage(page, async (id) => { const r = (await cxApi('GET', cxBase(cx.subject), '/problems/' + cx.problemId + '/agent/requests/' + id)).request; if (r.state === 'pending') return false; const v = await cxApi('GET', cxBase(cx.subject), '/problems/' + cx.problemId); cxApplyView(v); return r.state === 'completed' && r.results.filter((x) => x.status === 200).length === 1; }, req.id, 30000);
     await pollPage(page, ([a, h]) => cx.view.assemblies[a].modelHash !== h && cx.view.assemblies[a].components.find((c) => c.type === 'insulation-board').shape.params.thickness.value === 150, [asm, before]);
     await page.screenshot({path: path.join(shots, 'native-agent-1440.png')});
     assert.deepEqual(errors, [], 'page errors');

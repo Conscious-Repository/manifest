@@ -21,6 +21,7 @@ fs.mkdirSync(shots, {recursive: true});
     await page.waitForURL(/\/construction\/cp-[0-9a-f]{32}$/);
     await page.waitForFunction(() => window.__cxRenderer && cx.geometry);
     // the 2D section of the open revision, as an inert image
+    await page.evaluate(() => { document.querySelector('.cx-more-tools').open = true; });
     await page.getByRole('button', {name: 'Show the true section drawing of this revision'}).click();
     const img = page.locator('img.cx-section-img');
     await img.waitFor();

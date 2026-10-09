@@ -377,9 +377,9 @@ button.cx-path-node { border: 1px solid var(--accent); color: var(--accent); cur
 .cx-approach-pc .is-watch::marker { content: "!  "; color: var(--warn); }
 .cx-approach-facts { margin: var(--sp-2) 0 0; color: var(--base-60); letter-spacing: normal; text-transform: none; }
 .cx-approach-fig { display: block; width: 100%; margin-top: var(--sp-3); padding: 0; border: 1px solid var(--line-soft); border-radius: var(--radius); background: #fff; cursor: zoom-in; overflow: hidden; }
-.cx-approach-fig img { display: block; width: 100%; max-height: 220px; object-fit: contain; }
+.cx-approach-fig img { display: block; width: 100%; aspect-ratio: 1.75; object-fit: cover; object-position: center top; }
 .cx-chat-head { display: flex; gap: var(--sp-3); align-items: baseline; justify-content: space-between; }
-.cx-chat-thread { display: flex; flex-direction: column; gap: var(--sp-3); max-height: min(70vh, 720px); overflow-y: auto; padding-right: 2px; }
+.cx-chat-thread { display: flex; flex-direction: column; gap: var(--sp-3); }
 .cx-chat-intro { margin: 0; color: var(--base-60); font-size: var(--fs-sm); line-height: 1.45; }
 .cx-turn { max-width: 100%; }
 .cx-turn-text { font-size: var(--fs-sm); line-height: 1.5; overflow-wrap: anywhere; }
@@ -391,18 +391,48 @@ button.cx-path-node { border: 1px solid var(--accent); color: var(--accent); cur
 .cx-turn.is-system .cx-turn-text { color: var(--base-60); font-style: italic; }
 .cx-turn-meta { display: block; text-align: right; letter-spacing: normal; }
 .cx-chat-wait { margin: 0; color: var(--base-60); font-size: var(--fs-sm); }
-.cx-chat-form { display: flex; gap: var(--sp-2); align-items: flex-end; margin-top: var(--sp-3); }
-.cx-chat-in { flex: 1 1 auto; min-width: 0; resize: vertical; min-height: 44px; font: inherit; }
+.cx-chat-form { display: flex; gap: var(--sp-2); align-items: flex-end; }
+.cx-chat-in { flex: 1 1 auto; min-width: 0; resize: none; min-height: 44px; max-height: 180px; font: inherit; line-height: 1.4; }
 .cx-proposal { margin-top: var(--sp-3); border: 1px dashed var(--accent); border-radius: var(--radius); padding: var(--sp-3) var(--sp-4); background: color-mix(in srgb, var(--accent) 5%, var(--surface-panel)); }
 .cx-proposal.is-applied { border-style: solid; border-color: var(--good); background: var(--surface-panel); }
 .cx-proposal.is-partial { border-color: var(--warn); }
 .cx-proposal-sum { margin: var(--sp-1) 0 0; font-weight: 600; font-size: var(--fs-sm); }
 .cx-proposal-ops { margin: var(--sp-2) 0 0; padding-left: 1.1em; font-size: var(--fs-sm); line-height: 1.45; }
 .cx-proposal-state { margin: var(--sp-2) 0 0; letter-spacing: normal; }
-.cx-plan-more > summary { cursor: pointer; }
+/* Plan, second pass: one next step, a docked composer, three phone tabs */
+.cx-next { border: 1px solid var(--accent); border-radius: var(--radius); padding: var(--sp-4); background: color-mix(in srgb, var(--accent) 6%, var(--surface-panel)); }
+.cx-progress { display: flex; gap: 4px; margin: 0 0 var(--sp-3); padding: 0; list-style: none; font-size: var(--fs-xs); color: var(--base-60); }
+.cx-progress li { flex: 1 1 0; min-width: 0; padding-top: 6px; border-top: 3px solid var(--line); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cx-progress li.is-done { border-top-color: var(--good); }
+.cx-progress li.is-now { border-top-color: var(--accent); color: var(--text); font-weight: 600; }
+.cx-next-text { margin: 0; line-height: 1.45; }
+.cx-next-btn { margin-top: var(--sp-3); min-height: 44px; padding: 0 var(--sp-5); border: none; border-radius: var(--radius); background: var(--accent); color: var(--on-accent); font: inherit; font-weight: 600; cursor: pointer; }
+.cx-next-btn:hover { filter: brightness(1.08); }
+.cx-primary { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
+.cx-approach-open { margin-top: var(--sp-2); font-size: var(--fs-sm); }
+.cx-approach-open > summary { cursor: pointer; color: var(--warn); }
+.cx-approach-open ul { margin: var(--sp-2) 0 0; padding-left: 1.1em; color: var(--base-60); line-height: 1.45; }
+.cx-chat-earlier { align-self: center; }
+.cx-chat-dock { position: sticky; bottom: 0; z-index: 3; margin-top: var(--sp-3); padding: var(--sp-2) 0 calc(var(--sp-2) + env(safe-area-inset-bottom, 0px)); background: var(--bg); }
+.cx-chips { display: flex; gap: var(--sp-2); overflow-x: auto; scrollbar-width: none; margin-bottom: var(--sp-2); }
+.cx-chips::-webkit-scrollbar { display: none; }
+.cx-chip-btn { flex: none; min-height: 32px; padding: 0 var(--sp-3); border: 1px solid var(--line); border-radius: 999px; background: var(--surface-panel); color: var(--text); font: inherit; font-size: var(--fs-sm); cursor: pointer; white-space: nowrap; }
+.cx-chip-btn:hover { border-color: var(--accent); }
+.cx-proposal.is-quiet { border-style: solid; border-color: var(--line); background: var(--surface-panel); opacity: 0.85; }
+.cx-proposal details > summary { cursor: pointer; font-size: var(--fs-sm); color: var(--base-60); margin-top: var(--sp-2); }
+.cx-switch-btn.cx-switch-merged { display: none; }
+@media (max-width: 1279px) and (min-width: 861px) {
+  .cx-wb[data-active="research"] .cx-right, .cx-wb[data-active="assembly"] .cx-right { grid-template-rows: minmax(0, 1fr) minmax(0, 1fr); }
+  .cx-wb[data-active="research"] .cx-pane-c, .cx-wb[data-active="assembly"] .cx-pane-d { display: flex; }
+}
 @media (max-width: 860px) {
-  .cx-chat-thread { max-height: none; overflow: visible; }
-  .cx-chat-form { position: sticky; bottom: 0; background: var(--bg); padding: var(--sp-2) 0 calc(var(--sp-2) + env(safe-area-inset-bottom, 0px)); margin-bottom: 0; z-index: 3; }
+  .cx-wb[data-active="model"] .cx-pane-c { display: flex; margin-top: var(--sp-4); }
   .cx-chat-in { font-size: 16px; }
-  .cx-approach-list.is-wide { grid-template-columns: 1fr; }
+}
+.cx-dp-ask { align-self: center; margin-left: auto; }
+@media (max-width: 860px) {
+  .cx-wb .cx-pane-head { display: none; }
+  .cx-wb:not([data-active="model"]) .cx-crumb { display: none; }
+  .cx-model .cx-seg [data-drag] { display: none; }
+  .cx-head .cx-fine { font-size: var(--fs-xs); letter-spacing: normal; }
 }
