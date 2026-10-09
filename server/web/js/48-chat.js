@@ -140,6 +140,7 @@ function chatBackToChats() {
   back.title = "Back to chats";
   back.append(el("span", "mf-chat-back-glyph", "‹"), el("span", "mf-chat-back-label", "Chats"));
   back.onclick = () => mf.openChats();
+  if (typeof chatNowBackCount === "function") chatNowBackCount(back); // how many other chats need you (49-chat-now.js)
   return back;
 }
 
@@ -234,6 +235,7 @@ function chatMountHeader(head) {
   if(head && typeof chatWorkspaceHeader === "function")chatWorkspaceHeader(head);
   if(head && typeof mf !== "undefined" && mf?.openChats && !head.querySelector(".mf-chat-back"))head.prepend(chatBackToChats());
   if(head && typeof mf !== "undefined" && mf?.openChats && !head.querySelector(".mf-chat-new")){const add=chatHeadNewChat(),opts=head.querySelector(":scope > .chat-options-compact");opts?opts.before(add):head.append(add);}
+  if(head && typeof chatNowTitleSwitch === "function")chatNowTitleSwitch(head); // a phone title opens the stream switcher (49-chat-now.js)
   if (typeof chatHeadActionsHome === "function") chatHeadActionsHome(head);
   const focusKey = chatCaptureFocus(slot);
   slot.replaceChildren(...(head ? [head] : []));
@@ -1295,10 +1297,7 @@ async function chatSetPriority(key,expected,priority){
  throw Error('Projects changed elsewhere. Try again.');
 }
 function chatInboxEntries() {
-  const entries = chatSessions.map(session => ({agent: "", session}));
-  chatRoster.filter(a => !chatIsTerm(a.name)).forEach(agent => (chatAgentSessions[agent.name] || []).filter(session=>!chatHasNativeParent(session)).forEach(session => entries.push({agent: agent.name, session})));
-  if (chatTermEnabled) Object.keys(chatTermKinds).forEach(agent => chatTermList(agent).filter(session=>!chatHasCanonicalParent(session)&&!chatHasNativeParent(session)).forEach(session => entries.push({agent, session, terminal: true})));
-  (chatTaskThreads || []).forEach(t => entries.push(chatTaskEntry(t)));
+  const entries = chatInboxAllEntries();
   const query = chatSearchQuery.trim().toLowerCase();
   return entries.filter(chatEntryMatchesAttention).filter(entry => chatEntryLifecycle(entry)===chatLifecycleFilter).filter(entry => (chatWorkstreamFilter==="all"||(chatWorkstreamFilter==="standalone"?!chatWorkstreamMember(chatInboxKey(entry)):chatWorkstreamMember(chatInboxKey(entry))===chatWorkstreamFilter)) && (chatInboxFilter === "all" || entry.agent === chatInboxFilter || (entry.terminal&&[...(chatAgentSessions[chatInboxFilter]||[]),...chatTermSessions.filter(s=>s.kind===chatInboxFilter)].some(s=>s.origin?.mode==="continue"&&s.origin?.backend==="terminal"&&s.origin?.id===entry.session.id&&s.origin?.agent===entry.agent)))
     && [entry.session.title, entry.session.name, entry.session.cwd, chatAgentLabel(entry.agent), entry.session.spirit].filter(Boolean).join(" ").toLowerCase().includes(query))
@@ -1308,6 +1307,15 @@ function chatInboxEntries() {
       const time = entry => Date.parse(entry.session.updated || entry.session.lastUsed || entry.session.created || "") || 0;
       return time(b) - time(a);
     });
+}
+// chatInboxAllEntries — every conversation the rail knows, before the list's
+// search and filters apply (the phone Now section reads the same set)
+function chatInboxAllEntries() {
+  const entries = chatSessions.map(session => ({agent: "", session}));
+  chatRoster.filter(a => !chatIsTerm(a.name)).forEach(agent => (chatAgentSessions[agent.name] || []).filter(session=>!chatHasNativeParent(session)).forEach(session => entries.push({agent: agent.name, session})));
+  if (chatTermEnabled) Object.keys(chatTermKinds).forEach(agent => chatTermList(agent).filter(session=>!chatHasCanonicalParent(session)&&!chatHasNativeParent(session)).forEach(session => entries.push({agent, session, terminal: true})));
+  (chatTaskThreads || []).forEach(t => entries.push(chatTaskEntry(t)));
+  return entries;
 }
 function renderChatInboxRows() {
   const host = document.getElementById("chatInboxRows");
@@ -1333,7 +1341,7 @@ function renderChatInboxRows() {
     row.addEventListener("pointerleave", () => clearTimeout(hover), { passive: true });
     row.classList.toggle("open", entry.taskThread ? entry.session.id === chatTaskID : entry.agent === chatAgent && entry.session.id === chatOpenId);
     const meta = row.querySelector(".chat-rail-meta");
-    if (meta) meta.prepend(el("span", "chat-inbox-agent", entry.taskThread ? (entry.agent ? chatAgentLabel(entry.agent) + " · task" : "Task") : entry.terminal ? chatTermKinds[entry.agent] : entry.agent ? chatAgentLabel(entry.agent) : entry.session.spirit || "Spirits"));
+    if (meta) meta.prepend(el("span", "chat-inbox-agent", chatEntryAgentLabel(entry)));
     const key=chatInboxKey(entry),pinned=chatPins[key]===true;
     const state=chatEntryState(entry);row.dataset.execution=state.execution;
     const changed=chatSeen[key]&&chatSeen[key].marker!==chatActivityMarker(entry.session);if(changed&&meta)meta.prepend(el("span","chat-unread","new"));row.dataset.unread=String(!!changed);row.dataset.inboxKey=key;row.dataset.activity=chatActivityMarker(entry.session);
@@ -1364,11 +1372,17 @@ function renderChatInboxRows() {
     for(const [value,label] of [[3,'urgent'],[2,'high'],[1,'normal'],[0,'low']]){const option=el('option','','priority · '+label);option.value=value;priority.append(option);}const previous=chatWorkstreams.priorities?.[key]??1;priority.value=previous;
     priority.onclick=e=>e.stopPropagation();priority.onkeydown=e=>e.stopPropagation();priority.onchange=async()=>{priority.disabled=true;try{await chatSetPriority(key,previous,Number(priority.value));renderChatInboxRows();}catch(e){showToast(e.message);priority.value=previous;}finally{priority.disabled=false;}};menuBody.append(priority);
     if(group&&meta)meta.append(el("span","chat-row-group",chatWorkstreams.groups[group]));
-    row.onclick = () => { location.hash = entry.taskThread ? chatTaskThreadHash(entry.session.id) : entry.agent ? "#/chat/a/" + encodeURIComponent(entry.agent) + "/" + encodeURIComponent(entry.session.id) : "#/chat/" + encodeURIComponent(entry.session.id); };
+    row.onclick = () => { location.hash = chatEntryRoute(entry); };
     return row;
   });
   chatRenderProjectGroups(host,entries,rows);
+  if (typeof chatNowPaint === "function") chatNowPaint(); // the phone's Now section and ‹ Chats count (49-chat-now.js)
 }
+// chatEntryRoute — the one route an inbox entry opens at, from the rail's
+// rows or the phone's Now section and stream switcher (49-chat-now.js)
+function chatEntryRoute(entry){return entry.taskThread?chatTaskThreadHash(entry.session.id):entry.agent?"#/chat/a/"+encodeURIComponent(entry.agent)+"/"+encodeURIComponent(entry.session.id):"#/chat/"+encodeURIComponent(entry.session.id);}
+// chatEntryAgentLabel — who the conversation is with, as a row's meta line says it
+function chatEntryAgentLabel(entry){return entry.taskThread?(entry.agent?chatAgentLabel(entry.agent)+" · task":"Task"):entry.terminal?chatTermKinds[entry.agent]:entry.agent?chatAgentLabel(entry.agent):entry.session.spirit||"Spirits";}
 function chatRenderProjectGroups(host,entries,rows){
  const state=chatRenderProjectGroups.state||(chatRenderProjectGroups.state={collapsed:new Set(),expanded:new Set()});
  const groups=new Map(),recent=[];

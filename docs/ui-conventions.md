@@ -408,6 +408,8 @@ navigation click to this additional page chrome (2026-09-07).
 
 Chat uses one searchable, recent-first conversation directory across agents, with an optional agent filter. New chat chooses the recipient. Incoming and outgoing messages use the shared message radius and neutral surface tokens; the conversation header stays visible, and secondary management details fold under Details. On phones, the directory and conversation occupy separate panes. Terminal retains its dedicated PTY styling.
 
+On phones the Chats list opens with **Now** — Waiting on you · Working · Ready to review · Pinned — a read-only projection of the same inbox rows (`49-chat-now.js`): each conversation once, its state in the rail's own words, a next action or delivery summary, and its time; nothing loaded or a failed refresh is said, never shown as all clear. An open conversation's title is the stream switcher: the shared bottom sheet lists Needs you · Working · Pinned and View all chats without changing the route, and Back closes it. ‹ Chats stays one action with a neutral count of the other chats that wait on you or are ready. Pinned reads the existing pin preference; none of this writes. There is no permanent agent bar and no automatic switching (owner decision, 2026-10-09).
+
 ### Blueprint surface roles
 
 Use `--surface-header` for in-flow structural headers, `--surface-field` for editable controls/composers, `--surface-panel` for grouped content, and `--surface-overlay` for menus/modals/sticky elements that cover scrolled content. Defaults retain the original white surfaces. Jarvis uses restrained navy/blue fills; in-flow headers can be transparent. Never use transparent backing where text scrolls underneath. Dedicated PTY content continues to use `--term-bg`.

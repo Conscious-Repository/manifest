@@ -68,3 +68,38 @@ func TestChatUXConventions(t *testing.T) {
 		t.Error("48-chat.css re-types the .micro-label recipe")
 	}
 }
+
+// The phone Now section and stream switcher are a read-only projection over
+// the inbox the rail already loaded: no request, no storage, no timer of their
+// own (the chat refresh lifecycle repaints them), and none of the writers the
+// rail's menus use. Pinned stays the owner's existing pin preference, and
+// opening the switcher can never mark a conversation read.
+func TestChatNowIsReadOnly(t *testing.T) {
+	b, err := fs.ReadFile(webFiles, "web/js/49-chat-now.js")
+	if err != nil {
+		t.Fatalf("49-chat-now.js: %v", err)
+	}
+	var code strings.Builder
+	for _, line := range strings.Split(string(b), "\n") {
+		if i := strings.Index(line, "//"); i >= 0 && !strings.Contains(line[:i], "\"") && !strings.Contains(line[:i], "'") {
+			line = line[:i]
+		}
+		code.WriteString(line + "\n")
+	}
+	src := code.String()
+	for _, banned := range []string{"fetch(", "XMLHttpRequest", "EventSource", "sendBeacon", "localStorage", "sessionStorage", "indexedDB",
+		"setInterval(", "postJSON", "chatSetPinned(", "chatMarkViewed(", "chatSetLifecycle(", "chatSetPriority(", "chatSaveWorkstream("} {
+		if strings.Contains(src, banned) {
+			t.Errorf("49-chat-now.js uses %s — the Now section and the switcher only read what the inbox already holds", banned)
+		}
+	}
+	idx, err := fs.ReadFile(webFiles, "web/index.html")
+	if err != nil {
+		t.Fatal(err)
+	}
+	page := string(idx)
+	chat, now, tiles := strings.Index(page, `src="js/48-chat.js`), strings.Index(page, `src="js/49-chat-now.js`), strings.Index(page, `src="js/50-chat-tiles.js`)
+	if now < 0 || !(chat < now && now < tiles) {
+		t.Errorf("index.html must load js/49-chat-now.js after 48-chat.js and before 50-chat-tiles.js (positions %d, %d, %d)", chat, now, tiles)
+	}
+}

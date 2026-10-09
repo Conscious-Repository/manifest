@@ -2,7 +2,8 @@
    ZERO-DESKTOP-CHANGE BY CONSTRUCTION: everything in this file sits inside
    @media (max-width: 860px) or @media (hover: none) blocks, except the
    default-hides right below (which only affect nodes 98-mobile.js creates).
-   ≥861px renders byte-identically to a build without this file.
+   ≥861px renders byte-identically to a build without this file. (.chat-now
+   is hidden the same way: 49-chat-now.js builds it only on a phone.)
    860–1100 tablet band deliberately untouched (owner decision 2026-08-10).
    Rev 5 (2026-09-05, hardening pass): the touch tokens below + the last
    block — page-header wrap, touch floors, per-surface fixes measured at
@@ -28,6 +29,8 @@
 /* the conversation head's back-to-chats and the ··· menu's Workspace entry
    (48-chat.js chatBackToChats, 49-chat-workspace.js chatWorkspaceHeader) */
 .mf-chat-back, .mf-chat-new { display: none; }
+/* the Chats list's Now section (49-chat-now.js builds it only on a phone) */
+.chat-now { display: none; }
 .chat-status-changes, .chat-options-title { display: none; }
 .chat-details[open] > .mf-chat-ws-more { display: none; }
 
@@ -1193,4 +1196,84 @@
 @media (hover: none), (max-width: 860px) {
   .chat-turn-more { margin-left: 0; }
   .chat-turn-actions { left: 0; right: auto; }
+}
+
+/* ================= CHAT — Now and the stream switcher (2026-10-09) =================
+   49-chat-now.js; fixture chat-stream-switcher.cjs. One projection of the
+   inbox, three places, phone only:
+   - Now atop the Chats list: Waiting on you · Working · Ready to review ·
+     Pinned. A row is title + time, state · who, then the next action or what
+     the run is doing (two lines at most). A long title is cut; the state never
+     is (it wraps whole). State text keeps AA contrast: running in the accent,
+     failed and uncertain in --danger; --warn is 3:1 on white, so "needs you"
+     is ink with the amber dot as the second cue;
+   - the conversation title is the switcher's button (44px, ⌄); the sheet
+     lists the same rows, its "View all chats" stays in reach at the bottom;
+   - ‹ Chats carries a calm neutral count, never a red badge. */
+@media (max-width: 860px) {
+  .chat-now:not([hidden]) { display: flex; flex-direction: column; padding-bottom: var(--sp-4); margin-bottom: var(--sp-2); border-bottom: 1px solid var(--line); }
+  .chat-now-head { margin: 0; font-weight: 600; color: var(--base-80); }
+  .chat-now-label, .mf-streams-label { display: flex; align-items: baseline; gap: var(--sp-3); margin: 0; padding: var(--sp-5) 10px var(--sp-2); font-weight: 400; }
+  .chat-now-count, .mf-streams-count { font-variant-numeric: tabular-nums; color: var(--base-60); }
+  .chat-now-list, .mf-streams-list { list-style: none; margin: 0; padding: 0; }
+  .chat-now-item {
+    display: flex; flex-direction: column; gap: 2px; min-height: var(--touch); padding: 10px; box-sizing: border-box;
+    border-radius: var(--radius-lg); color: inherit; text-decoration: none; cursor: pointer;
+  }
+  .chat-now-item:hover { background: var(--base-10); }
+  .chat-now-item:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+  .chat-now-item[aria-current="page"] { background: var(--base-10); box-shadow: inset 2px 0 0 var(--accent); }
+  .chat-now-top { display: flex; align-items: baseline; gap: var(--sp-4); min-width: 0; }
+  .chat-now-title { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 500 var(--fs-lg)/1.4 var(--sans); color: var(--base-100); }
+  .chat-now-when { flex: none; font: var(--fs-xs)/1.4 var(--sans); font-variant-numeric: tabular-nums; color: var(--base-60); }
+  .chat-now-meta { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 var(--sp-3); min-width: 0; font: var(--fs-sm)/1.45 var(--sans); }
+  .chat-now-state { flex: 0 1 auto; max-width: 100%; font-weight: 600; color: var(--base-100); overflow-wrap: anywhere; }
+  .chat-now-state::before { content: ""; display: inline-block; width: 7px; height: 7px; margin-right: var(--sp-3); border-radius: 50%; background: var(--base-40); vertical-align: 1px; }
+  .chat-now-item[data-execution="running"] .chat-now-state { color: var(--accent); }
+  .chat-now-item[data-execution="running"] .chat-now-state::before { background: var(--accent); }
+  .chat-now-item[data-execution="queued"] .chat-now-state::before { background: none; box-shadow: inset 0 0 0 1.5px var(--base-50); }
+  .chat-now-item[data-execution="waiting_user"] .chat-now-state::before { background: var(--warn); }
+  .chat-now-item:is([data-execution="failed"], [data-execution="disconnected"]) .chat-now-state { color: var(--danger); }
+  .chat-now-item:is([data-execution="failed"], [data-execution="disconnected"]) .chat-now-state::before { background: var(--danger); }
+  .chat-now-agent { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--base-60); }
+  .chat-now-agent::before { content: "·"; padding-right: var(--sp-3); color: var(--base-40); }
+  .chat-now-summary {
+    display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden;
+    min-width: 0; overflow-wrap: anywhere; font: var(--fs-sm)/1.45 var(--sans); color: var(--base-60);
+  }
+  .chat-now-empty, .chat-now-note { margin: 0; padding: var(--sp-2) 10px var(--sp-4); font: var(--fs-md)/1.5 var(--sans); color: var(--base-60); }
+
+  /* the stream switcher: the title is the button; the sheet is mfSheet's */
+  .mf-stream-switch {
+    display: flex; align-items: center; gap: var(--sp-3); width: 100%; min-width: 0; min-height: var(--touch); box-sizing: border-box;
+    margin: 0; padding: 0 var(--sp-3); border: 0; border-radius: var(--radius-lg); background: none; cursor: pointer;
+    color: inherit; font: inherit; letter-spacing: inherit; word-spacing: inherit; text-transform: inherit; text-align: left;
+  }
+  .mf-stream-switch-text { display: flex; flex-direction: column; flex: 0 1 auto; min-width: 0; }
+  .mf-stream-switch-label, .mf-stream-switch-sub { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .mf-stream-switch-sub { font: var(--fs-xs)/1.3 var(--sans); letter-spacing: 0; text-transform: none; color: var(--base-60); }
+  .mf-stream-switch::after { content: "⌄"; flex: none; color: var(--base-60); font-size: var(--fs-xl); line-height: 1; transform: translateY(-0.2em); }
+  .mf-stream-switch:hover, .mf-stream-switch[aria-expanded="true"] { background: var(--hover); }
+  .mf-stream-switch:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+  /* the agent head's sub line now rides inside the button (49-chat-now.js) */
+  .chat-thread-header .chat-head:has(> .chat-head-title .mf-stream-switch) > .chat-head-sub { display: none; }
+  .mf-streams { display: flex; flex-direction: column; min-width: 0; }
+  .mf-streams-head { padding: 0 var(--sp-1) var(--sp-4); border-bottom: 1px solid var(--base-20); }
+  .mf-streams-title { margin: 0; font: 600 var(--fs-xl)/1.3 var(--sans); color: var(--base-100); }
+  .mf-streams-current, .mf-streams-note { margin: var(--sp-1) 0 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: var(--fs-sm)/1.45 var(--sans); color: var(--base-60); }
+  .mf-streams-empty { margin: 0; padding: var(--sp-7) var(--sp-1); font: var(--fs-md)/1.5 var(--sans); color: var(--base-60); }
+  .mf-streams-all {
+    position: sticky; bottom: 0; display: flex; align-items: center; justify-content: center; width: 100%; min-height: var(--touch);
+    margin-top: var(--sp-4); border: 1px solid var(--line); border-radius: var(--radius-lg); cursor: pointer;
+    background: var(--surface-overlay); box-shadow: 0 calc(-1 * var(--sp-6)) var(--sp-6) calc(-1 * var(--sp-2)) var(--base-00);
+    color: var(--accent); font: 500 var(--fs-lg)/1.2 var(--sans);
+  }
+  .mf-streams-all:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+
+  /* ‹ Chats: one action; the count is a quiet neutral pill inside it */
+  .mf-chat-back-count {
+    min-width: 20px; height: 20px; margin-left: var(--sp-2); padding: 0 var(--sp-3); box-sizing: border-box;
+    border-radius: 10px; background: var(--base-20); color: var(--base-100);
+    font: 600 var(--fs-xs)/20px var(--sans); font-variant-numeric: tabular-nums; text-align: center;
+  }
 }

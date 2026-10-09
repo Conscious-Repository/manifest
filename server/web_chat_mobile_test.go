@@ -57,3 +57,19 @@ func TestChatRailDotAlignmentUI(t *testing.T) {
 		t.Fatalf("rail dot alignment: %v\n%s", err, out)
 	}
 }
+
+// TestChatNowProjection: the Now projection (49-chat-now.js) files each
+// conversation once — Waiting on you · Working · Ready to review · Pinned —
+// with chatEntryState's own state word, a next action or delivery summary
+// from the records, and the ‹ Chats count of the OTHER conversations that wait
+// on the owner or are ready; it never writes (testdata/chat-now.cjs, node
+// only).
+func TestChatNowProjection(t *testing.T) { runFixture(t, "chat-now.cjs", false, false) }
+
+// TestChatStreamSwitcherUI: the phone Now section atop the Chats list, the
+// title's stream switcher sheet (no route change; Escape, scrim and Back
+// return focus to the title; rows go to their exact routes; View all chats),
+// the counted ‹ Chats, at 320/390/412 in default, dark and JARVIS, with page
+// errors and 5xx responses failing the run; desktop unchanged
+// (testdata/chat-stream-switcher.cjs).
+func TestChatStreamSwitcherUI(t *testing.T) { runFixture(t, "chat-stream-switcher.cjs", true, false) }

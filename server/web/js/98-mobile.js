@@ -64,7 +64,7 @@
       if (mqPhone.matches && !section) setOpen(false);
     });
     chatRail.addEventListener("click", (event) => {
-      if (mqPhone.matches && event.target.closest(".chat-rail-row, .chat-rail-task, .chat-rail-new")) setOpen(false);
+      if (mqPhone.matches && event.target.closest(".chat-rail-row, .chat-rail-task, .chat-rail-new, .chat-now-row")) setOpen(false);
     });
     // Keyboard resize and pan are coalesced into one idempotent layout pass.
     // The app FOLLOWS the visual viewport while a keyboard is up (2026-09-21):

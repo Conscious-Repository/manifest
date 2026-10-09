@@ -9,6 +9,12 @@
 //   /__delay?ms=N         hold a send's acknowledgement N ms
 //   /__legacy?on=1        404 /api/chat/inbox (an older server)
 // makeStub({codex:true}) adds one finished Codex thread, cx1 (#/chat/a/codex/cx1).
+// makeStub({inboxState:true}) answers the inbox's state slots (pins, lifecycle,
+// workstreams, seen) from the revisioned state store, as the server does;
+// without it they stay empty. The returned addSession(id, patch) adds an
+// Alfred thread, terminalRows are the live Codex/Claude rows, and inboxExtra
+// ({review, taskThreads}) stands in for review counts and task threads in the
+// inbox and in their own routes.
 // /api/chat/resolve names alfred as the owner of a/b; spirit reads are 404.
 // The app shell's reads outside chat answer empty (a fresh vault), not 404.
 // A send (POST …/messages) appends the user turn, records a queued delivery
@@ -53,12 +59,12 @@ const longTurns=[];for(let i=0;i<50;i++){const ts='2026-09-25T0'+String(9+Math.f
  longTurns.push({id:'lu'+i,who:'user',ts,text:i===1?longPaste:'question '+i});
  longTurns.push({id:'la'+i,who:'assistant',ts,end:ts,blocks:[{t:'step',cast:'exec_command',input:'ls '+i,id:'s'+i,done:true,result:'output of step '+i+' '+'x'.repeat(2000)},{t:'say',text:'answer '+i}]});}
 const liteOf=t=>({...t,blocks:t.blocks&&t.blocks.map(b=>b.t==='step'&&b.result?{...b,result:undefined,resultBytes:b.result.length,sid:'cx2',done:true}:b)});
-function makeStub({terminal=true,codex=false,longCodex=false}={}){
+function makeStub({terminal=true,codex=false,longCodex=false,inboxState=false}={}){
  const codexSessions=[...(codex?codexRows:[]),...(longCodex?[{id:'cx2',kind:'codex',name:'Long session',title:'Long session',cwd:'/home/owner/src/manifest',backend:'herdr',live:false,process:'stopped',lastUsed:'2026-09-25T12:00:00Z',agentState:'idle'}]:[])];
  const sessions={a:{id:'a',title:'Long research thread',status:'idle',agent:'alfred',turns:40,updated:'2026-09-25T11:00:00Z',created:'2026-09-25T10:00:00Z',spentUsd:0,deliveries:[]},
   b:{id:'b',title:'Second thread',status:'idle',agent:'alfred',turns:2,updated:'2026-09-25T09:00:00Z',created:'2026-09-25T09:00:00Z',spentUsd:0,deliveries:[]}};
  const bodies={a:long(40),b:long(2)};
- const state=new Map();const streams=[];const log=[];const related=[],launches=[];const lastSend={value:null};let down=false,delay=0,legacy=false;
+ const state=new Map();const inboxExtra={};const streams=[];const log=[];const related=[],launches=[];const lastSend={value:null};let down=false,delay=0,legacy=false;
  const json=(res,code,body)=>{res.writeHead(code,{'Content-Type':'application/json'});res.end(JSON.stringify(body));};
  const roster={agents:[{name:'alfred',label:'Alfred',enabled:true,durableSend:true,model:'claude-x'}]};
  const detail=id=>{const s=sessions[id];return {session:s,body:bodies[id],conversation:{key:'conv-'+id},capabilities:caps,supervision:s.supervision||{adapter:'hermes-oneshot',state:'unknown',evidence:'x',capabilities:caps,runs:[]},outputs:[],queued:[],operations:[],proposals:[],related:[],continuations:[],sharedFiles:[]};};
@@ -109,7 +115,8 @@ function makeStub({terminal=true,codex=false,longCodex=false}={}){
      s.supervision={adapter:'hermes-oneshot',state:'submitted',evidence:'delivery receipt '+id,capabilities:caps,runs:[{id,state:'queued'}]};s.updated=new Date().toISOString();
      json(res,200,{ok:true,id:s.id,requestId:id});},delay));return;}
    if(sm)return json(res,200,detail(sm[1]));
-   if(p==='/api/chat/inbox'){if(legacy)return json(res,404,{});return json(res,200,{roster,agents:{alfred:{sessions:Object.values(sessions)}},spirits:{sessions:[]},terminal:{sessions:codexSessions,enabled:terminal},state:{},review:{by_scope:{},by_task:{}},taskThreads:{threads:[]}});}
+   if(p==='/api/chat/inbox'){if(legacy)return json(res,404,{});const slots=inboxState?Object.fromEntries(['pins','lifecycle','workstreams','seen'].filter(slot=>state.has('inbox/'+slot)).map(slot=>[slot,state.get('inbox/'+slot)])):{};
+    return json(res,200,{roster,agents:{alfred:{sessions:Object.values(sessions)}},spirits:{sessions:[]},terminal:{sessions:codexSessions,enabled:terminal},state:slots,review:inboxExtra.review||{by_scope:{},by_task:{}},taskThreads:{threads:inboxExtra.taskThreads||[]}});}
    if(p==='/api/chat/sessions')return json(res,200,{sessions:[]});
    // which store owns an id: the agent threads here; spirit ids are never served
    if(p==='/api/chat/resolve'){const id=url.searchParams.get('id');return json(res,200,{id,owners:sessions[id]?[{backend:'hermes',agent:'alfred',route:'#/chat/a/alfred/'+id}]:[],checked:['spirits','alfred','terminal'],unavailable:[]});}
@@ -124,7 +131,8 @@ function makeStub({terminal=true,codex=false,longCodex=false}={}){
    if(st1&&longCodex){log.push('STEP '+url.searchParams.get('id'));const id=url.searchParams.get('id');const hit=longTurns.flatMap(t=>t.blocks||[]).find(b=>b.id===id);return hit?json(res,200,{id,result:hit.result}):json(res,404,{});}
    if(tt&&codexSessions.some(s=>s.id===tt[1]))return json(res,200,Number(url.searchParams.get('after'))>=codexTranscript.offset?{offset:codexTranscript.offset,turns:[],run:codexTranscript.run,context:codexTranscript.context,settings:codexTranscript.settings}:codexTranscript);
    if(p==='/api/terminal/folders')return json(res,200,{enabled:true,home:'/home/owner',recent:['/home/owner/src/manifest'],repos:['/home/owner/src/manifest','/home/owner/src/lab-apps']});
-   if(p==='/api/chat/review-status')return json(res,200,{by_scope:{},by_task:{}});
+   if(p==='/api/chat/review-status')return json(res,200,inboxExtra.review||{by_scope:{},by_task:{}});
+   if(p==='/api/tasks/threads'&&inboxExtra.taskThreads)return json(res,200,{threads:inboxExtra.taskThreads});
    // the app shell's own reads on every page (rail counts, feed badge,
    // connections, the terminal event stream): empty, as a fresh vault answers,
    // so a capture's console carries only the chat's own errors
@@ -142,6 +150,7 @@ function makeStub({terminal=true,codex=false,longCodex=false}={}){
   if(!file.startsWith(web)||!fs.existsSync(file)||fs.statSync(file).isDirectory()){res.writeHead(404);return res.end();}
   res.writeHead(200,{'Content-Type':types[path.extname(file)]||'application/octet-stream'});fs.createReadStream(file).pipe(res);
  });
- return {server,state,log,sessions,bodies};
+ const addSession=(id,patch={})=>{const now=new Date().toISOString();sessions[id]={id,title:'Thread '+id,status:'idle',agent:'alfred',turns:2,updated:now,created:now,spentUsd:0,deliveries:[],...patch};bodies[id]=long(sessions[id].turns);return sessions[id];};
+ return {server,state,log,sessions,bodies,addSession,terminalRows:codexSessions,inboxExtra};
 }
 module.exports={makeStub};
