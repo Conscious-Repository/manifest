@@ -398,7 +398,7 @@ button.cx-path-node { border: 1px solid var(--accent); color: var(--accent); cur
 .cx-proposal.is-partial { border-color: var(--warn); }
 .cx-proposal-sum { margin: var(--sp-1) 0 0; font-weight: 600; font-size: var(--fs-sm); }
 .cx-proposal-ops { margin: var(--sp-2) 0 0; padding-left: 1.1em; font-size: var(--fs-sm); line-height: 1.45; }
-.cx-proposal-state { margin: var(--sp-2) 0 0; letter-spacing: normal; }
+.cx-proposal-state { margin: var(--sp-2) 0 0; letter-spacing: normal; font-size: var(--fs-sm); line-height: 1.45; }
 /* Plan, second pass: one next step, a docked composer, three phone tabs */
 .cx-next { border: 1px solid var(--accent); border-radius: var(--radius); padding: var(--sp-4); background: color-mix(in srgb, var(--accent) 6%, var(--surface-panel)); }
 .cx-progress { display: flex; gap: 4px; margin: 0 0 var(--sp-3); padding: 0; list-style: none; font-size: var(--fs-xs); color: var(--base-60); }
@@ -408,7 +408,7 @@ button.cx-path-node { border: 1px solid var(--accent); color: var(--accent); cur
 .cx-next-text { margin: 0; line-height: 1.45; }
 .cx-next-btn { margin-top: var(--sp-3); min-height: 44px; padding: 0 var(--sp-5); border: none; border-radius: var(--radius); background: var(--accent); color: var(--on-accent); font: inherit; font-weight: 600; cursor: pointer; }
 .cx-next-btn:hover { filter: brightness(1.08); }
-.cx-primary { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
+.pill.cx-primary, .cx-dp-acts .cx-primary { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
 .cx-approach-open { margin-top: var(--sp-2); font-size: var(--fs-sm); }
 .cx-approach-open > summary { cursor: pointer; color: var(--warn); }
 .cx-approach-open ul { margin: var(--sp-2) 0 0; padding-left: 1.1em; color: var(--base-60); line-height: 1.45; }
@@ -469,3 +469,8 @@ button.cx-path-node { border: 1px solid var(--accent); color: var(--accent); cur
   .cx-fact-list .cx-fact { flex-direction: row; align-items: baseline; }
   .cx-fact-list .cx-fact-text { flex: 1 1 auto; flex-basis: auto; }
 }
+.cx-rich-list { margin: 0 0 var(--sp-2); padding-left: 1.2em; }
+.cx-rich-list li { margin-bottom: var(--sp-1); }
+.cx-turn-text.is-long { max-height: 22em; overflow: hidden; -webkit-mask-image: linear-gradient(to bottom, #000 75%, transparent); mask-image: linear-gradient(to bottom, #000 75%, transparent); }
+.cx-read-all { display: block; margin-top: var(--sp-1); }
+.cx-proposal-more { list-style: none; margin-left: -1.1em; }

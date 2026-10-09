@@ -76,6 +76,7 @@ function cxNextStep() {
   const focusChat = () => { const ta = cx.host && cx.host.querySelector(".cx-chat-in"); if (ta) { ta.scrollIntoView({ block: "center", behavior: "smooth" }); ta.focus(); } };
   const scrollTo = (sel) => () => { const n = cx.host && cx.host.querySelector(sel); if (n) n.scrollIntoView({ block: "start", behavior: "smooth" }); };
   if (pending) return { text: "Alfred is working on it. Research can take a few minutes — you can leave this page and come back." };
+  if (prop && prop.partial) return { text: "Most of Alfred's suggestion is in; one part couldn't be done. Ask him to fix it, or undo.", label: "See what's left", go: scrollTo(".cx-proposal.is-partial") };
   if (prop) return { text: "Alfred suggests " + prop.count + " change" + (prop.count === 1 ? "" : "s") + ". Review them, then apply or skip.", label: "Review", go: scrollTo(".cx-proposal.is-new") };
   switch (next && next.key) {
     case "describe": return { text: "Start by telling Alfred what's going on, in your own words — what you're building and what worries you.", label: "Describe it", go: focusChat };
@@ -488,31 +489,49 @@ function cxChatTurn(t) {
     bubble.classList.add("is-clamped");
     bubble.title = "Show all";
     bubble.onclick = () => bubble.classList.toggle("is-clamped");
+  } else if (!mine && text.length > 900) {
+    const k = "turn:" + t.n;
+    if (!cxp.open[k]) bubble.classList.add("is-long");
+    const b = el("button", "cx-link cx-read-all", cxp.open[k] ? "Show less" : "Read all");
+    b.type = "button";
+    b.onclick = () => { cxp.open[k] = !cxp.open[k]; cxChatRepaint(); };
+    row.append(b);
   }
   props.forEach((json) => row.append(cxProposalCard(json, (cxp.chat.session || "") + ":" + t.n + ":" + (i++))));
   if (t.sending) row.append(el("span", "cx-turn-meta micro-label", "sending…"));
   return row;
 }
 function cxRichText(host, text) {
-  text.split(/\n{2,}/).forEach((para) => {
-    const p = el("p", "");
-    para.split("\n").forEach((line, k) => {
-      if (k) p.append(document.createElement("br"));
-      const bold = /^\s*#{1,4}\s+/.test(line);
-      line = line.replace(/^\s*#{1,4}\s+/, "").replace(/\*\*(.+?)\*\*/g, "$1");
-      const span = bold ? el("strong", "") : document.createDocumentFragment();
-      let last = 0;
-      line.replace(/https?:\/\/[^\s)<>\]]+/g, (u, at) => {
-        span.append(document.createTextNode(line.slice(last, at)));
-        const a = el("a", "", u); a.href = u; a.target = "_blank"; a.rel = "noopener noreferrer";
-        span.append(a);
-        last = at + u.length;
-        return u;
-      });
-      span.append(document.createTextNode(line.slice(last)));
-      p.append(span);
+  const inline = (parent, line) => {
+    const bold = /^\s*#{1,4}\s+/.test(line);
+    line = line.replace(/^\s*#{1,4}\s+/, "").replace(/\*\*(.+?)\*\*/g, "$1");
+    const span = bold ? el("strong", "") : document.createDocumentFragment();
+    let last = 0;
+    line.replace(/https?:\/\/[^\s)<>\]]+/g, (u, at) => {
+      span.append(document.createTextNode(line.slice(last, at)));
+      const a = el("a", "", u.length > 48 ? u.replace(/^https?:\/\/(www\.)?/, "").slice(0, 40) + "…" : u); a.href = u; a.target = "_blank"; a.rel = "noopener noreferrer"; a.title = u;
+      span.append(a);
+      last = at + u.length;
+      return u;
     });
-    host.append(p);
+    span.append(document.createTextNode(line.slice(last)));
+    parent.append(span);
+  };
+  text.split(/\n{2,}/).forEach((para) => {
+    let p = null, ul = null;
+    para.split("\n").forEach((line) => {
+      const item = line.match(/^\s*(?:[-*•]|\d+[.)])\s+(.*)$/);
+      if (item) {
+        if (!ul) { ul = el("ul", "cx-rich-list"); host.append(ul); p = null; }
+        const li = el("li", "");
+        inline(li, item[1]);
+        ul.append(li);
+        return;
+      }
+      ul = null;
+      if (!p) { p = el("p", ""); host.append(p); } else p.append(document.createElement("br"));
+      inline(p, line);
+    });
   });
 }
 
@@ -544,7 +563,24 @@ function cxOpPlain(op, asmId) {
   }
 }
 
-function cxParseProposal(json) { try { const p = JSON.parse(json); return Array.isArray(p.changes) ? p : null; } catch (e) { return null; } }
+function cxParseProposal(json) { try { const p = JSON.parse(json); return Array.isArray(p.changes) ? cxRepairIds(p) : null; } catch (e) { return null; } }
+// models miscount hex: an id with the wrong number of digits is completed
+// the same way every time (so a re-read, a retry or an undo agrees), and
+// every mention of it in the suggestion follows
+function cxFnv(s) { let h = 0x811c9dc5; for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 0x01000193) >>> 0; } return h.toString(16).padStart(8, "0"); }
+function cxRepairIds(p) {
+  const map = new Map();
+  const fix = (v) => {
+    const m = /^(dq|clm|asm|cmp|dec|evd|src)-([0-9a-fA-F]+)$/.exec(v);
+    if (!m) return v;
+    let h = m[2].toLowerCase();
+    if (h.length === 32) return m[1] + "-" + h;
+    if (!map.has(v)) { const pad = cxFnv(v) + cxFnv(v + "+") + cxFnv(v + "++") + cxFnv(v + "+++"); h = (h + pad).slice(0, 32); map.set(v, m[1] + "-" + h); }
+    return map.get(v);
+  };
+  const walk = (x) => Array.isArray(x) ? x.map(walk) : x && typeof x === "object" ? Object.fromEntries(Object.entries(x).map(([k, v]) => [k, walk(v)])) : typeof x === "string" ? fix(x) : x;
+  return walk(p);
+}
 // the newest proposal still waiting for the owner, if any
 function cxLatestProposal() {
   const turns = (cxp.chat && cxp.chat.turns) || [];
@@ -555,6 +591,7 @@ function cxLatestProposal() {
     for (let i = blocks.length - 1; i >= 0; i--) {
       const key = (cxp.chat.session || "") + ":" + t.n + ":" + i, p = cxParseProposal(blocks[i][1]);
       if (p && !cxp.applied[key]) return { key, count: p.changes.reduce((n, c) => n + (c.operations || []).length, 0) };
+      if (p && cxp.applied[key].msg && !cxp.applied[key].ok && !cxp.applied[key].undone) return { key, partial: true, count: 0 };
     }
     if (blocks.length) return null;
   }
@@ -568,10 +605,21 @@ function cxProposalCard(json, key) {
   if (!prop) { card.append(el("p", "cx-form-msg", "Alfred's suggestion couldn't be read. Ask him to send it again.")); return card; }
   const changes = prop.changes, st = cxp.applied[key], ro = !!cx.view.readOnly;
   const n = changes.reduce((k, c) => k + (c.operations || []).length, 0);
-  card.append(el("div", "cx-proposal-kicker micro-label", st && st.ok ? "Applied" : st && st.undone ? "Undone" : st && st.skipped ? "Skipped" : "Alfred suggests " + n + " change" + (n === 1 ? "" : "s")));
+  card.append(el("div", "cx-proposal-kicker micro-label", st && st.ok ? "Applied" : st && st.undone ? "Undone" : st && st.skipped ? "Skipped" : st && st.msg ? "Partly applied" : "Alfred suggests " + n + " change" + (n === 1 ? "" : "s")));
   if (prop.summary) card.append(el("p", "cx-proposal-sum", prop.summary));
   const ul = el("ul", "cx-proposal-ops");
-  changes.forEach((ch) => (ch.operations || []).forEach((op) => ul.append(el("li", "", cxOpPlain(op, ch.assemblyId)))));
+  const lines = [];
+  changes.forEach((ch) => (ch.operations || []).forEach((op) => lines.push(cxOpPlain(op, ch.assemblyId))));
+  const showAll = !!cxp.open["prop:" + key] || lines.length <= 6;
+  (showAll ? lines : lines.slice(0, 5)).forEach((t) => ul.append(el("li", "", t)));
+  if (!showAll) {
+    const li = el("li", "cx-proposal-more");
+    const b = el("button", "cx-link", "Show all " + lines.length);
+    b.type = "button";
+    b.onclick = () => { cxp.open["prop:" + key] = true; cxChatRepaint(); };
+    li.append(b);
+    ul.append(li);
+  }
   const acts = el("div", "cx-dp-acts");
   const btn = (label, fn) => { const b = pillLight(label, fn); b.disabled = ro; acts.append(b); return b; };
   if (!st) {
@@ -594,9 +642,14 @@ function cxProposalCard(json, key) {
     const again = btn("Apply", () => cxApplyProposal(changes, key, again));
   } else {
     card.classList.add("is-partial");
-    card.append(ul, el("p", "cx-proposal-state", "Partly applied — " + st.msg));
-    const again = btn("Try the rest", () => cxApplyProposal(changes, key, again));
-    if (st.undo && st.undo.length) btn("Undo what was applied", () => cxUndoProposal(key));
+    const why = String(st.msg || "").replace(/^invalid request:\s*/i, "");
+    card.append(el("p", "cx-proposal-state", "Most of it is in. One part couldn't be done: " + why));
+    const det = el("details", "");
+    det.append(el("summary", "", "What it was"), ul);
+    card.append(det);
+    const fix = btn("Ask Alfred to fix it", () => cxChatSend("Part of your suggestion couldn't be applied: \"" + why + "\". The rest is in. Please send a corrected suggestion for just the part that's left — and if the model can't show it, describe it and raise it as a question instead."));
+    fix.classList.add("cx-primary");
+    if (st.undo && st.undo.length) btn("Undo", () => cxUndoProposal(key));
   }
   card.append(acts);
   return card;
@@ -649,6 +702,17 @@ async function cxApplyProposal(changes, key, btn) {
         const before = (cx.view.revisions || {})["assembly:" + target];
         const variants = asm.filter((o) => o.op === "CreateVariant").map((o) => cxInverse(o));
         ok = !!(await cxCommand(asm, { assembly: target, label: "Alfred's suggestion" }));
+        // a strategy that adds a part names the slot it needs an id for:
+        // supply one and send again (a few times at most)
+        for (let k = 0; !ok && k < 5; k++) {
+          const m = /newComponentIds\.([\w-]+)/.exec(cx.error || "");
+          if (!m) break;
+          const op = asm.find((o) => (o.op === "SetJunctionStrategy" || o.op === "SetWallCondition") && !(o.newComponentIds || {})[m[1]]);
+          if (!op) break;
+          op.newComponentIds = { ...(op.newComponentIds || {}), [m[1]]: cxNewId("cmp") };
+          cx.error = "";
+          ok = !!(await cxCommand(asm, { assembly: target, label: "Alfred's suggestion" }));
+        }
         if (ok) {
           if (asm.some((o) => o.op !== "CreateVariant") && before) undo.push({ assembly: target, ops: [{ op: "RestoreRevision", revision: before }] });
           variants.forEach((x) => undo.push(x));
