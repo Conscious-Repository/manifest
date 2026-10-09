@@ -1262,10 +1262,16 @@
   .mf-streams-title { margin: 0; font: 600 var(--fs-xl)/1.3 var(--sans); color: var(--base-100); }
   .mf-streams-current, .mf-streams-note { margin: var(--sp-1) 0 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: var(--fs-sm)/1.45 var(--sans); color: var(--base-60); }
   .mf-streams-empty { margin: 0; padding: var(--sp-7) var(--sp-1); font: var(--fs-md)/1.5 var(--sans); color: var(--base-60); }
+  /* the list scrolls beneath the sticky View all chats: whatever is scrolled
+     into view (Tab, focus, scrollIntoView) stops above the control and its
+     20px fade, and the control is opaque, so a heading passing under it never
+     shows through (the JARVIS HUD's overlay is 94%: the Pinned heading did) */
+  .mf-sheet-body:has(> .mf-streams) { scroll-padding-bottom: calc(var(--touch) + var(--sp-8)); }
   .mf-streams-all {
     position: sticky; bottom: 0; display: flex; align-items: center; justify-content: center; width: 100%; min-height: var(--touch);
     margin-top: var(--sp-4); border: 1px solid var(--line); border-radius: var(--radius-lg); cursor: pointer;
-    background: var(--surface-overlay); box-shadow: 0 calc(-1 * var(--sp-6)) var(--sp-6) calc(-1 * var(--sp-2)) var(--base-00);
+    background: linear-gradient(var(--surface-overlay), var(--surface-overlay)) var(--base-00);
+    box-shadow: 0 calc(-1 * var(--sp-6)) var(--sp-6) calc(-1 * var(--sp-2)) var(--base-00);
     color: var(--accent); font: 500 var(--fs-lg)/1.2 var(--sans);
   }
   .mf-streams-all:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }

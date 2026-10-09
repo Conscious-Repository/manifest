@@ -19,7 +19,9 @@
 //      owner or ready, in its accessible name, one action; zero shows none;
 //      streamed tokens and typing never move it; a real state change does;
 //   6. long titles truncate without hiding the state; 320/390/412 in default,
-//      dark and JARVIS: no sideways pan, no overlap, 44px targets;
+//      dark and JARVIS: no sideways pan, no overlap, 44px targets; the sheet's
+//      last group (Pinned) comes into view whole above the sticky View all
+//      chats, never under it, and nothing shows through that control;
 //   7. desktop (1280) is unchanged: no switcher, no Now section.
 // Page errors, console errors and 5xx responses fail the run; screenshots are
 // evidence only (MANIFEST_SHOTS, default the OS temp dir).
@@ -81,6 +83,35 @@ const THEMES={default:{},dark:{theme:'jarvis-og',colorScheme:'dark'},jarvis:{the
  const settled=page=>page.waitForFunction(()=>document.getAnimations().every(a=>a.playState!=='running'));
  const groups=(page,root,label,row)=>page.evaluate(([root,label,row])=>[...document.querySelectorAll(root)].filter(g=>g.getClientRects().length).map(g=>[g.querySelector(label).firstChild.textContent.trim(),[...g.querySelectorAll(row)].map(r=>r.querySelector('.chat-now-title').textContent)]),[root,label,row]);
  const rowTruth=(page,sel)=>page.evaluate(sel=>Object.fromEntries([...document.querySelectorAll(sel)].map(r=>[r.querySelector('.chat-now-title').textContent,[r.querySelector('.chat-now-state').textContent,r.querySelector('.chat-now-agent').textContent,r.querySelector('.chat-now-summary').textContent,r.querySelector('time')?.getAttribute('datetime')||'',r.querySelector('time')?.textContent.trim()||'',r.dataset.execution]])),sel);
+ // the open sheet's last group (Pinned) seen whole — inside the sheet and wholly
+ // above the sticky View all chats — when Tab reaches its row, when its heading
+ // or row is scrolled into view with the least scroll (block 'nearest', the
+ // tightest reveal), and at the end of the list; the control is opaque, so what
+ // passes beneath it never shows through
+ const clearOfViewAll=async(page,at)=>{
+  await page.evaluate(()=>{document.querySelector('.mf-sheet-body').scrollTop=0;document.querySelector('.mf-stream-row').focus({preventScroll:true});});
+  for(let i=0;i<12&&!(await page.evaluate(()=>!!document.activeElement?.closest('.mf-streams-group[data-now="pinned"]')));i++)await page.keyboard.press('Tab');
+  const got=await page.evaluate(()=>{
+   const body=document.querySelector('.mf-sheet-body'),all=body.querySelector('.mf-streams-all'),group=body.querySelector('.mf-streams-group[data-now="pinned"]');
+   if(!group)return null;
+   const label=group.querySelector('.mf-streams-label'),row=group.querySelector('.mf-stream-row');
+   const whole=e=>{const b=body.getBoundingClientRect(),f=all.getBoundingClientRect(),r=e.getBoundingClientRect();
+    return [r.top>=b.top-0.5&&r.bottom<=f.top+0.5,`${Math.round(r.top)}–${Math.round(r.bottom)}px, View all chats ${Math.round(f.top)}–${Math.round(f.bottom)}px`];};
+   const out={tab:document.activeElement===row?whole(row):[false,'Tab never reached it']};
+   for(const [name,e] of [['heading',label],['row',row]]){body.scrollTop=0;out[name+'AtRest']=whole(e)[0];e.scrollIntoView({block:'nearest'});out[name]=whole(e);}
+   body.scrollTop=body.scrollHeight;out.end=[whole(label),whole(row)];
+   body.scrollTop=0;
+   out.alpha=getComputedStyle(all).backgroundColor.match(/[\d.]+/g).map(Number)[3]??1;
+   return out;
+  });
+  assert.ok(got,at+': the sheet has a Pinned group');
+  assert.ok(got.heading[0],at+': the Pinned heading, brought into view, stays under View all chats ('+got.heading[1]+')');
+  assert.ok(got.row[0],at+': the pinned row, brought into view, stays under View all chats ('+got.row[1]+')');
+  assert.ok(got.tab[0],at+': Tab to the pinned row leaves it under View all chats ('+got.tab[1]+')');
+  assert.ok(got.end.every(e=>e[0]),at+': at the end of the list the Pinned group is under View all chats '+JSON.stringify(got.end));
+  assert.equal(got.alpha,1,at+': rows beneath show through View all chats');
+  return got;
+ };
  try{
   // ---- 1. Now on top of the Chats list ----
   {const stub=await start({},true);const {ctx,page}=await open(stub);
@@ -212,6 +243,18 @@ const THEMES={default:{},dark:{theme:'jarvis-og',colorScheme:'dark'},jarvis:{the
   console.log('PASS ‹ Chats: calm count of other chats needing you, in its name; zero shows none; tokens/typing never count');
   // ---- 6. long labels, widths and themes ----
   {const stub=await start({},true);
+   // the case QA found: at 320 in JARVIS the sheet outgrows the screen and its
+   // Pinned group starts under the sticky View all chats
+   {const {ctx,page,at}=await open(stub,{w:320,theme:'jarvis',route:'/#/chat/a/alfred/long'});
+    await page.locator('#chatThreadHeader .mf-chat-back-count').waitFor({timeout:5000});
+    await trigger(page).click();await dialog(page).waitFor();await settled(page);
+    const got=await clearOfViewAll(page,at);
+    assert.equal(got.headingAtRest,false,at+': the Pinned heading starts under View all chats, so it must scroll out');
+    // evidence: the pinned row Tab reached, whole with its heading above the control
+    await page.evaluate(()=>document.querySelector('.mf-streams-group[data-now="pinned"] .mf-stream-row').scrollIntoView({block:'nearest'}));
+    await page.screenshot({path:path.join(shots,'manifest-chat-switcher-pinned-jarvis-320.png')});
+    await ctx.close();}
+   console.log('PASS 320 JARVIS sheet foot: Pinned, under View all chats at rest, comes into view whole above it (reveal, Tab, end); the control is opaque');
    for(const theme of Object.keys(THEMES))for(const w of [320,390,412]){
     const {ctx,page,at}=await open(stub,{w,theme,route:'/#/chat/a/alfred/long',from:'/#/settings'});
     await page.locator('#chatThreadHeader .mf-chat-back-count').waitFor({timeout:5000});
@@ -234,6 +277,7 @@ const THEMES={default:{},dark:{theme:'jarvis-og',colorScheme:'dark'},jarvis:{the
     assert.equal(sheet.pan,false,at+': sheet pans sideways');assert.equal(sheet.short,0,at+': sheet rows under 44px');assert.equal(sheet.hidden,0,at+': a state is clipped or hidden');assert.equal(sheet.rows,7,at+': the open long thread is left out of the 8');
     const all=await page.getByRole('button',{name:'View all chats'}).boundingBox();assert.ok(all&&all.height>=44&&all.y+all.height<=844+0.5,at+': View all chats reachable');
     await settled(page);await page.screenshot({path:path.join(shots,`manifest-chat-switcher-${theme}-${w}.png`)});
+    await clearOfViewAll(page,at);
     await page.keyboard.press('Escape');await dialog(page).waitFor({state:'hidden'});
     await page.locator('#chatThreadHeader .mf-chat-back').click();await page.locator('#chatNow .chat-now-row').first().waitFor();
     const now=await sheetFits('#chatRail','#chatNow .chat-now-row');
@@ -243,7 +287,7 @@ const THEMES={default:{},dark:{theme:'jarvis-og',colorScheme:'dark'},jarvis:{the
     await page.screenshot({path:path.join(shots,`manifest-chat-now-${theme}-${w}.png`)});
     await ctx.close();
    }}
-  console.log('PASS 320/390/412 × default/dark/JARVIS: no pan, no overlap, 44px targets, long titles cut, states whole');
+  console.log('PASS 320/390/412 × default/dark/JARVIS: no pan, no overlap, 44px targets, long titles cut, states whole, Pinned clears View all chats');
   // ---- 7. desktop unchanged ----
   {const stub=await start({},true);const {ctx,page}=await open(stub,{w:1280,h:900});await settle(page);await page.waitForTimeout(400);
    const d=await page.evaluate(()=>({switcher:document.querySelectorAll('.mf-stream-switch').length,now:[...document.querySelectorAll('#chatNow, .chat-now')].filter(e=>e.getClientRects().length).length,title:document.querySelector('#chatThreadHeader .chat-head-title')?.children.length,rows:document.querySelectorAll('#chatInboxRows .chat-rail-row').length}));
