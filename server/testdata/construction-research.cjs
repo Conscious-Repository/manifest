@@ -130,7 +130,7 @@ const tab = (page, name) => page.getByRole('tab', {name, exact: true}).click();
     // ---- P6 catalog: generic families with unknowns, a sourced product, a previewed substitution ----
     await tab(page, 'Materials');
     await page.getByText('No products. Generic materials only until a sourced product is added.').waitFor();
-    await page.getByText(/Materials \(16 · generic families with explicit unknowns\)/).waitFor();
+    await page.getByText(/Materials \(18 · generic families with explicit unknowns\)/).waitFor();
     await page.getByText('Add a sourced product').click();
     await page.getByLabel('Product manufacturer').fill('Placeholder Insulation Co (fictional)');
     await page.getByLabel('Product model').fill('Placeholder Board 120 (fictional)');

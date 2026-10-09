@@ -317,6 +317,9 @@ function cxShowApproach(id) {
   cx.activeAssembly = id; cx.selection = ""; cx.geometry = null;
   if (cxPhone()) cx.pane = "model";
   cxRender(); cxQueueViewSave();
+  // land on the model itself, not wherever the Plan was scrolled to
+  const m = cx.host && cx.host.querySelector(".cx-pane-b");
+  if (m) requestAnimationFrame(() => m.scrollIntoView({ block: "start" }));
 }
 // choosing = propose + accept a decision bound to this exact revision
 async function cxChooseApproach(id) {
@@ -578,6 +581,8 @@ function cxOpPlain(op, asmId) {
     case "ProposeDecision": return "Propose choosing: " + op.title;
     case "AddProfiledPart": return "Custom part" + (a ? " in “" + a.name + "”" : "") + ": " + op.name + (op.replaces ? " (instead of " + comp(op.replaces) + ")" : "");
     case "SetProfile": return "Reshape " + comp(op.componentId);
+    case "UseSteelRafters": return "Steel rafters: 2 × " + op.size + " back to back" + (op.spacing ? " at " + Math.round(op.spacing) + " mm" : "");
+    case "AddSteelBeam": return "Steel beam " + op.size + ", centred " + Math.round(op.position) + " mm from the wall";
     default: return op.op;
   }
 }
@@ -765,6 +770,8 @@ function cxProposalBody(changes, key) {
       case "SetAssemblyText": { const e = asmEntry(ch.assemblyId || cx.activeAssembly); if (op.name && op.name !== e.name) { e.renamed = !e.isNew; e.from = e.name; e.name = op.name; } if (op.summary) e.summary = op.summary; break; }
       case "SetJunctionStrategy": { const e = asmEntry(ch.assemblyId || cx.activeAssembly); e.strategy = op.strategy; e.bits.push("Flashing: " + ((CX_PLAIN_STRAT[op.strategy] || {}).label || op.strategy)); break; }
       case "AddProfiledPart": { const e = asmEntry(ch.assemblyId || cx.activeAssembly); e.bits.push("Custom part: " + op.name + (op.replaces ? " — instead of the " + (((v.assemblies[e.id] || {}).components || []).find((c) => c.id === op.replaces) || {}).name : "")); break; }
+      case "UseSteelRafters": asmEntry(ch.assemblyId || cx.activeAssembly).bits.push("Steel rafters: 2 × " + op.size + (op.spacing ? " at " + Math.round(op.spacing) + " mm" : "")); break;
+      case "AddSteelBeam": asmEntry(ch.assemblyId || cx.activeAssembly).bits.push("Steel beam " + op.size + " at " + Math.round(op.position) + " mm"); break;
       case "SetProfile": { const e = asmEntry(ch.assemblyId || cx.activeAssembly); const c = (((v.assemblies[e.id] || {}).components || []).find((x) => x.id === op.componentId) || {}); e.bits.push("Reshaped: " + (c.name || "a custom part")); break; }
       case "SetWallCondition": { const e = asmEntry(ch.assemblyId || cx.activeAssembly); e.wall = op.value; e.bits.push("Wall: " + (({ "solid-bonded": "solid brick", cavity: "cavity wall" })[op.value] || op.value)); break; }
       default: other.push(cxOpPlain(op, ch.assemblyId));

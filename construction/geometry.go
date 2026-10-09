@@ -347,6 +347,8 @@ type FastenerFact struct {
 	DesignStack  float64  `json:"designStackMm"`
 	CurrentStack float64  `json:"currentStackMm"`
 	StackBased   bool     `json:"stackBased"`
+	HostSteel    bool     `json:"hostSteel,omitempty"`    // the host is a steel section
+	HostFlange   float64  `json:"hostFlangeMm,omitempty"` // its flange thickness
 }
 
 type LayerGap struct {
@@ -582,6 +584,11 @@ func (c *compiler) roofParts() {
 			if deck != nil {
 				top = c.layerW[deck.ID][0]
 			}
+			if isSteel(c.cat, comp) {
+				c.steelRafters(comp, top)
+				c.steelBeams(top - comp.param("depth"))
+				continue
+			}
 			b, d := comp.param("width"), comp.param("depth")
 			A := []V2{{0, f.zAt(0, top-d)}, {f.Lh, f.zAt(f.Lh, top-d)}}
 			B := []V2{{0, f.zAt(0, top)}, {f.Lh, f.zAt(f.Lh, top)}}
@@ -589,6 +596,7 @@ func (c *compiler) roofParts() {
 				s := ribbonPrism(fmt.Sprintf("%s#%d", comp.ID, k), A, B, f.profileFrame(), vmul(f.A, b))
 				c.add(comp, translateSolid(s, vmul(f.A, x-b/2)))
 			}
+			c.steelBeams(top - d)
 		case TypeBattenArray, TypeCounterBattens:
 			r := c.layerW[comp.ID]
 			bw := comp.param("width")
@@ -1056,6 +1064,11 @@ func (c *compiler) fasteners() {
 			}
 			fact.Embedment = round4(rafTop - (wStart - L))
 			fact.ReachesHost = wStart-L < rafTop
+			if isSteel(c.cat, host) {
+				// into steel the measure is penetration through the top flange
+				fact.HostSteel = true
+				fact.HostFlange = channelFor(host.param("depth"), host.param("width"))[3]
+			}
 		default:
 			// no resolvable host: no geometry, an issue later
 		}

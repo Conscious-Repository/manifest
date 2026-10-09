@@ -44,6 +44,8 @@ var genericMaterials = []genericMaterial{
 	{"mortar-generic", "mat-7e515034bf406e8b9c7207815b1057a9", "mortar", "Mortar (generic)", []string{"designation", "condition"}, nil, Appearance{"#bdb5a6", 0.95, 0, 1}, nil},
 	{"sheathing-generic", "mat-eb2c5086266053355fd3d245ee80e7a5", "sheathing", "Sheathing (generic)", []string{"thickness", "vapourResistance"}, nil, Appearance{"#c2a37a", 0.8, 0, 1}, nil},
 	{"cavity-air", "mat-48269e664a799241401bfc194adb5bce", "void", "Masonry cavity (air space)", nil, nil, Appearance{"#7fb2d9", 0.5, 0, 0.18}, nil},
+	{"steel-channel", "mat-5c1e7a0f2b9d4e86a3f04c7d1b2e9a61", "structural-steel", "Steel channel (generic, e.g. 2C3×3.5)", []string{"grade", "coating", "fireProtection"}, nil, Appearance{"#6c7379", 0.45, 0.85, 1}, []string{"structural capacity, connections and corrosion protection unverified: qualified review required"}},
+	{"steel-beam", "mat-9e3b2d71c4a84f05b6e1d0a27f58c3e4", "structural-steel", "Steel wide-flange beam (generic, e.g. W8×13)", []string{"grade", "coating", "fireProtection"}, nil, Appearance{"#5f666c", 0.45, 0.85, 1}, []string{"structural capacity, bearing and connections unverified: qualified review required"}},
 }
 
 var genericByKey = func() map[string]genericMaterial {
@@ -100,6 +102,15 @@ func (c *Catalog) material(id string, rev int) (Material, bool) {
 			if h.Revision == rev {
 				return Material{ID: m.ID, Revision: h.Revision, Family: m.Family, Name: h.Name, Generic: m.Generic,
 					Properties: h.Properties, Appearance: h.Appearance, Limits: m.Limits, Compatibility: m.Compatibility, Unknowns: m.Unknowns}, true
+			}
+		}
+	}
+	// a generic material added after this problem's catalog was made is
+	// still the same generic identity: resolve it from the generic list
+	if rev == 1 {
+		for _, g := range GenericMaterials() {
+			if g.ID == id {
+				return g, true
 			}
 		}
 	}

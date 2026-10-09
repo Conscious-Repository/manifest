@@ -378,6 +378,7 @@ function cxRender() {
     host.append(wb);
   }
   cxPaintHeader(wb);
+  if (wb.dataset.active !== cx.pane) cxPaintSwitch(wb); // a change of pane (Show model, Go to…) is shown, not just recorded
   cxPaintStatus();
   if (typeof cxPaintCrumb === "function") cxPaintCrumb();
   cxPaintAgent(wb.querySelector(".cx-pane-a .cx-pane-body"));

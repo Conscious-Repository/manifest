@@ -73,6 +73,7 @@ var shapeParams = map[string]map[string]paramSpec{
 	"weep-array":       {"spacing": {"mm", 200, 2000}, "width": {"mm", 5, 30}, "height": {"mm", 20, 120}},
 	"end-dam-pair":     {"height": {"mm", 10, 100}, "thickness": {"mm", 0.3, 3}},
 	"bent-profile":     {"thickness": {"mm", 0.3, 3}},
+	"wide-flange":      {"depth": {"mm", 50, 1000}, "flangeWidth": {"mm", 30, 500}, "webThickness": {"mm", 2, 40}, "flangeThickness": {"mm", 2, 60}, "position": {"mm", 50, 6000}},
 }
 
 // typeShapes: which shape kind a component type must use.
@@ -83,7 +84,7 @@ var typeShapes = map[string]string{
 	TypeApronFlashing: "bent-flashing", TypeSidewallFlash: "bent-flashing", TypeCounterflashing: "counterflashing",
 	TypeThroughWall: "through-wall", TypeSealant: "sealant-bead", TypeFastenerSet: "fastener-array",
 	TypeMasonryWythe: "masonry-wythe", TypeCavitySpace: "cavity", TypeWeepSet: "weep-array", TypeEndDams: "end-dam-pair",
-	TypeProfiledFlashing: "bent-profile",
+	TypeProfiledFlashing: "bent-profile", TypeSteelBeam: "wide-flange",
 }
 
 // layerTypes may sit in the ordered roof stack.

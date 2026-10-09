@@ -376,7 +376,12 @@ function cxLabelTargets(a) {
     const c = (a.components || []).find((x) => (x.role || "").startsWith(role) && x.applicability !== "inapplicable");
     if (c) out.push([c.id, name]);
   }
-  (a.components || []).forEach((c) => { if (c.type === "profiled-flashing" && c.applicability !== "inapplicable") out.push([c.id, c.name]); });
+  (a.components || []).forEach((c) => {
+    if (c.applicability === "inapplicable") return;
+    if (c.type === "profiled-flashing" || c.type === "steel-beam") out.push([c.id, c.name]);
+  });
+  // rafters say what they're made of
+  out.forEach((t) => { const c = (a.components || []).find((x) => x.id === t[0]); if (c && c.type === "rafter-array") t[1] = c.appearance === "steel-channel" ? "Steel rafters" : "Timber rafters"; });
   return out;
 }
 let cxLabelsOn = (() => { try { return localStorage.getItem("cx.labels") !== "0"; } catch (e) { return true; } })();

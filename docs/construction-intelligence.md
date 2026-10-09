@@ -173,6 +173,20 @@ its cross-section (`construction/profile.go`): `AddProfiledPart
   anchored to datums, a deterministic kernel checks and measures it, and a
   vision check ("Check it against the drawings") closes the loop.
 
+## Steel framing
+
+`UseSteelRafters {size, spacing?}` gives the rafter array the generic
+`steel-channel` material and a standard channel's depth and pair width (2 ×
+C3x3.5 … C8x11.5, back to back); the compiler then draws each rafter as two
+flanges and a doubled web. `AddSteelBeam {newComponentId, size, position}`
+adds a `steel-beam` (W6x9 … W12x14) along the wall, centred `position` mm
+out from the wall face, its flat top meeting the sloping rafter underside at
+its outer edge (`construction/steel.go`). Screws into steel rafters are
+checked for penetration through the flange (`structure.fastener.steel-
+penetration`, flange + 5 mm illustrative) instead of timber embedment;
+exposed steel adds a `steel.protection` review. Generic materials added
+after a problem was created resolve from the generic list (revision 1).
+
 ## Catalog and substitution
 
 Every problem starts with generic material families whose technical

@@ -501,7 +501,16 @@ func Evaluate(in ruleInput) []finding {
 				message: "Fastener set has no resolvable structural host; the attachment path is incomplete.", observed: "no host placement", expected: "named support", comps: []string{ff.Component}, inputs: []string{"hostId"}})
 			continue
 		}
-		if !ff.ReachesHost || ff.Embedment < ff.MinEmbedment {
+		if ff.HostSteel {
+			// into a steel flange: a self-drilling screw must pass right through
+			// it with a few threads beyond (5 mm, illustrative)
+			need := ff.HostFlange + 5
+			if !ff.ReachesHost || ff.Embedment < need {
+				add(finding{key: "structure.fastener.steel-penetration", target: ff.Component, severity: SevCritical, category: "structure",
+					message:  fmt.Sprintf("Screws reach %.1f mm into the steel rafters; through a %.1f mm flange that needs at least %.0f mm (illustrative), with self-drilling screws rated for steel.", ff.Embedment, ff.HostFlange, need),
+					observed: fmt.Sprintf("%.1f mm", ff.Embedment), expected: fmt.Sprintf("≥ %.0f mm and a qualified design", need), comps: []string{ff.Component, ff.Host}, specialist: true, inputs: []string{"length", "layer stack"}})
+			}
+		} else if !ff.ReachesHost || ff.Embedment < ff.MinEmbedment {
 			add(finding{key: "structure.fastener.embedment", target: ff.Component, severity: SevCritical, category: "structure",
 				message:  fmt.Sprintf("Fastener embedment %.1f mm into its host is below the illustrative %.0f mm check (reaches host: %v).", ff.Embedment, ff.MinEmbedment, ff.ReachesHost),
 				observed: fmt.Sprintf("%.1f mm", ff.Embedment), expected: fmt.Sprintf("≥ %.0f mm and a qualified design", ff.MinEmbedment), comps: []string{ff.Component, ff.Host}, specialist: true, inputs: []string{"length", "layer stack"}})
@@ -598,6 +607,13 @@ func Evaluate(in ruleInput) []finding {
 		if c := a.firstOf(typ); c == nil || c.Applicability == "inapplicable" {
 			add(finding{key: "timber.exposure", target: a.ID + ":" + typ, severity: SevCritical, category: "timber",
 				message: "The exposed rafters and finish-grade deck underside must remain in every viable alternative.", observed: typ + " missing", expected: typ + " present", inputs: []string{"components"}})
+		}
+	}
+	for i := range a.Components {
+		if c := &a.Components[i]; c.Applicability != "inapplicable" && isSteel(in.cat, c) {
+			add(finding{key: "steel.protection", target: a.ID, severity: SevAdvisory, category: "structure",
+				message: "Exposed steel framing: coating, corrosion at the bearings and fire protection are not assessed; connections and capacity need a qualified engineer.", observed: "not assessed", expected: "specialist review", specialist: true, inputs: []string{}})
+			break
 		}
 	}
 	add(finding{key: "timber.protection", target: a.ID, severity: SevAdvisory, category: "timber",
