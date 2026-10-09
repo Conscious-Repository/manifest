@@ -203,7 +203,7 @@ function cxDpCard(q) {
   c.append(head);
   if (q.why) c.append(el("p", "cx-dp-why", q.why));
   const acts = el("div", "cx-dp-acts");
-  (q.options || []).forEach(([label, fn]) => { const b = pillLight(label, fn); b.disabled = q.ro; acts.append(b); });
+  (q.options || []).forEach(([label, fn]) => { const b = pillLight(label, fn); b.classList.add("cx-opt"); b.disabled = q.ro; acts.append(b); });
   if (q.go) acts.append(pillLight(q.go[0], q.go[1]));
   // a free answer: shown at once when there are no options, else behind "Other…"
   let other = null;
@@ -218,6 +218,7 @@ function cxDpCard(q) {
     if ((q.options || []).length) {
       other.hidden = true;
       const o = pillLight("Other…", () => { other.hidden = false; o.remove(); inp.focus(); });
+      o.classList.add("cx-opt");
       o.disabled = q.ro;
       acts.append(o);
     }
@@ -1042,7 +1043,10 @@ cxPaintProblemTab = function (b) {
   const nar = el("div", "cx-about-text");
   if ((p.narrative || "").trim()) cxRichText(nar, p.narrative.trim()); else nar.append(el("p", "cx-empty", "Not described yet — tell Alfred in the Plan, or Edit."));
   const sc = ctx.scope;
-  if (sc) nar.append(el("p", "cx-about-meta", "Part of: " + (sc.text || sc.taskId || sc.workId) + (sc.status !== "resolved" ? " (link needs checking)" : "")));
+  if (sc) {
+    const plain = sc.text || String(sc.taskId || sc.workId || "").replace(/^[a-z]+\//, "").replace(/-/g, " ");
+    nar.append(el("p", "cx-about-meta", "Part of: " + plain + (sc.status !== "resolved" ? " (the task's link needs checking)" : "")));
+  }
   b.append(cxEditable("What this is", nar, () => {
     const w = el("div", "");
     const ta = el("textarea", "cx-in cx-narrative");

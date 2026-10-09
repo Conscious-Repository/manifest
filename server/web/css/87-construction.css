@@ -508,3 +508,26 @@ button.cx-path-node { border: 1px solid var(--accent); color: var(--accent); cur
 .cx-turn-file img { display: block; width: 84px; height: 60px; object-fit: cover; border: 1px solid var(--line); border-radius: var(--radius); background: #fff; }
 .cx-canvas-host.cx-capturing { position: fixed !important; left: 0; top: 0; width: 1600px !important; height: 1000px !important; max-width: none; z-index: 10000; }
 .cx-canvas-host.cx-capturing .cx-labels, .cx-canvas-host.cx-capturing .cx-state-chips { display: none; }
+/* readable buttons in the workbench: an answer or a suggestion can be a
+   sentence, so buttons wrap and grow instead of clipping at the pill's
+   fixed height, and answer options read as text, not as shouting labels
+   (the cinematic HUD's uppercase mono is for short commands) */
+:root .cx-wb .pill { height: auto; min-height: 32px; white-space: normal; line-height: 1.3; text-align: center; }
+:root .cx-dp .pill.cx-opt { justify-content: flex-start; text-align: left; font-family: var(--sans); font-weight: 500; letter-spacing: normal; text-transform: none; font-size: var(--fs-sm); padding: 7px 12px; max-width: 100%; }
+:root .cx-dp .pill.cx-opt:hover { border-color: var(--accent); }
+/* laptop widths: Details reads first, the selected part below it, in one
+   column that scrolls — not two half-height panes that cut both off */
+@media (max-width: 1279px) and (min-width: 861px) {
+  .cx-wb[data-active="research"] .cx-right, .cx-wb[data-active="assembly"] .cx-right { display: flex; flex-direction: column; overflow-y: auto; min-height: 0; }
+  .cx-wb[data-active="research"] .cx-right > .cx-pane, .cx-wb[data-active="assembly"] .cx-right > .cx-pane { flex: none; height: auto; min-height: 0; }
+  .cx-wb[data-active="research"] .cx-right .cx-pane-body, .cx-wb[data-active="assembly"] .cx-right .cx-pane-body { overflow: visible; }
+  .cx-wb[data-active="research"] .cx-right .cx-pane-d, .cx-wb[data-active="assembly"] .cx-right .cx-pane-d { order: 1; }
+  .cx-wb[data-active="research"] .cx-right .cx-pane-c, .cx-wb[data-active="assembly"] .cx-right .cx-pane-c { order: 2; border-top: 1px solid var(--line); }
+}
+@media (min-width: 861px) {
+  .cx-about-text { font-size: var(--fs-sm); }
+  .cx-pane-a .cx-pane-body.cx-plan { padding-bottom: 0; }
+}
+@media (min-width: 861px) {
+  .cx-about-dl dd { font-size: var(--fs-sm); line-height: 1.45; }
+}
