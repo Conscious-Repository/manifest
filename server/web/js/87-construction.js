@@ -841,6 +841,7 @@ function cxPaintModel(body) {
         cx.renderer = await cxRendererCreate(host, {
           onSelect: (id) => cxSelect(id),
           onCamera: () => cxQueueViewSave(),
+          onRendered: () => { if (typeof cxLabelsUpdate === "function") cxLabelsUpdate(host); },
           onContextLost: () => cxShowFallback(host, "3D unavailable: the graphics context was lost. The inspector, sections and downloads still work; it restores automatically if the browser allows."),
           onContextRestored: () => { const fb = host.querySelector(".cx-fallback"); if (fb) fb.remove(); },
         });

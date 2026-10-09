@@ -345,3 +345,111 @@ cxProblemRow = function (subject, row) {
     return form;
   };
 }
+
+// ---- labels on the model ----------------------------------------------------------------
+// Plain names pinned to the parts that matter, following the view. One label
+// per kind (the outer brick layer stands for the wall); fasteners are left to
+// the Fixings overlay. Toggle: "Labels".
+const CX_PART_LABELS = [
+  ["masonry:outer-wythe", "Brick wall"],
+  ["flashing:counter", "Counterflashing"],
+  ["flashing:base-apron", "Apron flashing"],
+  ["roof:corrugated-metal", "Metal roof panel"],
+  ["roof:profile-closure", "Foam closure"],
+  ["seal:", "Sealant"],
+  ["control:water-underlayment", "Underlayment"],
+  ["thermal:insulation", "Insulation"],
+  ["control:air-vapour", "Air / vapour membrane"],
+  ["support:battens", "Battens"],
+  ["structure:finish-deck", "Plywood deck"],
+  ["structure:exposed-rafters", "Steel rafters"],
+];
+let cxLabelsOn = (() => { try { return localStorage.getItem("cx.labels") !== "0"; } catch (e) { return true; } })();
+// Callouts: a dot on each part, a leader line, and the name in a column at
+// the nearer edge of the view, spaced so names never overlap.
+function cxLabelsUpdate(host) {
+  if (!host || !cx.renderer || !cx.renderer.labelAnchors) return;
+  let layer = host.querySelector(".cx-labels");
+  if (!layer) {
+    layer = el("div", "cx-labels"); layer.setAttribute("aria-hidden", "true");
+    layer.innerHTML = '<svg class="cx-label-lines" width="100%" height="100%"></svg>';
+    host.append(layer);
+  }
+  layer.hidden = !cxLabelsOn;
+  if (!cxLabelsOn) return;
+  const svg = layer.querySelector("svg");
+  const a = cxAsm();
+  if (!a) { layer.querySelectorAll(".cx-label-tag").forEach((t) => t.remove()); svg.replaceChildren(); return; }
+  const names = new Map();
+  for (const [role, name] of CX_PART_LABELS) {
+    const c = (a.components || []).find((x) => (x.role || "").startsWith(role));
+    if (c) names.set(c.id, name);
+  }
+  // while the view moves, carry the last anchors along; once it settles,
+  // find anchors again on what is actually visible
+  clearTimeout(cxLabelsTimer);
+  cxLabelsTimer = setTimeout(() => {
+    if (!cx.renderer || !host.isConnected) return;
+    cxLabelAnchors = cx.renderer.labelAnchors([...names.keys()]);
+    cxLabelsDraw(host);
+  }, 140);
+  cxLabelsDraw(host);
+}
+let cxLabelsTimer = 0, cxLabelAnchors = {};
+function cxLabelsDraw(host) {
+  const layer = host.querySelector(".cx-labels"), svg = layer && layer.querySelector("svg"), a = cxAsm();
+  if (!layer || !a || !cxLabelsOn) return;
+  const w = host.clientWidth, h = host.clientHeight, gap = cxPhone() ? 26 : 24;
+  const shown = [];
+  for (const [role, name] of CX_PART_LABELS) {
+    const c = (a.components || []).find((x) => (x.role || "").startsWith(role));
+    const wp = c && cxLabelAnchors[c.id];
+    const p = wp && cx.renderer.toScreen(wp);
+    if (p) shown.push({ id: c.id, name, x: p.x, y: p.y, side: p.x < w / 2 ? "l" : "r" });
+  }
+  // stack each column top to bottom in anchor order
+  for (const side of ["l", "r"]) {
+    const col = shown.filter((s) => s.side === side).sort((m, n) => m.y - n.y);
+    let next = 12;
+    for (const s of col) { s.ty = Math.max(s.y, next); next = s.ty + gap; }
+    const over = next - gap - (h - 12);
+    if (over > 0) for (const s of col) s.ty = Math.max(12, s.ty - over);
+  }
+  const keep = new Set(), NS = "http://www.w3.org/2000/svg";
+  svg.replaceChildren();
+  for (const s of shown) {
+    let tag = layer.querySelector(`.cx-label-tag[data-part="${s.id}"]`);
+    if (!tag) { tag = el("span", "cx-label-tag", s.name); tag.dataset.part = s.id; layer.append(tag); }
+    tag.hidden = false;
+    tag.classList.toggle("is-selected", cx.selection === s.id);
+    tag.classList.toggle("is-right", s.side === "r");
+    const tx = s.side === "l" ? 8 : w - 8;
+    tag.style.transform = `translate(${Math.round(tx)}px, ${Math.round(s.ty)}px)`;
+    const ex = s.side === "l" ? tx + tag.offsetWidth : tx - tag.offsetWidth;
+    const line = document.createElementNS(NS, "polyline");
+    line.setAttribute("points", `${ex},${s.ty} ${ex + (s.side === "l" ? 10 : -10)},${s.ty} ${s.x},${s.y}`);
+    const dot = document.createElementNS(NS, "circle");
+    dot.setAttribute("cx", s.x); dot.setAttribute("cy", s.y); dot.setAttribute("r", 3);
+    if (cx.selection === s.id) { line.classList.add("is-selected"); dot.classList.add("is-selected"); }
+    svg.append(line, dot);
+    keep.add(s.id);
+  }
+  layer.querySelectorAll(".cx-label-tag").forEach((t) => { if (!keep.has(t.dataset.part)) t.hidden = true; });
+}
+{
+  const base = cxModelToolbar;
+  cxModelToolbar = function () {
+    const tb = base();
+    const b = cxToolBtn("Labels", "Show the names of the parts on the model", () => {
+      cxLabelsOn = !cxLabelsOn;
+      try { localStorage.setItem("cx.labels", cxLabelsOn ? "1" : "0"); } catch (e) {}
+      b.classList.toggle("on", cxLabelsOn);
+      const host = tb.parentElement && tb.parentElement.querySelector(".cx-canvas-host");
+      if (host) cxLabelsUpdate(host);
+    });
+    b.classList.toggle("on", cxLabelsOn);
+    const drag = tb.querySelector(".cx-seg [data-drag]");
+    if (drag) drag.parentElement.append(b); else tb.prepend(b);
+    return tb;
+  };
+}

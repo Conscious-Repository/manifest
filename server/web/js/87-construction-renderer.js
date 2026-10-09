@@ -396,6 +396,7 @@ async function cxRendererCreate(host, opts) {
     const dt = performance.now() - t0;
     st.stats.frames++; st.stats.totalFrameMs += dt; st.stats.maxFrameMs = Math.max(st.stats.maxFrameMs, dt);
     if (!st.stats.firstRenderMs && st.ir) st.stats.firstRenderMs = Math.round(performance.now() - st.created);
+    if (opts.onRendered) opts.onRendered();
   }
   const ro = new ResizeObserver(resize);
   ro.observe(host);
@@ -478,6 +479,39 @@ async function cxRendererCreate(host, opts) {
     measure() { return new Promise((resolve) => { st.measuring = { points: [], done: resolve }; }); },
     cancelMeasure() { st.measuring = null; },
     // canvas position of a component's centre (tests and labels)
+    // where a part's label goes: its centre on screen, or null when the part
+    // is hidden or behind the camera; canvas-relative px
+    // Where to pin each part's name: cast a grid of rays over the view and
+    // keep, per part, the visible hit nearest the middle of where it shows.
+    // Hidden parts get no anchor. Returns {componentId: world point}.
+    labelAnchors(ids, step = 18) {
+      const want = new Set(ids), seen = new Map();
+      const w = canvas.clientWidth, h = canvas.clientHeight, r = canvas.getBoundingClientRect();
+      for (let y = step / 2; y < h; y += step) for (let x = step / 2; x < w; x += step) {
+        const hit = hitAt(r.left + x, r.top + y);
+        const id = hit && hit.object.userData.componentId;
+        if (!id || !want.has(id)) continue;
+        if (!seen.has(id)) seen.set(id, []);
+        seen.get(id).push({ x, y, p: hit.point.clone() });
+      }
+      const out = {};
+      for (const [id, pts] of seen) {
+        const mx = pts.reduce((t, q) => t + q.x, 0) / pts.length, my = pts.reduce((t, q) => t + q.y, 0) / pts.length;
+        let best = pts[0], d = Infinity;
+        for (const q of pts) { const e = Math.hypot(q.x - mx, q.y - my); if (e < d) { d = e; best = q; } }
+        out[id] = best.p;
+      }
+      return out;
+    },
+    // a world point on screen, in canvas pixels; null when behind or outside
+    toScreen(p) {
+      camera.updateMatrixWorld();
+      const v = p.clone().project(camera);
+      if (v.z < -1 || v.z > 1) return null;
+      const x = (v.x + 1) / 2 * canvas.clientWidth, y = (1 - v.y) / 2 * canvas.clientHeight;
+      if (x < 0 || y < 0 || x > canvas.clientWidth || y > canvas.clientHeight) return null;
+      return { x, y };
+    },
     project(componentId) {
       const part = st.parts.get(componentId);
       if (!part) return null;

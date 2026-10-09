@@ -333,3 +333,12 @@ button.cx-path-node { border: 1px solid var(--accent); color: var(--accent); cur
   .cx-fact { flex-direction: row; flex-wrap: wrap; align-items: center; }
   .cx-fact-text { flex-basis: 100%; }
 }
+/* plain part labels over the model */
+.cx-labels { position: absolute; inset: 0; pointer-events: none; overflow: hidden; z-index: 2; }
+.cx-label-tag { position: absolute; left: 0; top: 0; translate: 0 -50%; padding: 2px 7px; border-radius: 999px; font: 600 11px var(--sans); white-space: nowrap; color: #fff; background: rgba(15, 23, 32, 0.82); border: 1px solid rgba(255, 255, 255, 0.35); box-shadow: 0 1px 3px rgba(0, 0, 0, 0.35); }
+.cx-label-tag.is-right { translate: -100% -50%; }
+.cx-label-tag.is-selected { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
+.cx-label-lines { position: absolute; inset: 0; overflow: visible; }
+.cx-label-lines polyline { fill: none; stroke: rgba(255, 255, 255, 0.85); stroke-width: 1.25; filter: drop-shadow(0 0 1px rgba(0, 0, 0, 0.9)); }
+.cx-label-lines circle { fill: #fff; stroke: rgba(15, 23, 32, 0.9); stroke-width: 1.5; }
+.cx-label-lines .is-selected { stroke: var(--accent); }
