@@ -425,7 +425,9 @@ const CX_SUGGESTION_TEXT = { "Research this properly": () => cxKickoff() };
 function cxChatBlock() {
   const box = el("section", "cx-block cx-chat");
   const head = el("div", "cx-chat-head");
-  head.append(el("h3", "cx-plan-h", cx.view.problem.steward.agent === "zeck" ? "Zeck" : "Alfred"));
+  const who = el("h3", "cx-plan-h", cx.view.problem.steward.agent === "zeck" ? "Zeck" : "Alfred");
+  if (cxp.chat && cxp.chat.model) who.append(el("span", "cx-chat-model", cxp.chat.model + (cxp.chat.effort ? " · " + cxp.chat.effort : "")));
+  head.append(who);
   if (cxp.chat && cxp.chat.href) { const a = el("a", "cx-link", "Open in Chat"); a.href = cxp.chat.href; a.title = "The same conversation, full screen, in the Chat app"; head.append(a); }
   box.append(head);
   const thread = el("div", "cx-chat-thread");
@@ -1051,5 +1053,80 @@ const CX_VERIFY_PLAIN = { "not-field-verified": "not checked on site", "owner-co
       if (label) label.placeholder = "What it shows (optional)";
     }
     return blk;
+  };
+}
+
+// ---- the model view: open assembled; say when it isn't ---------------------------
+// Explode is for a moment's look at the layers. Restored from a saved view it
+// made a sound detail look broken (parts floating off the wall) with the
+// control folded away, so a problem always opens assembled, and any state
+// that changes what you see — pulled apart, cut open, parts hidden — shows
+// as a chip on the model with its one-tap way back.
+{
+  const base = cxRestoreView;
+  cxRestoreView = function () { base(); if (cx.vs) cx.vs.exploded = 0; };
+}
+{
+  const base = cxSyncToolbar;
+  cxSyncToolbar = function (wrap) { base(wrap); cxStateChips(wrap); };
+}
+function cxStateChips(wrap) {
+  const host = wrap && wrap.querySelector(".cx-canvas-host");
+  if (!host || !cx.vs) return;
+  let bar = host.querySelector(".cx-state-chips");
+  if (!bar) { bar = el("div", "cx-state-chips"); host.append(bar); }
+  bar.replaceChildren();
+  const chip = (text, label, fn) => { const b = el("button", "cx-state-chip"); b.type = "button"; b.append(el("span", "", text), el("strong", "", label)); b.onclick = fn; bar.append(b); };
+  if (cx.vs.exploded > 0) chip("Pulled apart", "Put back", () => { cx.vs.exploded = 0; const r = wrap.querySelector('[data-role="explode"]'); if (r) r.value = "0"; cxApplyVS(); });
+  if (cx.vs.section && cx.vs.section.enabled) chip("Cut open", "Close", () => { cx.vs.section = { ...cx.vs.section, enabled: false }; cxApplyVS(); });
+  if ((cx.vs.hidden || []).length || (cx.vs.isolated || []).length) chip("Some parts hidden", "Show all", () => { cx.vs.hidden = []; cx.vs.isolated = []; cxApplyVS(); });
+  bar.hidden = !bar.childElementCount;
+}
+
+// ---- workspace settings: the model Alfred uses here ------------------------------
+async function cxSettingsBlock(subject) {
+  const box = el("section", "cx-block cx-settings");
+  box.append(el("h3", "cx-plan-h", "Workspace settings"));
+  let d;
+  try { d = await cxApi("GET", cxBase(subject), "/settings"); } catch (e) { box.append(el("p", "cx-empty", "Settings unavailable: " + e.message)); return box; }
+  const cur = d.settings || {};
+  const row = el("div", "cx-settings-row");
+  const lab = el("label", "cx-about-label", "Alfred's model for construction");
+  const sel = document.createElement("select");
+  sel.className = "cx-in"; sel.setAttribute("aria-label", "Model");
+  const groups = new Map();
+  (d.models || []).forEach((m) => {
+    const g = m.description || m.provider || "Other";
+    if (!groups.has(g)) { const og = document.createElement("optgroup"); og.label = g; groups.set(g, og); sel.append(og); }
+    const o = document.createElement("option"); o.value = m.provider + "|" + m.id; o.textContent = m.label || m.id; groups.get(g).append(o);
+  });
+  if (!cur.model) { const o = document.createElement("option"); o.value = ""; o.textContent = "Alfred's profile default"; sel.prepend(o); }
+  sel.value = cur.model ? cur.provider + "|" + cur.model : "";
+  const eff = document.createElement("select");
+  eff.className = "cx-in"; eff.setAttribute("aria-label", "Reasoning effort");
+  (d.efforts || []).forEach((e) => { const o = document.createElement("option"); o.value = e.id; o.textContent = e.id; eff.append(o); });
+  eff.value = cur.effort || "high";
+  const msg = el("span", "cx-hint", d.saved ? "" : cur.model ? "Default — not saved yet" : "");
+  const save = pillLight("Save", async () => {
+    const [provider, model] = sel.value.split("|");
+    if (!model) return;
+    save.disabled = true;
+    try { await cxApi("PUT", cxBase(subject), "/settings", { model, provider, effort: eff.value }); msg.textContent = "Saved — Alfred uses " + model + " · " + eff.value + " from his next message"; }
+    catch (e) { msg.textContent = "Not saved: " + e.message; }
+    finally { save.disabled = false; }
+  });
+  row.append(lab, sel, eff, save);
+  box.append(row, msg, el("p", "cx-hint", "Used for research, approaches and decision points in every problem's conversation. The 3D models themselves are built exactly from each approach's parts and measurements — the AI chooses those, it doesn't draw."));
+  return box;
+}
+{
+  const base = cxListInto;
+  cxListInto = async function (host, subject) {
+    await base(host, subject);
+    const page = host.querySelector(".cx-list-page");
+    if (!page || !page.querySelector(".cx-list .cx-problem-row, .cx-list a, .cx-create")) return;
+    const blk = await cxSettingsBlock(subject);
+    const form = page.querySelector(".cx-create, form");
+    if (form) form.before(blk); else page.append(blk);
   };
 }

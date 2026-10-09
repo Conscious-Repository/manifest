@@ -494,3 +494,13 @@ button.cx-path-node { border: 1px solid var(--accent); color: var(--accent); cur
 .cx-pline-meta .cx-chip { font-size: var(--fs-xs); line-height: 1.5; letter-spacing: normal; text-transform: none; padding: 0 6px; }
 .cx-pline-meta .cx-pline-bit { flex-basis: 100%; }
 .cx-pline-warn { flex-basis: 100%; font-size: var(--fs-xs); color: var(--warn); }
+/* the model's state, said on the model */
+.cx-state-chips { position: absolute; left: 8px; top: 8px; z-index: 3; display: flex; flex-wrap: wrap; gap: 6px; pointer-events: none; }
+.cx-state-chip { pointer-events: auto; display: inline-flex; gap: 8px; align-items: center; min-height: 32px; padding: 0 12px; border: 1px solid var(--warn); border-radius: 999px; background: rgba(15, 23, 32, 0.85); color: #fff; font: inherit; font-size: var(--fs-sm); cursor: pointer; }
+.cx-state-chip strong { color: var(--warn); font-weight: 600; }
+/* workspace settings on the problem list */
+.cx-settings { margin-top: var(--sp-5); }
+.cx-settings-row { display: grid; grid-template-columns: 1fr auto auto; gap: var(--sp-2); align-items: center; }
+.cx-settings-row .cx-about-label { grid-column: 1 / -1; }
+.cx-chat-model { margin-left: var(--sp-2); font-weight: 400; font-size: var(--fs-xs); color: var(--base-60); }
+@media (max-width: 860px) { .cx-settings-row { grid-template-columns: 1fr; } }

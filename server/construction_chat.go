@@ -45,6 +45,8 @@ type constructionChatTurn struct {
 
 type constructionChatView struct {
 	Agent   string                 `json:"agent"`
+	Model   string                 `json:"model,omitempty"` // what the last reply ran with
+	Effort  string                 `json:"effort,omitempty"`
 	Session string                 `json:"session,omitempty"`
 	Href    string                 `json:"href,omitempty"`
 	Pending bool                   `json:"pending"`
@@ -85,6 +87,12 @@ func (s *Server) constructionChatView(agent string, sess agentchat.Session, ok b
 			v.Error = d.Error
 		case agentchat.DeliveryCompleted:
 			v.Error = ""
+		}
+		if d.Context != nil && d.Context.Recipient != nil {
+			v.Model, v.Effort = d.Context.Recipient.Model, d.Context.Recipient.Effort
+		}
+		if d.Result != nil && d.Result.ReportedModel != "" {
+			v.Model = d.Result.ReportedModel
 		}
 	}
 	turns := agentchat.ParseTurns(body)
@@ -168,6 +176,10 @@ func (s *Server) handleConstructionChatPost(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	recipient := agentchat.Recipient{Agent: agent, Profile: profile}
+	if set, _ := s.constructionSettingsNow(); set.Model != "" {
+		// the workspace's chosen model, per message, not Alfred's profile default
+		recipient.RequestedModel, recipient.Model, recipient.Provider, recipient.Effort = set.Model, set.Model, set.Provider, set.Effort
+	}
 	if _, err := s.agentChat.store.Accept(agent, conv, "cxc-"+in.RequestID, text, &agentchat.MessageContext{Conversation: desc, Agent: agent, Recipient: &recipient}); err != nil {
 		constructionError(w, construction.Unavailable(err.Error()))
 		return

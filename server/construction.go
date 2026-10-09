@@ -137,6 +137,7 @@ func (s *Server) registerConstructionRoutes(mux *http.ServeMux) {
 		s.registerConstructionCommandRoutes(mux, p)
 		s.registerConstructionStewardRoutes(mux, p)
 		s.registerConstructionChatRoutes(mux, p)
+		s.registerConstructionSettingsRoutes(mux, p)
 	}
 }
 

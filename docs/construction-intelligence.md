@@ -54,6 +54,17 @@ Model · Details):
 
 ## Plan pane: steer in chat, keep the answers here
 
+**Which model, and what it does.** Problem chats run with the workspace
+model (`GET|PUT …/settings`, stored as `workspace-settings.json` in the
+construction root): Astra (`gpt-6-astra`, provider `openai-codex`) on high by
+default when this machine lists it, else any model the Hermes catalog lists,
+chosen on the Home construction list. It is sent per message as the chat
+recipient, so Alfred's profile default no longer decides. The model never
+draws: geometry is compiled deterministically from the approach's typed
+parts and measurements (`construction/geometry.go`); the model proposes
+those. A problem always opens assembled (a saved Explode is not restored),
+and pulled-apart, cut-open or hidden-parts states show as chips on the model.
+
 The way of working is five stages shown under the header: describe → research
 → approaches → decide → specifics.
 - **Conversation.** Each problem has one ordinary steward conversation

@@ -418,3 +418,35 @@ func TestConstructionProblemChat(t *testing.T) {
 		t.Fatalf("questions %v", qs)
 	}
 }
+
+// The workspace model: Astra on high by default when this machine lists it,
+// any listed model by choice, and every problem-chat message carries it.
+func TestConstructionWorkspaceModel(t *testing.T) {
+	home := t.TempDir()
+	os.WriteFile(filepath.Join(home, "provider_models_cache.json"), []byte(`{"openai-codex":{"models":["gpt-6-astra","gpt-6-sol"]},"anthropic":{"models":["claude-fable-5-1"]}}`), 0o644)
+	t.Setenv("HERMES_HOME", home)
+	f, out := nativeFixture(t)
+	base := fixtureBase + "/settings"
+	g := f.do(t, "GET", base, nil).json(t)
+	if set := g["settings"].(map[string]any); set["model"] != "gpt-6-astra" || set["provider"] != "openai-codex" || set["effort"] != "high" || g["saved"] != false {
+		t.Fatalf("default: %v", g)
+	}
+	if r := f.do(t, "PUT", base, map[string]any{"model": "gpt-9-imaginary", "provider": "openai-codex", "effort": "high"}); r.Code != 422 {
+		t.Fatalf("an unlisted model is refused: %d %s", r.Code, r.Body)
+	}
+	if r := f.do(t, "PUT", base, map[string]any{"model": "claude-fable-5-1", "provider": "anthropic", "effort": "max"}); r.Code != 200 {
+		t.Fatalf("choose: %d %s", r.Code, r.Body)
+	}
+	_, id, _ := f.createTemplate(t, fixtureBase, "create-nat-model")
+	if r := f.do(t, "POST", fixtureBase+"/problems/"+id+"/chat", map[string]any{"schemaVersion": 1, "requestId": cReqID("m"), "text": "hello"}); r.Code != 200 {
+		t.Fatalf("chat %d %s", r.Code, r.Body)
+	}
+	deadline := time.Now().Add(30 * time.Second)
+	for len(stubCalls(t, out)) == 0 && time.Now().Before(deadline) {
+		time.Sleep(50 * time.Millisecond)
+	}
+	calls := stubCalls(t, out)
+	if len(calls) != 1 || calls[0].Model != "claude-fable-5-1" {
+		t.Fatalf("the chat turn runs with the workspace model: %+v", calls)
+	}
+}
