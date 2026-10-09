@@ -264,12 +264,21 @@ function cxApproachCard(id) {
   else if (on) head.append(el("span", "cx-chip", "in the model"));
   c.append(head);
   c.append(el("p", "cx-approach-how", cxPlainApproach(a)));
-  if (a.summary) c.append(el("p", "cx-approach-sum", a.summary));
+  // the approach in the model reads in full; the others fold to a line
+  const key = "asm:" + id, unfolded = key in cxp.open ? cxp.open[key] : on;
+  const more = el("div", "cx-approach-more");
+  more.hidden = !unfolded;
+  const fold = el("button", "cx-approach-toggle", unfolded ? "Less" : "More about it");
+  fold.type = "button";
+  fold.setAttribute("aria-expanded", String(unfolded));
+  fold.onclick = () => { cxp.open[key] = !unfolded; cxRender(); };
+  head.onclick = (e) => { if (e.target === head || e.target.classList.contains("cx-approach-name")) fold.click(); };
+  if (a.summary) more.append(el("p", "cx-approach-sum", a.summary));
   const s = CX_PLAIN_STRAT[a.junction.strategy];
   if (s && s.good) {
     const pc = el("ul", "cx-approach-pc");
     pc.append(el("li", "is-good", s.good), el("li", "is-watch", s.watch));
-    c.append(pc);
+    more.append(pc);
   }
   // what's still open on this approach, in plain words
   const rep = (v.validation || {})[id];
@@ -281,8 +290,8 @@ function cxApproachCard(id) {
     const ul = el("ul", "");
     plain.forEach((t) => ul.append(el("li", "", t)));
     det.append(ul);
-    c.append(det);
-  } else c.append(el("p", "cx-approach-facts", "Nothing critical left open"));
+    more.append(det);
+  } else more.append(el("p", "cx-approach-facts", "Nothing critical left open"));
   // the true section of this revision, drawn by the server (an inert image)
   const fig = el("button", "cx-approach-fig");
   fig.type = "button";
@@ -294,7 +303,8 @@ function cxApproachCard(id) {
   img.onerror = () => fig.remove();
   fig.append(img);
   fig.onclick = () => cxShowApproach(id);
-  c.append(fig);
+  more.append(fig);
+  c.append(fold, more);
   const acts = el("div", "cx-dp-acts");
   acts.append(pillLight(on && !cxPhone() ? "In the model →" : "Show model", () => cxShowApproach(id)));
   if (!chosen && !v.readOnly) acts.append(pillLight("Choose this one", () => cxChooseApproach(id)));
@@ -341,11 +351,11 @@ async function cxChatLoad() {
     if (pid !== cx.problemId) return;
     const before = cxp.chat ? JSON.stringify(cxp.chat) : "";
     cxp.chat = res.chat;
-    if (JSON.stringify(cxp.chat) !== before) cxChatRepaint();
+    if (JSON.stringify(cxp.chat) !== before || cxp.chat.pending) cxChatRepaint();
   } catch (e) { cxp.msg = "Couldn't load the conversation: " + e.message; cxChatRepaint(); }
   finally { cxp.loading = false; }
   clearTimeout(cxp.poll);
-  if (cxp.chat && cxp.chat.pending) cxp.poll = setTimeout(cxChatLoad, 2500);
+  if (cxp.chat && cxp.chat.pending) cxp.poll = setTimeout(cxChatLoad, 4000);
 }
 function cxChatRepaint() {
   const old = cx.host && cx.host.querySelector(".cx-chat");
@@ -383,7 +393,18 @@ async function cxChatSend(text) {
 
 function cxKickoff() {
   const p = cx.view.problem;
-  return "Please research this problem properly: " + p.title + (p.narrative ? " — " + p.narrative : "") + "\n\nLook up the building code, the panel and flashing makers' installation instructions and trade guidance; tell me in plain words what you found (with sources), propose two to four approaches as separate models, and raise the decision points I need to settle to choose between them.";
+  return "Please research “" + p.title + "” properly: the building code, the makers' installation instructions and trade guidance. Tell me in plain words what you found (with sources), propose two to four approaches as separate models, and raise the decisions I need to make to choose between them.";
+}
+
+// "Alfred is researching · 3 min", with a pulse; refreshed by the poll
+function cxWorking(turns) {
+  const mine = [...turns].reverse().find((t) => t.who === "user" && t.at);
+  const t0 = mine ? Date.parse(mine.at.replace(" ", "T")) : NaN;
+  const min = isNaN(t0) ? 0 : Math.max(0, Math.floor((Date.now() - t0) / 60000));
+  const w = el("div", "cx-chat-wait");
+  w.setAttribute("role", "status");
+  w.append(el("span", "cx-pulse"), el("span", "", "Alfred is " + (turns.length <= 2 ? "researching" : "thinking") + (min ? " · " + min + " min" : "") + ". You can leave — the answer will be here."));
+  return w;
 }
 
 // what to say next, by stage: a tap sends it
@@ -420,7 +441,7 @@ function cxChatBlock() {
     thread.append(more);
   }
   shown.forEach((t) => thread.append(cxChatTurn(t)));
-  if (cxp.chat && cxp.chat.pending) thread.append(el("p", "cx-chat-wait", "Alfred is working on it…"));
+  if (cxp.chat && cxp.chat.pending) thread.append(cxWorking(turns));
   if (cxp.chat && cxp.chat.error && !cxp.chat.pending) thread.append(el("p", "cx-form-msg", "The last reply failed: " + cxp.chat.error));
   box.append(thread);
   if (cxp.msg) { const m = el("p", "cx-form-msg", cxp.msg); m.setAttribute("role", "alert"); box.append(m); }
@@ -461,8 +482,13 @@ function cxChatTurn(t) {
   const props = [];
   text = text.replace(CX_PROPOSAL_RE, (m, json) => { props.push(json); return "\n"; });
   const bubble = el("div", "cx-turn-text");
-  cxRichText(bubble, mine && text.length > 600 ? text.slice(0, 600) + "…" : text.trim());
+  cxRichText(bubble, text.trim());
   row.append(bubble);
+  if (mine && text.length > 240) {
+    bubble.classList.add("is-clamped");
+    bubble.title = "Show all";
+    bubble.onclick = () => bubble.classList.toggle("is-clamped");
+  }
   props.forEach((json) => row.append(cxProposalCard(json, (cxp.chat.session || "") + ":" + t.n + ":" + (i++))));
   if (t.sending) row.append(el("span", "cx-turn-meta micro-label", "sending…"));
   return row;
@@ -718,4 +744,164 @@ async function cxUndoProposal(key) {
 {
   const go = cxGo;
   cxGo = function (pane, tab) { go(pane === "assembly" && cxPhone() ? "model" : pane, tab); };
+}
+
+// ---- About, for people: read first, edit on tap -----------------------------------
+const CX_SURE = [
+  ["checked", "Checked / documented", "known", "verified-fact"],
+  ["believe", "We believe it", "assumed", "user-assumption"],
+  ["guide", "From a code or guide", "known", "directly-applicable-guidance"],
+  ["reasoned", "Reasoned out", "assumed", "engineering-inference"],
+  ["unknown", "Not known", "unknown", "unknown"],
+];
+function cxSureOf(state, prov) {
+  if (state === "unknown") return "unknown";
+  const hit = CX_SURE.find((x) => x[3] === prov);
+  return hit ? hit[0] : "believe";
+}
+function cxSureSelect(value, label) {
+  const s = document.createElement("select");
+  s.className = "cx-in"; s.setAttribute("aria-label", label);
+  CX_SURE.forEach(([k, t]) => { const o = document.createElement("option"); o.value = k; o.textContent = t; s.append(o); });
+  s.value = value;
+  return s;
+}
+function cxSureChip(state, prov) {
+  const k = cxSureOf(state, prov), t = CX_SURE.find((x) => x[0] === k)[1];
+  return el("span", "cx-sure cx-sure-" + k, t.toLowerCase().replace(" / documented", ""));
+}
+// a block that reads as text and turns into its editor on "Edit"
+function cxEditable(title, readView, editView) {
+  const box = el("section", "cx-block cx-about");
+  const head = el("div", "cx-about-head");
+  head.append(el("h3", "cx-plan-h", title));
+  box.append(head);
+  if (!editView || cx.view.readOnly) { box.append(readView); return box; }
+  const key = "edit:" + title, editing = !!cxp.open[key];
+  const t = el("button", "cx-link", editing ? "Done" : "Edit");
+  t.type = "button";
+  t.onclick = () => { cxp.open[key] = !editing; cxPaintResearch(box.closest(".cx-pane-body")); };
+  head.append(t);
+  box.append(editing ? editView() : readView);
+  return box;
+}
+
+cxPaintProblemTab = function (b) {
+  const v = cx.view, p = v.problem, ro = !!v.readOnly, ctx = v.context || {};
+  // what this is
+  const nar = el("div", "cx-about-text");
+  if ((p.narrative || "").trim()) cxRichText(nar, p.narrative.trim()); else nar.append(el("p", "cx-empty", "Not described yet — tell Alfred in the Plan, or Edit."));
+  const sc = ctx.scope;
+  if (sc) nar.append(el("p", "cx-about-meta", "Part of: " + (sc.text || sc.taskId || sc.workId) + (sc.status !== "resolved" ? " (link needs checking)" : "")));
+  b.append(cxEditable("What this is", nar, () => {
+    const w = el("div", "");
+    const ta = el("textarea", "cx-in cx-narrative");
+    ta.value = p.narrative || ""; ta.setAttribute("aria-label", "Narrative"); ta.rows = 8;
+    w.append(ta, pillLight("Save narrative", async () => { if (await cxCommand([{ op: "SetProblemText", narrative: ta.value }])) { cxp.open["edit:What this is"] = false; cxRender(); } }));
+    return w;
+  }));
+  // where: location, rules, climate
+  const where = el("dl", "cx-about-dl");
+  const FIELDS = [["location", "Where"], ["jurisdiction", "Rules that apply"], ["climate", "Climate"]];
+  FIELDS.forEach(([f, label]) => {
+    const cur = p[f] || { text: "", state: "unknown", provenance: "unknown" };
+    const dd = el("dd", "");
+    dd.append(el("span", "", cur.text || "—"));
+    if (cxSureOf(cur.state, cur.provenance) !== "believe") dd.append(cxSureChip(cur.state, cur.provenance));
+    where.append(el("dt", "", label), dd);
+  });
+  b.append(cxEditable("Where", where, () => {
+    const w = el("div", "cx-about-edit"), rows = [];
+    FIELDS.forEach(([f, label]) => {
+      const cur = p[f] || { text: "", state: "unknown", provenance: "unknown" };
+      const row = el("div", "cx-about-row");
+      const tin = inputEl(label); tin.value = cur.text || ""; tin.className = "cx-in"; tin.setAttribute("aria-label", f);
+      const sure = cxSureSelect(cxSureOf(cur.state, cur.provenance), f + " — how sure");
+      row.append(el("label", "cx-about-label", label), tin, sure);
+      rows.push({ f, cur, tin, sure });
+      w.append(row);
+    });
+    // one save for what changed
+    w.append(pillLight("Save", async () => {
+      const ops = rows.map(({ f, cur, tin, sure }) => {
+        const s = CX_SURE.find((x) => x[0] === sure.value);
+        if (tin.value === (cur.text || "") && s[0] === cxSureOf(cur.state, cur.provenance)) return null;
+        return { op: "SetContext", field: f, text: tin.value, state: s[2], provenance: s[3] };
+      }).filter(Boolean);
+      if (!ops.length || await cxCommand(ops)) { cxp.open["edit:Where"] = false; cxRender(); }
+    }));
+    return w;
+  }));
+  // what we know about the house, and what we plan
+  for (const [list, title, ph] of [["existing", "The house today", "Add something about the house…"], ["proposed", "What we plan", "Add something about the plan…"]]) {
+    const facts = p[list] || [];
+    const rows = (editing) => {
+      const w = el("div", "cx-fact-list");
+      if (!facts.length) w.append(el("p", "cx-empty", "Nothing yet."));
+      facts.forEach((f) => {
+        const row = el("div", "cx-fact");
+        const t = el("span", "cx-fact-text", f.text);
+        if (cxSureOf("known", f.provenance) !== "believe") t.append(" ", cxSureChip("known", f.provenance));
+        row.append(t);
+        if (editing) { const x = el("button", "cx-x", "✕"); x.type = "button"; x.title = "Remove"; x.setAttribute("aria-label", "Remove fact"); x.onclick = () => cxCommand([{ op: "RemoveFact", id: f.id }]); row.append(x); }
+        w.append(row);
+      });
+      if (!ro) {
+        const add = el("div", "cx-fact-add");
+        const tin = inputEl(ph); tin.className = "cx-in"; tin.setAttribute("aria-label", "New " + list + " condition");
+        const sure = cxSureSelect("believe", "How sure");
+        sure.hidden = true;
+        const go = pillLight("Add", () => { const v = tin.value.trim(); if (!v) return; const s2 = CX_SURE.find((x) => x[0] === sure.value); cxCommand([{ op: "AddFact", id: cxNewId("clm"), list, text: v, provenance: s2[3] }]); });
+        tin.oninput = () => { sure.hidden = !tin.value.trim(); };
+        tin.onkeydown = (e) => { if (e.key === "Enter") go.click(); };
+        add.append(tin, sure, go);
+        w.append(add);
+      }
+      return w;
+    };
+    b.append(cxEditable(title, rows(false), facts.length ? () => rows(true) : null));
+  }
+  b.append(cxInputsBlock());
+};
+
+// photos and drawings: plain meta, one button to add
+const CX_ROLE_PLAIN = { photo: "Photo", drawing: "Drawing", document: "Document", other: "File" };
+const CX_VERIFY_PLAIN = { "not-field-verified": "not checked on site", "owner-confirmed": "you confirmed it", unknown: "" };
+{
+  const base = cxInputsBlock;
+  cxInputsBlock = function () {
+    const blk = base();
+    blk.classList.add("cx-about");
+    const h = blk.querySelector(":scope > .cx-label");
+    if (h) h.replaceWith(el("h3", "cx-plan-h", "Photos & drawings"));
+    const inputs = cx.view.problem.inputs || [];
+    blk.querySelectorAll(".cx-input").forEach((row, i) => {
+      const inp = inputs[i], meta = row.querySelector(".cx-input-meta");
+      if (!inp || !meta) return;
+      const mb = inp.size >= 1e6 ? (inp.size / 1048576).toFixed(1) + " MB" : Math.max(1, Math.round(inp.size / 1024)) + " KB";
+      meta.className = "cx-input-meta";
+      meta.textContent = [CX_ROLE_PLAIN[inp.role] || inp.role, mb, CX_VERIFY_PLAIN[inp.verification]].filter(Boolean).join(" · ");
+      meta.title = "revision " + inp.revision.slice(0, 12);
+    });
+    const empty = blk.querySelector(":scope > .cx-empty");
+    if (empty) empty.textContent = "None yet. Photos of the spot and the drawings help Alfred most.";
+    const form = blk.querySelector(".cx-upload");
+    if (form) {
+      const file = form.querySelector('input[type="file"]');
+      const pick = el("label", "pill light cx-upload-pick", "＋ Add a photo or drawing");
+      pick.append(file);
+      file.classList.add("cx-file-hidden");
+      form.prepend(pick);
+      const rest = [...form.children].filter((n) => n !== pick && !n.classList.contains("cx-form-msg"));
+      rest.forEach((n) => { n.hidden = true; });
+      file.addEventListener("change", () => {
+        rest.forEach((n) => { n.hidden = false; });
+        const f = file.files && file.files[0];
+        if (f) { pick.firstChild.textContent = f.name + " — "; const role = form.querySelector('[aria-label="Input role"]'); if (role) role.value = /^image\//.test(f.type) ? "photo" : "drawing"; }
+      });
+      const label = form.querySelector('[aria-label="Input label"]');
+      if (label) label.placeholder = "What it shows (optional)";
+    }
+    return blk;
+  };
 }

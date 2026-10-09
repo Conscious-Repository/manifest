@@ -159,7 +159,7 @@ async function backendRun(browser) {
   await page.waitForURL(/\/construction\/cp-[0-9a-f]{32}$/);
   const problemId = page.url().split('/').pop();
   await page.getByRole('heading', {name: 'Corrugated roof to masonry wall'}).waitFor();
-  await page.getByText(/Scope: Roof \[roof\] · resolved/).waitFor();
+  await page.getByText(/^Part of: Roof$/).waitFor(); // the linked scope, in plain words
   await page.getByText(/not approved for construction/).first().waitFor();
   await page.getByLabel('New existing condition').fill('Two nominal 100 mm masonry wythes (synthetic, unmeasured).');
   await page.getByRole('button', {name: 'Add', exact: true}).first().click();
