@@ -229,7 +229,7 @@ func (s *Server) constructionChatBrief(sess agentchat.Session) string {
 // the operations a proposal may carry, with their fields
 var constructionChatOps = []string{"AddQuestion", "AnswerQuestion", "SetQuestionState", "AddFact", "SetContext", "SetProblemText",
 	"CreateVariant", "SetAssemblyText", "SetJunctionStrategy", "SetWallCondition", "SetPitch", "SetDimension", "SetMaterial", "SetProduct",
-	"RemoveComponent", "ProposeDecision"}
+	"RemoveComponent", "ProposeDecision", "AddProfiledPart", "SetProfile"}
 
 // constructionOpFields lists an operation's JSON fields and their types
 // (optional ones marked "?"), read from the struct so it never drifts.
@@ -271,7 +271,10 @@ func constructionBriefText(st *construction.State) string {
 	p := st.Problem
 	type comp struct {
 		ID, Name, Role, Type string
-		Material, Product    string `json:",omitempty"`
+		Material, Product    string            `json:",omitempty"`
+		Applicability        string            `json:",omitempty"`
+		Sizes                map[string]string `json:",omitempty"` // mm, as the model draws them now
+		Profile              [][2]float64      `json:",omitempty"` // a profiled part's [u, v] points
 	}
 	type asm struct {
 		ID, Name, Summary, Lifecycle string
@@ -299,7 +302,22 @@ func constructionBriefText(st *construction.State) string {
 			}
 		}
 		for _, c := range a.Components {
-			cc := comp{ID: c.ID, Name: c.Name, Role: c.Role, Type: c.Type}
+			cc := comp{ID: c.ID, Name: c.Name, Role: c.Role, Type: c.Type, Profile: c.Shape.Profile}
+			if c.Applicability != "applicable" {
+				cc.Applicability = c.Applicability
+			}
+			for k, q := range c.Shape.Params {
+				if v, ok := q.Effective(); ok {
+					if cc.Sizes == nil {
+						cc.Sizes = map[string]string{}
+					}
+					label := fmt.Sprintf("%g %s", v, q.Unit)
+					if q.Value == nil || q.Illustrative {
+						label += " (placeholder)"
+					}
+					cc.Sizes[k] = label
+				}
+			}
 			if c.Material != nil {
 				cc.Material = c.Material.ID
 			}
@@ -357,6 +375,7 @@ func constructionBriefText(st *construction.State) string {
 	b.WriteString("The owner reviews and applies it; each applied change is a revision they can undo. New ids are \"<kind>-<32 lowercase hex>\" you choose (dq- questions, clm- facts, asm- approaches, cmp- components, dec- decisions). Never approve a decision. Nothing here is approved for construction.\n")
 	b.WriteString("Provenance values: verified-fact, directly-applicable-guidance, adapted-precedent, engineering-inference, user-assumption, unknown. Assembly operations go in a change with that approach's assemblyId; CreateVariant copies the change's assemblyId into a new approach. SetMaterial takes a materialId from catalogMaterials.\n")
 	b.WriteString("Model rules (a change that breaks one is refused): every id is \"<kind>-\" plus EXACTLY 32 lowercase hex characters. SetJunctionStrategy and SetWallCondition create parts the strategy needs and take their new ids in newComponentIds — slots apron, sidewall-flashing, through-wall, weeps, end-dams, cavity (give a new cmp- id for each slot the change might need). apron-through-wall-flashing needs a cavity wall: SetWallCondition value \"cavity\" (with newComponentIds.cavity) first, in the same change; a solid wall cannot take it. Reglet strategies need a counterflashing part. If the model can't represent an approach, describe it in SetAssemblyText and raise what's missing as a question instead of forcing it.\n")
+	b.WriteString("Custom parts — for a detail the fixed parts can't show (a receiver hooked into a cut joint, a hemmed drip, a kick-out): AddProfiledPart draws a bent-metal part by its cross-section, extruded along the whole junction. points are [u, v] in mm on ONE datum: u = out from the wall face (negative = into the brick), v = up from the top of the roof where it meets the wall (the apron's corner). Use the Sizes above to line up with the other parts — the apron's upstand top is at v = its upstand; the outer brick layer runs from u = 0 to u = −its thickness. The points are the metal's centreline; thickness (0.3–3 mm, default 0.6) is added half each side. 2–32 points, at least 1 mm apart, folds of 165° or less (no closed hems), no crossings. replaces: the id of a fixed part this one stands in for (it is set aside). A point at u < 0 cuts the outer brick layer to receive it, and the cut is reported for review. Example — a counterflashing hooked 20 mm into a joint 235 mm up, down the wall, kicked out 12 mm to lap a 150 mm upstand by 50 mm: points [[-20,235],[0,235],[0,160],[12,140],[12,100]]. Every change is checked: laps over the upstand and cuts are measured and come back as issues; read them (and the pictures, if the owner sends them) and redraw with SetProfile.\n")
 	b.WriteString("Operations (" + strings.Join(keys, ", ") + ") and their fields: " + string(ob) + "\n")
 	b.WriteString("Current state:\n" + string(sb) + "\n---")
 	return b.String()

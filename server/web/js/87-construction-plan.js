@@ -572,6 +572,8 @@ function cxOpPlain(op, asmId) {
     case "SetProduct": return "Product for " + comp(op.componentId) + ": " + op.productId;
     case "RemoveComponent": return "Remove " + comp(op.componentId);
     case "ProposeDecision": return "Propose choosing: " + op.title;
+    case "AddProfiledPart": return "Custom part" + (a ? " in “" + a.name + "”" : "") + ": " + op.name + (op.replaces ? " (instead of " + comp(op.replaces) + ")" : "");
+    case "SetProfile": return "Reshape " + comp(op.componentId);
     default: return op.op;
   }
 }
@@ -709,6 +711,8 @@ function cxProposalBody(changes, key) {
       case "CreateVariant": { const e = asmEntry(op.newAssemblyId); e.isNew = true; e.name = op.name || e.name; e.summary = op.summary || e.summary; break; }
       case "SetAssemblyText": { const e = asmEntry(ch.assemblyId || cx.activeAssembly); if (op.name && op.name !== e.name) { e.renamed = !e.isNew; e.from = e.name; e.name = op.name; } if (op.summary) e.summary = op.summary; break; }
       case "SetJunctionStrategy": { const e = asmEntry(ch.assemblyId || cx.activeAssembly); e.strategy = op.strategy; e.bits.push("Flashing: " + ((CX_PLAIN_STRAT[op.strategy] || {}).label || op.strategy)); break; }
+      case "AddProfiledPart": { const e = asmEntry(ch.assemblyId || cx.activeAssembly); e.bits.push("Custom part: " + op.name + (op.replaces ? " — instead of the " + (((v.assemblies[e.id] || {}).components || []).find((c) => c.id === op.replaces) || {}).name : "")); break; }
+      case "SetProfile": { const e = asmEntry(ch.assemblyId || cx.activeAssembly); const c = (((v.assemblies[e.id] || {}).components || []).find((x) => x.id === op.componentId) || {}); e.bits.push("Reshaped: " + (c.name || "a custom part")); break; }
       case "SetWallCondition": { const e = asmEntry(ch.assemblyId || cx.activeAssembly); e.wall = op.value; e.bits.push("Wall: " + (({ "solid-bonded": "solid brick", cavity: "cavity wall" })[op.value] || op.value)); break; }
       default: other.push(cxOpPlain(op, ch.assemblyId));
     }
@@ -1157,8 +1161,7 @@ function cxLabelledFrame(title) {
   g.fillStyle = "#f3f2ee"; g.fillRect(0, 0, W, H);
   g.drawImage(src, 0, 0);
   // the same callouts the page shows: a dot on the part, a line, the name in a column
-  const a = cxAsm(), names = new Map();
-  for (const [role, name] of CX_PART_LABELS) { const comp = (a.components || []).find((x) => (x.role || "").startsWith(role)); if (comp) names.set(comp.id, name); }
+  const a = cxAsm(), names = new Map(cxLabelTargets(a));
   const anchors = cx.renderer.labelAnchors([...names.keys()]);
   const shown = [];
   for (const [id, name] of names) { const wp = anchors[id], p = wp && cx.renderer.toScreen(wp); if (p) shown.push({ name, x: p.x * k, y: p.y * k, side: p.x * k < W / 2 ? "l" : "r" }); }

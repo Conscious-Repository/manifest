@@ -324,6 +324,15 @@ type IRFacts struct {
 	WallTop        float64        `json:"wallTopMm"`
 	CavityWidth    float64        `json:"cavityWidthMm"`
 	Inapplicable   []string       `json:"inapplicable"`
+	WallCuts       []WallCut      `json:"wallCuts,omitempty"`
+}
+
+// WallCut is a profiled part let into the outer wythe.
+type WallCut struct {
+	Component string  `json:"component"`
+	Depth     float64 `json:"depthMm"`
+	Height    float64 `json:"heightMm"`
+	Above     float64 `json:"aboveRoofMm"` // band bottom above the junction datum
 }
 
 type FastenerFact struct {
@@ -723,6 +732,7 @@ type junctionGeom struct {
 	embed      float64
 	twZ        float64 // through-wall bed joint height
 	twTh       float64
+	datum      float64 // profiled parts' v = 0: the roof top at the wall (z, or w at a sidewall)
 }
 
 func (c *compiler) flashings(support float64, g sheetGeom) {
@@ -765,6 +775,13 @@ func (c *compiler) flashings(support float64, g sheetGeom) {
 		}
 	}
 	c.jg = jg
+	switch {
+	case f.orient == "sidewall" && g.ok:
+		c.jg.datum = g.crestTop
+	default:
+		c.jg.datum = support / cosT
+	}
+	defer c.profiledParts(g)
 	cf := c.a.firstOf(TypeCounterflashing)
 	tw := c.a.firstOf(TypeThroughWall)
 	if cf != nil && c.active(cf) && jg.ok {

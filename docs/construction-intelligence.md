@@ -150,6 +150,29 @@ sources). Autonomous web acquisition is not implemented (no search provider)
 and is reported unavailable; PDF/OCR page extraction is not bundled (PDFs are
 retained; excerpts are requested). Tests use a synthetic fixture adapter.
 
+## Custom parts (profiled flashing)
+
+For details the template's fixed parts can't show, a part may be drawn by
+its cross-section (`construction/profile.go`): `AddProfiledPart
+{newComponentId, name, thickness, points, replaces?}` and `SetProfile`.
+- **Typed, bounded, no scripts:** 2–32 `[u, v]` points (mm) and a thickness;
+  the only vertex list a component may carry.
+- **One datum:** u out from the wall face (negative = into the brick), v up
+  from the roof top where it meets the wall; the brief lists every part's
+  current sizes so a profile can line up with them.
+- **Refused with the reason and the place:** crossings (which segments,
+  where), closed hems (> 165° folds), points under 1 mm apart, outside the
+  junction.
+- **Measured into issues:** a lap over the base flashing's upstand
+  (`custom-over-upstand`, ≥ 25 mm illustrative), a cut into the outer
+  wythe (`masonry.custom-cut`, the wythe is split to receive it, at least a
+  joint high) and a cut past it (`masonry.custom-cut.too-deep`); a part that
+  touches nothing is the existing blocking `geometry.disconnected`.
+- `replaces` sets a fixed part inapplicable (reversible). This follows how
+  CAD generation is made reliable: the model writes a small typed program,
+  anchored to datums, a deterministic kernel checks and measures it, and a
+  vision check ("Check it against the drawings") closes the loop.
+
 ## Catalog and substitution
 
 Every problem starts with generic material families whose technical

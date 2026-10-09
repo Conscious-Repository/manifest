@@ -369,6 +369,16 @@ const CX_PART_LABELS = [
   ["structure:finish-deck", "Plywood deck"],
   ["structure:exposed-rafters", "Steel rafters"],
 ];
+// what gets a name on the model: the fixed parts by role, custom parts by their own name
+function cxLabelTargets(a) {
+  const out = [];
+  for (const [role, name] of CX_PART_LABELS) {
+    const c = (a.components || []).find((x) => (x.role || "").startsWith(role) && x.applicability !== "inapplicable");
+    if (c) out.push([c.id, name]);
+  }
+  (a.components || []).forEach((c) => { if (c.type === "profiled-flashing" && c.applicability !== "inapplicable") out.push([c.id, c.name]); });
+  return out;
+}
 let cxLabelsOn = (() => { try { return localStorage.getItem("cx.labels") !== "0"; } catch (e) { return true; } })();
 // Callouts: a dot on each part, a leader line, and the name in a column at
 // the nearer edge of the view, spaced so names never overlap.
@@ -385,11 +395,7 @@ function cxLabelsUpdate(host) {
   const svg = layer.querySelector("svg");
   const a = cxAsm();
   if (!a) { layer.querySelectorAll(".cx-label-tag").forEach((t) => t.remove()); svg.replaceChildren(); return; }
-  const names = new Map();
-  for (const [role, name] of CX_PART_LABELS) {
-    const c = (a.components || []).find((x) => (x.role || "").startsWith(role));
-    if (c) names.set(c.id, name);
-  }
+  const names = new Map(cxLabelTargets(a));
   // while the view moves, carry the last anchors along; once it settles,
   // find anchors again on what is actually visible
   clearTimeout(cxLabelsTimer);
@@ -406,11 +412,10 @@ function cxLabelsDraw(host) {
   if (!layer || !a || !cxLabelsOn) return;
   const w = host.clientWidth, h = host.clientHeight, gap = cxPhone() ? 26 : 24;
   const shown = [];
-  for (const [role, name] of CX_PART_LABELS) {
-    const c = (a.components || []).find((x) => (x.role || "").startsWith(role));
-    const wp = c && cxLabelAnchors[c.id];
+  for (const [id, name] of cxLabelTargets(a)) {
+    const wp = cxLabelAnchors[id];
     const p = wp && cx.renderer.toScreen(wp);
-    if (p) shown.push({ id: c.id, name, x: p.x, y: p.y, side: p.x < w / 2 ? "l" : "r" });
+    if (p) shown.push({ id, name, x: p.x, y: p.y, side: p.x < w / 2 ? "l" : "r" });
   }
   // stack each column top to bottom in anchor order
   for (const side of ["l", "r"]) {

@@ -148,6 +148,11 @@ func ValidateAssembly(a *Assembly, problemID string, st *State) []string {
 				out = append(out, f+": shape parameter "+name+" is not allowlisted")
 			}
 		}
+		if shape == "bent-profile" {
+			out = append(out, checkProfile(f+".profile", c.Shape.Profile)...)
+		} else if len(c.Shape.Profile) > 0 {
+			out = append(out, f+": only a profiled part carries a profile")
+		}
 		if c.Layer != nil {
 			if !layerTypes[c.Type] {
 				out = append(out, f+": a "+c.Type+" is not a roof-stack layer")
@@ -465,11 +470,26 @@ func Evaluate(in ruleInput) []finding {
 	}
 	// laps
 	for _, l := range ir.Facts.Laps {
-		min := map[string]float64{"apron-over-sheet": 75, "counter-over-upstand": 25, "drip-over-upstand": 25}[l.Kind]
+		min := map[string]float64{"apron-over-sheet": 75, "counter-over-upstand": 25, "drip-over-upstand": 25, "custom-over-upstand": 25}[l.Kind]
 		if l.OK && l.Lap < min {
 			add(finding{key: "flashing.lap." + l.Kind, target: l.Over, severity: SevCritical, category: "moisture",
 				message:  fmt.Sprintf("%s lap %.1f mm is below the illustrative %g mm check; confirm against the manufacturer detail.", l.Kind, l.Lap, min),
 				observed: fmt.Sprintf("%.1f mm", l.Lap), expected: fmt.Sprintf("≥ %g mm (illustrative, unsourced)", min), comps: []string{l.Over, l.Under}, inputs: []string{"lap geometry"}})
+		}
+	}
+	// a profiled part cut into the brick: say how much, and where it can't go
+	for _, w := range ir.Facts.WallCuts {
+		outer := 0.0
+		if o := a.byRole("masonry:outer"); o != nil {
+			outer = o.param("thickness")
+		}
+		add(finding{key: "masonry.custom-cut", target: w.Component, severity: SevCritical, category: "masonry",
+			message:  fmt.Sprintf("This part is cut %.0f mm into the brick over a %.0f mm band starting %.0f mm above the roof: masonry condition, which joint, and permissible cutting need review.", w.Depth, w.Height, w.Above),
+			observed: fmt.Sprintf("%.0f mm deep, %.0f mm high", w.Depth, w.Height), expected: "a sound bed joint at that height; mason review", specialist: true, comps: []string{w.Component}, inputs: []string{"profile"}})
+		if outer > 0 && w.Depth > outer {
+			add(finding{key: "masonry.custom-cut.too-deep", target: w.Component, severity: SevCritical, category: "masonry",
+				message:  fmt.Sprintf("This part reaches %.0f mm into the wall, past the %.0f mm outer brick layer: the model only cuts the outer layer.", w.Depth, outer),
+				observed: fmt.Sprintf("%.0f mm", w.Depth), expected: fmt.Sprintf("≤ %.0f mm", outer), comps: []string{w.Component}, inputs: []string{"profile"}})
 		}
 	}
 	// attachment and structure

@@ -375,6 +375,9 @@ type LayerSpec struct {
 type Shape struct {
 	Kind   string              `json:"kind"`
 	Params map[string]Quantity `json:"params"`
+	// Profile is a bent-profile part's section, [u, v] mm from the junction
+	// datum (profile.go). No other shape kind carries points.
+	Profile [][2]float64 `json:"profile,omitempty"`
 }
 
 // Transform is a supported rigid offset: translation (mm) and a unit
