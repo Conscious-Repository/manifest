@@ -106,6 +106,7 @@ const THEMES={default:{},dark:{theme:'jarvis-og',colorScheme:'dark'},jarvis:{the
    // an outage: Now keeps the last list and says so; it never claims all clear
    await down(stub,true);await refresh();
    assert.equal(await page.locator('#chatNow .chat-now-note').textContent(),"Couldn't refresh chats · this is the last list");
+   assert.equal(await page.locator('#chatNow .chat-now-row').count(),8,'the last list stays');
    await down(stub,false);await refresh();
    assert.equal(await page.locator('#chatNow .chat-now-note').count(),0,'the note leaves with the outage');
    // a Now row goes to its conversation and closes the list

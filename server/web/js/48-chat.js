@@ -3345,7 +3345,10 @@ function chatTermFind(id) { return chatTermSessions.find((s) => s.id === id) || 
 async function loadChatTermSessions(quiet) {
   ensureTerminalEvents();
   let d;
-  try { d = await (await fetch("/api/terminal/sessions")).json(); } catch (e) { return false; }
+  // an outage's error body is not an empty registry: the last good rows stay
+  // (the rail and the phone's Now said "the last list" while every Codex and
+  // Claude row vanished, 2026-10-09)
+  try { const res = await fetch("/api/terminal/sessions"); if (!res.ok) return false; d = await res.json(); } catch (e) { return false; }
   return chatApplyTerminalList(d, quiet);
 }
 
