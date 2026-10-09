@@ -263,12 +263,12 @@ async function cxListInto(host, subject) {
   list.append(el("p", "cx-empty", "Loading…"));
   page.append(list);
   host.append(page);
-  let session = null;
+  let session = null, rows = [];
   try {
     session = await cxSession(cxBase(subject));
     const d = await cxApi("GET", cxBase(subject), "/problems");
     list.innerHTML = "";
-    const rows = (d && d.problems) || [];
+    rows = (d && d.problems) || [];
     if (!rows.length) list.append(el("p", "cx-empty", "No construction problems yet."));
     rows.forEach((row) => list.append(cxProblemRow(subject, row)));
     if (session.subject && session.subject.title) head.querySelector(".cx-list-title").textContent = (session.subject.title || "") + " · Construction";
@@ -277,7 +277,10 @@ async function cxListInto(host, subject) {
     list.append(cxRemoteOff(e) ? cxRemoteNotice(e) : el("p", "cx-empty", e.status === 503 ? "Construction is not enabled on this server." : "Couldn't load construction problems: " + e.message));
     return;
   }
-  page.append(cxCreateForm(subject, session));
+  const form = cxCreateForm(subject, session);
+  // the pilot title is offered only while there is nothing yet
+  if (rows.length) { const t = form.querySelector('[aria-label="Problem title"]'); if (t && t.value === CX_PILOT_TITLE) t.value = ""; }
+  page.append(form);
 }
 
 function cxScopeOptions(subject) {
@@ -562,6 +565,7 @@ const cxResearchTabs = [["problem", "Problem", (b) => cxPaintProblemTab(b)]];
 function cxPaintResearch(body) {
   body.innerHTML = "";
   const tabs = el("div", "cx-tabs");
+  tabs.setAttribute("role", "tablist");
   tabs.setAttribute("role", "tablist");
   const inner = el("div", "cx-tab-body");
   if (!cxResearchTabs.some(([k]) => k === cx.tab)) cx.tab = cxResearchTabs[0][0];

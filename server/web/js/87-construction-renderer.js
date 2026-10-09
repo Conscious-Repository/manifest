@@ -186,8 +186,21 @@ async function cxRendererCreate(host, opts) {
     if (!panning && !down.pivoted) { down.pivoted = true; setPivot(pivotFor(down.x, down.y)); }
     if (panning) pan(dx, dy); else orbit(dx, dy);
   });
+  let lastTap = null;
   const up = (e) => {
     ptrs.delete(e.pointerId);
+    // a touch double-tap zooms in on the spot (iOS sends no dblclick)
+    if (e.pointerType === "touch" && down && down.moved < 8 && ptrs.size === 0 && e.type === "pointerup") {
+      const now = performance.now();
+      if (lastTap && now - lastTap.t < 320 && Math.hypot(e.clientX - lastTap.x, e.clientY - lastTap.y) < 30) {
+        lastTap = null;
+        const pt = pointUnder(e.clientX, e.clientY);
+        if (pt) flyTo(pt, Math.max(0.08, ctl.radius * 0.45));
+        down = null;
+        return;
+      }
+      lastTap = { t: now, x: e.clientX, y: e.clientY };
+    }
     if (down && down.moved < 5 && ptrs.size === 0 && e.type === "pointerup") pickAt(e.clientX, e.clientY);
     if (ptrs.size === 0) down = null;
   };

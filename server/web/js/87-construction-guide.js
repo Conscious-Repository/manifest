@@ -107,7 +107,10 @@ function cxIssuePlain(is) {
 }
 
 // ---- the guide ------------------------------------------------------------------
-let cxGuideOpen = (() => { try { return localStorage.getItem("cx.guide.open") !== "0"; } catch (e) { return true; } })();
+// open by default on a wide screen, folded to its "Next:" line on a phone,
+// until the owner chooses
+const cxPhone = () => matchMedia("(max-width: 860px)").matches;
+let cxGuideOpen = (() => { try { const v = localStorage.getItem("cx.guide.open"); return v === null ? !cxPhone() : v !== "0"; } catch (e) { return !cxPhone(); } })();
 function cxGo(pane, tab) {
   cx.pane = pane;
   if (tab) cx.tab = tab;
@@ -260,5 +263,85 @@ if (typeof cxIssueRow === "function") {
     const plain = cxIssuePlain(is);
     if (plain && row) row.append(el("div", "cx-issue-plain", "What to do: " + plain));
     return row;
+  };
+}
+
+// ---- plain words for the lists and the header --------------------------------------
+const CX_PLAIN_LIFECYCLE = { draft: "Draft", investigating: "Researching", alternatives: "Comparing options", "owner-selected": "Option chosen", archived: "Archived" };
+const CX_PLAIN_FACT_PROV = { "user-assumption": "we believe", "verified-fact": "checked", "engineering-inference": "reasoned", "directly-applicable-guidance": "from a code or guide", "adapted-precedent": "from a similar case", unknown: "not known" };
+const cxPlural = (n, one, many) => n + " " + (n === 1 ? one : many);
+
+cxProblemRow = function (subject, row) {
+  const a = el("a", "cx-row");
+  a.href = cxHref(subject, row.id);
+  a.append(el("span", "cx-row-title", row.title || row.id));
+  const meta = [CX_PLAIN_LIFECYCLE[row.lifecycle] || row.lifecycle || "", row.alternatives ? cxPlural(row.alternatives, "option", "options") : "", row.inputs ? cxPlural(row.inputs, "document", "documents") : ""].filter(Boolean).join(" · ");
+  a.append(el("span", "cx-row-meta", row.error ? "unreadable: " + row.error : meta));
+  return a;
+};
+
+{
+  const base = cxPaintHeader;
+  cxPaintHeader = function (wb) {
+    base(wb);
+    const m = wb.querySelector(".cx-head-meta"), v = cx.view;
+    if (m && v) {
+      const n = (v.problem.alternatives || []).length;
+      m.textContent = (CX_PLAIN_LIFECYCLE[v.problem.lifecycle] || v.problem.lifecycle) + (n ? " · " + cxPlural(n, "option", "options") : "") + (v.readOnly ? " · read-only (newer format)" : "");
+      m.title = "Revision " + v.generation + " — every change is kept in History";
+    }
+    // facts: the source in plain words (the taxonomy stays in the tooltip)
+    wb.querySelectorAll(".cx-fact .cx-chip").forEach((c) => { const k = c.textContent; if (CX_PLAIN_FACT_PROV[k]) { c.title = k; c.textContent = CX_PLAIN_FACT_PROV[k]; } });
+  };
+}
+{
+  const base = cxPaintResearch;
+  cxPaintResearch = function (body) {
+    base(body);
+    if (body) body.querySelectorAll(".cx-fact .cx-chip").forEach((c) => { const k = c.textContent; if (CX_PLAIN_FACT_PROV[k]) { c.title = k; c.textContent = CX_PLAIN_FACT_PROV[k]; } });
+  };
+}
+
+// ---- the model toolbar on a phone ---------------------------------------------------
+// The views and Rotate/Move stay in reach; everything else folds under "More
+// tools", so the model gets the screen. The hint speaks touch.
+{
+  const base = cxModelToolbar;
+  cxModelToolbar = function () {
+    const tb = base();
+    if (!cxPhone()) return tb;
+    const segs = [...tb.querySelectorAll(":scope > .cx-seg")];
+    const keep = new Set(segs.filter((s) => s.querySelector("[data-drag]") || /Junction/.test(s.textContent)));
+    const more = el("details", "cx-more-tools");
+    more.append(el("summary", "", "More tools"));
+    const inner = el("div", "cx-more-body");
+    [...tb.children].forEach((n) => { if (!keep.has(n) && !n.classList.contains("cx-model-note")) inner.append(n); });
+    more.append(inner);
+    const hint = inner.querySelector(".cx-model-hint");
+    if (hint) { hint.textContent = "One finger rotates (Move: one finger moves) · two fingers pinch to zoom and drag to move · double-tap zooms in on a spot"; tb.append(hint); }
+    tb.append(more);
+    return tb;
+  };
+}
+
+// ---- new problem: pick the Home task by name ------------------------------------------
+{
+  const base = cxCreateForm;
+  cxCreateForm = function (subject, session) {
+    const form = base(subject, session);
+    const task = form.querySelector('input[placeholder^="Linked shared Home task id"]');
+    if (subject.kind === "home" && task) {
+      const id = "cx-home-tasks";
+      task.placeholder = "Linked Home task (start typing its name)";
+      task.setAttribute("list", id);
+      const dl = el("datalist", "");
+      dl.id = id;
+      form.append(dl);
+      fetch("/api/tasks").then((r) => r.ok ? r.json() : null).then((d) => {
+        const rows = ((d && d.rows) || []).filter((r) => r.container && /^home$/i.test(r.container.name) && /^home\//.test(r.id));
+        rows.forEach((r) => { const o = document.createElement("option"); o.value = r.id; o.label = r.text; o.textContent = r.text; dl.append(o); });
+      }).catch(() => {});
+    }
+    return form;
   };
 }
