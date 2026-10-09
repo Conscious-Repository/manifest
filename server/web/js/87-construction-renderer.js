@@ -38,7 +38,7 @@ async function cxRendererCreate(host, opts) {
   canvas.className = "cx-canvas";
   canvas.tabIndex = 0;
   canvas.setAttribute("role", "img");
-  canvas.setAttribute("aria-label", "3D assembly model — drag to rotate (or move, in Move mode), right- or shift-drag to move, scroll or pinch to zoom where you point, double-click to zoom in on a spot, arrows rotate, 1–4 set views, click a part to select it");
+  canvas.setAttribute("aria-label", "3D assembly model — trackpad: two-finger swipe rotates (moves, in Move mode), pinch zooms; mouse: drag rotates (moves, in Move mode), wheel zooms; right- or shift-drag moves; double-click zooms in on a spot; arrows rotate; 1–4 set views; click a part to select it");
   let renderer;
   try {
     renderer = new T.WebGLRenderer({ canvas, antialias: true, alpha: true, preserveDrawingBuffer: true });
@@ -112,7 +112,27 @@ async function cxRendererCreate(host, opts) {
     ray.setFromCamera(new T.Vector2(((cx - r.left) / r.width) * 2 - 1, -((cy - r.top) / r.height) * 2 + 1), camera);
     const n = new T.Vector3(); camera.getWorldDirection(n);
     const out = new T.Vector3();
-    return ray.ray.intersectPlane(new T.Plane().setFromNormalAndCoplanarPoint(n, ctl.target), out) ? out : null;
+    return ray.ray.intersectPlane(new T.Plane().setFromNormalAndCoplanarPoint(n, st.center || ctl.target), out) ? out : null;
+  }
+  // move the pivot to p without moving the camera: the view does not jump,
+  // and rotating then turns around p (orthographic scale kept too)
+  function setPivot(p) {
+    if (!p) return;
+    const pos = camera.position.clone(), off = pos.clone().sub(p), r = off.length();
+    if (r < 1e-6) return;
+    if (camera === ortho) ctl.zoom = ctl.zoom * r / ctl.radius;
+    ctl.target.copy(p); ctl.radius = r;
+    ctl.phi = Math.acos(Math.max(-1, Math.min(1, off.y / r)));
+    ctl.theta = Math.atan2(off.x, off.z);
+    applyCamera();
+  }
+  // the pivot for a rotation that starts at (cx, cy): the part under the
+  // cursor, else the middle of the model — never a point left off to one
+  // side by earlier zooms and moves, which swings the model out of view
+  function pivotFor(cx, cy) {
+    const h = hitAt(cx, cy);
+    if (h) return h.point.clone();
+    return st.center ? st.center.clone() : null;
   }
   // zoom toward what the cursor points at: the target slides toward it by
   // the same factor the distance shrinks, so that point stays under the cursor
@@ -163,6 +183,7 @@ async function cxRendererCreate(host, opts) {
       return;
     }
     const panning = down.button === 1 || down.button === 2 || (dragMode === "pan") !== down.shift;
+    if (!panning && !down.pivoted) { down.pivoted = true; setPivot(pivotFor(down.x, down.y)); }
     if (panning) pan(dx, dy); else orbit(dx, dy);
   });
   const up = (e) => {
@@ -173,10 +194,28 @@ async function cxRendererCreate(host, opts) {
   canvas.addEventListener("pointerup", up);
   canvas.addEventListener("pointercancel", up);
   canvas.addEventListener("contextmenu", (e) => e.preventDefault());
+  // A trackpad pinch arrives as ctrl+wheel; a two-finger swipe as small or
+  // fractional pixel deltas, often with deltaX; a mouse wheel as whole
+  // ~100 px (or line) notches with no deltaX. One gesture keeps the kind its
+  // first event had, so a swipe's momentum never turns into zoom.
+  let gesture = { kind: "", at: 0 };
   canvas.addEventListener("wheel", (e) => {
     e.preventDefault();
-    // a trackpad pinch arrives as ctrl+wheel with small deltas; a mouse wheel in ~100 px notches
-    const k = e.ctrlKey ? 0.01 : 0.0015;
+    const now = performance.now();
+    if (now - gesture.at > 220 || (e.ctrlKey && gesture.kind !== "pinch")) {
+      const swipe = e.deltaMode === 0 && (e.deltaX !== 0 || Math.abs(e.deltaY) < 40 || !Number.isInteger(e.deltaY));
+      gesture = { kind: e.ctrlKey ? "pinch" : swipe ? "swipe" : "wheel", at: now, pivoted: false };
+    }
+    gesture.at = now;
+    if (gesture.kind === "swipe") {
+      // fingers move the model as a drag would; Move mode (or shift) pans instead
+      const dx = -e.deltaX, dy = -e.deltaY;
+      if ((dragMode === "pan") !== e.shiftKey) { pan(dx, dy); return; }
+      if (!gesture.pivoted) { gesture.pivoted = true; setPivot(pivotFor(e.clientX, e.clientY)); }
+      orbit(dx * 0.8, dy * 0.8);
+      return;
+    }
+    const k = gesture.kind === "pinch" ? 0.01 : 0.0015;
     const dy = Math.max(-120, Math.min(120, e.deltaMode === 1 ? e.deltaY * 33 : e.deltaY));
     zoomAt(Math.exp(dy * k), e.clientX, e.clientY);
   }, { passive: false });

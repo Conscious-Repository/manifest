@@ -976,7 +976,7 @@ function cxModelToolbar() {
   bms.onchange = () => { const b = (cx.vs.bookmarks || [])[Number(bms.value)]; if (b && cx.renderer) cx.renderer.setCamera(b.camera); bms.value = ""; };
   const sec2d = cxToolBtn("2D section", "Show the true section drawing of this revision", () => cxToggleSection2D(!cx.section2D));
   tb.append(mode, proj, views, drag, sec, secKind, secOff, expLab, water, att, vis, measure, bm, bms, sec2d,
-    el("span", "cx-model-hint", "Scroll or pinch zooms where you point · drag rotates (Move: drag pans) · right-drag moves · double-click zooms in on a spot"),
+    el("span", "cx-model-hint", "Trackpad: two-finger swipe rotates, pinch zooms · Mouse: drag rotates, wheel zooms · Move mode moves instead of rotating · double-click zooms in on a spot · it turns around the part under your pointer"),
     el("span", "cx-model-note"));
   return tb;
 }
