@@ -296,7 +296,7 @@ func (s *Store) applyReContract(p Proposal) error {
 			if existingMilestone(list.Stages, m.Rock, m.Name) {
 				continue
 			}
-			t := &tasks.Task{Text: strings.TrimSpace(m.Name)}
+			t := &tasks.Task{Text: milestoneTitle(m.Name)}
 			t.Fields = append(t.Fields, tasks.Field{Key: "milestone", Value: ""})
 			list.Append(t, strings.TrimSpace(m.Rock))
 		}
@@ -335,6 +335,19 @@ func (s *Store) applyReContract(p Proposal) error {
 // child with this text (case-insensitive). Rock is matched by id or text, the
 // same way PropertyTaskList.Append resolves a parent, so the check and the
 // write always agree on which rock they mean.
+// milestoneTitle — the extractor names a new milestone by the node id it
+// means ("masonry-tuck-point-repair"), and that slug became the line people
+// read (743 N Euclid, 2026-10-10). A bare slug reads as words; the node id
+// is unchanged, since it slugs to the same thing.
+func milestoneTitle(name string) string {
+	name = strings.TrimSpace(name)
+	if name == "" || strings.ContainsAny(name, " \t") || !strings.ContainsAny(name, "-_") {
+		return name
+	}
+	words := strings.Join(strings.FieldsFunc(name, func(r rune) bool { return r == '-' || r == '_' }), " ")
+	return strings.ToUpper(words[:1]) + words[1:]
+}
+
 func existingMilestone(stages []realestate.WorkStage, rock, name string) bool {
 	rock, name = strings.TrimSpace(rock), strings.TrimSpace(name)
 	if name == "" {
@@ -342,7 +355,7 @@ func existingMilestone(stages []realestate.WorkStage, rock, name string) bool {
 	}
 	match := func(kids []*realestate.WorkNode) bool {
 		for _, k := range kids {
-			if k.Task != nil && strings.EqualFold(strings.TrimSpace(k.Task.Text), name) {
+			if k.Task != nil && (strings.EqualFold(strings.TrimSpace(k.Task.Text), name) || record.Slug(k.Task.Text, 40) == record.Slug(name, 40)) {
 				return true
 			}
 		}

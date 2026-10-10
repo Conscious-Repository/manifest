@@ -18,3 +18,17 @@ func TestReTaskOwnerParty(t *testing.T) {
 		t.Errorf("unset party: got %q, want unassigned", got)
 	}
 }
+
+// A milestone the extractor names by its slug reads as words, and keeps its
+// node id; a written name is left alone.
+func TestMilestoneTitle(t *testing.T) {
+	for in, want := range map[string]string{
+		"masonry-tuck-point-repair":   "Masonry tuck point repair",
+		"Masonry & tuck-point repair": "Masonry & tuck-point repair",
+		"electrical":                  "electrical",
+	} {
+		if got := milestoneTitle(in); got != want {
+			t.Errorf("milestoneTitle(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
