@@ -302,7 +302,7 @@ func (s *Store) applyReContract(p Proposal) error {
 		}
 		list.Stages = realestate.ParseWork(strings.Split(strings.TrimRight(realestate.EmitWork(list.Stages), "\n"), "\n"))
 		for _, tk := range work.tasks {
-			t := &tasks.Task{Text: strings.TrimSpace(tk.Text), Added: today, Owner: strings.TrimSpace(tk.Owner)}
+			t := &tasks.Task{Text: strings.TrimSpace(tk.Text), Added: today, Owner: s.reTaskOwner(tk.Owner)}
 			if tk.Decision {
 				t.Fields = append(t.Fields, tasks.Field{Key: "decision", Value: ""})
 			}

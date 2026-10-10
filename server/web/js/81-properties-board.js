@@ -475,6 +475,7 @@ function assigneeName(owner) {
   if (mineOwner(owner)) return "you";
   const c = reAssignee(owner);
   if (c) return c.name + (c.trade ? " (" + c.trade + ")" : "");
+  const a = (propTodosMeta && propTodosMeta.assignees) || {};
   const p = (a.aion || []).find((e) => e.initials === owner);
   if (p) return p.name;
   return owner;

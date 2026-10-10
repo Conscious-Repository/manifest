@@ -2,6 +2,7 @@ package approvals
 
 import (
 	"fmt"
+	"strings"
 
 	"manifest/aion"
 )
@@ -30,6 +31,26 @@ func ReBacklogPathAllowed(rel string) bool { return rel == ReBacklogPath }
 func (s *Store) WithReCapability(name string) *Store {
 	s.reCap = name
 	return s
+}
+
+// WithReOwnerParty names who decides for the property owner on contractor
+// documents. A bid says "owner to select the shingle color"; the extractor
+// copies that role word into the task's owner, and a role is not a person —
+// the owner wanted those tasks on Olga (2026-10-10).
+func (s *Store) WithReOwnerParty(slug string) *Store {
+	s.reOwnerParty = strings.TrimSpace(slug)
+	return s
+}
+
+// reTaskOwner resolves an extracted task owner: the property-owner role words
+// become the configured party; anything else is kept as written.
+func (s *Store) reTaskOwner(owner string) string {
+	owner = strings.TrimSpace(owner)
+	switch strings.ToLower(owner) {
+	case "owner", "property owner", "homeowner", "home owner", "client", "customer", "buyer":
+		return s.reOwnerParty
+	}
+	return owner
 }
 
 // applyReBacklog appends exactly one rendered item line to the RE decision

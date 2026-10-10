@@ -95,6 +95,7 @@ type Store struct {
 	vw                *vaultwriter.Writer // for guarded vault record writes (aion/re appends); nil disables them
 	aionCap           string              // approved-proposal capability for aion applies; "" disables them
 	reCap             string              // approved-proposal capability for real-estate applies; "" disables them
+	reOwnerParty      string              // who a bid's "property owner" tasks go to (a roster slug); "" leaves them unassigned
 	goalsCap          string              // approved-proposal capability for goals placements; "" disables them
 	noteCap           string              // approved-proposal capability for log/ dated-note creates + appends; "" refuses them once vw is wired
 }

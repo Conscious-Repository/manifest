@@ -64,6 +64,10 @@ type Config struct {
 	// stage 4): a todo whose [owner::] is empty, "me", or contains these
 	// initials is mine. Default "BA".
 	OwnerInitials string `json:"ownerInitials"`
+	// ReOwnerParty is who a contractor document's "property owner" tasks and
+	// decisions go to (a real-estate roster slug, e.g. "olga-sobkiv"). Empty
+	// leaves them unassigned (yours).
+	ReOwnerParty string `json:"reOwnerParty"`
 	// Port is the local port the web UI is served on.
 	Port int `json:"port"`
 	// PortalPort is the local port the standalone AION portal is served on —
