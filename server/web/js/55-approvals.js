@@ -777,6 +777,19 @@ function apprMoney(v) { return parseFloat(String(v).replace(/[$,\s]/g, "")) || 0
 // apprDeslug is the immediate label for a slug the registry has not answered
 // for yet (it resolves async; the node upgrades in place).
 function apprDeslug(v) { return String(v || "").replace(/^property\//, "").replace(/-/g, " "); }
+// a name a model wrote as a slug ("masonry-tuck-point-repair") reads as words
+function apprHumanName(v) {
+  const t = String(v || "").trim();
+  if (!/^[a-z0-9]+(-[a-z0-9]+)+$/.test(t)) return t;
+  const w = t.replace(/-/g, " ");
+  return w.charAt(0).toUpperCase() + w.slice(1);
+}
+// 2026-09-29 → Sep 29, 2026; anything else as written
+function apprDate(v) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(v || "").trim());
+  if (!m) return String(v || "");
+  return new Date(+m[1], +m[2] - 1, +m[3]).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
+}
 
 // buildReContractEditor — the intake card (overhaul §5, redesigned per
 // FEED-CONTRACT-CARD 1b): money is the headline AND the input; the split
@@ -822,6 +835,7 @@ function buildReContractEditor(a, evidence) {
   totalIn.oninput = () => { p.total = apprMoney(totalIn.value); dirty(); };
   totalIn.onblur = () => { totalIn.value = fmtMoney(p.total); };
   totalCol.append(totalIn);
+  (p.new_milestones || []).forEach((m) => { m.name = apprHumanName(m.name); });
   const ident = el("div", "re-intake-ident");
   ident.append(el("div", "re-intake-name", p.name || a.action));
   const metaBits = [];
@@ -829,8 +843,11 @@ function buildReContractEditor(a, evidence) {
   else if (p.contractor_create) metaBits.push(el("span", "", p.contractor_create));
   metaBits.push(tie(el("span"), propsPhrase));
   if (p.kind) metaBits.push(el("span", "", p.kind));
-  if (p.date) metaBits.push(el("span", "", p.date));
-  if (p.expires) metaBits.push(el("span", "", "expires " + p.expires));
+  if (p.date) metaBits.push(el("span", "", apprDate(p.date)));
+  if (p.expires) {
+    const days = /^(\d+)\s*days?\b/i.exec(p.expires);
+    metaBits.push(el("span", "", days ? "valid " + days[1] + " days" : "expires " + apprDate(p.expires)));
+  }
   const meta = el("div", "re-intake-meta");
   metaBits.forEach((b, i) => { if (i) meta.append(el("span", "re-intake-dot", "·")); meta.append(b); });
   ident.append(meta);
@@ -874,9 +891,9 @@ function buildReContractEditor(a, evidence) {
     splitSec.append(row);
     // one shared reasoning (an evenly-split combined scope) is one line, not
     // the same paragraph under every property
-    if (al.reason && !sharedReason) splitSec.append(el("div", "re-intake-reason", "· " + al.reason));
+    if (al.reason && !sharedReason) splitSec.append(el("div", "re-intake-reason", al.reason));
   });
-  if (sharedReason) splitSec.append(el("div", "re-intake-reason", "· " + sharedReason));
+  if (sharedReason) splitSec.append(el("div", "re-intake-reason", sharedReason));
   box.append(splitSec);
 
   // ---- 3. the consequence: what Confirm writes, in one list ----
@@ -903,15 +920,17 @@ function buildReContractEditor(a, evidence) {
   if (!p.contractor && p.contractor_create) {
     writeRow("＋", "new", () => p.contractor_create + " — contractor record", { id: a.id, kind: "contractor" });
   }
+  // one property: say it once (in the header), not on every line
+  const oneProp = new Set([...allocs.map((al) => al.property), ...(p.tasks || []).map((t) => t.property), ...(p.new_milestones || []).map((m) => m.property)]).size <= 1;
   (p.new_milestones || []).forEach((m, mi) => {
-    writeRow("＋", "new", () => m.name + " — milestone under " + names.rock(m.rock) + ", " + names.prop(m.property),
+    writeRow("＋", "new", () => m.name + " — new milestone under " + names.rock(m.rock) + (oneProp ? "" : ", " + names.prop(m.property)),
       { id: a.id, kind: "milestone", i: mi });
   });
   (p.tasks || []).forEach((t, ti) => {
     writeRow(t.decision ? "◇" : "○", t.decision ? "decision" : "task-" + (t.owner ? t.owner : "you"),
-      () => t.text + " → " + names.prop(t.property), { id: a.id, kind: "task", i: ti });
+      () => t.text + (oneProp ? "" : " → " + names.prop(t.property)), { id: a.id, kind: "task", i: ti });
   });
-  writeRow("＋", p.kind || "contract", () => (p.name || "this contract") + " — " + (p.kind || "contract") + " record",
+  writeRow("＋", p.kind || "contract", () => "Saves this " + (p.kind || "contract") + " on record",
     { id: a.id, kind: "contract" });
   const recordCount = () => rows.length;
   const ledgerText = tie(el("span", "re-intake-write-text"),
@@ -1579,7 +1598,7 @@ function apprInspectorInto(host) {
   }
 
   if (removable) {
-    const del = el("button", "aion-insp-del", "don't write this");
+    const del = el("button", "aion-insp-del", "Leave this out");
     del.onclick = () => {
       if (del.classList.contains("armed")) {
         if (removable() === false) return;
@@ -1588,7 +1607,7 @@ function apprInspectorInto(host) {
       }
       del.classList.add("armed");
       del.textContent = "remove from the proposal?";
-      setTimeout(() => { del.classList.remove("armed"); del.textContent = "don't write this"; }, 2500);
+      setTimeout(() => { del.classList.remove("armed"); del.textContent = "Leave this out"; }, 2500);
     };
     host.append(del);
   }
