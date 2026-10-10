@@ -304,10 +304,15 @@ async function liberPaintList(host, current) {
     a.href = t.kind === 'task' ? '#/chat/task/' + encodeURIComponent(t.taskId) : '#/chat/' + t.id;
     const top = el('div', 'liber-row-top');
     top.append(el('span', 'liber-row-title', (t.kind === 'task' ? 'About: ' : '') + (t.title || 'Conversation')), el('span', 'liber-row-when', liberWhen(t.updated)));
-    a.append(top, el('div', 'liber-row-last', t.busy ? 'Liber is answering…' : t.last));
+    a.append(top, el('div', 'liber-row-last', t.busy ? 'Liber is answering…' : liberPlain(t.last)));
     if (t.pending) a.append(el('span', 'liber-badge', t.pending + (t.pending === 1 ? ' waiting for you' : ' waiting for you')));
     rows.append(a);
   }
+}
+
+// A preview line reads as words: no table bars, bold marks or link syntax.
+function liberPlain(s) {
+  return String(s || '').replace(/\[([^\]]+)\]\([^)]+\)/g, '$1').replace(/\*\*|`/g, '').replace(/\s*\|[\s|:-]*/g, ' · ').replace(/^ · | · $/g, '').replace(/\s+/g, ' ').trim();
 }
 
 function liberPaintEmptyPane(pane) {
@@ -336,7 +341,7 @@ function liberPaintThread(pane, which) {
     th = next; title.textContent = th.kind === 'task' ? 'About: ' + (th.taskTitle || 'a task') : (th.title || 'Conversation');
     if (th.kind === 'task') head.querySelector('.liber-task-link')?.setAttribute('aria-label', 'Open the task “' + (th.taskTitle || 'this task') + '”');
     liberMessages(msgs, th, onThread);
-    if (atBottom) liberScrollEnd();
+    if (atBottom) liberScrollEnd(true);
   };
   const composer = liberComposer('Message Liber', async (text, images) => {
     const ref = th ? liberRef(th) : which || {};
@@ -351,8 +356,10 @@ function liberPaintThread(pane, which) {
   liber.stop = liberWatch(which, onThread);
 }
 
-function liberNearBottom() { const s = document.getElementById('contentScroll'); return !s || s.scrollHeight - s.scrollTop - s.clientHeight < 160; }
-function liberScrollEnd(force) { const s = document.getElementById('contentScroll'); if (s && (force || liberNearBottom())) requestAnimationFrame(() => { s.scrollTop = s.scrollHeight; }); }
+// The conversation scrolls inside its own box; the composer sits below it.
+function liberScroller() { return document.querySelector('#chatView .liber-msgs'); }
+function liberNearBottom() { const s = liberScroller(); return !s || s.scrollHeight - s.scrollTop - s.clientHeight < 160; }
+function liberScrollEnd(force) { const s = liberScroller(); if (s && (force || liberNearBottom())) requestAnimationFrame(() => { s.scrollTop = s.scrollHeight; }); }
 
 // ---- the task section ----
 function liberTaskSection(taskId, shared) {

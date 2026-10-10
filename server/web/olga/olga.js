@@ -249,9 +249,11 @@ async function flushDay(){for(const p of [...pendingDaySaves.values()]){clearTim
 window.addEventListener('beforeunload',e=>{if(pendingDaySaves.size||els.saveState.textContent==='saving'){e.preventDefault();e.returnValue='';}});
 async function olgaRoute(){
  try{await flushDay();}catch(e){return;}
+ // going to another screen (the menu, Back) closes an open dialog; unsaved edits ask first
+ if(!els.pickerModal.hidden){if(olgaPanelDirty&&olgaPanelDirty()){olgaGuardClose(new Event('route'));return;}closePicker();}
  const parts=location.hash.replace(/^#\/?/,'').split('/'),view=['day','goals','tasks','chat'].includes(parts[0])?parts[0]:'day';
  els.dayView.hidden=view!=='day';els.goalsView.hidden=view!=='goals';els.todosView.hidden=view!=='tasks';els.dateNav.hidden=view!=='day';
- els.crumbPath.textContent=view==='chat'?'LIBER':view.toUpperCase();els.crumbMeta.textContent='';
+ els.crumbPath.textContent=view==='chat'?'Chat':view[0].toUpperCase()+view.slice(1);els.crumbMeta.textContent='';
  if(view==='chat'){document.querySelectorAll('[data-olga-view]').forEach(n=>n.classList.toggle('active',n.dataset.olgaView==='chat'));if(typeof liberShow==='function')liberShow(parts);return;}
  if(typeof liberHide==='function')liberHide();
  document.querySelectorAll('[data-olga-view]').forEach(n=>n.classList.toggle('active',n.dataset.olgaView===view));
@@ -267,7 +269,7 @@ function olgaOpenLinkedTask(id){
  if(row)openTodoPanel(row);else showToast('That task isn’t on your list any more.');
 }
 for(const [view,glyph]of [['day','◷'],['goals','◎'],['tasks','☑'],['chat','✦']]){
- const a=el('a','rail-item');a.href='#/'+view;a.dataset.olgaView=view;a.append(el('span','rail-glyph',glyph),el('span','rail-label',view==='chat'?'CHAT':view.toUpperCase()));if(view==='chat'){a.title='Liber — your assistant';a.setAttribute('aria-label','Chat with Liber');}els.railGroups.append(a);
+ const a=el('a','rail-item');a.href='#/'+view;a.dataset.olgaView=view;a.append(el('span','rail-glyph',glyph),el('span','rail-label',view[0].toUpperCase()+view.slice(1)));if(view==='chat'){a.title='Liber — your assistant';a.setAttribute('aria-label','Chat with Liber');}els.railGroups.append(a);
 }
 els.railCollapse.onclick=()=>{els.appShell.classList.toggle('rail-collapsed');};
 els.crumbBack.onclick=()=>history.back();els.crumbFwd.onclick=()=>history.forward();els.crumbBack.disabled=false;els.crumbFwd.disabled=false;

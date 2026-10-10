@@ -162,3 +162,48 @@
 .olga-comment-form { display: flex; flex-direction: column; gap: 8px; padding-bottom: 12px; }
 .olga-comment-form .pill { align-self: flex-start; }
 .olga-toast { z-index: 3100; }
+
+/* Tidy pass (2026-10-10), measured against Manifest's own screens:
+   one type family in her controls, one field style, plain labels in the
+   menu and header, a dialog whose title and body line up. */
+#appShell button, #appShell input, #appShell select, #appShell textarea,
+#pickerModal button, #pickerModal input, #pickerModal select, #pickerModal textarea { font-family: inherit; }
+/* fields: one border, one radius, one height */
+.olga-find input, .olga-find select, .olga-area-filter, .olga-task-details input, .olga-task-details select, .olga-task-details textarea,
+.olga-q-card input, .olga-comment-form textarea {
+  box-sizing: border-box; min-height: 44px; padding: 10px 12px; border: 1px solid var(--base-30); border-radius: 10px;
+  background: var(--bg); color: var(--text); font: 16px/1.35 var(--sans, system-ui); outline: none;
+}
+.olga-find input:focus, .olga-find select:focus, .olga-task-details input:focus, .olga-task-details select:focus,
+.olga-task-details textarea:focus, .olga-q-card input:focus, .olga-comment-form textarea:focus { border-color: var(--base-100); box-shadow: 0 0 0 1px var(--base-100); outline: none; }
+.olga-find input::placeholder, .olga-q-card input::placeholder, .olga-comment-form textarea::placeholder { color: var(--base-50); }
+.olga-find, .olga-task-views { align-items: center; }
+/* importance reads as a word, not a code */
+#todosView .tdo-prio { font: 500 13px/20px var(--sans, system-ui); text-transform: capitalize; padding: 0 8px; border: 0; border-radius: 10px; background: var(--base-10); color: var(--base-60); }
+#todosView .tdo-prio.high { background: #fff4d6; color: #5a4300; font-weight: 600; }
+/* menu and header in plain words */
+#railGroups .rail-label { text-transform: none; letter-spacing: 0; font-family: var(--sans, system-ui); font-size: 15px; }
+.crumb-bar .crumb-path { font: 600 15px var(--sans, system-ui); letter-spacing: 0; text-transform: none; color: var(--text); }
+.crumb-bar .crumb-meta { font: 14px var(--sans, system-ui); letter-spacing: 0; color: var(--base-50); }
+.olga-mobile-signout, .rail-foot .rail-raw, .rail-foot .save-state { font-family: var(--sans, system-ui); letter-spacing: 0; text-transform: none; font-size: 13px; }
+/* the task dialog: title as big as the headings inside it, edges lined up */
+#pickerModal .modal-head { padding: 12px 12px 12px 20px; }
+#pickerModal .modal-title { font: 600 18px/1.3 var(--sans, system-ui); letter-spacing: 0; text-transform: none; }
+#pickerModal .modal-body { padding: 16px 20px 20px; }
+#pickerModal .olga-panel-body { padding: 0; }
+#pickerModal .modal-card { width: min(520px, calc(100vw - 32px)); max-height: min(86vh, 900px); }
+#pickerModal .liber-task-title, #pickerModal h3 { font: 600 18px/1.3 var(--sans, system-ui); }
+@media (max-width: 860px) {
+  #pickerModal .modal-card { border: 0; box-shadow: none; }
+  #pickerModal .modal-head { padding: 8px 8px 8px 16px; }
+  #pickerModal .modal-body { padding: 12px 16px calc(16px + env(safe-area-inset-bottom)); }
+  /* the menu: four plain tabs, evenly spaced, inside the screen edge */
+  #rail { padding: 6px 8px; }
+  #railGroups { gap: 4px; }
+  #railGroups .rail-item { flex: 1; justify-content: center; border-radius: 10px; gap: 6px; }
+  .crumb-bar { min-height: 52px; box-sizing: border-box; padding: 6px 16px; }
+}
+/* on a computer the task list keeps a readable width instead of stretching
+   a short title across the whole window */
+@media (min-width: 861px) { #todosView .areas-col { max-width: 900px; } }
+.olga-q-for:empty { display: none; }
