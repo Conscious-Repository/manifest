@@ -223,6 +223,35 @@ func runStaged(ctx context.Context, dataDir string, cfg Config, a hermes.DutyAut
 	return finish("verified", "candidate only; owner semantic review required", candidate, res.usage)
 }
 
+// allocateToSoleMilestone repairs one narrow slip: a reply that declares
+// exactly one new milestone but no allocation puts the whole total on that
+// milestone's rock (which exists; the milestone is added under it). Anything
+// else is left to refuse; the owner reviews the card either way.
+func allocateToSoleMilestone(reply string) string {
+	var top map[string]json.RawMessage
+	if json.Unmarshal([]byte(reply), &top) != nil {
+		return reply
+	}
+	var p map[string]json.RawMessage
+	if json.Unmarshal(top["payload"], &p) != nil {
+		return reply
+	}
+	var allocs []json.RawMessage
+	_ = json.Unmarshal(p["allocations"], &allocs)
+	var ms []struct{ Property, Rock, Name string }
+	var total float64
+	if len(allocs) > 0 || json.Unmarshal(p["new_milestones"], &ms) != nil || len(ms) != 1 || json.Unmarshal(p["total"], &total) != nil || total <= 0 {
+		return reply
+	}
+	m := ms[0]
+	b, _ := json.Marshal([]map[string]any{{"property": m.Property, "node": m.Rock, "amount": total, "reason": "whole total to " + m.Name + " (no allocation given; placed on its rock)"}})
+	p["allocations"] = b
+	pb, _ := json.Marshal(p)
+	top["payload"] = pb
+	out, _ := json.Marshal(top)
+	return string(out)
+}
+
 // candidateProblem names which strict check a refused reply failed, for the
 // receipt (fixed wording; never echoes reply content).
 func candidateProblem(c ProductionContract, reply string) string {
@@ -234,6 +263,7 @@ func candidateProblem(c ProductionContract, reply string) string {
 		ApplyPath string                      `json:"applyPath"`
 		Payload   approvals.ReContractPayload `json:"payload"`
 	}
+	reply = allocateToSoleMilestone(reply)
 	switch {
 	case decodeStrict([]byte(reply), &out) != nil:
 		return "not the expected JSON shape or types"
@@ -261,6 +291,7 @@ func parseProductionCandidate(c ProductionContract, reply string) (approvals.Pro
 		ApplyPath string                      `json:"applyPath"`
 		Payload   approvals.ReContractPayload `json:"payload"`
 	}
+	reply = allocateToSoleMilestone(reply)
 	if c.Validate() != nil || len(reply) > 64000 || decodeStrict([]byte(reply), &out) != nil || !productionKeysExact(reply) || out.Type != approvals.TypeReContract || out.Actor != c.Actor || out.Source != c.Source || out.Target != c.Target || out.ApplyPath != c.ApplyPath || !approvals.ReContractPathAllowed(out.ApplyPath) || out.Payload.Doc != c.Source || out.Payload.Validate() != nil {
 		return approvals.Proposal{}, productionRefusal("proposal contract refused")
 	}

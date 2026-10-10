@@ -280,3 +280,15 @@ func TestProductionRouteRequiresExplicitBoundaryAndCanonicalExtract(t *testing.T
 		t.Fatal("default-on route")
 	}
 }
+
+func TestProductionAllocatesToSoleMilestone(t *testing.T) {
+	in := `{"type":"re-contract","payload":{"total":39500,"new_milestones":[{"property":"748-n-euclid-ave","rock":"exterior-structural","name":"Masonry"}]}}`
+	out := allocateToSoleMilestone(in)
+	if !strings.Contains(out, `"allocations":[{"amount":39500,"node":"exterior-structural","property":"748-n-euclid-ave"`) {
+		t.Fatal(out)
+	}
+	two := `{"payload":{"total":1,"new_milestones":[{"property":"a","rock":"r","name":"x"},{"property":"a","rock":"r","name":"y"}]}}`
+	if allocateToSoleMilestone(two) != two {
+		t.Fatal("two milestones are not guessed")
+	}
+}
