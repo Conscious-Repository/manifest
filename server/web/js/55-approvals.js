@@ -273,8 +273,17 @@ function approvalCardEl(a) {
   // Olga's request (approvals.TypeOlgaRequest) is something to do, not a write to
   // approve: Done records that it's handled, Won't do asks why like Reject
   const isOlgaRequest = a.type === "olga-request";
+  // his answer goes back into her chat: an optional note rides either verdict
+  let olgaNote = null;
+  if (isOlgaRequest) {
+    olgaNote = el("textarea", "appr-olga-note");
+    olgaNote.rows = 2; olgaNote.placeholder = "Note to Olga (optional) — she sees it in her chat";
+    olgaNote.setAttribute("aria-label", "Note to Olga");
+    card.append(olgaNote);
+  }
   const confirmBtn = pill(isOlgaRequest ? "Done" : actionable ? "Confirm & apply" : "Confirm",
     async () => {
+      if (isOlgaRequest) { postApprovalDecision(a.id, "confirm", { note: olgaNote.value.trim() }); return; }
       // aion/re payload editors: whatever is in the form RIDES the confirm —
       // an unsaved owner/rock edit must never silently drop (2026-08-12 bug:
       // an assigned owner + rock vanished because "save edit" wasn't clicked)
@@ -288,7 +297,9 @@ function approvalCardEl(a) {
         isNewNote ? { attendees, title: titleRef.value, categories, visibility: visRef.shown() ? visRef.value : null } : null);
     });
   if (blocked) { confirmBtn.disabled = true; confirmBtn.classList.add("disabled"); }
-  actions.append(confirmBtn, pillLight(isOlgaRequest ? "Won’t do" : "Reject", () => spiritApprovalAct(a.id, "reject")));
+  actions.append(confirmBtn, isOlgaRequest
+    ? pillLight("Won’t do", () => postApprovalDecision(a.id, "reject", { reason: olgaNote.value.trim() }))
+    : pillLight("Reject", () => spiritApprovalAct(a.id, "reject")));
   // a payload editor's "save edit" sits with the verdicts, not under its
   // caption: one row of everything the owner can do with the card
   if (a.__saveEdit) { a.__saveEdit.classList.add("appr-save"); actions.append(a.__saveEdit); }

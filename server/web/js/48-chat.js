@@ -698,7 +698,7 @@ function chatLiberSection(lv) {
   sec.append(el("summary", "chat-liber-head", "Olga asked Liber · " + lv.turns.length + " message" + (lv.turns.length === 1 ? "" : "s") + " · read-only"));
   for (const t of lv.turns) {
     const wrap = el("div", "chat-turn " + (t.who === "olga" ? "chat-user" : "chat-spirit"));
-    const who = el("div", "chat-liber-who", (t.who === "olga" ? "Olga" : "Liber" + (t.model ? " · " + t.model : "")) + " · " + fmtWhen(t.at));
+    const who = el("div", "chat-liber-who", (t.who === "olga" ? "Olga" : t.who === "benjamin" ? "You" : "Liber" + (t.model ? " · " + t.model : "")) + " · " + fmtWhen(t.at));
     wrap.append(who);
     if ((t.images || []).length) {
       const row = el("div", "chat-liber-photos");

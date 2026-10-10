@@ -224,6 +224,8 @@ func main() {
 		WithHistory(cfg.DataDir).
 		Grant(
 			vaultwriter.Capability{Name: "shared-home", Zone: record.ZoneSystem, Pattern: filepath.ToSlash(filepath.Join(cfg.SystemRoot, "home")) + "/**", Actor: vaultwriter.ActorUserAction},
+			// his decisions on Olga's requests, for her server to deliver (server/olga_requests.go)
+			vaultwriter.Capability{Name: "olga-answers", Zone: record.ZoneSystem, Pattern: filepath.ToSlash(filepath.Join(cfg.SystemRoot, "olga", "answers")) + "/**", Actor: vaultwriter.ActorUserAction},
 			// goals.md + "goals <quarter>.md" archives/reviews + .pre-* backups
 			vaultwriter.Capability{Name: "goals", Zone: record.ZoneKnowledge,
 				Pattern: strings.TrimSuffix(orDefault(cfg.GoalsFileName, "goals.md"), ".md") + "*",

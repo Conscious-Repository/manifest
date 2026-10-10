@@ -1,9 +1,12 @@
 package server
 
 import (
+	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -45,4 +48,31 @@ func (s *Server) syncOlgaRequests() {
 		}
 	}
 	olgaRequestsSeen.stamp = stamp
+}
+
+// answerOlga hands Benjamin's decision on one of her requests back to her
+// server, which posts it into the conversation the request came from. The
+// answer file is written once: a repeated decision changes nothing.
+func (s *Server) answerOlga(p approvals.Proposal, decision, note string) error {
+	if s.vault == nil || !s.vault.Enabled() {
+		return errors.New("vault unavailable")
+	}
+	root := s.vault.VaultRoot()
+	b, _ := os.ReadFile(filepath.Join(root, "system", "olga", "requests.md"))
+	req, ok := approvals.OlgaRequestByID(string(b), p.ID)
+	if !ok {
+		req = approvals.OlgaRequest{ID: p.ID, Asked: strings.TrimPrefix(p.Action, "Olga asked: ")}
+	}
+	a := approvals.OlgaAnswer{ID: p.ID, Thread: req.Thread, Asked: req.Asked, Decision: decision,
+		Note: strings.TrimSpace(note), At: time.Now().UTC().Format(time.RFC3339)}
+	js, err := json.MarshalIndent(a, "", " ")
+	if err != nil {
+		return err
+	}
+	return s.vault.UpdateCap("olga-answers", "system/olga/answers/"+p.ID+".json", func(before []byte) ([]byte, error) {
+		if len(before) > 0 {
+			return before, nil
+		}
+		return append(js, '\n'), nil
+	})
 }

@@ -241,6 +241,15 @@ func newLiber(opts OlgaOptions, gated http.Handler, write func(string, []byte) e
 	}
 	l.svc = svc
 	svc.Recover()
+	// Benjamin's answers to her requests (his Manifest writes them; see
+	// server/olga_requests.go) go into the conversation each came from.
+	answers := filepath.Join(vault, "system", "olga", "answers")
+	go func(every time.Duration) {
+		for {
+			deliverOlgaAnswers(svc, answers)
+			time.Sleep(every)
+		}
+	}(olgaAnswerPoll)
 	go func() {
 		// the launcher writes its verdict a few seconds after start
 		for i := 0; i < 60 && svc.SettleDeploys(); i++ {
@@ -966,4 +975,32 @@ func (p *olgaPlanner) Apply(pr *olgachat.Proposal) (string, error) {
 		return "Updated the house plan", nil
 	}
 	return "", errors.New("unknown suggestion")
+}
+
+// olgaAnswerPoll is how often her server looks for Benjamin's answers.
+var olgaAnswerPoll = 20 * time.Second
+
+// deliverOlgaAnswers posts every answer file into her conversations. Delivery
+// is idempotent (the turn id comes from the answer), so the files stay as the
+// record and a restart re-checks them harmlessly.
+func deliverOlgaAnswers(svc *olgachat.Service, dir string) {
+	ents, _ := os.ReadDir(dir)
+	for _, e := range ents {
+		if e.IsDir() || !strings.HasSuffix(e.Name(), ".json") {
+			continue
+		}
+		b, err := os.ReadFile(filepath.Join(dir, e.Name()))
+		if err != nil {
+			continue
+		}
+		var a olgachat.Answer
+		if json.Unmarshal(b, &a) != nil || a.ID+".json" != e.Name() {
+			continue
+		}
+		if added, err := svc.Deliver(a); err != nil {
+			svc.Log(map[string]any{"at": time.Now().UTC().Format(time.RFC3339), "kind": "answer", "answer": a.ID, "error": err.Error()})
+		} else if added {
+			svc.Log(map[string]any{"at": time.Now().UTC().Format(time.RFC3339), "kind": "answer", "answer": a.ID, "thread": a.Thread, "decision": a.Decision})
+		}
+	}
 }

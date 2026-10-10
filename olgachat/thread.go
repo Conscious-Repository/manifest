@@ -77,7 +77,7 @@ type Thread struct {
 
 type Turn struct {
 	ID     string    `json:"id"`
-	Who    string    `json:"who"` // olga | liber
+	Who    string    `json:"who"` // olga | liber | benjamin (his answer to a request)
 	Text   string    `json:"text"`
 	Images []string  `json:"images,omitempty"` // photos she attached (ids in the thread's files folder)
 	At     time.Time `json:"at"`

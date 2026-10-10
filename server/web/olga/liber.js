@@ -149,11 +149,13 @@ function liberMessages(host, th, onThread) {
         for (const id of t.images) { const b = el('button', 'liber-photo'); b.type = 'button'; b.setAttribute('aria-label', 'Open photo'); const img = el('img'); img.src = liberPhotoURL(id, liberRef(th)); img.alt = 'Photo'; img.loading = 'lazy'; b.append(img); b.onclick = () => liberViewPhoto(img.src); grid.append(b); }
         msg.append(grid);
       }
-      if (t.text) msg.append(t.who === 'liber' ? liberText(t.text) : el('p', 'liber-mine', t.text));
+      // Benjamin's answer to one of her requests: his words, labelled as his
+      if (t.text && t.who === 'benjamin') msg.append(el('p', 'liber-from', 'Benjamin'), el('p', 'liber-benjamin', t.text));
+      else if (t.text) msg.append(t.who === 'liber' ? liberText(t.text) : el('p', 'liber-mine', t.text));
     }
     for (const c of t.cards || []) msg.append(liberCard(th, c, onThread));
     if (t.queued) msg.append(el('p', 'liber-meta', 'Waiting for Liber…'));
-    else if (t.at && t.who === 'olga') msg.append(el('p', 'liber-meta', liberWhen(t.at)));
+    else if (t.at && t.who !== 'liber') msg.append(el('p', 'liber-meta', liberWhen(t.at)));
     host.append(msg);
   }
 }

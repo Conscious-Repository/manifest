@@ -1,6 +1,8 @@
 package server
 
 import (
+	"encoding/json"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -8,6 +10,7 @@ import (
 	"time"
 
 	"manifest/approvals"
+	"manifest/record"
 	"manifest/vaultwriter"
 )
 
@@ -17,7 +20,7 @@ import (
 func TestOlgaRequestsArriveInApprovals(t *testing.T) {
 	vault := t.TempDir()
 	srv := &Server{}
-	srv.UseVault(vaultwriter.New(vault))
+	srv.UseVault(vaultwriter.New(vault).Grant(vaultwriter.Capability{Name: "olga-answers", Zone: record.ZoneSystem, Pattern: "system/olga/answers/**", Actor: vaultwriter.ActorUserAction}))
 	srv.UseApprovals(approvals.NewStore(t.TempDir()))
 	path := filepath.Join(vault, "system", "olga", "requests.md")
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
@@ -50,7 +53,7 @@ func TestOlgaRequestsArriveInApprovals(t *testing.T) {
 	if c.Action != `Olga asked: Could would create a "direct" chat option?` || c.Agent != "olga" || !c.Allowed || c.ApplyPath != "" {
 		t.Fatalf("card = %+v", c)
 	}
-	if !strings.Contains(c.Body, "What it would take:\nA server change.\nHer request is ready to send.") {
+	if !strings.Contains(c.Body, "What it would take: A server change.\nHer request is ready to send.") {
 		t.Fatalf("body lost the write-up:\n%s", c.Body)
 	}
 	if n := srv.feedInboxCount(time.Now()); n < 1 {
@@ -59,8 +62,19 @@ func TestOlgaRequestsArriveInApprovals(t *testing.T) {
 
 	// Done records the decision; the card never comes back, even when the
 	// file grows with a new request
-	if err := srv.approvals.Confirm(c.ID); err != nil {
-		t.Fatal(err)
+	req := httptest.NewRequest("POST", "/api/spirits/approvals/"+c.ID+"/confirm", strings.NewReader(`{"note":"Built it — try the new chat button."}`))
+	req.SetPathValue("id", c.ID)
+	rec := httptest.NewRecorder()
+	srv.handleSpiritsApprovalConfirm(rec, req)
+	if rec.Code != 200 {
+		t.Fatalf("Done: %d %s", rec.Code, rec.Body)
+	}
+	b, _ := os.ReadFile(filepath.Join(vault, "system", "olga", "answers", c.ID+".json"))
+	var a approvals.OlgaAnswer
+	// an entry written before chats were recorded has no thread: her server
+	// then starts a conversation for the answer
+	if json.Unmarshal(b, &a) != nil || a.Decision != "done" || a.Note != "Built it — try the new chat button." || a.Thread != "" || a.Asked != `Could would create a "direct" chat option?` {
+		t.Fatalf("answer file: %s", b)
 	}
 	write(head + first + second)
 	got = cards()

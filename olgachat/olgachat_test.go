@@ -185,3 +185,55 @@ func TestBuildThenUseKeepsTheWorktree(t *testing.T) {
 		t.Fatalf("after restart %+v", c)
 	}
 }
+
+// Benjamin's answer to a request: into the chat it came from, once; a
+// request with no recorded chat (or a chat since gone) gets its own.
+func TestDeliverAnswer(t *testing.T) {
+	dir := t.TempDir()
+	write := func(p string, b []byte) error {
+		if err := os.MkdirAll(filepath.Dir(p), 0o700); err != nil {
+			return err
+		}
+		return os.WriteFile(p, b, 0o600)
+	}
+	s := &Service{Store: &Store{Private: filepath.Join(dir, "chat"), Shared: filepath.Join(dir, "home"), Write: write}, Now: time.Now}
+	th := &Thread{ID: "c-0123456789ab", Kind: KindApp, Title: "Plywood", Turns: []Turn{{ID: "t-1", Who: "olga", Text: "ask Benjamin"}}}
+	if err := s.Store.Save(th); err != nil {
+		t.Fatal(err)
+	}
+	id := strings.Repeat("ab", 20)
+	a := Answer{ID: id, Thread: "app:c-0123456789ab", Asked: "ask Benjamin", Decision: "done", Note: "Sunday works."}
+	for i, want := range []bool{true, false} {
+		if added, err := s.Deliver(a); err != nil || added != want {
+			t.Fatalf("delivery %d: added=%v err=%v", i, added, err)
+		}
+	}
+	got, _ := s.Store.App("c-0123456789ab")
+	if len(got.Turns) != 2 || got.Turns[1].Who != "benjamin" || got.Turns[1].Text != "Done — “ask Benjamin”\n\nSunday works." {
+		t.Fatalf("%+v", got.Turns)
+	}
+	if r := Recent(got, 4, false); r[1].Who != "Benjamin" {
+		t.Fatalf("Liber would read his words as %q", r[1].Who)
+	}
+	b := Answer{ID: strings.Repeat("cd", 20), Asked: "a direct chat", Decision: "wont"}
+	if added, err := s.Deliver(b); err != nil || !added {
+		t.Fatalf("no-thread answer: %v %v", added, err)
+	}
+	own, err := s.Store.App("c-" + b.ID[:12])
+	if err != nil || own.Title != "From Benjamin: a direct chat" || own.Turns[0].Text != "Not doing this one — “a direct chat”." {
+		t.Fatalf("own conversation: %+v %v", own, err)
+	}
+	if added, _ := s.Deliver(b); added {
+		t.Fatal("the no-thread answer was delivered twice")
+	}
+	if _, err := s.Deliver(Answer{ID: "../x"}); err == nil {
+		t.Fatal("accepted a bad id")
+	}
+}
+
+func TestParseReplyForBenjamin(t *testing.T) {
+	r := ParseReply("Sent.\n```json\n{\"route\":\"talk\",\"for_benjamin\":\" Is Saturday ok? \"}\n```")
+	if r.ForBenjamin != "Is Saturday ok?" || r.Text != "Sent." {
+		t.Fatalf("%+v", r)
+	}
+}

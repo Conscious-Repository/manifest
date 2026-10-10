@@ -357,6 +357,7 @@ func (s *Service) answer(kind string, ref Ref, olgaID, liberID, forced string) {
 			if jevDown && r.Route == "confirm" && r.Restatement != "" {
 				tu.Cards = append(tu.Cards, Card{ID: NewID("k-"), Kind: CardConfirm, State: StatePending, Summary: r.Restatement, Updated: s.now().UTC()})
 			}
+			s.forBenjamin(ref, tu, msg, r, entry)
 		})
 	}
 }
@@ -517,6 +518,7 @@ func (s *Service) taskTurn(t *Thread, ref Ref, msg string, recent []Exchange, li
 			}
 			tu.Cards = append(tu.Cards, Card{ID: NewID("k-"), Kind: CardProposal, State: StatePending, Summary: line, Proposal: p, Updated: s.now().UTC()})
 		}
+		s.forBenjamin(ref, tu, msg, r, entry)
 	})
 	if len(dropped) > 0 {
 		entry["droppedProposals"] = dropped
@@ -724,7 +726,7 @@ func (s *Service) buildTurn(ref Ref, msg string, recent []Exchange, liberID, con
 		state, summary = StateDiscarded, "Nothing needed changing."
 	}
 	if note != "" && s.Notes != nil {
-		_ = s.Notes(fmt.Sprintf("- %s — Olga asked: %q\n  What it would take: %s\n", s.now().Format("2006-01-02 15:04"), msg, note))
+		_ = s.Notes(fmt.Sprintf("- %s — Olga asked: %q\n  Thread: %s\n  What it would take: %s\n", s.now().Format("2006-01-02 15:04"), msg, ref.Kind+":"+ref.ID, note))
 	}
 	built := ch
 	_, _ = s.update(ref, func(t *Thread) error {
@@ -768,7 +770,7 @@ func cardFor(t *Thread, changeID string) string {
 
 func (s *Service) noteForBenjamin(ref Ref, msg, liberID string, entry map[string]any, why string) {
 	if s.Notes != nil {
-		_ = s.Notes(fmt.Sprintf("- %s — Olga asked: %q (%s)\n", s.now().Format("2006-01-02 15:04"), msg, why))
+		_ = s.Notes(fmt.Sprintf("- %s — Olga asked: %q (%s)\n  Thread: %s\n", s.now().Format("2006-01-02 15:04"), msg, why, ref.Kind+":"+ref.ID))
 	}
 	entry["noted"] = why
 	_, _ = s.update(ref, func(t *Thread) error {
@@ -778,6 +780,103 @@ func (s *Service) noteForBenjamin(ref Ref, msg, liberID string, entry map[string
 		}
 		return nil
 	})
+}
+
+// forBenjamin files a message the voice wrote for Benjamin (she asked to ask
+// or tell him something, or needs something only he can do) into his
+// Approvals, and marks Liber's turn with a "Sent to Benjamin" card. It runs
+// inside the turn's update, so it only appends to the file and the turn.
+func (s *Service) forBenjamin(ref Ref, tu *Turn, msg string, r Reply, entry map[string]any) {
+	note := strings.TrimSpace(r.ForBenjamin)
+	if note == "" || s.Notes == nil {
+		return
+	}
+	if len(note) > 2000 {
+		note = note[:2000] + "…"
+	}
+	if err := s.Notes(fmt.Sprintf("- %s — Olga asked: %q\n  Thread: %s\n  Message for Benjamin: %s\n", s.now().Format("2006-01-02 15:04"), clipWords(msg, 600), ref.Kind+":"+ref.ID, strings.Join(strings.Fields(note), " "))); err != nil {
+		entry["forBenjaminError"] = err.Error()
+		return
+	}
+	entry["forBenjamin"] = true
+	tu.Cards = append(tu.Cards, Card{ID: NewID("k-"), Kind: CardNote, State: StateDiscarded, Summary: "Sent to Benjamin — his answer will appear here", Updated: s.now().UTC()})
+}
+
+// Answer is Benjamin's decision on one of her requests, as his Manifest
+// writes it (system/olga/answers/<id>.json).
+type Answer struct {
+	ID       string `json:"id"`
+	Thread   string `json:"thread"`
+	Asked    string `json:"asked"`
+	Decision string `json:"decision"` // done | wont
+	Note     string `json:"note"`
+}
+
+// AnswerText is what she reads under his name (the chat labels it "Benjamin").
+func AnswerText(a Answer) string {
+	asked := clipWords(a.Asked, 140)
+	var head string
+	switch a.Decision {
+	case "done":
+		head = "Done — “" + asked + "”"
+	default:
+		head = "Not doing this one — “" + asked + "”"
+	}
+	if n := strings.TrimSpace(a.Note); n != "" {
+		return head + "\n\n" + n
+	}
+	return head + "."
+}
+
+// Deliver posts Benjamin's answer into the conversation the request came
+// from, once (the turn id is derived from the answer). An answer whose
+// conversation is unknown or gone starts its own conversation. It reports
+// whether anything was added.
+func (s *Service) Deliver(a Answer) (bool, error) {
+	if len(a.ID) < 16 || strings.Trim(a.ID, "0123456789abcdef") != "" {
+		return false, errors.New("bad answer id")
+	}
+	turnID := "t-benjamin-" + a.ID[:16]
+	ref, ok := Ref{}, false
+	if kind, id, cut := strings.Cut(a.Thread, ":"); cut && id != "" {
+		ref, ok = Ref{Kind: kind, ID: id}, kind == KindApp || kind == KindTask
+	}
+	if ok {
+		if _, err := s.load(ref); err != nil {
+			ok = false
+		}
+	}
+	turn := Turn{ID: turnID, Who: "benjamin", Text: AnswerText(a), At: s.now().UTC()}
+	if !ok {
+		// its own conversation, named after the request
+		t, err := s.Store.App("c-" + a.ID[:12])
+		if err != nil && !errors.Is(err, os.ErrNotExist) {
+			return false, err
+		}
+		if t != nil {
+			return false, nil
+		}
+		t = &Thread{ID: "c-" + a.ID[:12], Kind: KindApp, Title: "From Benjamin: " + clipWords(a.Asked, 40), Created: s.now().UTC(), Turns: []Turn{turn}}
+		unlock := s.lock(key(t))
+		defer unlock()
+		if err := s.Store.Save(t); err != nil {
+			return false, err
+		}
+		s.notify(key(t))
+		return true, nil
+	}
+	added := false
+	_, err := s.update(ref, func(t *Thread) error {
+		for _, tu := range t.Turns {
+			if tu.ID == turnID {
+				return nil
+			}
+		}
+		t.Turns = append(t.Turns, turn)
+		added = true
+		return nil
+	})
+	return added, err
 }
 
 // ship runs Use or Undo. The process restarts when it succeeds; Recover

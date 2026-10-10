@@ -367,6 +367,8 @@ func (s *Server) handleSpiritsApprovalConfirm(w http.ResponseWriter, r *http.Req
 		// written (aion_visibility.go); it never touches the note itself.
 		Visibility     string `json:"visibility"`
 		EditVisibility bool   `json:"editVisibility"`
+		// Note: olga-request — his words to Olga, delivered with Done
+		Note string `json:"note"`
 	}
 	_ = decode(r, &b) // body is optional (plain confirm)
 	id := r.PathValue("id")
@@ -452,6 +454,12 @@ func (s *Server) handleSpiritsApprovalConfirm(w http.ResponseWriter, r *http.Req
 			return
 		}
 	}
+	if loadErr == nil && pending.Type == approvals.TypeOlgaRequest {
+		if err := s.answerOlga(pending, "done", b.Note); err != nil {
+			httpError(w, errBadRequest("marked done, but Olga could not be told: "+err.Error()))
+			return
+		}
+	}
 	if loadErr == nil {
 		s.recordTaskApprovalDecision(pending, "Approved")
 	}
@@ -526,6 +534,13 @@ func (s *Server) handleSpiritsApprovalReject(w http.ResponseWriter, r *http.Requ
 	if loadErr == nil && pending.Type == approvals.TypePortalProposal {
 		if err := s.decidePortalProposal(pending, false); err != nil {
 			log.Printf("portal proposal reject: card closed but the store did not: %v", err)
+		}
+	}
+	// her request: the reason is his note to her, delivered into her chat
+	if loadErr == nil && pending.Type == approvals.TypeOlgaRequest {
+		if err := s.answerOlga(pending, "wont", b.Reason); err != nil {
+			httpError(w, errBadRequest("declined, but Olga could not be told: "+err.Error()))
+			return
 		}
 	}
 	if loadErr == nil {

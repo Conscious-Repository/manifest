@@ -38,6 +38,10 @@
 .liber-msg.is-olga { align-self: flex-end; text-align: right; }
 .liber-mine { display: inline-block; text-align: left; margin: 0; padding: 10px 14px; border-radius: 18px 18px 4px 18px; background: var(--base-20); white-space: pre-wrap; overflow-wrap: anywhere; }
 .liber-msg.is-liber { align-self: flex-start; }
+/* Benjamin's answer to a request she sent him */
+.liber-msg.is-benjamin { align-self: stretch; }
+.liber-from { margin: 0 0 4px; font-size: 13px; letter-spacing: .04em; color: var(--base-40); }
+.liber-benjamin { margin: 0; padding: 10px 14px; border-left: 3px solid var(--base-40); background: var(--base-10); border-radius: 4px; white-space: pre-wrap; overflow-wrap: anywhere; }
 .liber-text p { margin: 0 0 10px; white-space: pre-wrap; overflow-wrap: anywhere; }
 .liber-text p:last-child { margin-bottom: 0; }
 .liber-text ul, .liber-text ol { margin: 0 0 10px; padding-left: 22px; }

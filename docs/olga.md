@@ -41,6 +41,15 @@ Her goals are entered directly in GOALS; no import step is needed.
 - **Log:** `/private/olga/liber.log`, one JSON line per turn and deploy
   (routes, models, timings; not her words).
 - **Notes for Benjamin:** `system/olga/requests.md`.
+- **Requests ↔ Approvals (2026-10-10):** each entry in `requests.md` carries
+  `Thread: <kind>:<id>` and becomes an `olga-request` card in Benjamin's
+  Approvals (Done / Won't do, optional note to her). His decision is written to
+  `system/olga/answers/<id>.json` (capability `olga-answers`); her server polls
+  that folder every 20 s and posts it into the chat it came from as a
+  `who: "benjamin"` turn, once. Liber files requests itself through
+  `for_benjamin` when she asks it to ask or tell Benjamin something. His
+  assistants (Alfred and others) stay out of her app; Liber does its own web
+  research.
 - **Tests:**
   - `go test ./server -run 'Liber|OlgaStrict|OlgaPreview'` and `go test ./olgachat`.
   - Live, opt-in: `MANIFEST_LIBER_LIVE=1 go test ./olgachat -run Probes` (the

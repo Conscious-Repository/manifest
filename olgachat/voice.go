@@ -61,8 +61,8 @@ var outputShape = map[Mode]string{
   {"kind": "task.update", "id": "existing task id", "text": "new title, optional", "priority": "low|med|high|none, optional", "summary": "…"},
   {"kind": "task.note", "id": "existing task id", "append": "markdown to add to its notes", "summary": "…"},
   {"kind": "plan.patch", "patch": { /* JSON merge patch against the house plan */ }, "summary": "…"}
-]}`,
-	ModeTalk:    `{"route": "talk" or "confirm", "restatement": "one line, only when route is confirm"}`,
+], "for_benjamin": "only when she asks you to ask or tell Benjamin something, or needs something only he can do: the message for him; otherwise omit"}`,
+	ModeTalk:    `{"route": "talk" or "confirm", "restatement": "one line, only when route is confirm", "for_benjamin": "only when she asks you to ask or tell Benjamin something, or needs something only he can do: the message for him, in plain words; otherwise omit"}`,
 	ModeConfirm: `{"restatement": "one line describing the change"}`,
 	ModeHandoff: `{"brief": "full description for the builder"}`,
 	ModeRelay:   `{}`,
@@ -83,8 +83,11 @@ func Recent(t *Thread, n int, skipLast bool) []Exchange {
 			continue
 		}
 		who := "Olga"
-		if tu.Who == "liber" {
+		switch tu.Who {
+		case "liber":
 			who = "Liber"
+		case "benjamin":
+			who = "Benjamin"
 		}
 		txt := tu.Text
 		if n := len(tu.Images); n > 0 {
@@ -134,6 +137,7 @@ type Reply struct {
 	Restatement string
 	Brief       string
 	Proposals   []RawProposal
+	ForBenjamin string // a message for Benjamin, filed in his Approvals
 }
 
 // RawProposal is a suggestion as the voice wrote it, before validation.
@@ -165,6 +169,7 @@ func ParseReply(raw string) Reply {
 		Brief       string          `json:"brief"`
 		Proposals   []RawProposal   `json:"proposals"`
 		Reply       string          `json:"reply"`
+		ForBenjamin string          `json:"for_benjamin"`
 		Extra       json.RawMessage `json:"-"`
 	}
 	r.Text = strings.TrimSpace(raw[:m[0]])
@@ -175,6 +180,7 @@ func ParseReply(raw string) Reply {
 		r.Text = strings.TrimSpace(v.Reply)
 	}
 	r.Route, r.Restatement, r.Brief, r.Proposals = strings.TrimSpace(v.Route), strings.TrimSpace(v.Restatement), strings.TrimSpace(v.Brief), v.Proposals
+	r.ForBenjamin = strings.TrimSpace(v.ForBenjamin)
 	if len(r.Proposals) > 8 {
 		r.Proposals = r.Proposals[:8]
 	}
