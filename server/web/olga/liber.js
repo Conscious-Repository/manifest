@@ -14,16 +14,29 @@ async function liberApi(path, body) {
 function liberRef(th) { return th.kind === 'task' ? { task: th.taskId } : { id: th.id }; }
 function liberQuery(ref) { return ref.task ? 'task=' + encodeURIComponent(ref.task) : 'id=' + encodeURIComponent(ref.id); }
 
-// Plain text with paragraphs, simple bullets and **bold** — never HTML. A
-// block may mix a lead-in line with its bullets ("First:\n- this\n- that").
+// Plain text with paragraphs, simple bullets, tables, links and **bold** —
+// never HTML. A block may mix a lead-in line with its bullets ("First:\n- this").
 function liberText(text) {
   const box = el('div', 'liber-text');
-  const bullet = /^\s*([-*•]|\d+[.)])\s+/;
+  const bullet = /^\s*([-*•]|\d+[.)])\s+/, row = /^\s*\|.*\|\s*$/, rule = /^\s*\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)*\|?\s*$/;
+  const cells = l => l.trim().replace(/^\|/, '').replace(/\|$/, '').split('|').map(c => c.trim());
   for (const block of String(text || '').split(/\n{2,}/)) {
     let list = null, para = [];
     const flush = () => { if (para.length) box.append(liberInline(el('p'), para.join('\n'))); para = []; };
-    for (const l of block.split('\n')) {
-      if (bullet.test(l)) {
+    const lines = block.split('\n');
+    for (let i = 0; i < lines.length; i++) {
+      const l = lines[i];
+      if (row.test(l) && rule.test(lines[i + 1] || '')) {
+        flush(); list = null;
+        const wrap = el('div', 'liber-table'), table = el('table'), head = el('tr');
+        cells(l).forEach(c => head.append(liberInline(el('th'), c)));
+        const thead = el('thead'), tbody = el('tbody'); thead.append(head);
+        for (i += 2; i < lines.length && row.test(lines[i]); i++) {
+          const tr = el('tr'); cells(lines[i]).forEach(c => tr.append(liberInline(el('td'), c))); tbody.append(tr);
+        }
+        i--;
+        table.append(thead, tbody); wrap.append(table); box.append(wrap);
+      } else if (bullet.test(l)) {
         flush();
         if (!list) { list = el(/^\s*\d/.test(l) ? 'ol' : 'ul'); box.append(list); }
         list.append(liberInline(el('li'), l.replace(bullet, '')));
@@ -33,12 +46,23 @@ function liberText(text) {
   }
   return box;
 }
+// Bold, links (plain or [label](url), opened in a new tab) and plain text.
 function liberInline(node, s) {
-  s.split(/(\*\*[^*]+\*\*)/).forEach(part => {
-    if (/^\*\*[^*]+\*\*$/.test(part)) node.append(el('strong', '', part.slice(2, -2)));
-    else if (part) node.append(document.createTextNode(part.replace(/`([^`]+)`/g, '$1')));
+  s.split(/(\*\*[^*]+\*\*|\[[^\]]+\]\(https?:\/\/[^\s)]+\)|https?:\/\/[^\s<>"]+[^\s<>".,;:!?)\]])/).forEach(part => {
+    if (!part) return;
+    let m;
+    if (/^\*\*[^*]+\*\*$/.test(part)) node.append(liberInline(el('strong'), part.slice(2, -2)));
+    else if ((m = /^\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)$/.exec(part)) || /^https?:\/\//.test(part)) {
+      const url = m ? m[2] : part, a = el('a', 'liber-link', m ? m[1] : liberShortURL(url));
+      a.href = url; a.target = '_blank'; a.rel = 'noopener noreferrer'; node.append(a);
+    } else node.append(document.createTextNode(part.replace(/`([^`]+)`/g, '$1')));
   });
   return node;
+}
+// A long store URL reads as its site and a bit of the path.
+function liberShortURL(u) {
+  try { const x = new URL(u); const path = x.pathname.length > 24 ? x.pathname.slice(0, 22) + '…' : x.pathname; return x.hostname.replace(/^www\./, '') + (path === '/' ? '' : path); }
+  catch (e) { return u; }
 }
 
 function liberWhen(iso) {

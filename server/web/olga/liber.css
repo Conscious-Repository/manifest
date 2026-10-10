@@ -114,3 +114,11 @@
 .liber-photo-view { position: fixed; inset: 0; z-index: 4000; background: rgba(0,0,0,.9); display: flex; align-items: center; justify-content: center; padding: calc(16px + env(safe-area-inset-top)) 16px calc(16px + env(safe-area-inset-bottom)); }
 .liber-photo-view img { max-width: 100%; max-height: 100%; object-fit: contain; border-radius: 6px; }
 .liber-photo-close { position: absolute; top: calc(8px + env(safe-area-inset-top)); right: 8px; width: 48px; height: 48px; border: 0; border-radius: 50%; background: rgba(255,255,255,.18); color: #fff; font-size: 22px; cursor: pointer; }
+
+/* tables (comparisons she asks for) scroll sideways inside the message */
+.liber-table { margin: 0 0 12px; overflow-x: auto; -webkit-overflow-scrolling: touch; border: 1px solid var(--line); border-radius: 10px; }
+.liber-table table { border-collapse: collapse; min-width: 100%; font: 14px/1.4 var(--sans, system-ui); }
+.liber-table th, .liber-table td { padding: 8px 10px; text-align: left; vertical-align: top; border-bottom: 1px solid var(--line); min-width: 90px; max-width: 220px; overflow-wrap: anywhere; }
+.liber-table th { background: var(--base-05); font-weight: 600; white-space: nowrap; }
+.liber-table tr:last-child td { border-bottom: 0; }
+.liber-link { color: var(--accent, #2a62c9); text-decoration: underline; text-underline-offset: 2px; overflow-wrap: anywhere; }

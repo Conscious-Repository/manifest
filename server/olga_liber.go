@@ -187,7 +187,8 @@ func newLiber(opts OlgaOptions, gated http.Handler, write func(string, []byte) e
 	}
 	l := &liber{gated: gated, builder: cfg.Builder}
 	svc := &olgachat.Service{Store: store, Planner: &olgaPlanner{gated: gated}, Now: time.Now}
-	// The voice: her own Hermes profile, memory as its only tool.
+	// The voice: her own Hermes profile with memory and the web (search and
+	// page reading) — no files or terminal on this machine.
 	if cfg.Voice != nil {
 		svc.Voice = cfg.Voice
 	} else {
@@ -256,6 +257,13 @@ func newLiber(opts OlgaOptions, gated http.Handler, write func(string, []byte) e
 	return l, nil
 }
 
+// Liber's tools, and how long one turn may take: looking things up on the web
+// (prices, stores, how-tos) takes a few minutes, so a turn gets ten.
+const (
+	liberToolsets   = "memory,web"
+	liberTurnBudget = 10 * time.Minute
+)
+
 // hermesVoice asks her profile one composed prompt.
 type hermesVoice struct {
 	run                      *hermes.Runner
@@ -267,7 +275,7 @@ func (h *hermesVoice) Ask(ctx context.Context, prompt string, images []string) (
 	if len(images) > 0 {
 		return h.askWithPhotos(ctx, prompt, images)
 	}
-	res, err := h.run.Run(ctx, hermes.Request{Prompt: prompt, Profile: h.profile, Model: h.model, Provider: h.provider, Toolsets: "memory", TimeoutSeconds: 170})
+	res, err := h.run.Run(ctx, hermes.Request{Prompt: prompt, Profile: h.profile, Model: h.model, Provider: h.provider, Toolsets: liberToolsets, TimeoutSeconds: int(liberTurnBudget / time.Second)})
 	tokens := 0
 	if res.Usage != nil {
 		tokens = int(res.Usage.TotalTokens)
@@ -292,11 +300,11 @@ func (h *hermesVoice) askWithPhotos(ctx context.Context, prompt string, images [
 	for _, p := range images {
 		imgs = append(imgs, map[string]string{"path": p, "mime": olgachat.ImageMime(filepath.Base(p))})
 	}
-	req, _ := json.Marshal(map[string]any{"prompt": prompt, "images": imgs, "home": h.home, "model": h.model, "provider": h.provider, "usage": usage})
+	req, _ := json.Marshal(map[string]any{"prompt": prompt, "images": imgs, "home": h.home, "model": h.model, "provider": h.provider, "toolsets": liberToolsets, "usage": usage})
 	if err := os.WriteFile(reqFile, req, 0o600); err != nil {
 		return ans, err
 	}
-	ctx, cancel := context.WithTimeout(ctx, 170*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, liberTurnBudget)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, h.python, shim, reqFile)
 	cmd.Dir = dir

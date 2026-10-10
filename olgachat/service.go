@@ -435,7 +435,7 @@ func (s *Service) voiceTurn(ref Ref, mode Mode, ctxData map[string]any, recent [
 	}
 	to := s.VoiceTimeout
 	if to <= 0 {
-		to = 3 * time.Minute
+		to = 11 * time.Minute // above the voice's own 10 (web research)
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), to)
 	defer cancel()

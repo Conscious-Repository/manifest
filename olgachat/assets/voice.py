@@ -8,4 +8,4 @@ parts = [{"type": "text", "text": req["prompt"]}]
 for im in req.get("images", []):
     data = base64.b64encode(open(im["path"], "rb").read()).decode()
     parts.append({"type": "image_url", "image_url": {"url": f"data:{im['mime']};base64,{data}"}})
-sys.exit(run_oneshot(parts, model=req.get("model"), provider=req.get("provider"), toolsets="memory", usage_file=req.get("usage")))
+sys.exit(run_oneshot(parts, model=req.get("model"), provider=req.get("provider"), toolsets=req.get("toolsets", "memory"), usage_file=req.get("usage")))
