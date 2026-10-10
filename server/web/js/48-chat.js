@@ -2903,6 +2903,10 @@ function renderChatComposer(session) {
   ta._grow=grow;
   ta.addEventListener("input", grow);
   ta.addEventListener("input", chatSaveDraft);
+  // typing during (or after a lost answer to) a send shows the words again:
+  // is-sending hides the field's text, and new words must never be invisible
+  // (owner 2026-10-10: "only the red underline for misspelled words")
+  ta.addEventListener("input", () => { if (host.classList.contains("is-sending")) host.classList.remove("is-sending"); });
   // @-mention typeahead (portal sections): the word at the caret starting
   // with @ opens the list; click/Tab/Enter inserts, Escape closes.
   const mention = el("div", "chat-mention");
