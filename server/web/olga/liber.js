@@ -42,10 +42,11 @@ function liberText(text) {
       if (row.test(l) && rule.test(lines[i + 1] || '')) {
         flush(); list = null;
         const wrap = el('div', 'liber-table'), table = el('table'), head = el('tr');
-        cells(l).forEach(c => head.append(liberInline(el('th'), c)));
+        const heads = cells(l).map(c => c.replace(/\*\*/g, ''));
+        heads.forEach(c => head.append(el('th', '', c)));
         const thead = el('thead'), tbody = el('tbody'); thead.append(head);
         for (i += 2; i < lines.length && row.test(lines[i]); i++) {
-          const tr = el('tr'); cells(lines[i]).forEach(c => tr.append(liberInline(el('td'), c))); tbody.append(tr);
+          const tr = el('tr'); cells(lines[i]).forEach((c, j) => { const td = liberInline(el('td'), c); td.dataset.label = heads[j] || ''; tr.append(td); }); tbody.append(tr);
         }
         i--;
         table.append(thead, tbody); wrap.append(table); box.append(wrap);
@@ -68,9 +69,17 @@ function liberInline(node, s) {
     else if ((m = /^\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)$/.exec(part)) || /^https?:\/\//.test(part)) {
       const url = m ? m[2] : part, a = el('a', 'liber-link', m ? m[1] : liberShortURL(url));
       a.href = url; a.target = '_blank'; a.rel = 'noopener noreferrer'; node.append(a);
-    } else node.append(document.createTextNode(part.replace(/`([^`]+)`/g, '$1')));
+    } else liberPhones(node, part.replace(/`([^`]+)`/g, '$1'));
   });
   return node;
+}
+// US phone numbers are tappable, so she can call a store straight from a list.
+function liberPhones(node, text) {
+  text.split(/(\(?\b\d{3}\)?[ .-]\d{3}-\d{4}\b)/).forEach((part, i) => {
+    if (!part) return;
+    if (i % 2) { const a = el('a', 'liber-link', part); a.href = 'tel:+1' + part.replace(/\D/g, ''); node.append(a); }
+    else node.append(document.createTextNode(part));
+  });
 }
 // A long store URL reads as its site and a bit of the path.
 function liberShortURL(u) {
