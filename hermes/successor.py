@@ -14,7 +14,10 @@ import socket
 import sys
 
 HOST, PORT = '192.168.87.11', 8000
-MODEL, PROVIDER = 'deepseek-v4.1-flash', 'deepseek-local'
+# The lab's fixed local endpoint may serve either model (it swapped DeepSeek
+# for GLM on 2026-10-10); the authority names which, and nothing else answers.
+MODELS, PROVIDER = ('deepseek-v4.1-flash', 'glm-5.3-flash'), 'deepseek-local'
+MODEL = MODELS[0]  # set from the authority in main()
 
 
 def isolate():
@@ -70,9 +73,10 @@ def unique_object(pairs):
 
 
 def main():
+    global MODEL
     packet = json.loads(sys.stdin.buffer.read(100001))
     a = packet['authority']
-    if (a['provider'] != PROVIDER or a['model'] != MODEL or
+    if (a['provider'] != PROVIDER or a['model'] not in MODELS or
             a['tools'] != ['none'] or a['mcp'] != 'no_mcp' or
             a.get('costPolicy') != 'local-zero-marginal' or
             a.get('providerBinding') != 'fixed-local-endpoint' or
@@ -80,6 +84,7 @@ def main():
             a['ceilingUsd'] != 0 or a['maxSteps'] != 1 or
             not 1 <= a['timeoutSeconds'] <= 120):
         raise RuntimeError('authority')
+    MODEL = a['model']
     # Resolve the numeric address before lockdown (no DNS/provider discovery).
     address = socket.inet_aton(HOST)
     if len(address) != 4:
@@ -91,8 +96,10 @@ def main():
         conn = http.client.HTTPConnection(HOST, PORT, timeout=a['timeoutSeconds'])
         # Sparks rejects tools=[]; omit both tool fields for this locally
         # enforced tool-free authority. Response scope checks still apply.
+        # JSON mode: GLM wraps objects in markdown fences otherwise, which the
+        # strict candidate parser (rightly) refuses.
         body = json.dumps({'model': MODEL, 'messages': [{'role': 'user', 'content': packet['prompt']}],
-                           'stream': False, 'max_tokens': 4096})
+                           'stream': False, 'max_tokens': 4096, 'response_format': {'type': 'json_object'}})
         conn.request('POST', '/v1/chat/completions', body, {'Content-Type': 'application/json'})
         response = conn.getresponse()
         if response.status != 200:
