@@ -209,9 +209,47 @@ func runStaged(ctx context.Context, dataDir string, cfg Config, a hermes.DutyAut
 	}
 	candidate, err := parseProductionCandidate(c, res.reply)
 	if err != nil {
-		return finish("refused", "proposal contract refused", empty, nil)
+		// keep what was refused beside the receipt, locally, for the owner's review
+		if rf, ferr := root.OpenFile("refused-reply.txt", os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600); ferr == nil {
+			_, _ = rf.WriteString(res.reply)
+			_ = rf.Close()
+		}
+		why := "proposal contract refused"
+		if r := candidateProblem(c, res.reply); r != "" {
+			why += " (" + r + ")"
+		}
+		return finish("refused", why, empty, nil)
 	}
 	return finish("verified", "candidate only; owner semantic review required", candidate, res.usage)
+}
+
+// candidateProblem names which strict check a refused reply failed, for the
+// receipt (fixed wording; never echoes reply content).
+func candidateProblem(c ProductionContract, reply string) string {
+	var out struct {
+		Type      string                      `json:"type"`
+		Actor     string                      `json:"actor"`
+		Source    string                      `json:"source"`
+		Target    string                      `json:"target"`
+		ApplyPath string                      `json:"applyPath"`
+		Payload   approvals.ReContractPayload `json:"payload"`
+	}
+	switch {
+	case decodeStrict([]byte(reply), &out) != nil:
+		return "not the expected JSON shape or types"
+	case !productionKeysExact(reply):
+		return "unexpected fields"
+	case out.Type != approvals.TypeReContract || out.Actor != c.Actor:
+		return "wrong type or actor"
+	case out.Source != c.Source || out.Payload.Doc != c.Source:
+		return "source not copied exactly"
+	case out.Target != c.Target || out.ApplyPath != c.ApplyPath:
+		return "target not copied exactly"
+	}
+	if err := out.Payload.Validate(); err != nil {
+		return "payload: " + err.Error()
+	}
+	return ""
 }
 
 func parseProductionCandidate(c ProductionContract, reply string) (approvals.Proposal, error) {

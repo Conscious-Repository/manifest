@@ -235,6 +235,10 @@ func TestProductionReceiptAndLatch(t *testing.T) {
 				}
 				if !d.IsDir() {
 					rel, _ := filepath.Rel(dir, path)
+					// a refused reply is kept beside its receipt for the owner's review
+					if rel == filepath.Join(ProductionPath, "refused-reply.txt") {
+						return nil
+					}
 					files = append(files, rel)
 				}
 				return nil
