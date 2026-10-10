@@ -81,7 +81,7 @@ func validateAuthority(a hermes.DutyAuthority) error {
 	if err := a.Validate(); err != nil {
 		return refusal("invalid explicit successor authority")
 	}
-	if a.Model != Model || a.Provider != Provider {
+	if !hermes.LocalModels[a.Model] || a.Provider != Provider {
 		return refusal("lane model/provider pin differs")
 	}
 	if len(a.Tools) != 1 || a.Tools[0] != "none" || a.MCP != "no_mcp" {

@@ -116,13 +116,18 @@ async function reIntakeUpload(file) {
     const r = await fetch("/api/realestate/intake?name=" + encodeURIComponent(file.name), {
       method: "POST", body: file,
     });
-    if (!r.ok) throw new Error(await r.text());
+    if (!r.ok) {
+      const t = await r.text();
+      let msg = t;
+      try { msg = JSON.parse(t).error || t; } catch (e) {}
+      throw new Error(msg);
+    }
     const result = await r.json();
     showToast(result.status === "pending"
-      ? "Pending proposal in FEED — review required; intake pilot stopped"
+      ? file.name + " — proposal ready in FEED for your review"
       : "Parsing " + file.name + " — the proposal will land in FEED");
   } catch (e) {
-    showToast("Intake failed — " + String(e.message || e).slice(0, 120));
+    showToast(file.name + ": " + String(e.message || e).slice(0, 200));
   }
 }
 

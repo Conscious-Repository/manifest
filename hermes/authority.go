@@ -71,7 +71,7 @@ func (a DutyAuthority) Validate() error {
 		return refuse("missing finite execution bounds")
 	}
 	if a.Provider == "deepseek-local" || a.CostPolicy != "" || a.ProviderBinding != "" || a.Endpoint != "" {
-		if a.Provider != "deepseek-local" || a.Model != "deepseek-v4.1-flash" || a.CostPolicy != LocalCostPolicy || a.ProviderBinding != LocalProviderBinding || a.Endpoint != LocalEndpoint {
+		if a.Provider != "deepseek-local" || !LocalModels[a.Model] || a.CostPolicy != LocalCostPolicy || a.ProviderBinding != LocalProviderBinding || a.Endpoint != LocalEndpoint {
 			return refuse("invalid local cost policy or endpoint binding")
 		}
 		if *a.CeilingUSD != 0 || a.MaxSteps != 1 || a.TimeoutSeconds > ExtractionTimeoutCap || len(a.Tools) != 1 || a.Tools[0] != "none" || a.MCP != "no_mcp" {
@@ -84,6 +84,11 @@ func (a DutyAuthority) Validate() error {
 // VerifyDutyResult is the mandatory acceptance boundary before ParseProposals
 // or approvals.Propose. Refused text is erased so callers cannot accept it even
 // if they accidentally continue after an error. Only known usage is accepted.
+// LocalModels are the models the lab's fixed local endpoint may serve. The lab
+// swapped DeepSeek for GLM on 2026-10-10; whichever one a duty names is still
+// pinned exactly (a reply from any other model is "model drift").
+var LocalModels = map[string]bool{"deepseek-v4.1-flash": true, "glm-5.3-flash": true}
+
 func VerifyDutyResult(a DutyAuthority, res Result, reportedProvider string, usagePresent bool) (Result, error) {
 	reject := func(reason string) (Result, error) { return Result{}, refuse(reason) }
 	if err := a.Validate(); err != nil {
@@ -128,7 +133,7 @@ func (r *Runner) dutyAuthority(req Request) (DutyAuthority, error) {
 	case "extractor/aion", "extractor/real-estate", "extractor/ooda-email":
 		return a, refuse("extraction requires the Hermes CLI authority")
 	}
-	if a.Provider != "deepseek-local" || a.Model != "deepseek-v4.1-flash" || *a.CeilingUSD != 0 {
+	if a.Provider != "deepseek-local" || !LocalModels[a.Model] || *a.CeilingUSD != 0 {
 		return a, refuse("unsupported zero-cost successor identity")
 	}
 	if len(a.Tools) != 1 || a.Tools[0] != "none" || a.MCP != "no_mcp" {

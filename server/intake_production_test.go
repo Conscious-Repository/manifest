@@ -191,16 +191,16 @@ func TestREIntakeProductionPendingOnlyAndOneShot(t *testing.T) {
 	if n, _ := s.approvals.AutoApplyAppends(nil); n != 0 {
 		t.Fatal("auto applied")
 	}
-	// Rewiring emulates a restart: the durable reservation, not process memory,
-	// refuses a second upload before source artifacts or the adapter.
+	// Rewiring emulates a restart. Each document has its own durable
+	// reservation: the same document is never run twice, a different one runs.
 	s.UseReIntake(s.reIntakeConfig, s.reIntakeDataDir, s.reIntakeAuthority)
-	w = postIntake(s, "second.txt", "different document")
-	if w.Code != 503 || !strings.Contains(w.Body.String(), "STOP") || calls != 1 {
-		t.Fatal(w.Code, calls)
+	w = postIntake(s, "again.txt", "synthetic bid")
+	if w.Code != 503 || !strings.Contains(w.Body.String(), "Intake stopped: source already pending") || calls != 1 {
+		t.Fatal("same document ran twice", w.Code, w.Body.String(), calls)
 	}
 	files, _ := filepath.Glob(filepath.Join(vault, "system/realestate/files/*"))
 	if len(files) != 3 {
-		t.Fatal("second source ingested", files)
+		t.Fatal("refused source ingested", files)
 	}
 	assertIntakeProtected(t, s, vault, harness)
 }
@@ -388,4 +388,32 @@ func TestREIntakeProductionCanonicalDocxExtraction(t *testing.T) {
 		t.Fatal(payload)
 	}
 	assertIntakeProtected(t, s, vault, harness)
+}
+
+// One stopped document doesn't block the next: each has its own receipt, and
+// the same document still never runs twice (owner, 2026-10-10: one failed
+// upload had locked every later intake).
+func TestREIntakeProductionPerDocument(t *testing.T) {
+	s, _, _ := intakeFixture(t, true)
+	calls := 0
+	s.reIntakeRun = func(_ context.Context, dir string, cfg reintake.Config, a hermes.DutyAuthority, c reintake.ProductionContract) (approvals.Proposal, reintake.ProductionReceipt, error) {
+		calls++
+		if !strings.Contains(dir, strings.TrimPrefix(c.Source, "sha256:")) {
+			t.Fatalf("run dir %s is not the document's own", dir)
+		}
+		if calls == 1 {
+			return reintake.RunStaged(context.Background(), dir, cfg, a, c) // the real adapter, with no model reachable: it stops
+		}
+		p, r := syntheticIntakeCandidate(t, dir, c)
+		return p, r, nil
+	}
+	if w := postIntake(s, "first.txt", "first document"); w.Code != 503 || !strings.Contains(w.Body.String(), "Intake stopped:") {
+		t.Fatal("first stops", w.Code, w.Body.String())
+	}
+	if w := postIntake(s, "first-again.txt", "first document"); w.Code != 503 || !strings.Contains(w.Body.String(), "already tried once") || calls != 1 {
+		t.Fatal("the stopped document is not retried", w.Code, w.Body.String(), calls)
+	}
+	if w := postIntake(s, "second.txt", "second document"); w.Code != 200 || calls != 2 {
+		t.Fatal("a different document runs", w.Code, w.Body.String(), calls)
+	}
 }

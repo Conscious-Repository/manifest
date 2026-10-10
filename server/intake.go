@@ -59,7 +59,7 @@ func (s *Server) handleREIntake(w http.ResponseWriter, r *http.Request) {
 		// Match FileStore.Save's identity without creating source artifacts.
 		source := fmt.Sprintf("sha256:%x", sha256.Sum256(data))
 		if err := s.reserveREIntake(source); err != nil {
-			s.stopREIntake(w, err)
+			s.stopREIntakeFor(w, source, err)
 			return
 		}
 	}

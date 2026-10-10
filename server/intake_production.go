@@ -3,7 +3,10 @@ package server
 import (
 	"encoding/json"
 	"errors"
+	"log"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 
 	"manifest/approvals"
@@ -20,6 +23,17 @@ func (s *Server) UseReIntake(cfg reintake.Config, dataDir string, authority herm
 	s.reIntakeRun = reintake.RunStaged
 }
 
+// reIntakeDocDir is one document's own run directory. Each document gets one
+// attempt with its own receipt (the pilot's safety: no retry, no fallback),
+// but one stopped document no longer blocks every other document. Clearing a
+// document's directory is the owner's reset for that document.
+func (s *Server) reIntakeDocDir(source string) string {
+	if s.reIntakeDataDir == "" || !strings.HasPrefix(source, "sha256:") {
+		return s.reIntakeDataDir
+	}
+	return filepath.Join(s.reIntakeDataDir, "excalibur-retirement", "re-intake-documents", strings.TrimPrefix(source, "sha256:"))
+}
+
 func (s *Server) reserveREIntake(source string) error {
 	if err := reintake.ValidateProductionAccess(s.reIntakeConfig, s.reIntakeAuthority); err != nil {
 		return err
@@ -30,7 +44,11 @@ func (s *Server) reserveREIntake(source string) error {
 	if err := s.checkREIntakeSource(source); err != nil {
 		return err
 	}
-	return reintake.ReserveUpload(s.reIntakeDataDir)
+	dir := s.reIntakeDocDir(source)
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return err
+	}
+	return reintake.ReserveUpload(dir)
 }
 
 // checkREIntakeSource is read-only; duplicate refusals must not burn the pilot.
@@ -49,16 +67,31 @@ func (s *Server) checkREIntakeSource(source string) error {
 	return nil
 }
 
-func (s *Server) stopREIntake(w http.ResponseWriter, _ error) {
-	// HTTP response is the synchronous owner page; never send provider diagnostics
-	// or invoke a notification connector. Any existing reservation remains burnt.
+func (s *Server) stopREIntake(w http.ResponseWriter, err error) {
+	s.stopREIntakeFor(w, "", err)
+}
+
+// stopREIntakeFor answers the owner's page with why, in words: the reason the
+// run stopped (never provider diagnostics), and that document's own status.
+func (s *Server) stopREIntakeFor(w http.ResponseWriter, source string, err error) {
+	reason := "intake unavailable"
+	var ref *hermes.Refusal
+	if errors.As(err, &ref) {
+		reason = strings.TrimSuffix(ref.Reason, "; "+reintake.ProductionStop)
+	} else if err != nil {
+		reason = err.Error()
+	}
+	if strings.Contains(reason, "prior or uncertain invocation") || strings.Contains(reason, "already reserved") {
+		reason = "this document was already tried once; it isn't run again automatically"
+	}
+	log.Printf("re-intake stopped (%s): %v", strings.TrimPrefix(source, "sha256:"), err)
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusServiceUnavailable)
-	_ = json.NewEncoder(w).Encode(map[string]any{"error": reintake.ProductionStop, "pageOwnerRequired": true, "pilotStatus": reintake.PilotStatus(s.reIntakeDataDir), "spooled": false})
+	_ = json.NewEncoder(w).Encode(map[string]any{"error": "Intake stopped: " + reason, "stop": reintake.ProductionStop, "pageOwnerRequired": true, "pilotStatus": reintake.PilotStatus(s.reIntakeDocDir(source)), "spooled": false})
 }
 
 func (s *Server) finishREIntake(w http.ResponseWriter, r *http.Request, name string, ref realestate.CASRef, extractRel string, res extract.Result) {
-	stop := func(err error) { s.stopREIntake(w, err) }
+	stop := func(err error) { s.stopREIntakeFor(w, ref.Ref, err) }
 	if !res.HasText || res.Via == "none" {
 		stop(errors.New("no extract"))
 		return
@@ -72,7 +105,8 @@ func (s *Server) finishREIntake(w http.ResponseWriter, r *http.Request, name str
 		stop(err)
 		return
 	}
-	textSource, err := reintake.StageExtract(s.reIntakeDataDir, res.Text)
+	dir := s.reIntakeDocDir(ref.Ref)
+	textSource, err := reintake.StageExtract(dir, res.Text)
 	if err != nil {
 		stop(err)
 		return
@@ -83,7 +117,7 @@ func (s *Server) finishREIntake(w http.ResponseWriter, r *http.Request, name str
 		stop(err)
 		return
 	}
-	candidate, receipt, err := s.reIntakeRun(r.Context(), s.reIntakeDataDir, s.reIntakeConfig, s.reIntakeAuthority, c)
+	candidate, receipt, err := s.reIntakeRun(r.Context(), dir, s.reIntakeConfig, s.reIntakeAuthority, c)
 	if err != nil {
 		stop(err)
 		return
@@ -97,7 +131,7 @@ func (s *Server) finishREIntake(w http.ResponseWriter, r *http.Request, name str
 		stop(errors.New("domain context changed"))
 		return
 	}
-	if err := reintake.CheckCandidateReceipt(s.reIntakeDataDir, c, candidate, receipt); err != nil {
+	if err := reintake.CheckCandidateReceipt(dir, c, candidate, receipt); err != nil {
 		stop(err)
 		return
 	}
@@ -108,7 +142,7 @@ func (s *Server) finishREIntake(w http.ResponseWriter, r *http.Request, name str
 		stop(err)
 		return
 	}
-	writeJSON(w, map[string]any{"ref": ref.Ref, "name": ref.Name, "existed": ref.Existed, "spooled": false, "proposalId": proposal.ID, "status": "pending", "pilotStatus": reintake.PilotStatus(s.reIntakeDataDir)})
+	writeJSON(w, map[string]any{"ref": ref.Ref, "name": ref.Name, "existed": ref.Existed, "spooled": false, "proposalId": proposal.ID, "status": "pending", "pilotStatus": reintake.PilotStatus(dir)})
 }
 
 // Reuse the existing contractor/property/contract request context, and supply

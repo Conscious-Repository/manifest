@@ -153,11 +153,13 @@ func runStaged(ctx context.Context, dataDir string, cfg Config, a hermes.DutyAut
 	}
 	defer f.Close()
 	receipt = productionReceipt("uncertain", "outcome uncertain")
+	receipt.Model = a.Model
 	if appendProductionReceipt(f, receipt) != nil || syncProductionRoot(root) != nil {
 		return empty, receipt, productionRefusal("receipt persistence failed")
 	}
 	finish := func(state, reason string, candidate approvals.Proposal, usage *hermes.TokenUsage) (approvals.Proposal, ProductionReceipt, error) {
 		receipt = productionReceipt(state, reason)
+		receipt.Model = a.Model
 		if state == "verified" {
 			b, _ := json.Marshal(candidate)
 			receipt.CandidateSHA256 = fmt.Sprintf("%x", sha256.Sum256(b))
