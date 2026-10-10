@@ -90,6 +90,15 @@
   .liber-pane { min-height: calc(100dvh - 120px); }
   .liber-msg { max-width: 94%; }
 }
+/* Desktop: use the room right of the menu — a little breathing space at the
+   edges, a roomier chat list, and a conversation that fills the rest. */
+@media (min-width: 861px) {
+  .liber-view { box-sizing: border-box; max-width: 1480px; grid-template-columns: clamp(300px, 28%, 400px) minmax(0, 1fr); gap: 0 clamp(28px, 3vw, 48px); padding: 24px clamp(24px, 3vw, 48px) 0; }
+  .liber-list { padding-right: clamp(16px, 2vw, 28px); }
+  .liber-hello { padding-top: 8px; }
+  .liber-hello-text { max-width: 40em; }
+  .liber-msg { max-width: min(88%, 760px); }
+}
 .liber-card.is-change .liber-card-summary { font-weight: 400; }
 
 /* photos */
