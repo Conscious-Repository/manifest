@@ -179,7 +179,46 @@ func (s *Server) observeTerm(ctx context.Context, se termSession) (terminalObser
 	if err != nil {
 		return terminalUnknown(id), err
 	}
-	return rt.Inspect(ctx, id)
+	ob, err := rt.Inspect(ctx, id)
+	if err == nil {
+		ob = s.settleStaleWorking(se, ob)
+	}
+	return ob, err
+}
+
+// staleWorkingQuiet is how long an agent must have written nothing after its
+// own recorded turn end before that record outranks a runtime "working".
+const staleWorkingQuiet = 2 * time.Minute
+
+// settleStaleWorking — herdr guesses "working" from the window title, and a
+// title that stops updating leaves a finished agent "working" for hours
+// (owner 2026-10-11: "WORKING 7h 47m" on a chat that had ended; the send path
+// then held every new message as "agent is working"). The agent's transcript
+// is its own record: when its last turn ended (Claude end_turn, Codex
+// task_complete) and the file has been quiet since, the agent is idle. A long
+// tool call or a Codex task still in progress has no turn end, so it stays
+// working however quiet it is.
+func (s *Server) settleStaleWorking(se termSession, ob terminalObservation) terminalObservation {
+	if ob.AgentState != "working" || (se.Kind != "claude" && se.Kind != "codex") || se.BoardBrief != "" || s.terminal == nil {
+		return ob
+	}
+	path := s.terminal.transcriptPath(se)
+	if path == "" {
+		return ob
+	}
+	st, err := os.Stat(path)
+	if err != nil || time.Since(st.ModTime()) < staleWorkingQuiet {
+		return ob
+	}
+	tr, ok := readTranscript(se.Kind, path, 0)
+	if !ok || tr.Run == nil || tr.Run.State != "completed" {
+		return ob
+	}
+	if at, err := time.Parse(time.RFC3339Nano, tr.Run.At); err != nil || time.Since(at) < staleWorkingQuiet {
+		return ob
+	}
+	ob.AgentState = "idle"
+	return ob
 }
 
 // launchHerdr persists every boundary before crossing it. An interrupted intent,

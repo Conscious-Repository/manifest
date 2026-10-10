@@ -55,7 +55,7 @@ func (h *terminalEventHub) snapshotLocked() terminalEventSnapshot {
 			// Keep its process and agent state unknown rather than adopting another.
 			ob.Connectivity = "connected"
 			if got, ok := h.latest[se.Runtime.Pane]; ok && got.Identity.Generation == se.Runtime.Generation && got.Identity.Occupant == se.Runtime.Occupant && got.Identity.Session == se.Runtime.Session && got.Identity.Host == se.Runtime.Host && (se.Runtime.AgentSession == "" || se.Runtime.AgentSession == got.Identity.AgentSession) {
-				ob = got
+				ob = h.server.settleStaleWorking(se, got)
 				ob.Identity.ManifestID = se.ID
 			}
 		}
