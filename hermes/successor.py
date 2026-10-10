@@ -99,7 +99,10 @@ def main():
         # JSON mode: GLM wraps objects in markdown fences otherwise, which the
         # strict candidate parser (rightly) refuses.
         body = json.dumps({'model': MODEL, 'messages': [{'role': 'user', 'content': packet['prompt']}],
-                           'stream': False, 'max_tokens': 4096, 'response_format': {'type': 'json_object'}})
+                           'stream': False, 'max_tokens': 4096, 'response_format': {'type': 'json_object'},
+                           # GLM reasons by default and spends the whole budget
+                           # thinking; a one-step extraction answers directly
+                           **({'chat_template_kwargs': {'enable_thinking': False}} if MODEL.startswith('glm') else {})})
         conn.request('POST', '/v1/chat/completions', body, {'Content-Type': 'application/json'})
         response = conn.getresponse()
         if response.status != 200:
