@@ -441,3 +441,6 @@ func TestFixtureChatSnappy(t *testing.T) { runFixture(t, "chat-snappy.cjs", true
 // from first paint; classic rolls it back; boot once, never with reduced
 // motion; AA contrast (jarvis-hud.cjs).
 func TestFixtureJarvisHUD(t *testing.T) { runFixture(t, "jarvis-hud.cjs", true, false) }
+
+// Opens on the latest message; a send settles the composer once (chat-pinned.cjs).
+func TestFixtureChatPinned(t *testing.T) { runFixture(t, "chat-pinned.cjs", true, false) }

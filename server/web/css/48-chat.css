@@ -1264,3 +1264,6 @@ label.chat-artifact-handoff{display:flex;flex-direction:row;align-items:flex-sta
 .chat-liber-note { font-family: var(--sans); font-size: var(--fs-sm); color: var(--base-50); }
 .chat-liber-photos { display: flex; flex-wrap: wrap; gap: var(--sp-2); margin-bottom: var(--sp-2); }
 .chat-liber-photos img { width: 96px; height: 96px; object-fit: cover; border-radius: var(--radius); border: 1px solid var(--line); }
+/* a send being confirmed: the field is at rest, its words hidden (they return if refused) */
+.chat-composer.is-sending textarea.chat-input { color: transparent; caret-color: transparent; }
+.chat-composer.is-sending textarea.chat-input::placeholder { color: transparent; }

@@ -1283,3 +1283,7 @@
     font: 600 var(--fs-xs)/20px var(--sans); font-variant-numeric: tabular-nums; text-align: center;
   }
 }
+/* a long hint stays on the field's one row, cut with an ellipsis (2026-10-10) */
+@media (max-width: 860px) {
+  .chat-main .chat-composer textarea.chat-input::placeholder { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+}

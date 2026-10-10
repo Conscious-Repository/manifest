@@ -90,7 +90,7 @@ const census=()=>{const out=[];for(const e of document.querySelectorAll('button,
    await page.locator('#chatTranscript .chat-run-state').waitFor();await page.locator('.chat-queued-control > .chat-queued-cancel').waitFor();await page.waitForTimeout(300);
    const says=await page.evaluate(()=>[...document.querySelectorAll('.chat-shell *')].filter(e=>e.getBoundingClientRect().height>0&&[...e.childNodes].some(n=>n.nodeType===3&&/queued/i.test(n.textContent))).map(e=>e.textContent.trim()));
    assert.deepEqual(says,['Queued · accepted, not started'],'the queued state is stated once');
-   assert.equal(await page.locator('#chatComposer textarea').getAttribute('placeholder'),"Can't steer; messages queue…",'capability truth stays in the field');
+   assert.equal(await page.locator('#chatComposer textarea').getAttribute('placeholder'),"Messages queue…",'capability truth stays in the field');
    assert.equal(await page.locator('#chatTranscript .chat-user.is-queued + .chat-turn-receipt .chat-queued-edit').textContent(),'Edit');
    const cancel=page.getByRole('button',{name:'Cancel queued instruction: Please check the build',exact:true});
    const cb=await cancel.evaluate(e=>{const r=e.getBoundingClientRect();return {w:r.width,h:r.height};});

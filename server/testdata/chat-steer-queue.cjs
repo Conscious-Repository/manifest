@@ -20,8 +20,8 @@ const {makeStub}=require('./chat-stub-api.cjs');
   assert.equal(count(/^POST .*\/messages/),0);
   // a turn runs: the field says Alfred cannot steer
   await fetch(base+'/__set?id=b&patch='+encodeURIComponent(JSON.stringify({status:'thinking'})));
-  await page.waitForFunction(()=>/can.t steer/.test(document.querySelector('#chatComposer textarea')?.placeholder||''),null,{timeout:8000});
-  assert.equal(await ta.getAttribute('placeholder'),'✦ Working — can\'t steer; messages queue…');
+  await page.waitForFunction(()=>/messages queue/.test(document.querySelector('#chatComposer textarea')?.placeholder||''),null,{timeout:8000});
+  assert.equal(await ta.getAttribute('placeholder'),'✦ Working · messages queue…');
   // Tab queues (the durable queue: accepted, not started)
   await ta.fill('queue this');await ta.press('Tab');
   for(let i=0;i<40&&!count(/^POST .*\/sessions\/b\/messages/);i++)await page.waitForTimeout(100);
@@ -44,7 +44,7 @@ const {makeStub}=require('./chat-stub-api.cjs');
   assert.equal(stub.sessions.b.deliveries.at(-1).state,'cancelled','the pulled-back message is no longer queued');
   await page.locator('#chatTranscript .chat-user.is-cancelled').getByText('Cancelled before dispatch').waitFor();
   assert.deepEqual(errors,[]);
-  console.log('PASS: native steer vs queue — cannot-steer said in words, Tab queues, ↑ pulls back (cancelled first), Tab moves focus when idle.');
+  console.log('PASS: native steer vs queue — messages-queue said in words, Tab queues, ↑ pulls back (cancelled first), Tab moves focus when idle.');
   await ctx.close();
  }finally{await browser.close();stub.server.close();}
 })().catch(e=>{console.error(e);process.exitCode=1;});

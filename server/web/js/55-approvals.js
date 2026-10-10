@@ -780,8 +780,7 @@ function apprDeslug(v) { return String(v || "").replace(/^property\//, "").repla
 // a name a model wrote as a slug ("masonry-tuck-point-repair") reads as words
 function apprHumanName(v) {
   const t = String(v || "").trim();
-  if (!/^[a-z0-9]+(-[a-z0-9]+)+$/.test(t)) return t;
-  const w = t.replace(/-/g, " ");
+  const w = /^[a-z0-9]+(-[a-z0-9]+)+$/.test(t) ? t.replace(/-/g, " ") : t;
   return w.charAt(0).toUpperCase() + w.slice(1);
 }
 // 2026-09-29 → Sep 29, 2026; anything else as written
@@ -923,7 +922,7 @@ function buildReContractEditor(a, evidence) {
   // one property: say it once (in the header), not on every line
   const oneProp = new Set([...allocs.map((al) => al.property), ...(p.tasks || []).map((t) => t.property), ...(p.new_milestones || []).map((m) => m.property)]).size <= 1;
   (p.new_milestones || []).forEach((m, mi) => {
-    writeRow("＋", "new", () => m.name + " — new milestone under " + names.rock(m.rock) + (oneProp ? "" : ", " + names.prop(m.property)),
+    writeRow("＋", "new", () => m.name + " — new milestone under " + apprHumanName(names.rock(m.rock)) + (oneProp ? "" : ", " + names.prop(m.property)),
       { id: a.id, kind: "milestone", i: mi });
   });
   (p.tasks || []).forEach((t, ti) => {
@@ -976,7 +975,7 @@ function buildReContractEditor(a, evidence) {
     const tail = parts.slice(1).join("/");
     const made = (p.new_milestones || []).find((m) =>
       m.property === al.property && tail === String(m.name).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, ""));
-    return [names.rock(parts[0]), made ? made.name : apprDeslug(tail)].filter(Boolean).join(" / ");
+    return [apprHumanName(names.rock(parts[0])), made ? made.name : apprHumanName(apprDeslug(tail))].filter(Boolean).join(" / ");
   }
   function propsPhrase() {
     const labels = [...new Set(allocs.map((al) => names.prop(al.property)))];

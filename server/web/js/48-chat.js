@@ -2817,6 +2817,8 @@ function renderChatComposer(session) {
   const host = document.getElementById("chatComposer");
   if (!host) return;
   host.classList.add("input-surface");
+  // a send has been answered (accepted or refused): the field is itself again
+  if (host.classList.contains("is-sending")) { host.classList.remove("is-sending"); const t = host.querySelector("textarea"); if (t && t._grow) t._grow(); }
   if(session?.sharing && session.sharing.state!=="shared"){host.dataset.built="";host.classList.add("closed");host.replaceChildren(el("p","chat-load-error","Sharing is awaiting recovery. Use Recover sharing above to finish, then continue in the team conversation."));return;}
   // a closed composer (failed load, sharing recovery) rebuilds from the draft
   if(host.classList.contains("closed")){host.classList.remove("closed");host.removeAttribute("aria-disabled");host.replaceChildren();host.dataset.built="";if(typeof mountMics==="function")setTimeout(mountMics,0);}
@@ -2865,7 +2867,7 @@ function renderChatComposer(session) {
     const run = session ? chatEntryState({session}) : null;
     // this adapter cannot steer a running turn (capabilities.steer), so the
     // field says so, and that a message now waits for the next turn
-    return run && run.execution === "running" ? "✦ " + run.label + " — can't steer; messages queue…" : run && run.execution === "queued" ? "Can't steer; messages queue…" : "Message…";
+    return run && run.execution === "running" ? "✦ " + run.label + " · messages queue…" : run && run.execution === "queued" ? "Messages queue…" : "Message…";
   };
   // a portal agent takes one order at a time: a send while it runs 409s, so
   // the button says so instead (the placeholder already says why)
@@ -2901,12 +2903,12 @@ function renderChatComposer(session) {
   // clamped so a long paste scrolls inside instead of shoving the transcript.
   const grow = () => { const size = () => { if (host.classList.contains("is-sending")) { ta.style.height = ""; return; } const measured = textareaContentHeight(ta); if (!measured) return; const height = Math.min(measured, Math.max(56,Math.min(220,(window.visualViewport?.height||window.innerHeight)*0.3))) + "px"; if (ta.style.height !== height) ta.style.height = height; }; size(); if (chatComposerShape(host, ta)) size(); };
   ta._grow=grow;
-  ta.addEventListener("input", grow);
-  ta.addEventListener("input", chatSaveDraft);
   // typing during (or after a lost answer to) a send shows the words again:
   // is-sending hides the field's text, and new words must never be invisible
   // (owner 2026-10-10: "only the red underline for misspelled words")
   ta.addEventListener("input", () => { if (host.classList.contains("is-sending")) host.classList.remove("is-sending"); });
+  ta.addEventListener("input", grow);
+  ta.addEventListener("input", chatSaveDraft);
   // @-mention typeahead (portal sections): the word at the caret starting
   // with @ opens the list; click/Tab/Enter inserts, Escape closes.
   const mention = el("div", "chat-mention");

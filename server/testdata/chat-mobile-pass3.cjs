@@ -14,11 +14,10 @@
 //      empty row between them at 390) and its menu opens on screen;
 //   4. one rhythm: 24–32px between turns (10px), a reply's meta 8–12px under
 //      its text (19px, more than the gap to the next turn);
-//   5. the composer after a send (a long run-state hint gives the field its
-//      own row): the chips join the controls row, two rows, ≤100px at 390
-//      (a phone conversation folds model · effort into ＋ since 2026-10-03;
-//      what stays visible still shares the row)
-//      (three rows, 148px), every target 44px;
+//   5. the composer after a send stays one resting row (owner 2026-10-10: a
+//      long run-state hint used to give the field its own row, and the box
+//      regrew after shrinking on send); the hint is cut with an ellipsis and
+//      is the field's tooltip; every target 44px;
 //   6. one primary per region: send with text is the accent (ink #171717),
 //      ＋ New chat in the head is not a second filled button (accent fill);
 //      the composer's radius is the --radius-message token (26px).
@@ -85,7 +84,7 @@ const phone=w=>({viewport:{width:w,height:844},isMobile:true,hasTouch:true});
    await page.getByRole('button',{name:'Edit queued instruction: Please check the build',exact:true}).waitFor();
    await page.getByRole('button',{name:'Cancel queued instruction: Please check the build',exact:true}).waitFor();
    // 5. the composer after a send: two rows, the chips beside + · mic · send
-   await page.waitForFunction(()=>document.querySelector('#chatComposer textarea').placeholder==="Can't steer; messages queue…");
+   await page.waitForFunction(()=>document.querySelector('#chatComposer textarea').placeholder==="Messages queue…");
    await page.locator('#chatComposer .mic-btn').waitFor();await page.waitForTimeout(200);
    const c=await page.evaluate(()=>{
     const R=e=>e.getBoundingClientRect(),host=document.getElementById('chatComposer'),mid=e=>Math.round(R(e).top+R(e).height/2);
@@ -94,9 +93,13 @@ const phone=w=>({viewport:{width:w,height:844},isMobile:true,hasTouch:true});
     return {h:R(host).height,rows:new Set(kids.map(mid)).size,chipsWithSend:[...host.querySelectorAll('.chat-composer-recipient,.chat-composer-model')].filter(e=>e.offsetParent).every(e=>Math.abs(mid(e)-mid(send))<=2),
      small:kids.filter(e=>e.matches('button')&&(R(e).width<44||R(e).height<44)).map(e=>e.className),overflow:document.documentElement.scrollWidth>innerWidth};
    });
-   assert.equal(c.rows,2,'the composer holds '+c.rows+' rows'+at);
+   assert.equal(c.rows,1,'the composer holds '+c.rows+' rows'+at);
    assert.ok(c.chipsWithSend,'the chips share the controls row'+at);
-   if(w===390)assert.ok(c.h<=100,'the composer is '+c.h+'px'+at);
+   assert.ok(c.h<=60,'the composer is '+c.h+'px'+at);
+   const fits=await page.evaluate(()=>{const t=document.querySelector('#chatComposer textarea'),cs=getComputedStyle(t),g=document.createElement('canvas').getContext('2d');g.font=cs.fontStyle+' '+cs.fontWeight+' '+cs.fontSize+' '+cs.fontFamily;return g.measureText(t.placeholder).width<=t.clientWidth-parseFloat(cs.paddingLeft)-parseFloat(cs.paddingRight);});
+   // whole from 390 up; at 320 it ends in an ellipsis and the tooltip carries it
+   if(w>=390)assert.ok(fits,'the hint reads whole on the one row'+at);
+   else assert.equal(await page.evaluate(()=>document.querySelector('#chatComposer textarea').title),'Messages queue…','the cut hint is the tooltip'+at);
    assert.deepEqual(c.small,[],'a composer control under 44px'+at);
    assert.equal(c.overflow,false,'horizontal overflow'+at);
    // 2. Edit: out of the queue, back into the field
@@ -108,6 +111,6 @@ const phone=w=>({viewport:{width:w,height:844},isMobile:true,hasTouch:true});
    assert.deepEqual(errors,[],at);
    await ctx.close();stub.server.close();
   }
-  console.log('PASS: queued state under its own bubble with 44px Edit/Cancel, meta row grouped, 24px turns / meta under its text, two-row composer after a send, accent send, quiet ＋, token radius — 320/390/412');
+  console.log('PASS: queued state under its own bubble with 44px Edit/Cancel, meta row grouped, 24px turns / meta under its text, one-row composer after a send, accent send, quiet ＋, token radius — 320/390/412');
  }finally{await browser.close();}
-})().catch(e=>{console.error(e);process.exitCode=1;});
+})().catch(e=>{console.error(e);process.exit(1);});

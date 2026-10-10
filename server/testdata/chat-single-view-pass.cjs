@@ -8,7 +8,7 @@
 //      44px target (was 29×36); its open menu's live actions are 44px rows in
 //      ≥4.5:1 ink (were 40px at 2.52:1, indistinguishable from disabled);
 //   2. 390, after a send: the queued-cancel control is a 44px target at
-//      ≥4.5:1; the run-state hint ("Can't steer; messages queue…")
+//      ≥4.5:1; the run-state hint ("Messages queue…")
 //      fits its field instead of clipping mid-word, and the "accepted, not
 //      started" line stays in view as the field takes its row; typing and
 //      clearing do not move the field;
@@ -63,7 +63,7 @@ const contrastOf=(sel,pseudo)=>{const parse=c=>(c.match(/[\d.]+/g)||[]).map(Numb
    const ta=page.locator('#chatComposer textarea');
    await ta.fill('Please check the build');await page.locator('#chatComposer .chat-send').click();
    await page.locator('.chat-queued-control > .chat-queued-cancel').waitFor();
-   await page.waitForFunction(()=>document.querySelector('#chatComposer textarea').placeholder==="Can't steer; messages queue…");
+   await page.waitForFunction(()=>document.querySelector('#chatComposer textarea').placeholder==="Messages queue…");
    const cancel=await box(page,'.chat-queued-control > .chat-queued-cancel');
    assert.ok(cancel.h>=44,'queued cancel is '+cancel.h+'px tall');
    const cc=await page.evaluate(contrastOf,'.chat-queued-control > .chat-queued-cancel');assert.ok(cc>=4.5,'queued cancel contrast '+cc.toFixed(2));
