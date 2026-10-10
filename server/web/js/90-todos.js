@@ -37,11 +37,22 @@ async function loadTodos() {
   }
 }
 
+// todosWriteSeq ticks before and after every write: a background refresh that
+// was in flight across a write carries the pre-write payload and must not
+// land over the write's fresh one (the edit showed, then reverted until the
+// next poll).
+let todosWriteSeq = 0;
 async function todosApi(path, body) {
+  todosWriteSeq++;
   try {
     todosCache = { ...todosCache, ...(await postJSONOk(path, body)) };
+    todosWriteSeq++;
     renderTodos();
-  } catch (e) { showToast((e.message || "Task update failed").slice(0, 80)); }
+  } catch (e) {
+    todosWriteSeq++;
+    showToast("Not saved — " + (e.message || "task update failed").slice(0, 100), null, "error");
+    loadTodos(); // converge: an optimistic reorder/hold must not outlive a refusal
+  }
 }
 
 // tabOf buckets a row into the FOCUS sub-tabs by its container.
@@ -329,8 +340,10 @@ function rankedRow(r, idx) {
   if (r.source !== "property") {
     const teth = el("button", "tdo-tether" + (r.rock ? " on" : ""), "⧗");
     teth.title = r.rock ? "advances " + r.rock + " — click to change" : "tether to a rock or stage…";
+    // an aion row can only advance an Aion rock: the live contract refuses
+    // any other (and the server now does too), so offer only those
     teth.onclick = () => openTetherPicker(teth, { rock: r.rock }, r.container.name,
-      (p) => todosApi("/api/tasks/update", { id: r.id, rock: p.rock, stage: p.stage }));
+      (p) => todosApi("/api/tasks/update", { id: r.id, rock: p.rock, stage: p.stage }), r.source === "aion");
     right.append(teth);
   }
   // ⇢ delegate (Phase 6) — dispatch this todo to a harness; the chip tracks
@@ -481,7 +494,7 @@ async function tetherAreas() {
 
 // openTetherPicker swaps `anchor` for the typeahead; restores it on escape /
 // blur. preferArea floats that area's rocks to the top. onPick({rock, stage}).
-function openTetherPicker(anchor, current, preferArea, onPick) {
+function openTetherPicker(anchor, current, preferArea, onPick, onlyPreferred) {
   let done = false;
   const restore = () => { if (!done && ta.el.parentNode) ta.el.replaceWith(anchor); };
   const pick = (rock, stage) => { done = true; ta.el.replaceWith(anchor); onPick({ rock, stage }); };
@@ -493,7 +506,7 @@ function openTetherPicker(anchor, current, preferArea, onPick) {
     suggest: async (q, add) => {
       const areas = await tetherAreas();
       const items = [];
-      areas.forEach((a) => (a.rocks || []).filter((r) => !r.checked).forEach((r) => {
+      areas.filter((a) => !onlyPreferred || a.name === preferArea).forEach((a) => (a.rocks || []).filter((r) => !r.checked).forEach((r) => {
         items.push({ label: a.name + " · " + r.text, rock: r.id, stage: "", area: a.name });
         (r.children || []).filter((c) => !c.checked).forEach((c) =>
           items.push({ label: a.name + " · " + r.text + " → " + c.text, rock: r.id, stage: c.text, area: a.name }));

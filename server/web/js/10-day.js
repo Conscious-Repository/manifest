@@ -1,5 +1,6 @@
 // ---- day: load + render ----
 async function load(date) {
+  await flushSaves(); // a pending edit lands before the day is re-read
   state.date = date || isoToday();
   const today = state.date === isoToday();
   els.dateLabel.textContent = today ? "TODAY" : prettyDate(state.date);
@@ -165,6 +166,7 @@ function openMilestonePicker(i, pick) {
 }
 
 async function setFocus(slot, goalId) {
+  await flushSaves();
   setSaveState("saving");
   try {
     const r = await fetch(`/api/day/focus?date=${state.date}`, {
@@ -172,13 +174,15 @@ async function setFocus(slot, goalId) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ slot, goalId }),
     });
+    if (!r.ok) throw new Error((await r.text()).trim() || "HTTP " + r.status);
     state.day = await r.json();
     setSaveState("saved");
-  } catch (e) { setSaveState("error"); }
+  } catch (e) { setSaveState("error"); showToast("Focus not saved — " + String(e.message || e).slice(0, 120), null, "error"); }
   renderDay();
 }
 
 async function setMilestone(slot, milestoneId) {
+  await flushSaves();
   setSaveState("saving");
   try {
     const r = await fetch(`/api/day/focus/milestone?date=${state.date}`, {
@@ -186,9 +190,10 @@ async function setMilestone(slot, milestoneId) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ slot, milestoneId }),
     });
+    if (!r.ok) throw new Error((await r.text()).trim() || "HTTP " + r.status);
     state.day = await r.json();
     setSaveState("saved");
-  } catch (e) { setSaveState("error"); }
+  } catch (e) { setSaveState("error"); showToast("Focus not saved — " + String(e.message || e).slice(0, 120), null, "error"); }
   renderDay();
 }
 
@@ -307,6 +312,7 @@ function openTaskPicker(pick, stageId) {
 // captureTask (goals-orient): free-typed day task → appended into goals.md under
 // the focus slot's stage with a durable [goal:: id], seated on the day linked.
 async function captureTask(stageId, text) {
+  await flushSaves();
   setSaveState("saving");
   try {
     const r = await fetch(`/api/day/capture?date=${state.date}`, {
@@ -316,35 +322,39 @@ async function captureTask(stageId, text) {
     });
     if (!r.ok) throw new Error(await r.text());
     setSaveState("saved");
-  } catch (e) { setSaveState("error"); }
+  } catch (e) { setSaveState("error"); showToast("Couldn't capture — " + String(e.message || e).slice(0, 120), null, "error"); }
   load(state.date); // reload: the task re-seats linked in its slot row
 }
 
 async function pullGoal(goalId) {
   if (collectTasks().length >= MAX_TASKS) return; // hard cap of 3 tasks — remove one first
+  await flushSaves();
   setSaveState("saving");
   try {
-    await fetch(`/api/day/pull?date=${state.date}`, {
+    const r = await fetch(`/api/day/pull?date=${state.date}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ goalId }),
     });
+    if (!r.ok) throw new Error((await r.text()).trim() || "HTTP " + r.status);
     setSaveState("saved");
-  } catch (e) { setSaveState("error"); }
+  } catch (e) { setSaveState("error"); showToast("Couldn't add — " + String(e.message || e).slice(0, 120), null, "error"); }
   load(state.date); // reload to show the linked task + updated pool
 }
 
 async function pullTodo(taskId) {
   if (collectTasks().length >= MAX_TASKS) return;
+  await flushSaves();
   setSaveState("saving");
   try {
-    await fetch(`/api/day/pull?date=${state.date}`, {
+    const r = await fetch(`/api/day/pull?date=${state.date}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ taskId }),
     });
+    if (!r.ok) throw new Error((await r.text()).trim() || "HTTP " + r.status);
     setSaveState("saved");
-  } catch (e) { setSaveState("error"); }
+  } catch (e) { setSaveState("error"); showToast("Couldn't add — " + String(e.message || e).slice(0, 120), null, "error"); }
   load(state.date);
 }
 

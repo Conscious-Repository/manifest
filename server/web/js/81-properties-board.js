@@ -83,22 +83,26 @@ async function pfPatch(p, key, value) {
   try {
     const fresh = await postJSONOk("/api/properties/" + encodeURIComponent(p.slug) + "/field", { key, value });
     pfSwap(fresh);
-  } catch (e) { showToast("Couldn't save " + key + " — " + (e.message || "")); }
+  } catch (e) {
+    showToast("Couldn't save " + key + " — " + (e.message || ""));
+    if (propMode === "portfolio") renderPortfolio(); // the field shows the refused value until repainted
+  }
 }
 
 async function pfWorkOp(p, body) {
   try {
     const fresh = await postJSONOk("/api/properties/" + encodeURIComponent(p.slug) + "/work", body);
     pfSwap(fresh);
-  } catch (e) { showToast("Couldn't save — " + (e.message || "")); }
+  } catch (e) { showToast("Couldn't save — " + (e.message || "")); if (propMode === "portfolio") renderPortfolio(); }
 }
 
 function pfSwap(fresh) {
   if (fresh && fresh.slug) {
     const i = propertyCache.findIndex((x) => x.slug === fresh.slug);
     if (i >= 0) { fresh.__source = propertyCache[i].__source; propertyCache[i] = fresh; }
+    propLoadSeq++; // a read already in flight predates this save
   }
-  renderPortfolio();
+  reRepaintWhenIdle(() => { if (propMode === "portfolio") renderPortfolio(); });
 }
 
 function renderPortfolio() {
@@ -491,7 +495,7 @@ function statusSelect(p, onSaved) {
   sel.value = p.status || "negotiating"; // options are mounted above — the value sticks
   sel.onchange = async () => {
     try { onSaved(await postJSONOk("/api/properties/" + encodeURIComponent(p.slug) + "/field", { key: "status", value: sel.value })); }
-    catch (err) { showToast("Couldn't update status"); }
+    catch (err) { sel.value = p.status || "negotiating"; showToast("Couldn't update status"); } // never show a refused status
   };
   return sel;
 }

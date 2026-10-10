@@ -41,6 +41,7 @@ let recPeopleShowArchived = false;  // `who I'd ask` includes the set-aside
 let recPersonEdit = null; // the connector id whose row is in edit mode
 let recPlaceQuery = "";   // PLACES search
 let recPlaceEdit = null;  // the place id whose row is in edit mode
+let recPlaceDraft = null; // {id, draft} — the open editor's words, held across repaints
 let recFocusedReview = false;
 let recFocusedKey = "";
 let recFocusedIndex = 0;
@@ -152,12 +153,18 @@ function recKeepControl(runId, draftId, name, after, also) {
 }
 
 async function recSourcesPost(url, body, okMsg, method) {
+  recWritesInFlight++;
   try {
     const r = await fetchJSONRetry(method || "POST", url, body || {}); // survives a deploy-window 502
     if (!r.ok) throw new Error(await r.text());
     const out = await r.json();
     if (out.runs) recRuns = out.runs;
     if (out.view) recCache = out.view;
+    // an accept/pass/keep moves tombstones and the ranked set: drop those
+    // memos so neither list shows the person where they were before the
+    // write (the ranked view refreshes itself after its own writes)
+    recPassedList = null; recPassedTicket++;
+    if (recPlacesLayout !== "people") recRanked = null;
     if (okMsg) showToast(okMsg);
     renderAion();
     return out;
@@ -168,17 +175,29 @@ async function recSourcesPost(url, body, okMsg, method) {
     // must not stay dead on a card whose facts did not change
     renderAion();
     return null;
-  }
+  } finally { recWritesInFlight--; }
 }
 
+// Writes in flight. recPollLive drops a snapshot that raced one, or it would
+// paint the pre-write record over the value the owner just saved.
+let recWritesInFlight = 0;
+
 async function recPost(url, body, okMsg) {
+  recWritesInFlight++;
   try {
     const r = await fetchJSONRetry("POST", url, body || {}); // survives a deploy-window 502
     if (!r.ok) throw new Error(await r.text());
     recCache = await r.json();
     if (okMsg) showToast(okMsg);
     renderAion();
-  } catch (e) { showToast(String(e.message || e).slice(0, 140), null, "error"); }
+    return true;
+  } catch (e) {
+    showToast(String(e.message || e).slice(0, 140), null, "error");
+    // repaint from the record we still hold: a select or checkbox the server
+    // refused must not keep showing the value that was never saved
+    renderAion();
+    return false;
+  } finally { recWritesInFlight--; }
 }
 
 // ---- derivations (every count derives; never a literal) ----
@@ -380,8 +399,9 @@ function recHeaderMeta() {
 
 // ---- entry ----
 
-async function renderAionRecruiting(host, focusNav = "") {
+async function renderAionRecruiting(host, focusNav = "", focusEdit = null) {
   let restoreNav = document.activeElement?.dataset?.recNav || focusNav;
+  let restoreEdit = focusEdit;
   host.innerHTML = "";
   if (!recCache) {
     host.append(emptyRow("loading…"));
@@ -404,6 +424,8 @@ async function renderAionRecruiting(host, focusNav = "") {
   const paint = () => {
     const focusedNav = document.activeElement?.dataset?.recNav || restoreNav;
     restoreNav = "";
+    const editing = recEditSnapshot() || restoreEdit;
+    restoreEdit = null;
     paintRail(rail);
     paintMain(main);
     // NETWORK is a picture, and a picture needs the width. The candidate
@@ -433,6 +455,7 @@ async function renderAionRecruiting(host, focusNav = "") {
       const buttons = [...document.querySelectorAll("[data-rec-nav]")].filter((b) => b.getClientRects().length && !b.disabled);
       (buttons.find((b) => b.dataset.recNav === focusedNav) || buttons[0])?.focus({preventScroll: true});
     }
+    recEditRestore(editing);
   };
   recPaint = paint;
   paint();
@@ -440,6 +463,36 @@ async function renderAionRecruiting(host, focusNav = "") {
 
 // module-level handle so deep handlers repaint in place
 let recPaint = null;
+
+// A save's repaint rebuilds every input. Blur-to-save means the owner has
+// usually already moved on and is typing in the NEXT field when the response
+// lands, and that field was destroyed with its words in it. Inputs that carry
+// data-rec-edit (a key stable across repaints, scoped to the record) are
+// snapshotted before a rebuild and their value, focus and caret put back.
+function recEditSnapshot() {
+  const a = document.activeElement;
+  const key = a && a.dataset && a.dataset.recEdit;
+  if (!key) return null;
+  let start = null, end = null;
+  try { start = a.selectionStart; end = a.selectionEnd; } catch (_) {}
+  // Chrome blurs the field while the rebuild removes it; its blur-save must
+  // not send the half-typed value (recBlurSave) — the restore carries it on
+  a.recRebuilding = true;
+  return { key, value: a.value, start, end, node: a };
+}
+// recBlurSave: is this blur the owner leaving the field (save), or a repaint
+// tearing it down mid-edit (don't — the words move to the rebuilt field)?
+function recBlurSave(n) { return n.isConnected && !n.recRebuilding; }
+function recEditRestore(snap) {
+  if (!snap) return;
+  snap.node.recRebuilding = false; // survived the paint, or is gone for good
+  const n = [...document.querySelectorAll("[data-rec-edit]")].find((x) => x.dataset.recEdit === snap.key);
+  if (!n || n === snap.node) return;
+  // an editor that keeps its draft from oninput hears the restored words too
+  if (n.value !== snap.value) { n.value = snap.value; n.dispatchEvent(new Event("input", { bubbles: true })); }
+  n.focus({ preventScroll: true });
+  if (snap.start != null) { try { n.setSelectionRange(snap.start, snap.end); } catch (_) {} }
+}
 
 // ---- the rail: VIEWS over ROLES over SEEDS, with the sync footer ----
 
@@ -957,6 +1010,7 @@ function recIntakeBox() {
     const inp = el("input", "pp-in");
     inp.type = "text";
     inp.value = recIntake[key] || "";
+    inp.dataset.recEdit = "intake#" + key; // the ask poll repaints while you type here
     if (hint) inp.placeholder = hint;
     inp.oninput = () => { recIntake[key] = inp.value; };
     wrap.append(inp);
@@ -1169,6 +1223,7 @@ function recConnectorEditor(p, row) {
     const inp = el("input", "pp-in");
     inp.type = "text";
     inp.value = draft[key];
+    inp.dataset.recEdit = p.id + "#person#" + key;
     if (hint) inp.placeholder = hint;
     inp.oninput = () => { draft[key] = inp.value; };
     inp.onkeydown = (e) => { if (e.key === "Enter") save(); if (e.key === "Escape") cancel(); };
@@ -1370,23 +1425,30 @@ function recAdhocSources() {
 // made by mistake was permanent in practice.
 let recPassedOpen = false;
 let recPassedList = null;
+let recPassedLoading = false;
+let recPassedTicket = 0; // bumped by every write that moves tombstones
+async function recLoadPassed() {
+  const ticket = recPassedTicket;
+  let list;
+  try { list = (await (await fetch("/api/aion/recruiting/passed")).json()).passed || []; }
+  catch (e) { list = []; }
+  if (ticket !== recPassedTicket) return recLoadPassed(); // a pass landed meanwhile: read again
+  recPassedList = list;
+  if (recPaint) recPaint();
+}
 function recPassedFold() {
   const box = el("section", "rec-passed");
   const head = el("button", "rec-fold-head");
   head.append(el("span", "sec-caret", recPassedOpen ? "▾" : "▸"));
   head.append(el("span", "micro-label", "PASSED"));
   head.append(el("span", "rec-fold-meta", recPassedList ? String(recPassedList.length) : ""));
-  head.onclick = async () => {
-    recPassedOpen = !recPassedOpen;
-    if (recPassedOpen && !recPassedList) {
-      try { recPassedList = (await (await fetch("/api/aion/recruiting/passed")).json()).passed || []; }
-      catch (e) { recPassedList = []; }
-    }
-    if (recPaint) recPaint();
-  };
+  head.onclick = () => { recPassedOpen = !recPassedOpen; if (recPaint) recPaint(); };
   box.append(head);
   if (!recPassedOpen) return box;
-  const list = recPassedList || [];
+  // fetched when open and not held: a pass or pursue elsewhere drops the memo
+  // (recSourcesPost), so the list never shows a tombstone set from before it
+  if (!recPassedList) { if (!recPassedLoading) { recPassedLoading = true; recLoadPassed().finally(() => { recPassedLoading = false; }); } box.append(emptyRow("loading…")); return box; }
+  const list = recPassedList;
   if (!list.length) { box.append(emptyRow("nobody passed on yet")); return box; }
   list.slice().reverse().forEach((pp) => {
     const row = el("div", "rec-passed-row");
@@ -1612,6 +1674,10 @@ function recPlaceRow(p) {
       o.selected = (p.cadence || "") === v;
       cad.append(o);
     });
+    // a hand-written cadence this list lacks shows as itself, not "no cadence"
+    if (p.cadence && ![...cad.options].some((o) => o.value === p.cadence)) {
+      const o = el("option", "", p.cadence); o.value = p.cadence; o.selected = true; cad.append(o);
+    }
     cad.title = "how often this place is due another sweep — it marks the row due; it never sweeps on its own";
     cad.onchange = async () => {
       await recWrite("/api/aion/recruiting/place/" + encodeURIComponent(p.id), { cadence: cad.value }, "POST",
@@ -1642,9 +1708,14 @@ function recPlaceRow(p) {
 
 function recPlaceEditor(p, row) {
   row.classList.add("editing");
-  const draft = { name: p.name || "", org: p.org || "", url: p.url || "", class: p.class || "", label: p.label || "" };
   const feedNow = ((p.unknown || []).find((f) => f.key === "feed") || {}).value || "";
-  draft.feed = feedNow;
+  // the draft outlives this render: picking a class repaints the row, and a
+  // draft rebuilt from the record put the old class back and dropped every
+  // field typed so far
+  if (!recPlaceDraft || recPlaceDraft.id !== p.id) {
+    recPlaceDraft = { id: p.id, draft: { name: p.name || "", org: p.org || "", url: p.url || "", class: p.class || "", label: p.label || "", feed: feedNow } };
+  }
+  const draft = recPlaceDraft.draft;
 
   const grid = el("div", "rec-place-fields");
   const field = (label, key, hint) => {
@@ -1653,6 +1724,7 @@ function recPlaceEditor(p, row) {
     const inp = el("input", "pp-in");
     inp.type = "text";
     inp.value = draft[key];
+    inp.dataset.recEdit = p.id + "#place#" + key;
     if (hint) inp.placeholder = hint;
     inp.oninput = () => { draft[key] = inp.value; };
     inp.onkeydown = (e) => { if (e.key === "Enter") save(); if (e.key === "Escape") cancel(); };
@@ -1675,14 +1747,15 @@ function recPlaceEditor(p, row) {
   });
   row.append(classes);
 
-  const cancel = () => { recPlaceEdit = null; if (recPaint) recPaint(); };
+  const cancel = () => { recPlaceEdit = null; recPlaceDraft = null; if (recPaint) recPaint(); };
   const save = async () => {
     const body = {};
     ["name", "org", "url", "class", "label"].forEach((k) => { if (draft[k] !== (p[k] || "")) body[k] = draft[k]; });
     if (p.class === "media" && draft.feed !== feedNow) body.feed = draft.feed;
     if (!Object.keys(body).length) { cancel(); return; }
-    await recWrite("/api/aion/recruiting/place/" + encodeURIComponent(p.id), body, "POST", draft.name + " saved");
-    recPlaceEdit = null;
+    // a refused save keeps the editor and its words open beside the error
+    if (!await recWrite("/api/aion/recruiting/place/" + encodeURIComponent(p.id), body, "POST", draft.name + " saved")) return;
+    recPlaceEdit = null; recPlaceDraft = null;
     renderAion();
   };
 
@@ -1716,6 +1789,7 @@ async function recPlaceDelete(p) {
 // the server sent a view, and says what refused. Returns false on failure so
 // a caller can leave the row alone.
 async function recWrite(url, body, method, okMsg) {
+  recWritesInFlight++;
   try {
     const opt = { method: method || "POST" };
     if (body) {
@@ -1732,7 +1806,7 @@ async function recWrite(url, body, method, okMsg) {
   } catch (e) {
     showToast(String(e.message || e).slice(0, 160), null, "error");
     return false;
-  }
+  } finally { recWritesInFlight--; }
 }
 
 // ---- the main column, per view ----
@@ -3205,7 +3279,11 @@ function paintRoleView(main) {
     const text = el("input", "pp-in rec-crit-text");
     text.type = "text";
     text.value = x.criterion;
+    // keyed by the saved wording, not the index: a save that drops an
+    // emptied row shifts every index under the field being typed in
+    text.dataset.recEdit = "crit#" + role.slug + "#" + x.criterion;
     text.onblur = () => {
+      if (!recBlurSave(text)) return;
       if (text.value.trim() === x.criterion) return;
       x.criterion = text.value.trim();
       put(crit.filter((y) => y.criterion), "criteria saved");
@@ -3296,13 +3374,17 @@ function paintRoleView(main) {
 
 // recPut mirrors recPost for PUT routes (the criteria editor).
 async function recPut(url, body, okMsg) {
+  recWritesInFlight++;
   try {
     const r = await fetchJSONRetry("PUT", url, body || {}); // survives a deploy-window 502
     if (!r.ok) throw new Error(await r.text());
     recCache = await r.json();
     if (okMsg) showToast(okMsg);
     renderAion();
-  } catch (e) { showToast(String(e.message || e).slice(0, 140), null, "error"); }
+  } catch (e) {
+    showToast(String(e.message || e).slice(0, 140), null, "error");
+    renderAion(); // the criteria list snaps back to what the server holds (see recPost)
+  } finally { recWritesInFlight--; }
 }
 
 // recRoleId is the role a new candidate is filed under: the selected lane, or
@@ -3369,7 +3451,8 @@ function paintInspector(host) {
   const name = el("input", "rec-name-in");
   name.type = "text";
   name.value = c.name || "";
-  name.onblur = () => { if (name.value.trim() && name.value !== c.name) patch({ name: name.value.trim() }); };
+  name.dataset.recEdit = c.id + "#name";
+  name.onblur = () => { if (recBlurSave(name) && name.value.trim() && name.value !== c.name) patch({ name: name.value.trim() }); };
   name.onkeydown = (e) => { if (e.key === "Enter") { e.preventDefault(); name.blur(); } };
   host.append(name);
 
@@ -3380,12 +3463,21 @@ function paintInspector(host) {
     const id = r.id || "role/" + r.slug;
     const o = el("option", "", r.title || r.slug);
     o.value = id;
-    o.selected = c.role === id;
+    o.selected = c.role === id || "role/" + c.role === id; // the server takes a slug or an id
     role.append(o);
   });
+  // a tether to a role this board no longer lists still shows as itself — a
+  // select without its value falls back to "— role" and reads as unsaved
+  if (c.role && ![...role.options].some((o) => o.selected && o.value)) {
+    const o = el("option", "", c.role); o.value = c.role; o.selected = true; role.append(o);
+  }
   role.onchange = () => patch({ role: role.value });
   const stage = el("select", "pp-in rec-in");
-  (recCache.stages || []).filter((st) => st !== "archived").forEach((st) => {
+  const stages = (recCache.stages || []).filter((st) => st !== "archived");
+  // archived (disabled, restore is the way back) or any stage the list lacks
+  // is shown as itself rather than as the first option
+  if (c.stage && !stages.includes(c.stage)) stages.push(c.stage);
+  stages.forEach((st) => {
     const o = el("option", "", st); o.value = st; o.selected = c.stage === st; stage.append(o);
   });
   stage.disabled = c.stage === "archived";
@@ -3424,8 +3516,9 @@ function paintInspector(host) {
     const n = el("input", "pp-in rec-in");
     n.type = "text";
     n.value = value || "";
+    n.dataset.recEdit = c.id + "#" + key;
     const old = n.value;
-    n.onblur = () => { if (n.value !== old) patch({ [key]: n.value }); };
+    n.onblur = () => { if (recBlurSave(n) && n.value !== old) patch({ [key]: n.value }); };
     n.onkeydown = (e) => { if (e.key === "Enter") { e.preventDefault(); n.blur(); } };
     return field(into, label, n);
   };
@@ -3435,6 +3528,9 @@ function paintInspector(host) {
   text(profile, "location", "location", p.location);
   const profileDetails = el("details", "rec-advanced");
   profileDetails.append(el("summary", "", "Edit profile"), profile);
+  // stays open across the repaint each field's save causes
+  profileDetails.open = !!recInspOpen.profile;
+  profileDetails.ontoggle = () => { recInspOpen.profile = profileDetails.open; };
   host.append(el("div", "rec-draft-sub", [p.title, p.org, p.location].filter(Boolean).join(" · ") || "Profile details not recorded"));
   host.append(profileDetails);
   if ((c.evidence || []).length) host.append(recBackgroundBrief({ ...p, evidence: c.evidence }));
@@ -3743,6 +3839,7 @@ function recFitSection(c, gate) {
   return sec;
 }
 
+let recEvidenceForm = {}; // candidate id → the citation being typed
 // evidence — the citations. A URL, a quote and a date, kept verbatim, because
 // a citation is what outlives every cache and every adapter.
 function recEvidenceBody(c) {
@@ -3761,19 +3858,29 @@ function recEvidenceBody(c) {
   if (!(c.evidence || []).length) out.push(emptyRow("no evidence yet"));
 
   const form = el("div", "rec-ev-form");
+  // the unsent citation lives beside the record, not in the inputs: any
+  // repaint (a refused add included) rebuilds them
+  const st = recEvidenceForm[c.id] || (recEvidenceForm[c.id] = { url: "", kind: "", quote: "" });
   const url = inputEl("https://… (or leave blank for a note)");
   url.classList.add("rec-in");
+  url.value = st.url;
+  url.oninput = () => { st.url = url.value; };
   const kind = selectEl(["publication", "repo", "grant", "affiliation", "page",
     "conference", "ats_record", "contact_published", "owner_note"]);
   kind.classList.add("rec-in");
+  if (st.kind) kind.value = st.kind;
+  kind.onchange = () => { st.kind = kind.value; };
   const quote = el("textarea", "pp-in rec-in rec-quote");
   quote.placeholder = "verbatim quote — never paraphrased";
+  quote.value = st.quote;
+  quote.oninput = () => { st.quote = quote.value; };
   const add = el("button", "pill light", "add evidence");
-  add.onclick = () => {
+  add.onclick = async () => {
     if (!url.value.trim() && !quote.value.trim()) { showToast("evidence needs a url or a quote"); return; }
-    recPost("/api/aion/recruiting/candidate/evidence/" + c.id, {
+    delete recEvidenceForm[c.id]; // the success repaint opens an empty form
+    if (!await recPost("/api/aion/recruiting/candidate/evidence/" + c.id, {
       url: url.value.trim(), kind: kind.value, snippet: quote.value,
-    }, "evidence captured");
+    }, "evidence captured")) { recEvidenceForm[c.id] = st; renderAion(); }
   };
   form.append(url, kind, quote, add);
   out.push(form);
@@ -3965,10 +4072,13 @@ function recOutreachSection(c) {
     const subject = el("input", "pp-in rec-in");
     subject.type = "text";
     subject.value = draft.subject || "";
+    subject.dataset.recEdit = c.id + "#outreach-subject";
     const body = el("textarea", "pp-in rec-in rec-quote");
     body.value = draft.body || "";
+    body.dataset.recEdit = c.id + "#outreach-body";
     draftEdited=()=>subject.value!==(draft.subject||"")||body.value!==(draft.body||"");
     const capture = () => {
+      if (!recBlurSave(subject) || !recBlurSave(body)) return;
       if (subject.value === (draft.subject || "") && body.value === (draft.body || "")) return;
       recOutreachDraft(c, { kind: draft.kind, via: draft.via || "", to: draft.to || [], subject: subject.value, body: body.value });
     };
@@ -4651,12 +4761,18 @@ async function recPollLive() {
   if(aionMode!=="recruiting" || !recCache || recLiveReading || Date.now()-recLastLiveRead<15000 || document.querySelector('.rec-stage-control[data-dirty="true"]')) return;
   const focused=document.activeElement;
   if(els.aionView.contains(focused) && /INPUT|TEXTAREA|SELECT/.test(focused.tagName)) return;
+  // the phone inspector is a sheet outside aionView: its fields count too
+  if(focused?.dataset?.recEdit || recWritesInFlight) return;
   recLiveReading=true;recLastLiveRead=Date.now();
+  const base=recCache;
   try {
     const r=await fetch("/api/aion/recruiting",{cache:"no-store"});
     if(!r.ok) throw new Error("Recruiting refresh failed");
     const next=await r.json();
-    if(aionMode!=="recruiting" || document.querySelector('.rec-stage-control[data-dirty="true"]') || (els.aionView.contains(document.activeElement) && /INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName)))return;
+    // a write landed (or is still out) while this read was in flight: the
+    // snapshot may predate it, and painting it would undo the saved edit
+    if(recCache!==base || recWritesInFlight) return;
+    if(aionMode!=="recruiting" || document.querySelector('.rec-stage-control[data-dirty="true"]') || (els.aionView.contains(document.activeElement) && /INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName)) || document.activeElement?.dataset?.recEdit)return;
     if(JSON.stringify(next)!==JSON.stringify(recCache)){
       const selectors=[".rec-inspector",".rec-board",".rec-role-controls"];
       const scrolls=selectors.map(sel=>document.querySelector(sel)?.scrollTop || 0);

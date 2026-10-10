@@ -596,11 +596,16 @@ const moneyProposeDismissed = new Set();
 let moneyRepaint = null;
 
 // moneyRefresh — refetch the lot, repaint in place, re-render the inspector
+let moneyRefreshSeq = 0;
 async function moneyRefresh() {
+  // newest read wins: two quick picks refresh twice, and the older response
+  // landing last repainted the second pick back to its old value
+  const seq = ++moneyRefreshSeq;
   try {
     const d = await (await fetch("/api/realestate/statements")).json();
+    if (seq !== moneyRefreshSeq) return;
     moneyRows = d.rows || [];
-  } catch (e) {}
+  } catch (e) { if (seq !== moneyRefreshSeq) return; }
   if (moneyRepaint) moneyRepaint(); else { renderProperties(); return; }
   const sel = moneySelId && moneyRows.find((r) => r.id === moneySelId);
   renderMoneyInspector(sel || null);
@@ -798,7 +803,7 @@ function moneyCatSelect(r) {
       if (sel.value) moneyArmSpread(r, res);
       if (moneyFileToast(r, res, sel.value ? "Categorized" : "Category cleared")) moneySelId = null;
       moneyRefresh();
-    } catch (e) { showToast("Couldn't save"); }
+    } catch (e) { sel.value = r.category || ""; showToast("Couldn't save"); } // never show a refused pick
   };
   return sel;
 }
@@ -1630,7 +1635,7 @@ function moneyRow(r) {
         moneySelId = null;
       }
       moneyRefresh();
-    } catch (e) { showToast("Couldn't assign"); }
+    } catch (e) { sel.value = cur; showToast("Couldn't assign"); } // never show a refused pick
   };
   row.append(sel);
   // category ON the row — filing no longer needs the inspector; the inspector
@@ -1661,17 +1666,21 @@ function openMoneyAssignSheet(r) {
       }
       // filed-edit on phone: category + note write through to the ledger
       // row(s); unfile pulls the transaction back for reassignment
+      // the local row changes only once the server took it — set first, a
+      // refused refile left the sheet and list showing a value never written
       const refile = async (patch, okMsg) => {
         try {
           await postJSONOk("/api/realestate/statements/" + encodeURIComponent(r.id) + "/refile", patch);
+          Object.assign(r, patch.unfile ? {} : patch);
           showToast(okMsg || "Ledger row(s) updated");
-        } catch (e) { showToast("Couldn't update — " + (e.message || "")); }
+          return true;
+        } catch (e) { showToast("Couldn't update — " + (e.message || "")); return false; }
       };
-      const ta = categoryTypeahead(r, () => {}, async (name) => { r.category = name; await refile({ category: name }); });
+      const ta = categoryTypeahead(r, () => {}, async (name) => { await refile({ category: name }); });
       body.append(ta.el);
       const noteIn2 = inputEl("note — rewrites the ledger row(s)");
       noteIn2.value = r.note || "";
-      noteIn2.onchange = () => { r.note = noteIn2.value; refile({ note: noteIn2.value }); };
+      noteIn2.onchange = async () => { if (!(await refile({ note: noteIn2.value }))) noteIn2.value = r.note || ""; };
       body.append(noteIn2);
       const unfile = el("button", "pill light re-money-unfile", "unfile ← back to the lot");
       unfile.onclick = async () => {
@@ -1786,7 +1795,10 @@ function renderMoneyInspector(r) {
       await postJSONOk("/api/realestate/statements/" + encodeURIComponent(r.id) + "/refile", patch());
       showToast(okMsg || "Ledger row(s) updated");
       moneyRefresh();
-    } catch (e) { showToast("Couldn't update — " + (e.message || "")); }
+    } catch (e) {
+      showToast("Couldn't update — " + (e.message || ""));
+      moneyRefresh(); // re-read: the slice hop patch() already moved locally
+    }
   };
   // category + note are owner-editable until apply (bank plan §5): the bank
   // memo arrives as the initial note; the row note IS the ledger note
@@ -1798,7 +1810,7 @@ function renderMoneyInspector(r) {
     inp.value = r[key] || "";
     inp.onchange = async () => {
       if (isApplied) {
-        r[key] = inp.value;
+        // refileSave refreshes from the server on success; no local write first
         await refileSave(() => ({ [key]: inp.value }))();
         return;
       }
@@ -1828,8 +1840,7 @@ function renderMoneyInspector(r) {
       if (moneyFileToast(r, res, "Saved")) moneySelId = null;
       moneyRefresh();
     }, isApplied ? async (name) => {
-      r.category = name;
-      await refileSave(() => ({ category: name }))();
+      await refileSave(() => ({ category: name }))(); // refreshes on success
     } : null);
     f.append(el("span", "aion-insp-flabel", "category"), ta.el);
     insp.append(f);
@@ -1972,7 +1983,11 @@ function moneyHopFields(r, host) {
         moneySelId = null;
         moneyRefresh();
       }
-    } catch (e) { showToast("Couldn't save"); }
+    } catch (e) {
+      // the pickers keep the refused value otherwise — show what is saved
+      nodeSel.value = a.workId || ""; cSel.value = a.contract || "";
+      showToast("Couldn't save");
+    }
   };
   const field = (label, node) => {
     const f = el("div", "pp3-insp-field");
@@ -2071,7 +2086,7 @@ async function renderDealPage(slug) {
     if (p.__source) return;
     try {
       const d = await (await fetch("/api/properties/" + encodeURIComponent(p.slug) + "/source")).json();
-      p.__source = d.source || d; // the endpoint wraps: {source: {...}}
+      p.__source = ("source" in d ? d.source : d) || {}; // {source: {...}}, or {source: null} with no sidecar
     } catch (e) { p.__source = {}; }
   }));
   // stat strip from member source data (screening tier — the portal runs the

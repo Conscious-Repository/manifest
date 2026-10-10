@@ -818,7 +818,7 @@ function rgMenu(id, ev) {
     item("someone I'd ask", async () => {
       if (await recWrite("/api/aion/recruiting/network/mark",
         { key: id.replace(/^contact\//, ""), name: node.label }, "POST",
-        node.label + " is someone you'd ask")) rgLoad();
+        node.label + " is someone you'd ask")) { st.profiles = {}; rgLoad(); }
     });
   }
   document.body.append(menu);
@@ -1290,8 +1290,10 @@ function rgPanel(data) {
     ask.title = "mark them as a connector — intro paths start from these people";
     ask.onclick = async () => {
       const key = node.id.replace(/^contact\//, "");
+      // the panel's profile is memoised per node: drop it, or the panel
+      // keeps saying "not in your network" after the mark
       if (await recWrite("/api/aion/recruiting/network/mark",
-        { key, name: node.label }, "POST", node.label + " is someone you'd ask")) rgLoad();
+        { key, name: node.label }, "POST", node.label + " is someone you'd ask")) { st.profiles = {}; rgLoad(); }
     };
     acts.append(ask);
   }

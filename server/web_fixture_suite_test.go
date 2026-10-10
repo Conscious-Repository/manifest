@@ -291,6 +291,16 @@ func TestFixtureApprovalsScreen(t *testing.T) {
 	runFixture(t, "approvals-screen.cjs", true, false)
 }
 
+// An approval edit stays made across repaints, stale reads and saves (approvals-edit-persistence.cjs).
+func TestFixtureApprovalsEditPersistence(t *testing.T) {
+	runFixture(t, "approvals-edit-persistence.cjs", true, false)
+}
+
+// An AION backlog edit stays made across saves, refusals, polls and repaints (aion-backlog-edit-persistence.cjs).
+func TestFixtureAionBacklogEditPersistence(t *testing.T) {
+	runFixture(t, "aion-backlog-edit-persistence.cjs", true, false)
+}
+
 // Olga's requests arrive in Approvals with Done / Won't do (olga-request-approval.cjs).
 func TestFixtureOlgaRequestApproval(t *testing.T) {
 	runFixture(t, "olga-request-approval.cjs", true, false)
@@ -407,6 +417,17 @@ func TestFixtureChatChangesChip(t *testing.T) { runFixture(t, "chat-changes-chip
 
 // The fr-shell tables (Contractors, Fundraising, Portfolio, Money) on a phone (fr-shell-phone.cjs).
 func TestFixtureFrShellPhone(t *testing.T) { runFixture(t, "fr-shell-phone.cjs", true, false) }
+
+// Property-page edits hold: alias owner shown, waiting kept on the tree node,
+// a blurred est saved, a stale list read dropped (re-edit-persist.cjs).
+func TestFixtureReEditPersist(t *testing.T) { runFixture(t, "re-edit-persist.cjs", true, false) }
+
+// Fundraising, Network and person-page edits stay put: focus and typing kept
+// through a save, typed dates saved once, edits on the live rows, unsaved
+// notes kept, refusals said (edit-persistence-people.cjs).
+func TestFixtureEditPersistencePeople(t *testing.T) {
+	runFixture(t, "edit-persistence-people.cjs", true, false)
+}
 
 // Writing after iA Writer: editor, library, quick search, editing tools,
 // preview/export and the phone (writing-ia.cjs).

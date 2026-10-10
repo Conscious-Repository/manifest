@@ -199,17 +199,31 @@ function queueSave(endpoint, payloadFn) {
   const date = state.date;
   const payload = payloadFn();
   const key = endpoint + "|" + date;
-  clearTimeout(savers[key]);
-  savers[key] = setTimeout(async () => {
+  clearTimeout(savers[key] && savers[key].timer);
+  const run = async () => {
+    delete savers[key];
     try {
-      await fetch(`/api/${endpoint}?date=${date}`, {
+      const r = await fetch(`/api/${endpoint}?date=${date}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
+      // a refusal used to read as "saved"; the next load silently showed the old day
+      if (!r.ok) throw new Error((await r.text().catch(() => "")).trim() || "HTTP " + r.status);
       setSaveState("saved");
-    } catch (e) { setSaveState("error"); }
-  }, 500);
+    } catch (e) {
+      setSaveState("error");
+      showToast("Day not saved — " + String(e.message || e).slice(0, 120), null, "error");
+    }
+  };
+  savers[key] = { timer: setTimeout(run, 500), run };
+}
+// flushSaves runs every pending debounced save now. A reload (or a pull /
+// capture that reloads) inside the 500ms window otherwise repainted the
+// server's older day over the edit, and the late save then wrote a payload
+// that predated the pull — dropping the pulled task.
+function flushSaves() {
+  return Promise.all(Object.values(savers).map((s) => { clearTimeout(s.timer); return s.run(); }));
 }
 function setSaveState(s) {
   els.saveState.textContent = s;

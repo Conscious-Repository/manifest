@@ -404,17 +404,26 @@ async function netSave(p, set) {
     const out = await postJSONOk("/api/network/person/" + encodeURIComponent(p.id), { set });
     const kept = out.person || {};
     const wasID = p.id;
-    // a contact/team row's first edit ADOPTS it: the id becomes the kept row's
-    if (kept.id && kept.id !== p.id) {
-      p.id = kept.id;
-      p.editable = true;
-      if (!(p.sources || []).includes("kept")) p.sources = ["kept"].concat(p.sources || []);
-      if (netSel === wasID) netSel = kept.id;
-    }
-    if ("type" in kept || "kind" in set) p.kind = kept.type || "";
-    p.tags = kept.tags || [];
-    p.lastContact = kept.lastContact || "";
-    if ("team" in set) p.team = kept.team || "";
+    const apply = (x) => {
+      // a contact/team row's first edit ADOPTS it: the id becomes the kept row's
+      if (kept.id && kept.id !== x.id) {
+        x.id = kept.id;
+        x.editable = true;
+        if (!(x.sources || []).includes("kept")) x.sources = ["kept"].concat(x.sources || []);
+      }
+      if ("type" in kept || "kind" in set) x.kind = kept.type || "";
+      x.tags = kept.tags || [];
+      x.lastContact = kept.lastContact || "";
+      if ("team" in set) x.team = kept.team || "";
+    };
+    apply(p);
+    // The open page's person can be a row of an OLDER cache: netRefresh
+    // swaps netCache under it (every return to Network does). Writing only
+    // that copy left the list — and the page when reopened — on the old
+    // value, so the edit showed and then reverted.
+    const cur = netCache && (netCache.people || []).find((x) => x.id === wasID || (kept.id && x.id === kept.id));
+    if (cur && cur !== p) apply(cur);
+    if (kept.id && netSel === wasID) netSel = kept.id;
     netGraphStale = true;
     netPaintList();
     return true;
@@ -534,7 +543,16 @@ function netPaintBuild(p, insp) {
   });
   tags.setAttribute("list", listId);
   let tagsWas = tags.value;
-  tags.onblur = () => { if (tags.value !== tagsWas) { tagsWas = tags.value; netSave(p, { tags: tags.value }); } };
+  tags.onblur = async () => {
+    if (tags.value === tagsWas) return;
+    tagsWas = tags.value;
+    const ok = await netSave(p, { tags: tags.value });
+    // show what is stored: a refused save goes back to it (it kept showing
+    // tags that were never saved), a saved one reads as the server cleaned it
+    const stored = (p.tags || []).join(", ");
+    if (document.activeElement !== tags) tags.value = tagsWas = stored;
+    else if (!ok) tagsWas = stored; // still typing: the next blur retries
+  };
   tags.onkeydown = (e) => { if (e.key === "Enter") { e.preventDefault(); tags.blur(); } };
   field("experience", tags);
 
@@ -553,7 +571,16 @@ function netPaintBuild(p, insp) {
   const date = el("input", "pp-in");
   date.type = "date";
   date.value = p.lastContact || "";
-  date.onchange = () => netSave(p, { last_contact: date.value });
+  // a typed date fires change per keystroke (year 0002, 0020…), each one a
+  // save racing the next: commit once, on blur or Enter, or at once when the
+  // change came from outside the field (a phone's picker)
+  const saveDate = async () => {
+    if (date.value === (p.lastContact || "")) return;
+    if (!(await netSave(p, { last_contact: date.value })) && document.activeElement !== date) date.value = p.lastContact || "";
+  };
+  date.onblur = saveDate;
+  date.onchange = () => { if (document.activeElement !== date) saveDate(); };
+  date.onkeydown = (e) => { if (e.key === "Enter") { e.preventDefault(); date.blur(); } };
   const today = el("button", "pill light", "today");
   today.onclick = () => {
     const d = new Date();

@@ -57,13 +57,20 @@ async function homePlanLoad() {
 
 // the shown plan: saved, or saved + draft as the server derives it
 function hpActivePatch() { return hp.draft ? hpClone(hp.draft.patch) : {}; }
+let hpViewSeq = 0;
 async function hpRefreshView() {
+  // newest preview wins: an older draft's preview landing last showed the
+  // later edit reverted on screen while the draft still held it
+  const seq = ++hpViewSeq;
   hp.problems = [];
   const patch = hpActivePatch();
-  if (!hp.data || !hp.data.plan || !Object.keys(patch).length) { hp.view = hp.data; hpRepaint(); return; }
+  if (!hp.data || !hp.data.plan || !Object.keys(patch).length) { hp.view = hp.data; hp.previewing = false; hpRepaint(); return; }
   hp.previewing = true;
-  try { hp.view = await hpFetch("POST", "/api/home/plan/preview", { patch }); }
-  catch (e) { hp.view = hp.data; hp.problems = e.problems && e.problems.length ? e.problems : [e.message]; }
+  let view = hp.data, problems = [];
+  try { view = await hpFetch("POST", "/api/home/plan/preview", { patch }); }
+  catch (e) { problems = e.problems && e.problems.length ? e.problems : [e.message]; }
+  if (seq !== hpViewSeq) return;
+  hp.view = view; hp.problems = problems;
   hp.previewing = false;
   hpRepaint();
 }
@@ -83,6 +90,10 @@ function hpEdit(path, value) {
   path.slice(0, -1).forEach((k) => { if (!node[k] || typeof node[k] !== "object") node[k] = {}; node = node[k]; });
   node[path[path.length - 1]] = value === undefined ? null : value;
   hpStoreDraft();
+  // show the draft's fields at once (derived figures follow with the
+  // preview): repainting from the last preview put the old value back in
+  // the field just edited until the debounced preview landed
+  if (hp.view && hp.view.plan) hp.view = Object.assign({}, hp.view, { plan: hpMerge(hp.data.plan, hp.draft.patch) });
   hpRefreshSoon();
   hpRepaint();
 }
@@ -155,6 +166,20 @@ function hpMount(host, cls, which) {
 }
 function homePlanRender(host) { hpMount(host, "hp", "chart"); }
 function homePlanFeedRender(host) { hpMount(host, "hp hp-feed-view", "feed"); }
+// hpKeepFocus — rebuild a host and put the caret back in the same field WITH
+// what was typed there: a repaint (a preview landing, another card saving)
+// rebuilt the focused input from saved data and dropped the unsaved text.
+function hpKeepFocus(host, rebuild) {
+  const a = document.activeElement;
+  const key = a && host.contains(a) ? a.dataset.hpFocus : "";
+  const typed = key && (a.tagName === "INPUT" || a.tagName === "TEXTAREA") && a.type !== "checkbox" ? a.value : null;
+  rebuild();
+  if (!key) return;
+  const n = host.querySelector(`[data-hp-focus="${CSS.escape(key)}"]`);
+  if (!n) return;
+  if (typed !== null && n.value !== typed) n.value = typed;
+  n.focus();
+}
 function hpRepaint() {
   if (hpHost && hpHost.isConnected) hpPaint();
   if (hpFeedHost && hpFeedHost.isConnected) hpFeedPaint();
@@ -364,6 +389,9 @@ function hpMergePatches(...ps) { return ps.reduce((a, b) => hpMerge(a, b), {}); 
 function hpFeedPaint() {
   const host = hpFeedHost;
   const keepFocus = document.activeElement && host.contains(document.activeElement) ? document.activeElement.dataset.hpFocus : "";
+  // the cards' answer fields are unsaved until submitted — carry the typed
+  // text across the rebuild (another card's save repaints the whole feed)
+  const typed = keepFocus && document.activeElement.tagName === "INPUT" ? document.activeElement.value : null;
   host.replaceChildren();
   if (hpUnavailable(host)) return;
   const v = hp.data, items = hpFeedItems(v);
@@ -387,7 +415,10 @@ function hpFeedPaint() {
     list.append(hpFeedCard(v, x));
   });
   host.append(list);
-  if (keepFocus) { const n = host.querySelector(`[data-hp-focus="${CSS.escape(keepFocus)}"]`); if (n) n.focus(); }
+  if (keepFocus) {
+    const n = host.querySelector(`[data-hp-focus="${CSS.escape(keepFocus)}"]`);
+    if (n) { if (typed !== null && !n.value) n.value = typed; n.focus(); }
+  }
 }
 
 function hpFeedCard(v, x) {
@@ -468,9 +499,7 @@ async function homePlanEditorInto(host, taskId) {
     // the first paint may land before the caller mounts host; later ones stop once it is gone
     if (painted && !host.isConnected) { if (hpEditorRepaint === paint) hpEditorRepaint = null; return; }
     painted = true;
-    const focus = document.activeElement && host.contains(document.activeElement) ? document.activeElement.dataset.hpFocus : "";
-    host.replaceChildren(hpEditor(taskId));
-    if (focus) { const n = host.querySelector(`[data-hp-focus="${CSS.escape(focus)}"]`); if (n) n.focus(); }
+    hpKeepFocus(host, () => host.replaceChildren(hpEditor(taskId)));
   };
   hpEditorRepaint = paint;
   paint();

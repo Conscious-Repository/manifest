@@ -103,25 +103,29 @@ function renderDealDiligence(host, slug, options = {}) {
   const mount=document.createElement('div');host.replaceChildren(mount);
   const endpoint=options.endpoint||('/api/deals/'+encodeURIComponent(slug)+'/underwriting');
   const viewState={tab:'overview',all:false};
-  let stopped=false,busy=false,printing=false,revision='',controller;
+  // loadSeq: a reload (after a save) supersedes a poll already in flight — that
+  // poll read the bundle BEFORE the save, and landing last it painted the old
+  // assumptions back until the next 5 s poll
+  let stopped=false,busy=false,printing=false,revision='',controller,loadSeq=0;
   let printClosed=[];const beforePrint=()=>{printing=true;printClosed=Array.from(mount.querySelectorAll('details:not([open])'));printClosed.forEach(d=>d.open=true);};const afterPrint=()=>{printClosed.forEach(d=>d.open=false);printClosed=[];printing=false;};
   window.addEventListener('beforeprint',beforePrint);window.addEventListener('afterprint',afterPrint);
   const dispose=()=>{window.removeEventListener('beforeprint',beforePrint);window.removeEventListener('afterprint',afterPrint);stopped=true;clearInterval(timer);controller?.abort();document.removeEventListener('visibilitychange',visible);};
   const load=async()=>{
     if(stopped||busy||printing||mount.querySelector('form[data-dirty]'))return;if(!mount.isConnected){dispose();return;}busy=true;
-    controller=new AbortController();const timeout=setTimeout(()=>controller.abort(),20000);
+    const seq=++loadSeq,ctl=controller=new AbortController();const timeout=setTimeout(()=>ctl.abort(),20000);
     try{
-      const response=await fetch(endpoint,{cache:'no-store',credentials:'same-origin',signal:controller.signal,headers:revision?{'If-None-Match':'"'+revision+'"'}:{}});
+      const response=await fetch(endpoint,{cache:'no-store',credentials:'same-origin',signal:ctl.signal,headers:revision?{'If-None-Match':'"'+revision+'"'}:{}});
+      if(seq!==loadSeq)return;
       if(response.status===304){mount.querySelector('[data-live-status]')?.replaceChildren(document.createTextNode('Live · checked '+new Date().toLocaleTimeString()));return;}
       if(!response.ok||response.redirected)throw Error('Could not refresh underwriting ('+response.status+').');
-      const bundle=await response.json();if(stopped||printing||!mount.isConnected||mount.querySelector('form[data-dirty]'))return;
+      const bundle=await response.json();if(seq!==loadSeq||stopped||printing||!mount.isConnected||mount.querySelector('form[data-dirty]'))return;
       const open=Array.from(mount.querySelectorAll('details[open]')).map(d=>d.querySelector('summary')?.textContent);
       const scroll=window.scrollY;
-      await drawDealUnderwriting(mount,slug,{...options,viewState,endpoint,bundle,reload:()=>{revision='';return load();}});
+      await drawDealUnderwriting(mount,slug,{...options,viewState,endpoint,bundle,reload:()=>{revision='';busy=false;return load();}});
       mount.querySelectorAll('details').forEach(d=>{if(open.includes(d.querySelector('summary')?.textContent))d.open=true;});
       if(revision)window.scrollTo({top:scroll});revision=bundle.revision;
-    }catch(error){if(stopped)return;let status=mount.querySelector('[data-live-status]');if(!status){status=document.createElement('p');status.dataset.liveStatus='';mount.append(status);}status.setAttribute('role','status');status.textContent=(revision?'Showing last loaded data. ':'')+error.message+' Retrying automatically.';}
-    finally{clearTimeout(timeout);busy=false;}
+    }catch(error){if(stopped||seq!==loadSeq)return;let status=mount.querySelector('[data-live-status]');if(!status){status=document.createElement('p');status.dataset.liveStatus='';mount.append(status);}status.setAttribute('role','status');status.textContent=(revision?'Showing last loaded data. ':'')+error.message+' Retrying automatically.';}
+    finally{clearTimeout(timeout);if(seq===loadSeq)busy=false;}
   };
   const visible=()=>{if(document.visibilityState==='visible')load();};
   const timer=setInterval(()=>{if(!mount.isConnected){dispose();return;}if(document.visibilityState==='visible')load();},5000);

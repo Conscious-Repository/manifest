@@ -63,22 +63,71 @@ async function loadAion() {
   renderAion();
 }
 
+// aionRendering: true while renderAion tears down and rebuilds. Chrome fires
+// blur/change on a focused field as it is removed — those are not commits
+// (the words carry over to the rebuilt field via aionInspEditRestore).
+let aionRendering = false;
 function renderAion() {
+  aionRendering = true;
+  try { renderAionNow(); } finally { aionRendering = false; }
+}
+function renderAionNow() {
   // the portals are live-synced, so there is no sync status to show here;
   // only RECRUITING writes a header meta, so clear it for every other view
   if (els.aionMeta && aionMode !== "recruiting") els.aionMeta.textContent = "";
   if (typeof railSetCount === "function") railSetCount("aion", aionOpenCount());
   const host = els.aionBody;
   const recruitingFocus = document.activeElement?.dataset?.recNav || "";
+  // a field mid-edit is captured BEFORE the host is cleared: once it is
+  // detached its words are gone (96-aion-recruiting.js recEditSnapshot)
+  const recruitingEdit = aionMode === "recruiting" && typeof recEditSnapshot === "function" ? recEditSnapshot() : null;
+  // the backlog inspector's field mid-typing, likewise: one field's save
+  // reloads + rebuilds the inspector, which dropped the words half-typed
+  // into the next field
+  const inspEdit = aionInspEditSnapshot();
+  // V/TO + org dirty bars hang off aionView, not the host: drop the last
+  // render's (they piled up one per repaint, a stale one still reading
+  // "unsaved" over freshly reloaded rows)
+  els.aionView.querySelectorAll(":scope > .dirty-bar").forEach((b) => b.remove());
   host.innerHTML = "";
   if (!aionCache) { host.append(emptyRow("aion unavailable")); return; }
+  aionStaleNote(host);
   if (aionMode === "fundraising") renderAionFundraising(host);
-  else if (aionMode === "recruiting") renderAionRecruiting(host, recruitingFocus);
+  else if (aionMode === "recruiting") renderAionRecruiting(host, recruitingFocus, recruitingEdit);
   else if (aionMode === "heuristics") renderAionHeuristics(host);
   else if (aionMode === "vto") renderAionVTO(host);
   else if (aionMode === "goals") renderAionGoals(host);
   else if (aionMode === "org") renderAionOrg(host);
-  else renderAionBacklog(host);
+  else { renderAionBacklog(host); aionInspEditRestore(inspEdit); }
+}
+
+// aionInspEditSnapshot / Restore carry a focused inspector field (tagged
+// data-aion-field, keyed by item) across a rebuild: its words, caret and
+// focus. The new input keeps its own commit handlers, so blur/Enter still save.
+function aionInspEditSnapshot() {
+  const a = document.activeElement;
+  if (!a || !a.dataset || !a.dataset.aionField) return null;
+  return { key: a.dataset.aionField, value: a.value, start: a.selectionStart, end: a.selectionEnd };
+}
+function aionInspEditRestore(snap) {
+  if (!snap) return;
+  const f = [...document.querySelectorAll("[data-aion-field]")].find((n) => n.dataset.aionField === snap.key);
+  if (!f) return;
+  f.value = snap.value;
+  f.focus();
+  try { if (snap.start != null) f.setSelectionRange(snap.start, snap.end); } catch (_) {}
+}
+
+// aionStaleNote: the cockpit reads the LIVE projection, which keeps serving
+// its last good snapshot when the vault fails the contract check — so a saved
+// edit would look reverted with no reason given. Say so instead.
+function aionStaleNote(host) {
+  const sync = aionCache.sync;
+  if (!sync || !sync.stale || aionMode === "recruiting" || aionMode === "fundraising") return;
+  const note = el("div", "aion-section-note aion-stale-note",
+    "Showing the last good snapshot — saved edits won't appear here until this is fixed: " + (sync.error || "the live projection failed its check"));
+  note.setAttribute("role", "status");
+  host.append(note);
 }
 
 // aionAddTask — the work surface's quick-add: create with title+owner, then
@@ -99,10 +148,14 @@ async function aionAddTask(title, owner) {
 async function aionPost(url, body, okMsg) {
   try {
     const r = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body || {}) });
-    if (!r.ok) throw new Error(await r.text());
+    if (!r.ok) {
+      showToast("Not saved — " + ((await r.text()).trim() || "HTTP " + r.status).slice(0, 120), null, "error");
+      await loadAion(); // converge: an optimistic paint must not outlive a refusal
+      return;
+    }
     if (okMsg) showToast(okMsg);
     await loadAion();
-  } catch (e) { showToast(String(e.message || e).slice(0, 120)); }
+  } catch (e) { showToast("Couldn't reach the server — " + String(e.message || e).slice(0, 100), null, "error"); }
 }
 
 async function pollAionLive() {
@@ -112,11 +165,22 @@ async function pollAionLive() {
     const r = await fetch("/api/aion/revision", { cache: "no-cache", headers: aionRevisionETag ? { "If-None-Match": aionRevisionETag } : {} });
     if (r.status === 304) { aionPollDelay = 3000; scheduleAionPoll(aionPollDelay); return; }
     if (!r.ok) throw new Error("revision " + r.status);
-    aionRevisionETag = r.headers.get("ETag") || aionRevisionETag;
     const st = await r.json();
     const next = st.effectiveRevision || "";
-    const editing = els.aionView.contains(document.activeElement) && /INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName);
-    if (aionRevision && next && next !== aionRevision && !editing) await loadAion();
+    // a phone's inspector is a bottom sheet outside aionView: typing there is
+    // editing too, or the poll's rebuild drops the half-typed field. Unsaved
+    // V/TO / registry rows (a marked dirty bar) are an edit in progress too.
+    const active = document.activeElement;
+    const editing = (!!active && /INPUT|TEXTAREA|SELECT/.test(active.tagName) && (els.aionView.contains(active) || !!active.closest(".mf-sheet"))) ||
+      !!els.aionView.querySelector(".dirty-bar:not([hidden]):not(.derived)");
+    if (aionRevision && next && next !== aionRevision && editing) {
+      // hold the reload — but DON'T record this revision or its ETag: doing
+      // so meant the change was never picked up once the edit finished
+      scheduleAionPoll(3000);
+      return;
+    }
+    aionRevisionETag = r.headers.get("ETag") || aionRevisionETag;
+    if (aionRevision && next && next !== aionRevision) await loadAion();
     aionRevision = next;
     aionPollDelay = 3000;
   } catch (_) { aionPollDelay = Math.min(aionPollDelay * 2, 30000); }
@@ -217,7 +281,7 @@ function renderAionBacklog(host) {
   (aionCache.people || []).forEach((p) => { people[p.initials] = p.name || ""; });
   const groups = {};
   const order = [];
-  openTasks.concat(doneInPlace).concat(goalTasks.filter((g) => !g.checked)).forEach((it) => {
+  openTasks.concat(doneInPlace).concat(goalTasks.filter((g) => !g.checked || freshDone(g))).forEach((it) => {
     const key = (it.owner || "").toUpperCase() || "—";
     if (!groups[key]) { groups[key] = []; order.push(key); }
     groups[key].push(it);
@@ -353,9 +417,16 @@ function aionTaskRow(it) {
   c.onclick = (e) => {
     e.stopPropagation();
     if (it.goalTask) {
-      // a live goals.md task: flip the paint now, write through the goals API
-      it.checked = !done; it.status = done ? "open" : "done"; renderAion();
-      aionPost("/api/goals/check", { id: it.id.replace(/^goal:/, ""), checked: !done });
+      // a live goals.md task: flip the paint now, write through the goals API.
+      // The row object is rebuilt from goalsArea on every render, so the flip
+      // goes onto the cached goals node (flipping `it` was repainted away at
+      // once), and the regret hold keeps the checked row in place.
+      const gid = it.id.replace(/^goal:/, "");
+      const node = ((aionCache.goalsArea || {}).rocks || []).flatMap((r) => (r.children || []).flatMap((st) => st.children || [])).find((c) => c.id === gid);
+      if (node) node.checked = !done;
+      if (done) aionFreshDone.delete(it.id); else aionFreshDone.add(it.id);
+      renderAion();
+      aionPost("/api/goals/check", { id: gid, checked: !done });
       return;
     }
     if (done) aionFreshDone.delete(it.id);
@@ -445,10 +516,17 @@ function renderAionInspector(insp, items) {
   const patch = (set, msg) => aionPost("/api/aion/backlog/update/" + it.id, set, msg);
 
   // Stable IDs survive title edits, so the inspector remains selected.
+  // a decided decision is permanent except its rock (store.UpdateItem
+  // refuses the rest) — lock those fields instead of letting an edit show
+  // and then bounce
+  const locked = it.kind === "decision" && it.status === "decided";
   const title = inputEl("");
   title.value = it.text;
   title.className = "aion-insp-title";
+  title.dataset.aionField = it.id + "|title";
+  title.readOnly = locked;
   const commitTitle = () => {
+    if (aionRendering || !title.isConnected) return; // a rebuild's blur, not a commit
     const v = title.value.trim();
     if (v && v !== it.text) patch({ title: v });
   };
@@ -465,26 +543,45 @@ function renderAionInspector(insp, items) {
     insp.append(f);
   };
 
+  // owner: pick from the people registry OR type initials. Typed initials
+  // used to go nowhere (no change handler) — they sat in the field looking
+  // saved until the next repaint put the old owner back. Clearing the field
+  // unassigns.
+  let ownerSaved = it.owner || "";
+  const saveOwner = (v) => {
+    v = v.replace(/^@/, "").trim().toUpperCase();
+    if (v === ownerSaved) return;
+    ownerSaved = v;
+    patch({ owner: v });
+  };
   const ownerTa = typeahead({ placeholder: "initials", initial: it.owner || "",
+    onChange: (v) => { if (!aionRendering && ownerTa.input.isConnected) saveOwner(v); },
     suggest: (q, add, ta) => aionOwnerSuggest(q, add, {
-      commit: (v) => { ta.commit(v); if (v !== it.owner) patch({ owner: v }); },
+      commit: (v) => { ta.commit(v); saveOwner(v); },
       input: ta.input,
     }) });
+  ownerTa.input.dataset.aionField = it.id + "|owner";
+  ownerTa.input.disabled = locked;
   field("owner", ownerTa.el);
 
   // rock: BOTH kinds tether. A decision without one falls out of every
   // rock-scoped surface (the portal cone, scoped work/archive), and a decided
   // decision keeps this one editable field — linkage, not content, so the
   // record of what was decided stays permanent (owner call 2026-08-18).
+  let rockShown = rockLabel(it.rock);
   const rockTa = typeahead({
-    placeholder: "type to pick a rock…", initial: rockLabel(it.rock),
-    suggest: (q, add, ta) => aionRockSuggest(q, add, ta, (id) => { if (id !== it.rock) patch({ rock: id }); }),
+    placeholder: "type to pick a rock…", initial: rockShown,
+    suggest: (q, add, ta) => aionRockSuggest(q, add, ta, (id, text) => { rockShown = id ? text : ""; if (id !== it.rock) patch({ rock: id }); }),
+    // the rock is a pick, never free text: typed words that weren't picked
+    // snap back to the saved rock instead of reading as if they were set
+    onChange: () => { if (!aionRendering && rockTa.input.isConnected && rockTa.value() !== rockShown) rockTa.setValue(rockShown); },
   });
   field("rock", rockTa.el);
 
   if (it.kind === "task") {
     const due = inputEl("");
     due.type = "date"; due.value = it.due || ""; due.className = "pp-in";
+    due.dataset.aionField = it.id + "|due";
     due.onchange = () => patch({ due: due.value });
     field("due", due);
     // (no status field — open/in-progress was a distinction without a
@@ -493,6 +590,8 @@ function renderAionInspector(insp, items) {
     const nb = inputEl("");
     nb.type = "date"; nb.className = "pp-in";
     nb.value = /^\d{4}-\d{2}-\d{2}$/.test(it.neededBy || "") ? it.neededBy : "";
+    nb.dataset.aionField = it.id + "|needed_by";
+    nb.disabled = locked;
     nb.onchange = () => patch({ needed_by: nb.value });
     field("needed by", nb);
     if (it.status !== "decided") {
@@ -501,6 +600,7 @@ function renderAionInspector(insp, items) {
       // button mid-panel (owner call 2026-08-12)
       const outcome = inputEl("what was decided…");
       outcome.className = "pp-in aion-insp-outcome";
+      outcome.dataset.aionField = it.id + "|outcome";
       field("outcome", outcome);
       const decide = el("button", "aion-decide-inline", "decide ⏎");
       decide.title = "files to the permanent decision log (Enter in the outcome field does the same)";

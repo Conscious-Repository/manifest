@@ -211,11 +211,7 @@ async function renderPropertyPage(slug) {
     name.title = "click to rename";
     name.onclick = () => {
       const input = inputEl(""); input.value = st.text || ""; input.classList.add("work-edit");
-      input.addEventListener("keydown", (ev) => {
-        if (ev.key === "Enter" && input.value.trim()) propWorkOp(p, { op: "edit", id: st.id, text: input.value.trim() });
-        else if (ev.key === "Escape") input.replaceWith(name);
-      });
-      input.addEventListener("blur", () => { if (input.parentNode) input.replaceWith(name); });
+      propInlineEdit(input, name, st.text || "", (v) => v && propWorkOp(p, { op: "edit", id: st.id, text: v }));
       name.replaceWith(input); input.focus();
     };
     line.append(name);
@@ -266,11 +262,7 @@ async function renderPropertyPage(slug) {
         mname.title = "click to rename";
         mname.onclick = () => {
           const input = inputEl(""); input.value = n.text || ""; input.classList.add("work-edit");
-          input.addEventListener("keydown", (ev) => {
-            if (ev.key === "Enter" && input.value.trim()) propWorkOp(p, { op: "edit", id: n.id, text: input.value.trim() });
-            else if (ev.key === "Escape") input.replaceWith(mname);
-          });
-          input.addEventListener("blur", () => { if (input.parentNode) input.replaceWith(mname); });
+          propInlineEdit(input, mname, n.text || "", (v) => v && propWorkOp(p, { op: "edit", id: n.id, text: v }));
           mname.replaceWith(input); input.focus();
         };
         const mdel = el("button", "pp3-stage-x", "✕");
@@ -297,10 +289,7 @@ async function renderPropertyPage(slug) {
         }
         return;
       }
-      const row = propTodoRow(p, {
-        id: n.taskId, text: n.text, checked: !!n.checked, owner: n.owner || "",
-        waiting: n.waiting || "", since: n.since || "", workId: n.id,
-      }, "tree");
+      const row = propTodoRow(p, propTreeTask(n), "tree");
       if (depth > 0) row.classList.add("deep");
       row.append(estChip(p, n, false));
       appendContractChips(row, n);
@@ -377,7 +366,14 @@ async function renderPropertyPage(slug) {
   // restore an open inspector across re-renders. A decision is not in the flat
   // p.tasks projection, so it resolves against the tree it lives in.
   if (propSel && propSel.kind === "task") {
-    const t = (p.tasks || []).find((x) => x.id === propSel.id);
+    // restore from the TREE node when there is one: the flat p.tasks entry has
+    // no workId or waiting, so a restored panel blanked the waiting value just
+    // saved and aimed the next waiting edit at the task id (404 on /work)
+    let t = null;
+    (p.work || []).forEach((st) => walkNodes(st, st.tasks, (_, n) => {
+      if (!t && !n.milestone && !n.decision && n.taskId === propSel.id) t = propTreeTask(n);
+    }));
+    t = t || (p.tasks || []).find((x) => x.id === propSel.id);
     if (t) openPropInspector(p, { kind: "task", id: t.id, task: t }); else closePropInspector();
   } else if (propSel && propSel.kind === "decision") {
     let hit = null;
@@ -540,21 +536,37 @@ function editableOwnerLine(p, key, display, cls) {
     const input = inputEl("");
     input.className = "pp3-owner-in";
     input.value = (key === "owner" ? p.owner : p.ownerAddr) || "";
-    const save = async () => {
+    propInlineEdit(input, v, input.value, async (val) => {
       try {
-        await postJSONOk("/api/properties/" + encodeURIComponent(p.slug) + "/field", { key, value: input.value.trim() });
-        renderProperties();
+        applyFreshProperty(await postJSONOk("/api/properties/" + encodeURIComponent(p.slug) + "/field", { key, value: val }));
       } catch (e) { showToast("Couldn't save"); }
-    };
-    input.addEventListener("keydown", (ev) => {
-      if (ev.key === "Enter") save();
-      if (ev.key === "Escape") input.replaceWith(v);
     });
-    input.addEventListener("blur", () => { if (input.parentNode) input.replaceWith(v); });
     v.replaceWith(input);
     input.focus();
   };
   return v;
+}
+
+// propInlineEdit — a click-to-edit field swapped in for `display`: Enter OR blur
+// commits a changed value, Escape cancels, one commit per edit. Blur used to
+// cancel, so a value typed and then clicked away from showed on screen and
+// was silently thrown away. A save re-renders the page (the input goes with
+// it); when it didn't — a failed save, an empty rename — the display returns.
+function propInlineEdit(input, display, original, commit) {
+  let done = false;
+  const restore = () => { if (input.isConnected) input.replaceWith(display); };
+  const finish = async (save) => {
+    if (done) return;
+    done = true;
+    const v = input.value.trim();
+    if (save && v !== original) await commit(v);
+    restore();
+  };
+  input.addEventListener("keydown", (ev) => {
+    if (ev.key === "Enter") finish(true);
+    else if (ev.key === "Escape") finish(false);
+  });
+  input.addEventListener("blur", () => { if (input.parentNode) finish(true); });
 }
 
 // ---- underwrite editor: the plan inputs behind the BUDGET figure ----
@@ -616,10 +628,23 @@ async function renderUnderwrite(p, uwHost) {
   const actions = el("div", "pp3-uw-actions");
   const save = el("button", "pp3-compose-go", "save ↵");
   save.onclick = async () => {
-    fields.forEach((f) => { money[f.key] = parseFloat(f.input.value) || 0; });
-    money.contingency_pct = (parseFloat(pct.value) || 0) / 100;
+    // write onto a FRESH read: while this editor sat open, a rock est edit
+    // re-synced hard_costs server-side, and PUTting the copy read at open put
+    // the old figure back
+    let base = root;
     try {
-      await putJSON("/api/properties/" + encodeURIComponent(p.slug) + "/source", root);
+      const d = await (await fetch("/api/properties/" + encodeURIComponent(p.slug) + "/source")).json();
+      if (d && d.source && typeof d.source === "object") base = d.source;
+    } catch (e) {}
+    let target = base;
+    if (!(base.purchase_price > 0) && !(base.hard_costs > 0) &&
+        Array.isArray(base.properties) && base.properties.length > 0 && typeof base.properties[0] === "object") {
+      target = base.properties[0];
+    }
+    fields.forEach((f) => { target[f.key] = parseFloat(f.input.value) || 0; });
+    target.contingency_pct = (parseFloat(pct.value) || 0) / 100;
+    try {
+      await putJSON("/api/properties/" + encodeURIComponent(p.slug) + "/source", base);
       showToast("Underwrite saved");
       renderProperties();
     } catch (e) { showToast("Couldn't save: " + (e.message || e)); }
@@ -795,6 +820,8 @@ function ledgerForm(p, r, i) {
       (n.children || []).forEach((c) => walk(c, pre + "· "));
     });
   });
+  // same rule for a tether to a node no longer in the tree — keep, don't drop
+  if (r && r.workId && ![...nodeSel.options].some((o) => o.value === r.workId)) nopt(r.workId, r.workId + " (not in the tree)");
   if (r && r.workId) nodeSel.value = r.workId;
   const contractSel = selectEl([]);
   contractSel.className = "pp-in";
@@ -805,6 +832,14 @@ function ledgerForm(p, r, i) {
     .forEach((c) => copt(c.slug, c.name + " · " + fmtMoney(c.remaining != null ? c.remaining : c.total) + " left"));
   cs.filter((c) => c.status === "proposed" && (c.allocations || []).some((a) => a.property === p.slug))
     .forEach((c) => copt(c.slug, c.name + " · proposed bid " + fmtMoney(c.total)));
+  // a row linked to a contract that is no longer open (closed, declined) still
+  // carries the link: without its own option the select fell back to "no
+  // contract", and saving the row silently dropped its [contract::] token
+  if (r && r.contract && !cs.some((c) => c.slug === r.contract &&
+      (c.status === "accepted" || c.status === "proposed") && (c.allocations || []).some((a) => a.property === p.slug))) {
+    const c = cs.find((x) => x.slug === r.contract);
+    copt(r.contract, ((c && c.name) || r.contract) + (c ? " · " + c.status : ""));
+  }
   if (r && r.contract) contractSel.value = r.contract;
   contractSel.onchange = () => {
     // picking a bid without a node prefills the node from its allocation
@@ -888,6 +923,16 @@ function ledgerForm(p, r, i) {
   return form;
 }
 
+// propTreeTask — a tree node as the task the row + inspector edit. The flat
+// p.tasks projection carries neither the node id nor waiting/since, so it
+// can't stand in for this (see the inspector restore).
+function propTreeTask(n) {
+  return {
+    id: n.taskId, text: n.text, checked: !!n.checked, owner: n.owner || "",
+    waiting: n.waiting || "", since: n.since || "", added: n.added || "", workId: n.id,
+  };
+}
+
 // walkNodes — depth-first over a rock's node tree (shared by the page + the
 // look-back derivations).
 function walkNodes(rock, nodes, fn) {
@@ -911,16 +956,10 @@ function estChip(p, node, isParent) {
     const inp = inputEl("est $");
     inp.className = "re-est-edit";
     inp.value = own || "";
-    const commit = () => {
-      const v = inp.value.trim();
+    propInlineEdit(inp, chip, inp.value, (v) => {
       const n = parseFloat(v.replace(/[,$]/g, ""));
-      propWorkOp(p, { op: "set-field", id: node.id, field: "est", value: v === "" || isNaN(n) ? "" : String(n) });
-    };
-    inp.addEventListener("keydown", (ev) => {
-      if (ev.key === "Enter") commit();
-      else if (ev.key === "Escape") inp.replaceWith(chip);
+      return propWorkOp(p, { op: "set-field", id: node.id, field: "est", value: v === "" || isNaN(n) ? "" : String(n) });
     });
-    inp.addEventListener("blur", () => { if (inp.parentNode) inp.replaceWith(chip); });
     chip.replaceWith(inp);
     inp.focus();
   };
@@ -1061,6 +1100,7 @@ function appendBidLine(host, p, n) {
           const r = await postJSONOk("/api/realestate/contracts/" + encodeURIComponent(b.slug) + "/accept", {});
           const n2 = (r && (r.declined || []).length) || 0;
           showToast("Accepted" + (n2 ? " — " + n2 + " other bid" + (n2 === 1 ? "" : "s") + " declined" : ""));
+          reContractsCache = null; // reload the list: the ledger picker still offered it as a proposed bid
           renderProperties();
         } catch (err) { showToast("Couldn't accept — " + (err.message || "")); }
       };
@@ -1092,20 +1132,32 @@ function appendContractChips(row, n) {
 async function propWorkOp(p, body, quiet) {
   try {
     const fresh = await postJSONOk("/api/properties/" + encodeURIComponent(p.slug) + "/work", body);
-    if (!quiet) applyFreshProperty(fresh);
+    // a work op re-syncs hard_costs into source.json server-side
+    // (syncHardCosts), so the page's cached source is stale from here
+    if (!quiet) applyFreshProperty(fresh, false);
+    else dropCachedSource(p.slug);
   } catch (e) { showToast("Couldn't update — " + (e.message || "")); }
+}
+
+function dropCachedSource(slug) {
+  const c = propertyCache.find((x) => x.slug === slug);
+  if (c) delete c.__source;
 }
 
 // applyFreshProperty — the property save endpoints answer with the freshly
 // re-parsed record: swap it into the cache and repaint ONLY the page (the
 // old path re-fetched the whole tab — three requests and a jarring full
 // redraw for a one-field edit; owner report 2026-08-18).
-function applyFreshProperty(p) {
+// keepSource=false when the write may have changed source.json: carrying the
+// old copy forward let the next UNDERWRITING input PUT it back over the
+// server's synced hard_costs.
+function applyFreshProperty(p, keepSource = true) {
   if (!p || !p.slug) { renderProperties(); return; }
   const i = propertyCache.findIndex((x) => x.slug === p.slug);
   if (i >= 0) {
-    p.__source = propertyCache[i].__source; // keep the page's source cache warm
+    if (keepSource) p.__source = propertyCache[i].__source; // keep the page's source cache warm
     propertyCache[i] = p;
+    propLoadSeq++; // a list read already in flight predates this save — it must not land over it
   }
   if (propMode === "page" && propSlug === p.slug) renderPropertyPage(p.slug);
   else renderProperties();
@@ -1243,7 +1295,12 @@ function openPropInspector(p, sel) {
   opt("", "you");
   const a = (propTodosMeta && propTodosMeta.assignees) || {};
   (a.realestate || []).forEach((c) => opt(c.slug, c.name + (c.trade ? " (" + c.trade + ")" : "")));
-  ownerSel.value = mineOwner(t.owner) ? "" : t.owner; // BA/me/empty all read as "you"
+  // the option values are roster SLUGS; an owner written as an alias
+  // ("olga-sobkiv" for OS) matched none, so the select showed someone else.
+  // BA/me/empty all read as "you"; an owner off the roster keeps its own option.
+  const curOwner = mineOwner(t.owner) ? "" : reOwnerKey(t.owner);
+  if (curOwner && ![...ownerSel.options].some((o) => o.value === curOwner)) opt(curOwner, assigneeName(curOwner));
+  ownerSel.value = curOwner;
   const note = el("div", "pp3-insp-note");
   const setNote = () => {
     if (sel.kind === "decision") { note.textContent = "Decided here — the line stays under its rock in the record."; return; }
@@ -1264,7 +1321,7 @@ function openPropInspector(p, sel) {
   ownerSel.onchange = () => assign(ownerSel.value);
   if (phone) {
     // Rev 4: a tap-list, not a <select> — 48px rows, ● on the current one.
-    const current = mineOwner(t.owner) ? "" : t.owner;
+    const current = curOwner;
     const list = el("div", "mf-assign");
     const rowOpt = (v, l) => {
       const r = el("button", "mf-opt" + (v === current ? " on" : ""));
@@ -1306,7 +1363,9 @@ function openPropInspector(p, sel) {
   // waiting — [waiting:: who] + [since:: today] on the tree line (audit fix:
   // the board showed waiting state; nothing here could set it). Clearing
   // re-opens; the aging fuse re-anchors to since (tasks conventions).
-  if (sel.kind !== "decision" && !t.checked) {
+  // waiting writes the tree node (/work set-field) — a legacy flat task has
+  // no node, and the edit could only fail
+  if (sel.kind !== "decision" && !t.checked && t.workId) {
     const wIn = inputEl("who / what it waits on…");
     wIn.className = "pp-in";
     wIn.value = t.waiting || "";
@@ -1314,8 +1373,8 @@ function openPropInspector(p, sel) {
       const v = wIn.value.trim();
       if (v === (t.waiting || "")) return;
       const today = new Date().toISOString().slice(0, 10);
-      await propWorkOp(p, { op: "set-field", id: t.workId || t.id, field: "waiting", value: v }, true);
-      propWorkOp(p, { op: "set-field", id: t.workId || t.id, field: "since", value: v ? today : "" });
+      await propWorkOp(p, { op: "set-field", id: t.workId, field: "waiting", value: v }, true);
+      propWorkOp(p, { op: "set-field", id: t.workId, field: "since", value: v ? today : "" });
     };
     wIn.addEventListener("keydown", (ev) => { if (ev.key === "Enter") wIn.blur(); });
     host.append(field("waiting on", wIn));
@@ -1403,7 +1462,10 @@ function underwritingSection(p) {
     if (!src) {
       try {
         const d = await (await fetch("/api/properties/" + encodeURIComponent(p.slug) + "/source")).json();
-        src = p.__source = d.source || d; // the endpoint wraps: {source: {...}}
+        // the endpoint wraps: {source: {...}}, and {source: null} when there is
+        // no sidecar — `d.source || d` kept the wrapper, and the next input
+        // wrote a junk "source": null key into the new source.json
+        src = p.__source = ("source" in d ? d.source : d) || {};
       } catch (e) { src = p.__source = {}; }
     }
     host.innerHTML = "";

@@ -220,6 +220,7 @@ function renderContractForm() {
         name: name.value.trim() || null, contractor: contractorSlug, status: status.value,
         total: t, date: date.value.trim(), expires: expires.value.trim(), allocations,
       });
+      reContractsCache = null; // the list cache loads only when empty — it lacks this one
       showToast("Contract created");
       location.hash = "#/properties/contract/" + encodeURIComponent(res.slug);
     } catch (e) { showToast("Couldn't create — " + String(e.message || e).slice(0, 140)); }
@@ -515,7 +516,9 @@ function renderContractorInspector(host, c, opts) {
       await postJSONOk("/api/realestate/contractors/" + encodeURIComponent(c.slug) + "/update", set);
       await ensureEntities(true);
       await loadReContracts();
-      renderProperties();
+      // a blur-save fires as Tab lands in the next field: repainting now
+      // rebuilt the inspector under the caret and lost what was being typed
+      reRepaintWhenIdle(renderProperties);
     } catch (e) { showToast("Couldn't save — " + (e.message || "")); }
   };
   const head = el("div", "aion-insp-head");
@@ -759,8 +762,11 @@ async function renderContractPage(slug) {
   const patch = async (set) => {
     try {
       await postJSONOk("/api/realestate/contracts/" + encodeURIComponent(slug) + "/update", set);
-      renderProperties();
+      // the CONTRACTORS tab and the ledger pickers read the list cache, which
+      // only loads when empty — a status change here read as unsaved there
+      reContractsCache = null;
     } catch (e) { showToast("Couldn't save — " + (e.message || "")); }
+    renderProperties(); // either way: the page re-reads, never shows a refused status
   };
 
   const page = el("div", "re-contract-page");

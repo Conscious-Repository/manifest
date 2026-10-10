@@ -642,3 +642,19 @@ func TestNothingAddressesTheHiringFile(t *testing.T) {
 		}
 	}
 }
+
+// A profile key written twice (an accepted draft's orcid + homepage both
+// route to website) must take an edit in the slot Profile() reads, or the
+// edit looks like it never saved.
+func TestRecruitingProfileEditReadsBackWhenKeyRepeats(t *testing.T) {
+	doc := ParseCandidate("---\nid: cand/x\nname: X\n---\n\n## profile\n- [title:: Old]\n- [title:: Older] [org:: Lab]\n")
+	if err := doc.SetProfile("title", "New"); err != nil {
+		t.Fatal(err)
+	}
+	if got := doc.Profile()["title"]; got != "New" {
+		t.Fatalf("title after edit = %q, want New", got)
+	}
+	if got := doc.Profile()["org"]; got != "Lab" {
+		t.Fatalf("org = %q, want Lab", got)
+	}
+}

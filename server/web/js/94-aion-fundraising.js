@@ -149,7 +149,16 @@ function frTouchField(host, field, patch, label, key, manual, touch) {
   const wrap = el("div", "fr-touch-editor");
   const row = el("div", "fr-touch-editor-row");
   const input = el("input", "pp-in fr-in"); input.type = "date"; input.value = manual || "";
-  input.onchange = () => patch({ [key]: input.value });
+  input.dataset.frField = key; input.dataset.frOld = input.value;
+  // Typing a date fires change on every keystroke once the segments are full
+  // (year 0002, 0020, 0202…): each saved a wrong date and the repaint threw
+  // the caret out mid-year. Commit once, on blur (or Enter); a change made
+  // while the field is not focused (a phone's picker) commits at once.
+  let was = input.value;
+  const commit = () => { if (input.value !== was) { was = input.value; patch({ [key]: input.value }); } };
+  input.onblur = commit;
+  input.onchange = () => { if (document.activeElement !== input) commit(); };
+  input.onkeydown = (e) => { if (e.key === "Enter") { e.preventDefault(); input.blur(); } };
   row.append(input);
   if (manual) { const clear = el("button", "fr-person-rm", "×"); clear.title = "clear the typed date"; clear.onclick = () => patch({ [key]: "" }); row.append(clear); }
   wrap.append(row);
@@ -197,8 +206,27 @@ async function frPost(url, body, msg) {
     if (!r.ok) throw new Error(await r.text());
     frCache = await r.json();
     if (msg) showToast(msg);
-    renderAion();
+    frRender();
   } catch (e) { showToast(String(e.message || e).slice(0, 140)); }
+}
+
+// frRender repaints after a save without taking the owner out of the field
+// they moved to. A blur-save's answer lands while they type in the NEXT
+// field, and the rebuild replaced that field: the caret went and what they
+// had typed was gone (or, in Chrome, half-saved by the removal's blur). The
+// field is found again by its key and gets back its focus, caret and any
+// unsaved text; its own blur then saves that text as usual.
+function frRender() {
+  const a = document.activeElement;
+  const key = a && a.dataset ? a.dataset.frField : "";
+  const keep = key ? { value: a.value, dirty: a.value !== a.dataset.frOld, start: a.selectionStart, end: a.selectionEnd } : null;
+  renderAion();
+  if (!keep) return;
+  const n = document.querySelector('[data-fr-field="' + key + '"]');
+  if (!n || n === a) return;
+  if (keep.dirty) n.value = keep.value;
+  n.focus();
+  try { n.setSelectionRange(keep.start, keep.end); } catch (_) {}
 }
 
 function renderFundraisingSync() {
@@ -248,24 +276,34 @@ function renderFundraisingInspector(host, op) {
   const x = el("button", "aion-insp-x", "✕"); x.onclick = () => { frSel = null; renderAion(); }; head.append(x); host.append(head);
   const patch = (set) => frPost("/api/aion/fundraising/update/" + op.id, set);
   const field = (label, node) => { const f = el("div", "aion-insp-field fr-insp-field"); f.append(el("span", "aion-insp-flabel", label), node); host.append(f); };
-  const text = (label, key, value, multiline) => { const n = el(multiline ? "textarea" : "input", "pp-in fr-in"); if (!multiline) n.type = "text"; n.value = value || ""; let old = n.value; n.onblur = () => { if (n.value !== old) patch({ [key]: n.value }); }; field(label, n); return n; };
+  const text = (label, key, value, multiline) => { const n = el(multiline ? "textarea" : "input", "pp-in fr-in"); if (!multiline) n.type = "text"; n.value = value || ""; n.dataset.frField = key; n.dataset.frOld = n.value; let old = n.value; n.onblur = () => { if (n.value !== old) patch({ [key]: n.value }); }; field(label, n); return n; };
 
   text("firm", "firm", op.firm);
   const website = el("div", "fr-website-editor");
-  const websiteInput = el("input", "pp-in fr-in"); websiteInput.type = "url"; websiteInput.placeholder = "https://…"; websiteInput.value = op.website || ""; let oldWebsite = websiteInput.value;
+  const websiteInput = el("input", "pp-in fr-in"); websiteInput.type = "url"; websiteInput.placeholder = "https://…"; websiteInput.value = op.website || ""; websiteInput.dataset.frField = "website"; websiteInput.dataset.frOld = websiteInput.value; let oldWebsite = websiteInput.value;
   websiteInput.onblur = () => { if (websiteInput.value !== oldWebsite) patch({ website: websiteInput.value }); };
   websiteInput.onkeydown = (e) => { if (e.key === "Enter") { e.preventDefault(); websiteInput.blur(); } };
   website.append(websiteInput);
   if (op.website) { const openWebsite = el("a", "fr-website-open", "open ↗"); openWebsite.href = op.website; openWebsite.target = "_blank"; openWebsite.rel = "noopener"; website.append(openWebsite); }
   field("website", website);
   const status = el("select", "pp-in fr-in"); ["prospect", "active", "committed", "passed"].forEach((v) => { const o = el("option", "", v); o.value = v; o.selected = op.status === v; status.append(o); }); status.onchange = () => patch({ status: status.value }); field("status", status);
-  const amount = el("input", "pp-in fr-in"); amount.type = "number"; amount.min = "0"; amount.step = "1000"; amount.value = op.amount || ""; amount.onblur = () => patch({ amount: amount.value }); field("amount", amount);
+  const amount = el("input", "pp-in fr-in"); amount.type = "number"; amount.min = "0"; amount.step = "1000"; amount.value = op.amount || ""; amount.dataset.frField = "amount"; amount.dataset.frOld = amount.value;
+  // save only a change: an unchanged blur (tabbing through) posted and
+  // rebuilt the inspector under the field the owner was moving to
+  amount.onblur = () => { if (amount.value !== amount.dataset.frOld) patch({ amount: amount.value }); }; field("amount", amount);
 
   const people = el("div", "fr-insp-people");
   (op.people || []).forEach((p) => { const chip = el("span", "fr-person-chip linked"); const open = el("button", "fr-person-name fr-person", p.display); open.onclick = () => { location.hash = personHref(p.key); }; const rm = el("button", "fr-person-rm", "×"); rm.title = "unlink from this opportunity"; rm.onclick = () => frPost("/api/aion/fundraising/person-remove/" + op.id, { key: p.key }); chip.append(open, rm); people.append(chip); });
   (op.unlinkedPeople || []).forEach((name) => {
     const chip = el("span", "fr-person-chip plain"); chip.append(frPendingPerson(name));
-    const rm = el("button", "fr-person-rm", "×"); rm.title = "remove this pending name"; rm.onclick = () => patch({ unlinkedPeople: (op.unlinkedPeople || []).filter((x) => x !== name) });
+    const rm = el("button", "fr-person-rm", "×"); rm.title = "remove this pending name"; rm.onclick = async () => {
+      // the write replaces the whole list, so build it from a fresh read: the
+      // page's copy can predate a Sheet sync or a link made elsewhere, and
+      // would put back names those had moved or added
+      let names = op.unlinkedPeople || [];
+      try { const r = await fetch("/api/aion/fundraising", { cache: "no-store" }); if (r.ok) { const cur = ((await r.json()).opportunities || []).find((x) => x.id === op.id); if (cur) names = cur.unlinkedPeople || []; } } catch (_) {}
+      patch({ unlinkedPeople: names.filter((x) => x !== name) });
+    };
     chip.append(rm); people.append(chip);
   });
   const addPerson = typeahead({

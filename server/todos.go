@@ -648,6 +648,13 @@ func (s *Server) handleTaskUpdate(w http.ResponseWriter, r *http.Request) {
 		httpError(w, errBadRequest("id is required"))
 		return
 	}
+	// a rename must not change WHICH task this is: personal and property ids
+	// derive from the text, so pin the current id first. Unpinned, the open
+	// panel kept the old id and fell back to showing it (no title, no actions)
+	// — the rename looked lost there.
+	if b.Text != nil && strings.TrimSpace(*b.Text) != "" {
+		s.pinTaskID(b.ID) // aion/re ids are stable already: no write
+	}
 	if b.Domain != nil && s.plannerNotes != nil {
 		doc, err := s.tasksStore.Load()
 		if err != nil {
@@ -705,7 +712,7 @@ func (s *Server) handleTaskUpdate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if strings.HasPrefix(b.ID, "aion:") || strings.HasPrefix(b.ID, "re:") {
-		store, bare, okb := s.backlogStoreFor(b.ID)
+		_, _, okb := s.backlogStoreFor(b.ID)
 		if !okb {
 			http.Error(w, "backlog not available", http.StatusServiceUnavailable)
 			return
@@ -719,12 +726,24 @@ func (s *Server) handleTaskUpdate(w http.ResponseWriter, r *http.Request) {
 		}
 		if b.Rock != nil {
 			set["rock"] = strings.TrimSpace(*b.Rock)
+			if strings.HasPrefix(b.ID, "aion:") {
+				stage := ""
+				if b.Stage != nil {
+					stage = strings.TrimSpace(*b.Stage)
+				}
+				id, ok := s.aionTether(set["rock"], stage)
+				if !ok {
+					httpError(w, errBadRequest("an Aion task can only advance an Aion rock or milestone"))
+					return
+				}
+				set["rock"] = id
+			}
 		}
 		if len(set) == 0 {
 			httpError(w, errBadRequest("nothing to update"))
 			return
 		}
-		if err := store.UpdateItem(bare, set, time.Now()); err != nil {
+		if err := s.backlogUpdate(b.ID, set); err != nil {
 			httpError(w, err)
 			return
 		}

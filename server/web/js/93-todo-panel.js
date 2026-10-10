@@ -47,6 +47,7 @@ let todoSelId = null;      // selected todo id ("" = none)
 let todoPanelData = null;  // last /api/tasks/panel payload
 let todoDeepLink = null;   // #/tasks/<id> → open after load
 let todoPanelTimer = null; // live refresh while the panel is open
+let todoPanelFetchSeq = 0; // ticks per explicit panel refetch (every write ends in one)
 // a composer preset ({mode, focusAgent}) set by openTodoPanel(…, opts) — the
 // ⇢ shortcut opens the panel straight into Do mode (agent-chat plan §3.4f);
 // consumed by the next composer render.
@@ -62,19 +63,23 @@ function ensureTodoPanelPoll() {
     if (refreshing || document.hidden || !els.todosView || els.todosView.hidden || _dragId) return;
     if (els.todosView.contains(document.activeElement) && document.activeElement.matches("input, textarea, select")) return;
     refreshing = true;
+    const seq = todosWriteSeq;
     try {
       const response = await fetch("/api/tasks");
       if (!response.ok) throw new Error("Task refresh failed");
       const tasks = await response.json();
       if (_dragId || (els.todosView.contains(document.activeElement) && document.activeElement.matches("input, textarea, select"))) return;
+      if (seq !== todosWriteSeq) return; // a write landed meanwhile: this payload predates it
       if (JSON.stringify(tasks) !== JSON.stringify(todosCache) || todosLoadError) {
         todosCache = tasks; todosLoadError = ""; renderTodos();
       }
       if (!todoSelId) return;
+      const panelSeq = todoPanelFetchSeq;
       const panelResponse = await fetch("/api/tasks/panel?id=" + encodeURIComponent(todoSelId));
       if (!panelResponse.ok) return;
       const fresh = await panelResponse.json();
       if (fresh.id !== todoSelId) return;
+      if (panelSeq !== todoPanelFetchSeq) return; // a post-write refetch is newer than this
       if (JSON.stringify(fresh) !== JSON.stringify(todoPanelData)) {
         todoPanelData = fresh;
         renderTodoPanel(false);
@@ -166,6 +171,7 @@ async function renderTodoPanel(refetch) {
   const requestedID = todoSelId;
   if (!todoPanelData || todoPanelData.id !== todoSelId) host.replaceChildren(el("div", "tdo-p-empty", "Loading task…"));
   if (refetch || !todoPanelData || todoPanelData.id !== todoSelId) {
+    todoPanelFetchSeq++;
     try {
       const response = await fetch("/api/tasks/panel?id=" + encodeURIComponent(requestedID));
       if (!response.ok) throw new Error("Task unavailable");
@@ -645,8 +651,8 @@ function todoAssigneeControl(d, row) {
 async function todoAssign(ownerToken, taRef) {
   try {
     await postJSONOk("/api/tasks/assign", { id: todoSelId, owner: ownerToken });
-    loadTodos(); // rows re-project the owner; panel re-syncs via loadTodos
-    renderTodoPanel(true);
+    todosWriteSeq++; // an in-flight poll predates the assignment
+    await loadTodos(); // rows re-project the owner; loadTodos re-renders the open panel
   } catch (e) {
     showToast("Couldn't assign — " + (e.message || "error"));
     if (taRef && taRef.el) renderTodoPanel(true);
@@ -914,7 +920,10 @@ function todoRoster() {
       out.push({ id: x.id + "::" + pi, name: x.name + " · " + pi, kind: "agent" }));
   });
   (a.aion || []).forEach((x) => out.push({ id: x.id || x.initials || x.name, name: x.name || x.initials, kind: "aion" }));
-  (a.realestate || []).forEach((x) => out.push({ id: x.id || x.name, name: x.name, kind: "re" }));
+  // RE entries carry `slug` (people.md initials / contractor slug) — the key
+  // RE surfaces match owners on. Falling back to the name wrote "brian
+  // anderson" into [owner::] where every RE view expects "BPA".
+  (a.realestate || []).forEach((x) => out.push({ id: x.id || x.slug || x.name, name: x.name, kind: "re" }));
   return out;
 }
 

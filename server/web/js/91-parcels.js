@@ -131,7 +131,9 @@ function parcelPopup(p, layer) {
     if (!text) return;
     btn.disabled = true;
     try {
-      const fresh = await postJSON("/api/parcels/" + encodeURIComponent(p.slug) + "/log", { text });
+      // postJSONOk: postJSON swallows a refused write — the note vanished from
+      // the field with no toast and was never saved
+      const fresh = await postJSONOk("/api/parcels/" + encodeURIComponent(p.slug) + "/log", { text });
       p.log = fresh.log || p.log; p.lastLog = fresh.lastLog || p.lastLog;
       const i = parcelCache.findIndex((x) => x.slug === p.slug);
       if (i >= 0) parcelCache[i] = { ...parcelCache[i], log: p.log, lastLog: p.lastLog };

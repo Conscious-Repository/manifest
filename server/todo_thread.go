@@ -207,11 +207,10 @@ func (s *Server) addThreadEntry(author threads.Identity, taskID, action, text st
 func (s *Server) setTaskOwner(id, owner string) error {
 	switch {
 	case strings.HasPrefix(id, "aion:"), strings.HasPrefix(id, "re:"):
-		store, bare, ok := s.backlogStoreFor(id)
-		if !ok {
+		if _, _, ok := s.backlogStoreFor(id); !ok {
 			return errBadRequest("backlog not configured")
 		}
-		return store.UpdateItem(bare, map[string]string{"owner": owner}, time.Now())
+		return s.backlogUpdate(id, map[string]string{"owner": owner}) // clears a team owner override too
 	case strings.HasPrefix(id, "prop:"):
 		slug, lineID := splitPropID(id)
 		if slug == "" {

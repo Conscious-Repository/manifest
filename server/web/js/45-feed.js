@@ -162,11 +162,13 @@ async function loadFeed() {
   const settledRead = fetch("/api/manifest/operations/receipts")
     .then(async (r) => { if (!r.ok) throw new Error((await r.text()).trim() || "HTTP " + r.status); return r.json(); })
     .then((d) => ({ receipts: d.receipts || [], total: d.total || 0 }), (e) => ({ error: e.message || String(e) }));
+  const readAt = Date.now(); // the server reads no earlier than this (apprReadBefore)
   try {
     const r = await fetch("/api/feed?status=" + FEED_STATUS);
     if (!r.ok) throw new Error("HTTP " + r.status);
     const d = await r.json();
-    next = { items: d.items || [], signals: d.signals || [], proposals: d.proposals || [], portalItems: d.portalItems || [], consumeItems: d.consumeItems || [], receipts: d.receipts || [], bankPending: d.bankPending || [], settled: null };
+    (d.proposals || []).forEach((p) => { p.__readAt = readAt; });
+    next = { items: (d.items || []).filter((it) => !(feedDecided.get(it.id) > readAt)), signals: d.signals || [], proposals: d.proposals || [], portalItems: d.portalItems || [], consumeItems: d.consumeItems || [], receipts: d.receipts || [], bankPending: d.bankPending || [], settled: null };
     badge = d.badge || 0;
   } catch (e) {
     next = null;
@@ -271,6 +273,16 @@ function renderFeed() {
   // zero" while the nav badge disagreed. It must ask whether ANY tail lane has
   // something, not just findings.
   const tailHasCards = FEED_TAIL_LANES.some((lane) => laneVisible(lane.kind) && lane.slice(feedCache).length);
+  // the rail: drafts and the selection outlive this repaint (the 3s poll can
+  // rebuild the list under an open edit), so re-mark and re-fill from them.
+  // On BOTH paths: the empty one used to return first, leaving the inspector
+  // (a phone sheet) open on the card just confirmed. A failed load keeps the
+  // drafts — it says nothing about which proposals are gone.
+  const paintRail = () => {
+    if (!feedLoadError) apprDraftsKeep((feedCache.proposals || []).map((x) => x.id));
+    apprPaintSel();
+    apprInspectorSoft();
+  };
   if (!host.children.length && !tailHasCards) {
     if (feedLoadError) {
       const err = el("div", "ro-row empty feed-load-error");
@@ -290,6 +302,7 @@ function renderFeed() {
       readLink();
     }
     if (laneVisible("proposal")) appendFeedSettled(host);
+    paintRail();
     return;
   }
   FEED_TAIL_LANES.forEach((lane) => {
@@ -298,11 +311,7 @@ function renderFeed() {
   });
   readLink();
   if (laneVisible("proposal")) appendFeedSettled(host);
-  // the rail: drafts and the selection outlive this repaint (the 3s poll can
-  // rebuild the list under an open edit), so re-mark and re-fill from them
-  apprDraftsKeep((feedCache.proposals || []).map((x) => x.id));
-  apprPaintSel();
-  renderApprovalInspector();
+  paintRail();
   if (pendingApprovalFocus) { // deep-linked ("review →")
     const target = host.querySelector(`[data-approval-id="${CSS.escape(pendingApprovalFocus)}"]`);
     pendingApprovalFocus = null;
@@ -485,12 +494,26 @@ async function feedVerdict(card, it, verb, status) {
   const stub = el("div", "feed-stub");
   stub.append(el("span", "feed-stub-verb micro-label", verb), el("span", "feed-stub-title", it.title));
   const undo = el("button", "feed-stub-undo", "undo");
-  undo.onclick = () => feedAction(it.id, { status: "new" });
+  undo.onclick = () => feedRestore(it.id);
   stub.append(undo);
   card.replaceWith(stub);
   const ok = await feedPost(`/api/feed/${encodeURIComponent(it.id)}/status`, { status });
   if (!ok) { stub.replaceWith(card); loadFeed(); return; }
+  // the cache still listed it as new: any repaint from it (a tab switch back,
+  // a poll read begun before this write) put the decided card back
+  feedDecided.set(it.id, Date.now());
+  feedCache.items = feedCache.items.filter((x) => x.id !== it.id);
   refreshFeedBadge();
+}
+// feedDecided — item id → when its verdict landed; loadFeed drops the item
+// from a read that started before then (it may predate the write).
+const feedDecided = new Map();
+// feedRestore — undo / restore back to the inbox. feedAction never checked the
+// response, so a refused restore read as saved and the item simply stayed gone.
+async function feedRestore(id) {
+  feedDecided.delete(id);
+  await feedPost(`/api/feed/${encodeURIComponent(id)}/status`, { status: "new" });
+  loadFeed();
 }
 
 // portalCardEl renders the third feed card kind: an externally-sourced portal
@@ -649,7 +672,7 @@ function feedCard(it) {
     // fetch, and nothing to link subscribers to, without one.
     if (external) acts.push(curatePill(it, card));
   } else {
-    acts.push(pillLight("restore", () => feedAction(it.id, { status: "new" })));
+    acts.push(pillLight("restore", () => feedRestore(it.id)));
   }
   card.append(cardActions(acts));
   return card;

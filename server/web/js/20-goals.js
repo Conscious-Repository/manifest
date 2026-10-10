@@ -3,14 +3,21 @@
 async function goalsApi(method, path, body) {
   setSaveState("saving");
   try {
-    await fetch(path, {
+    const r = await fetch(path, {
       method,
       headers: { "Content-Type": "application/json" },
       body: body ? JSON.stringify(body) : undefined,
     });
+    // a refusal used to read as "saved" and the reload quietly put the old
+    // value back — the edit seemed to vanish. Say why.
+    if (!r.ok) throw new Error((await r.text().catch(() => "")).trim() || "HTTP " + r.status);
     setSaveState("saved");
-  } catch (e) { setSaveState("error"); }
+  } catch (e) { goalsSaveFailed(e); }
   await loadGoals();
+}
+function goalsSaveFailed(e) {
+  setSaveState("error");
+  showToast("Not saved — " + String((e && e.message) || e).slice(0, 120), null, "error");
 }
 
 // ---- ORIENT: the ladder felt top-to-bottom (goals-orient plan) ----
@@ -247,7 +254,7 @@ function orientArea(area) {
       const link = el("button", "go-un-link", "→ rock…");
       link.onclick = () => openTetherPicker(link, { rock: "" }, area.name, async (p) => {
         if (!p.rock) return;
-        try { await postJSONOk("/api/tasks/update", { id: t.id, rock: p.rock, stage: p.stage }); } catch (err) {}
+        try { await postJSONOk("/api/tasks/update", { id: t.id, rock: p.rock, stage: p.stage }); } catch (err) { goalsSaveFailed(err); }
         loadGoals();
       });
       row.insertBefore(link, row.lastChild); // before the age cell
@@ -260,7 +267,7 @@ function orientArea(area) {
       link.title = "convert this issue to a task tethered to a rock";
       link.onclick = () => openTetherPicker(link, { rock: "" }, area.name, async (p) => {
         if (!p.rock) return;
-        try { await postJSONOk("/api/tasks/issue/to-task", { id: is.id, rock: p.rock, stage: p.stage }); } catch (err) {}
+        try { await postJSONOk("/api/tasks/issue/to-task", { id: is.id, rock: p.rock, stage: p.stage }); } catch (err) { goalsSaveFailed(err); }
         loadGoals();
       });
       row.append(link);
@@ -550,13 +557,13 @@ function goTaskRow(t, areaName, nested) {
   tc.title = "done";
   tc.onclick = async (e) => {
     e.stopPropagation();
-    try { await postJSONOk("/api/tasks/check", { id: t.id, checked: true }); } catch (err) {}
+    try { await postJSONOk("/api/tasks/check", { id: t.id, checked: true }); } catch (err) { goalsSaveFailed(err); }
     loadGoals();
   };
   row.append(tc);
   const tt = el("span", "go-task-text", t.text);
   clickToEdit(tt, () => t.text, async (v) => {
-    try { await postJSONOk("/api/tasks/update", { id: t.id, text: v }); } catch (err) {}
+    try { await postJSONOk("/api/tasks/update", { id: t.id, text: v }); } catch (err) { goalsSaveFailed(err); }
     loadGoals();
   });
   row.append(tt);
@@ -567,7 +574,7 @@ function goTaskRow(t, areaName, nested) {
   const ownerNode = hasOwner ? el("span", "go-stage-owner", "@" + t.owner)
     : el("button", "o-ghost go-owner-ghost", "＋@");
   ownerEditable(ownerNode, () => (hasOwner ? t.owner : ""), async (v) => {
-    try { await postJSONOk("/api/tasks/update", { id: t.id, owner: v }); } catch (err) {}
+    try { await postJSONOk("/api/tasks/update", { id: t.id, owner: v }); } catch (err) { goalsSaveFailed(err); }
     loadGoals();
   }, ownerRegistryFor(areaName));
   row.append(ownerNode);
@@ -581,7 +588,7 @@ function goTaskRow(t, areaName, nested) {
       setTimeout(() => x.classList.remove("armed"), 2500);
       return;
     }
-    try { await postJSONOk("/api/tasks/drop", { id: t.id }); } catch (err) {}
+    try { await postJSONOk("/api/tasks/drop", { id: t.id }); } catch (err) { goalsSaveFailed(err); }
     loadGoals();
   };
   row.append(x);

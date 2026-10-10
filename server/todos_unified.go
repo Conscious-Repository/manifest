@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"os"
@@ -13,6 +14,7 @@ import (
 
 	"manifest/agentchat"
 	"manifest/aion"
+	"manifest/goals"
 	"manifest/realestate"
 	"manifest/record"
 	"manifest/tasks"
@@ -645,9 +647,61 @@ func (s *Server) backlogStoreFor(id string) (*aion.Store, string, bool) {
 	return nil, id, false
 }
 
-func (s *Server) backlogTaskCheck(w http.ResponseWriter, id string, checked bool) {
+// backlogUpdate writes fields onto a composite backlog item. An aion item goes
+// through the live layer's owner write, exactly as the AION cockpit's edits
+// do: it re-renders the served projection and clears any team override on
+// the keys it set. A bare store write left a member's override winning on the
+// AION board and the portal, so an edit made from TASKS looked reverted there.
+func (s *Server) backlogUpdate(id string, set map[string]string) error {
 	store, bare, ok := s.backlogStoreFor(id)
 	if !ok {
+		return errors.New("backlog not available")
+	}
+	if strings.HasPrefix(id, "aion:") && s.aionLive != nil {
+		return s.aionLive.ownerUpdate(bare, set, time.Now())
+	}
+	return store.UpdateItem(bare, set, time.Now())
+}
+
+// aionTether resolves a tether pick onto the Aion goals ladder: the rock id,
+// or — when a stage is named — that milestone's own id (an aion item carries
+// its milestone in [rock::]; there is no [stage::]). ok=false when the rock is
+// not on the ladder: the live contract refuses a rock that resolves to no
+// goal, and one bad tether froze the whole AION board on its last good
+// snapshot, so every later edit there looked lost.
+func (s *Server) aionTether(rock, stage string) (string, bool) {
+	area := s.aionGoalsArea()
+	if area == nil || rock == "" {
+		return rock, true // no ladder to check against / untether
+	}
+	var find func([]goals.GoalView) *goals.GoalView
+	find = func(list []goals.GoalView) *goals.GoalView {
+		for i := range list {
+			if list[i].ID == rock {
+				return &list[i]
+			}
+			if g := find(list[i].Children); g != nil {
+				return g
+			}
+		}
+		return nil
+	}
+	g := find(area.Rocks)
+	if g == nil {
+		return "", false
+	}
+	if stage != "" {
+		for _, c := range g.Children {
+			if c.ID == stage || strings.EqualFold(c.Text, stage) {
+				return c.ID, true
+			}
+		}
+	}
+	return g.ID, true
+}
+
+func (s *Server) backlogTaskCheck(w http.ResponseWriter, id string, checked bool) {
+	if _, _, ok := s.backlogStoreFor(id); !ok {
 		http.Error(w, "backlog not available", http.StatusServiceUnavailable)
 		return
 	}
@@ -655,7 +709,7 @@ func (s *Server) backlogTaskCheck(w http.ResponseWriter, id string, checked bool
 	if checked {
 		status = aion.StatusDone
 	}
-	if err := store.UpdateItem(bare, map[string]string{"status": status}, time.Now()); err != nil {
+	if err := s.backlogUpdate(id, map[string]string{"status": status}); err != nil {
 		httpError(w, err)
 		return
 	}

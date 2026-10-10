@@ -14,13 +14,43 @@ function apprDraft(a) {
   const base = JSON.stringify(a.reContractPayload || {});
   let d = apprDrafts.get(a.id);
   if (!d) { d = { p: JSON.parse(base), base, dirty: false, saving: false, err: "" }; apprDrafts.set(a.id, d); }
-  else if (d.base !== base && !d.dirty) { d.p = JSON.parse(base); d.base = base; }
+  else if (d.base !== base && !d.dirty && !apprReadBefore(a, d.savedAt)) { d.p = JSON.parse(base); d.base = base; }
   return d;
+}
+// apprReadBefore — the row came from a feed read that started before the
+// draft's last save landed, so it may carry the pre-save payload: a poll in
+// flight across a save used to put the old values back. loadFeed stamps
+// __readAt; rows from elsewhere carry none and are taken as they come.
+function apprReadBefore(a, savedAt) {
+  return !!savedAt && a.__readAt != null && a.__readAt < savedAt;
+}
+// apprForms — the same survival for the editors built inside a card's own
+// closure (aion/resolve/goals payload, a new note's title/people/categories/
+// tier, the note to Olga). Every feed load — a decision on ANY card, a "save
+// edit", a finished agent run — rebuilds every card, and these used to start
+// over from the server's copy: an owner or rock picked but not yet saved went
+// back to the old value. A server change replaces the form only while it holds
+// no unsaved edit, and never from a read older than the form's last save.
+const apprForms = new Map(); // approval id → {base, s, clean, savedAt}
+function apprForm(a, base, init) {
+  let f = apprForms.get(a.id);
+  if (!f || (f.base !== base && !apprReadBefore(a, f.savedAt) && JSON.stringify(f.s) === f.clean)) {
+    f = { base, s: init(), clean: null, savedAt: f ? f.savedAt : 0 };
+    apprForms.set(a.id, f);
+  }
+  return f;
+}
+// apprFormSettle — what the form holds now is the server's (just built from
+// it, or just saved to it); an edit after this keeps the form across repaints.
+function apprFormSettle(f, saved) {
+  f.clean = JSON.stringify(f.s);
+  if (saved) f.savedAt = Date.now();
 }
 // apprDraftsKeep — drop drafts whose proposal is gone (confirmed / rejected).
 function apprDraftsKeep(ids) {
   const live = new Set(ids || []);
   [...apprDrafts.keys()].forEach((id) => { if (!live.has(id)) apprDrafts.delete(id); });
+  [...apprForms.keys()].forEach((id) => { if (!live.has(id)) apprForms.delete(id); });
   if (apprSel && !live.has(apprSel.id)) apprSel = null;
 }
 
@@ -163,11 +193,11 @@ function approvalCardEl(a) {
   const isAppendNote = a.type === "append-vault-note"; // email-sync append the auto-apply refused
   let attendees = null; // create-vault-note: the editable people list sent on Confirm
   let categories = null; // create-vault-note: the editable frontmatter categories
-  const titleRef = { value: null }; // create-vault-note: the editable filename title
+  let titleRef = { value: null }; // create-vault-note: the editable filename title
   // create-vault-note from a synced transcript: the accepted visibility tier
   // (value) and whether the row is showing (an aion note only) — Confirm
   // sends it only while shown, so a non-aion note records nothing.
-  const visRef = { value: null, shown: () => false };
+  let visRef = { value: null, shown: () => false };
   if (actionable) {
     card.classList.add("actionable");
     // create-vault-note shows its path via the editable title field below, so the
@@ -206,10 +236,14 @@ function approvalCardEl(a) {
     // drive automation — `aion` makes the written note auto-extract
     // tasks/decisions/heuristics into FEED.
     if (isNewNote) {
+      // the edits outlive a repaint (apprForms): the editors mutate these in place
+      const form = apprForm(a, JSON.stringify([a.applyPath, a.proposed, a.visibilitySuggestion || null]), () => ({
+        title: { value: null }, attendees: parseAttendees(a.proposed || ""),
+        categories: parseCategories(a.proposed || ""), vis: { value: null, shown: () => false },
+      }));
+      ({ title: titleRef, attendees, categories, vis: visRef } = form.s);
       card.append(buildTitleEditor(a.applyPath, titleRef));
-      attendees = parseAttendees(a.proposed || "");
       card.append(buildAttendeeEditor(attendees, parseUnlinkedPeople(a.proposed || "")));
-      categories = parseCategories(a.proposed || "");
       // a synced transcript (granola / heypocket / email) also proposes its
       // visibility tier — shown only while the note carries `aion`, so the
       // row appears and disappears with the category chip
@@ -217,6 +251,7 @@ function approvalCardEl(a) {
       if (a.visibilitySuggestion) visibility = buildVisibilityEditor(a.visibilitySuggestion, categories, visRef);
       card.append(buildCategoryEditor(categories, () => { if (visibility) visibility.sync(); }));
       if (visibility) card.append(visibility.wrap);
+      if (form.clean == null) apprFormSettle(form);
     }
 
     if (isGoals && a.goalsPayload) {
@@ -279,6 +314,11 @@ function approvalCardEl(a) {
     olgaNote = el("textarea", "appr-olga-note");
     olgaNote.rows = 2; olgaNote.placeholder = "Note to Olga (optional) — she sees it in her chat";
     olgaNote.setAttribute("aria-label", "Note to Olga");
+    // a half-written note survives the feed's repaints (apprForms)
+    const form = apprForm(a, a.body || "", () => ({ note: "" }));
+    if (form.clean == null) apprFormSettle(form);
+    olgaNote.value = form.s.note;
+    olgaNote.oninput = () => { form.s.note = olgaNote.value; };
     card.append(olgaNote);
   }
   const confirmBtn = pill(isOlgaRequest ? "Done" : actionable ? "Confirm & apply" : "Confirm",
@@ -417,11 +457,13 @@ const APPR_VISIBILITY_HINT = {
 function buildVisibilityEditor(sug, categories, ref) {
   const wrap = el("div", "appr-attendees appr-visibility");
   const known = !!sug.known;
-  ref.value = APPR_VISIBILITY_TIERS.includes(sug.suggested) ? sug.suggested : "held";
+  const suggested = APPR_VISIBILITY_TIERS.includes(sug.suggested) ? sug.suggested : "held";
+  // a tier already picked on this card survives the repaint (apprForms)
+  if (!APPR_VISIBILITY_TIERS.includes(ref.value)) ref.value = suggested;
   const where = sug.source === "pocket" ? "HeyPocket" : sug.source === "email" ? "email" : "Granola";
   wrap.append(el("div", "appr-attendees-label",
-    "Visibility — suggested: " + ref.value + (known
-      ? " (already tiered as " + ref.value + " in the tier map)"
+    "Visibility — suggested: " + suggested + (known
+      ? " (already tiered as " + suggested + " in the tier map)"
       : sug.basis === "jev"
         ? " (Jev's advice for this untiered " + where + " transcript — nothing is shared until you confirm)"
         : " (" + where + " transcript not yet tiered — the safe default)") +
@@ -472,7 +514,7 @@ function parseAttendees(proposed) {
 function buildTitleEditor(applyPath, ref) {
   const m = /^(\d{4}-\d{2}-\d{2}(?: - \d{4}-\d{2}-\d{2})?) (.+)\.md$/.exec(applyPath || "");
   const date = m ? m[1] : "";
-  ref.value = m ? m[2] : "";
+  if (ref.value == null) ref.value = m ? m[2] : ""; // an edited title survives the repaint
   const wrap = el("div", "appr-title");
   wrap.append(el("div", "appr-title-label", "Title — edit before confirming"));
   const row = el("div", "appr-title-row");
@@ -717,28 +759,45 @@ const apprSaveTimers = new Map();
 function apprScheduleSave(a) {
   const d = apprDraft(a);
   d.dirty = true;
+  d.rev = (d.rev || 0) + 1;
   clearTimeout(apprSaveTimers.get(a.id));
   apprSaveTimers.set(a.id, setTimeout(() => apprFlush(a), 800));
-  renderApprovalInspector();
+  // after the event: a blur that committed is still moving focus to the next
+  // field, and a rebuild now would drop it on the floor
+  setTimeout(apprInspectorSoft, 0);
 }
 async function apprFlush(a) {
   clearTimeout(apprSaveTimers.get(a.id));
   const d = apprDraft(a);
+  // one save at a time per card: two in flight can land out of order and
+  // leave the server on the older payload; the later edit goes after this one
+  if (d.inflight) { await d.inflight; return apprFlush(a); }
   if (!d.dirty) return true;
   const bad = apprValidate(a, d.p);
-  if (bad) { d.err = ""; renderApprovalInspector(); return false; }
-  d.saving = true; d.err = ""; renderApprovalInspector();
+  if (bad) { d.err = ""; apprInspectorSoft(); return false; }
+  d.saving = true; d.err = ""; apprInspectorSoft();
+  let settled; d.inflight = new Promise((r) => { settled = r; });
+  // what this request carries: an edit made while it is in flight stays dirty
+  const rev = d.rev || 0, body = JSON.stringify(d.p);
   try {
     const r = await fetch("/api/spirits/approvals/" + encodeURIComponent(a.id) + "/recontract", {
-      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(d.p),
+      method: "POST", headers: { "Content-Type": "application/json" }, body,
     });
     if (!r.ok) throw new Error((await r.text()).trim());
-    d.dirty = false; d.base = JSON.stringify(d.p);
+    // the card's proposal is what the server now holds: without this the next
+    // repaint compared the saved draft against the card's old payload, took it
+    // for a server change and put the old values back (owner 2026-10-10: an
+    // owner picked in the inspector showed, then reverted, though it saved)
+    a.reContractPayload = JSON.parse(body);
+    d.base = JSON.stringify(a.reContractPayload);
+    d.dirty = (d.rev || 0) !== rev;
+    d.savedAt = Date.now(); // a feed read begun before now may predate it (apprReadBefore)
   } catch (e) {
     d.err = String(e.message || e).slice(0, 120);
   }
   d.saving = false;
-  renderApprovalInspector();
+  d.inflight = null; settled();
+  apprInspectorSoft();
   return !d.err && !d.dirty;
 }
 
@@ -1011,8 +1070,13 @@ function buildReContractEditor(a, evidence) {
 }
 
 function buildAionEditor(a) {
-  const p = Object.assign({}, a.aionPayload);
-  p.heuristic = Object.assign({ mode: "", target: "" }, p.heuristic || {});
+  // the form outlives the card's repaints (apprForms) — see the save below
+  const held = apprForm(a, JSON.stringify(a.aionPayload || {}), () => {
+    const p = Object.assign({}, a.aionPayload);
+    p.heuristic = Object.assign({ mode: "", target: "" }, p.heuristic || {});
+    return p;
+  });
+  const p = held.s;
   const wrap = el("div", "aion-appr");
   // the APPLIES TO chip above already names the file — this line says what
   // the owner does here, not where it lands
@@ -1189,12 +1253,14 @@ function buildAionEditor(a) {
     dirtyNote.textContent = "edits ride Confirm — save edit keeps them without confirming";
   };
   rebuild();
+  if (held.clean == null) apprFormSettle(held);
   wrap.append(previewFold);
   const flush = async () => {
     const r = await fetch("/api/spirits/approvals/" + encodeURIComponent(a.id) + "/aion", {
       method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(p),
     });
     if (!r.ok) throw new Error(await r.text());
+    apprFormSettle(held, true); // saved: the next load's payload is ours
   };
   // Confirm flushes the CURRENT form state first — see the confirm handler
   a.__payloadFlush = flush;
@@ -1216,7 +1282,9 @@ function buildAionEditor(a) {
 // decision. Kind and the resolving verb are fixed; the fence rewrites via
 // the same /aion endpoint (SetAionPayload's resolve lane).
 function buildResolveEditor(a) {
-  const p = Object.assign({}, a.aionPayload);
+  const held = apprForm(a, JSON.stringify(a.aionPayload || {}), () => Object.assign({}, a.aionPayload));
+  if (held.clean == null) apprFormSettle(held);
+  const p = held.s; // outlives the card's repaints (apprForms)
   const wrap = el("div", "aion-appr");
   const verb = p.kind === "decision" ? "decided" : "done";
   wrap.append(el("div", "appr-diff-label",
@@ -1248,6 +1316,7 @@ function buildResolveEditor(a) {
       method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(p),
     });
     if (!r.ok) throw new Error(await r.text());
+    apprFormSettle(held, true);
   };
   a.__payloadFlush = flush; // Confirm flushes the current form state first
   const save = pillLight("save edit", async () => {
@@ -1451,10 +1520,15 @@ function apprInspectorInto(host) {
     return field(label, input);
   };
   const pickField = (label, get, set, suggest) => {
+    // a pick writes the slug and shows its label; the browser then fires
+    // `change` with that label on blur (the owner had typed first), which used
+    // to overwrite the slug with the address/rock text — the aion editor's
+    // rockPickedText guard, here
+    let picked = null;
     const ta = typeahead({
       placeholder: label, initial: get() || "",
-      suggest: (q, add, t) => suggest(q, add, t, (v) => { set(v); commit(); }),
-      onChange: (v) => { if ((get() || "") !== v) { set(v); commit(); } },
+      suggest: (q, add, t) => suggest(q, add, t, (v) => { picked = t.value(); set(v); commit(); }),
+      onChange: (v) => { if (v !== picked && (get() || "") !== v) { set(v); commit(); } },
     });
     return field(label, ta.el);
   };
@@ -1611,8 +1685,16 @@ function apprInspectorInto(host) {
     host.append(del);
   }
 
+  host.append(apprInspectorFoot(a));
+}
+
+// apprInspectorFoot — the inspector's save line for the open selection.
+function apprInspectorFoot(a) {
+  const d = apprDraft(a);
   const foot = el("div", "aion-insp-foot");
-  const bad = apprValidate(a, p);
+  foot.dataset.selKey = apprSelKey(apprSel);
+  foot.__p = d.p; // the payload the fields above were built over
+  const bad = apprValidate(a, d.p);
   if (d.err) { foot.textContent = "save failed — " + d.err; foot.classList.add("off"); }
   else if (d.saving) foot.textContent = "saving…";
   else if (bad) {
@@ -1620,7 +1702,26 @@ function apprInspectorInto(host) {
     foot.classList.add("off");
     if (bad.sel) { foot.style.cursor = "pointer"; foot.onclick = () => apprSelect(bad.sel); }
   } else foot.textContent = "edits save as you go";
-  host.append(foot);
+  return foot;
+}
+
+// apprInspectorSoft — a repaint the owner did not ask for (a save starting or
+// landing, a feed load) must not rebuild the field being typed in: it threw
+// away text typed into the next field while the last one saved (WebKit fires
+// no blur on removal, so nothing committed it), dropped the focus a Tab had
+// just moved, and on a phone the sheet sits outside #feedView, past the
+// feed poll's own typing guard. With focus inside the inspector showing this
+// same selection, only the save line is redrawn.
+function apprInspectorSoft() {
+  const key = apprSelKey(apprSel), act = document.activeElement;
+  const card = apprSel ? apprCards.get(apprSel.id) : null;
+  const foot = key && act && card && card.box.isConnected
+    ? [...document.querySelectorAll(".aion-insp-foot")].find((f) => f.dataset.selKey === key && f.parentElement.contains(act))
+    : null;
+  // a server change replaced the draft: the fields edit a payload no one
+  // reads any more, so they are rebuilt after all
+  if (!foot || foot.__p !== apprDraft(card.a).p) { renderApprovalInspector(); return; }
+  foot.replaceWith(apprInspectorFoot(card.a));
 }
 
 // ---- the goals placement card (§12 2026-08-19) --------------------------
@@ -1689,7 +1790,8 @@ function goalsCardSource(a) {
 // `under` control is a picker over the LIVE ladder, so a milestone chooses its
 // real rock and a task chooses its real milestone (or rock) by its own text.
 function buildGoalsEditor(a) {
-  const p = Object.assign({}, a.goalsPayload);
+  const held = apprForm(a, JSON.stringify(a.goalsPayload || {}), () => Object.assign({}, a.goalsPayload));
+  const p = held.s; // outlives the card's repaints (apprForms)
   const wrap = el("div", "goals-place");
   const row = el("div", "goals-place-row");
   wrap.append(row);
@@ -1698,7 +1800,12 @@ function buildGoalsEditor(a) {
   // the ladder arrives async once per session; the row renders immediately off
   // the cached copy and repaints itself when the first fetch lands
   let reg = apprGoalsReg;
-  if (!reg) apprGoalsRegistry().then((r) => { reg = r; rebuild(); });
+  // (its defaults are not an owner edit: a clean form stays clean)
+  if (!reg) apprGoalsRegistry().then((r) => {
+    const clean = JSON.stringify(p) === held.clean;
+    reg = r; rebuild();
+    if (clean) apprFormSettle(held);
+  });
 
   // chip — a labelled control that reads as a pill in the action row, so the
   // picker is an affordance ON the card rather than a form beneath it
@@ -1847,6 +1954,7 @@ function buildGoalsEditor(a) {
   // so the owner can fix the payload and let the next feed load re-enable it
   a.__gateBind = (fn) => { gate.push = fn; a.__gateFn = fn; sync(); };
   rebuild();
+  if (held.clean == null) apprFormSettle(held); // after rebuild's defaults
   wrap.append(note);
 
   const flush = async () => {
@@ -1854,6 +1962,7 @@ function buildGoalsEditor(a) {
       method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(p),
     });
     if (!r.ok) throw new Error(await r.text());
+    apprFormSettle(held, true);
   };
   a.__payloadFlush = flush;
   // the exact write Confirm makes, current → proposed (server-computed) — one

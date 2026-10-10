@@ -249,7 +249,10 @@ async function renderCategoriesPanel(pane) {
       await ensureMoneyCats(true);
       showToast(c.name + " → " + cls);
       renderREsettings();
-    } catch (e) { showToast("Couldn't retype — " + (e.message || ""), null, "error"); }
+    } catch (e) {
+      showToast("Couldn't retype — " + (e.message || ""), null, "error");
+      renderREsettings(); // the class select still showed the refused class
+    }
   };
   const rename = async (c, to) => {
     to = (to || "").trim().toLowerCase();

@@ -82,13 +82,19 @@ func (d *CandidateDoc) SetProfile(key, value string) error {
 		return errf("unknown profile field %q", key)
 	}
 	sec := ensureSection(&d.Sections, "profile")
-	for _, r := range rows(sec) {
-		if r.Has(key) {
-			r.Set(key, value)
-			return nil
+	// the LAST occurrence is the one Profile() reads (an accepted draft can
+	// carry [website::] twice: orcid, then homepage); writing the first copy
+	// saved an edit nobody could see, and it looked like it never took
+	rs := rows(sec)
+	for i := len(rs) - 1; i >= 0; i-- {
+		for j := len(rs[i].Fields) - 1; j >= 0; j-- {
+			if strings.EqualFold(rs[i].Fields[j].Key, key) {
+				rs[i].Fields[j].Value = value
+				return nil
+			}
 		}
 	}
-	if rs := rows(sec); len(rs) > 0 {
+	if len(rs) > 0 {
 		rs[len(rs)-1].Set(key, value)
 		return nil
 	}

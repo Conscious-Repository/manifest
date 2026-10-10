@@ -69,28 +69,51 @@ function rePropertyLink(slug, label, cls = "") {
   return link;
 }
 
+// propLoadSeq — the newest /api/properties read wins. Two renders in flight
+// (two quick edits) could land out of order, and the older response — read
+// before the second write — put the first edit's pre-save values back on
+// screen. applyFreshProperty bumps it too: its record is newer than any read
+// already in flight.
+let propLoadSeq = 0;
 async function loadProperties() {
+  const seq = ++propLoadSeq;
   try {
     const d = await (await fetch("/api/properties")).json();
+    // superseded: drop it — unless nothing has loaded yet (a caller awaiting
+    // this read still needs a list)
+    if (seq !== propLoadSeq && propertyCache.length) return;
     propertyCache = d.properties || [];
     dealCache = d.deals || [];
     templateCache = d.templates || [];
     holdingsCache = d.holdings || {};
-  } catch (e) { propertyCache = []; dealCache = []; templateCache = []; holdingsCache = {}; }
+  } catch (e) {
+    if (seq === propLoadSeq) { propertyCache = []; dealCache = []; templateCache = []; holdingsCache = {}; }
+  }
 }
 
+// the same newest-read-wins guard as loadProperties, per endpoint
+let reBacklogSeq = 0, propTodosSeq = 0;
 async function loadReBacklog() {
-  try { reBacklogCache = await (await fetch("/api/re/backlog")).json(); }
-  catch (e) { reBacklogCache = { items: [], goalsArea: null }; }
+  const seq = ++reBacklogSeq;
+  let d;
+  try { d = await (await fetch("/api/re/backlog")).json(); }
+  catch (e) { d = { items: [], goalsArea: null }; }
+  if (seq === reBacklogSeq) reBacklogCache = d;
 }
 
 async function loadPropTodosMeta() {
-  try { propTodosMeta = await (await fetch("/api/tasks")).json(); }
-  catch (e) { propTodosMeta = { outstanding: [], assignees: {}, counts: {} }; }
+  const seq = ++propTodosSeq;
+  let d;
+  try { d = await (await fetch("/api/tasks")).json(); }
+  catch (e) { d = { outstanding: [], assignees: {}, counts: {} }; }
+  if (seq === propTodosSeq) propTodosMeta = d;
 }
 
+let propRenderSeq = 0; // a superseded render never paints (see propLoadSeq)
 async function renderProperties() {
+  const seq = ++propRenderSeq;
   await Promise.all([loadProperties(), loadPropTodosMeta(), loadReBacklog()]);
+  if (seq !== propRenderSeq) return;
   renderReToggle();
   // the WORK rail counts WORK — open tasks + open decisions, the same
   // derivation the BACKLOG page renders from (reOpenCount in 85-re-domain.js)
@@ -109,6 +132,27 @@ async function renderProperties() {
   else if (propMode === "contractors") { els.propertyBoard.hidden = false; renderREContractors(); }
   else if (propMode === "portfolio") { els.propertyBoard.hidden = false; renderPortfolio(); }
   else { els.propertyBoard.hidden = false; renderREBacklog(); } // default = BACKLOG
+}
+
+// reRepaintWhenIdle — run a save's repaint now, unless the user is typing in
+// another field of the same inspector (Tab from a blur-saved field into the
+// next): then hold it until focus leaves that inspector. Repainting at once
+// rebuilt the inspector under the caret and dropped what was being typed.
+function reRepaintWhenIdle(repaint) {
+  const a = document.activeElement;
+  const typing = a && (a.tagName === "TEXTAREA" ||
+    (a.tagName === "INPUT" && !/^(checkbox|radio|button|submit|file)$/.test(a.type)));
+  const host = typing ? a.closest(".fr-inspector, .mf-sheet-body") : null;
+  if (!host) { repaint(); return; }
+  host._reHeldRepaint = repaint; // the newest save's repaint wins
+  if (host._reHeldBound) return;
+  host._reHeldBound = true;
+  host.addEventListener("focusout", (e) => {
+    if (!host._reHeldRepaint || (e.relatedTarget && host.contains(e.relatedTarget))) return;
+    const run = host._reHeldRepaint;
+    host._reHeldRepaint = null;
+    run();
+  });
 }
 
 // ---- derived helpers (RE spec §2: every count computed from its list) ----

@@ -42,6 +42,25 @@ async function showContactPage(key) {
   renderContactPage(p);
 }
 
+// cpRepaint draws a write's answer (the fresh page) for the contact on
+// screen. A first write can rename the contact — the note it creates is
+// named after them, and its filename is the key — so the page adopts the
+// new key; before, the answer was dropped as "another contact's" and the
+// page sat on the old state with its button stuck at "saving…".
+function cpRepaint(fromKey, np) {
+  if (!np || !np.key) return;
+  if (cpPageKey === fromKey && np.key !== fromKey) {
+    cpPageKey = np.key;
+    const ta = cpPageHost && cpPageHost.querySelector(".cp-note-editor");
+    if (ta && ta.dataset.key === fromKey) ta.dataset.key = np.key;
+  }
+  renderContactPage(np);
+}
+
+// cpFail says a refused write out loud (postJSON swallowed refusals, so the
+// page repainted the old state as if the click had done nothing).
+function cpFail(what, e) { showToast("couldn't " + what + " — " + errMsg(e).slice(0, 120), null, "error"); }
+
 function showFlash(node, msg, isError) {
   node.textContent = msg; node.hidden = false;
   node.classList.toggle("error", !!isError);
@@ -67,7 +86,8 @@ function renderTriage(items) {
   const headActions = el("span", "triage-head-actions");
   const bulk = pillLight("Dismiss all " + items.length, async () => {
     if (!confirm("Dismiss all " + items.length + " queued names? (remembered — they won't return)")) return;
-    await postJSON("/api/contacts/dismiss-bulk", { keys: items.map((t) => t.key) });
+    try { await postJSONOk("/api/contacts/dismiss-bulk", { keys: items.map((t) => t.key) }); }
+    catch (e) { cpFail("dismiss them", e); return; }
     cpRefresh();
   });
   bulk.hidden = true;
@@ -84,10 +104,12 @@ function renderTriage(items) {
     if (t.likelyOrg) nm.append(el("span", "triage-hint", " likely org"));
     r.append(nm, el("span", "triage-refs", t.refCount + " ref" + (t.refCount === 1 ? "" : "s")));
     const act = el("span", "triage-actions");
+    // a refused decision is said, not silently re-listed
+    const decide = async (url, body) => { try { await postJSONOk(url, body); cpRefresh(); } catch (e) { cpFail("save that", e); } };
     act.append(
-      pill("Person", async () => { await postJSON("/api/contacts/confirm", { key: t.key, display: t.display }); cpRefresh(); }),
-      pillLight("Org", async () => { await postJSON("/api/contacts/org", { key: t.key }); cpRefresh(); }),
-      pillLight("Dismiss", async () => { await postJSON("/api/contacts/dismiss", { key: t.key }); cpRefresh(); }),
+      pill("Person", () => decide("/api/contacts/confirm", { key: t.key, display: t.display })),
+      pillLight("Org", () => decide("/api/contacts/org", { key: t.key })),
+      pillLight("Dismiss", () => decide("/api/contacts/dismiss", { key: t.key })),
     );
     r.append(act);
     rows.append(r);
@@ -309,6 +331,11 @@ function cpSection(title, count) {
 
 function renderContactPage(p) {
   const host = cpPageHost; if (!host || cpPageKey !== p.key) return;
+  // An unsaved note survives the repaints other writes on this page cause
+  // (a ticked loop, a linked email, a location) — they used to rebuild the
+  // editor from the server's body and drop what was typed.
+  const prevTa = host.querySelector(".cp-note-editor");
+  const draft = prevTa && prevTa.dataset.key === p.key && prevTa.value !== prevTa.dataset.saved ? prevTa.value : null;
   host.innerHTML = "";
 
   // 1. header — name, aliases, linked firms
@@ -390,7 +417,8 @@ function renderContactPage(p) {
         if (it.kind === "checkbox") {
           const box = el("input"); box.type = "checkbox";
           box.addEventListener("change", async () => {
-            await postJSON("/api/note/task", { path: g.path, line: it.line, want: box.checked });
+            try { await postJSONOk("/api/note/task", { path: g.path, line: it.line, want: box.checked }); }
+            catch (e) { box.checked = !box.checked; cpFail("tick that", e); return; }
             showContactPage(p.key);
           });
           row.append(box);
@@ -428,8 +456,8 @@ function renderContactPage(p) {
       row.append(el("span", "cp-date", u.date), el("span", "cp-title", u.title));
       if (!u.confirmed && u.email) {
         row.append(pill("This is " + p.display + " (" + u.email + ")", async () => {
-          await postJSON("/api/contacts/email", { key: p.key, display: p.display, email: u.email });
-          showContactPage(p.key);
+          try { cpRepaint(p.key, await postJSONOk("/api/contacts/email", { key: p.key, display: p.display, email: u.email })); }
+          catch (e) { cpFail("link " + u.email, e); }
         }));
       } else if (u.confirmed) {
         row.append(el("span", "cp-confirmed", "✓ matched"));
@@ -489,8 +517,8 @@ function renderContactPage(p) {
   const doAdd = async () => {
     const email = einp.value.trim();
     if (!email) return;
-    const np = await postJSON("/api/contacts/email", { key: p.key, display: p.display, email });
-    renderContactPage(np);
+    try { cpRepaint(p.key, await postJSONOk("/api/contacts/email", { key: p.key, display: p.display, email })); }
+    catch (e) { cpFail("link " + email, e); }
   };
   einp.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); doAdd(); } });
   addRow.append(einp, pill("Link email", doAdd));
@@ -502,8 +530,14 @@ function renderContactPage(p) {
       const sug = el("div", "cp-email-suggest");
       sug.append(el("span", "cp-email-suggest-text", "You met " + p.display + " on " + c.metOn + " — link " + c.email + "?"));
       sug.append(
-        pill("Link", async () => { renderContactPage(await postJSON("/api/contacts/email", { key: p.key, display: p.display, email: c.email })); }),
-        pillLight("Dismiss", async () => { await postJSON("/api/contacts/email-dismiss", { email: c.email, key: p.key }); sug.remove(); }),
+        pill("Link", async () => {
+          try { cpRepaint(p.key, await postJSONOk("/api/contacts/email", { key: p.key, display: p.display, email: c.email })); }
+          catch (e) { cpFail("link " + c.email, e); }
+        }),
+        pillLight("Dismiss", async () => {
+          try { await postJSONOk("/api/contacts/email-dismiss", { email: c.email, key: p.key }); sug.remove(); }
+          catch (e) { cpFail("dismiss", e); }
+        }),
       );
       esec.append(sug);
     });
@@ -512,17 +546,24 @@ function renderContactPage(p) {
   // 6. note pane — raw-markdown editor; blank + placeholder when no note exists
   const note = cpSection("Note");
   const ta = el("textarea", "cp-note-editor");
-  ta.value = p.noteBody || "";
+  ta.dataset.key = p.key;
+  ta.dataset.saved = p.noteBody || "";
+  ta.value = draft != null ? draft : ta.dataset.saved;
   ta.placeholder = "notes about " + p.display + "…  (type [[ to link a name)";
   attachWikilinkAutocomplete(ta);
   note.append(ta);
   const actions = el("div", "cp-note-actions");
   const saveBtn = pill(p.hasNote ? "Save note" : "Create note", async () => {
     saveBtn.disabled = true; saveBtn.textContent = "saving…";
-    const np = await postJSON("/api/contacts/note", { key: p.key, display: p.display, body: ta.value });
+    const body = ta.value;
+    let np;
+    // a refused save said "note saved" and left the button at "saving…"
+    try { np = await postJSONOk("/api/contacts/note", { key: p.key, display: p.display, body }); }
+    catch (e) { saveBtn.disabled = false; saveBtn.textContent = p.hasNote ? "Save note" : "Create note"; cpFail("save the note", e); return; }
     showToast("note saved");
     const created = !p.hasNote;
-    renderContactPage(np);
+    ta.dataset.saved = body; // what was saved is no longer a draft
+    cpRepaint(p.key, np);
     if (created) cpRefresh(true);
   });
   actions.append(saveBtn);
@@ -622,14 +663,21 @@ async function runCreateSearch(q, host) {
     const act = el("span", "cc-actions");
     act.append(
       pillLight("Open", () => { location.hash = personHref(r.key); }),
-      pill("Bind “" + q + "”", async () => { await postJSON("/api/contacts/bind", { variant: q, canonical: r.key, display: q }); location.hash = personHref(r.key); }),
+      pill("Bind “" + q + "”", async () => {
+        try { await postJSONOk("/api/contacts/bind", { variant: q, canonical: r.key, display: q }); }
+        catch (e) { cpFail("bind " + q, e); return; }
+        location.hash = personHref(r.key);
+      }),
     );
     row.append(act);
     host.append(row);
   });
   const create = el("div", "cc-create");
   create.append(pill("Create new contact “" + q + "”", async () => {
-    const p = await postJSON("/api/contacts/note", { key: q.toLowerCase(), display: q, body: "" });
+    let p;
+    // a refused create opened a page for a contact that did not exist
+    try { p = await postJSONOk("/api/contacts/note", { key: q.toLowerCase(), display: q, body: "" }); }
+    catch (e) { cpFail("create " + q, e); return; }
     location.hash = personHref(p.key || q.toLowerCase());
   }));
   host.append(create);
