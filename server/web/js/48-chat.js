@@ -164,7 +164,9 @@ function chatHeadNewChat() {
 // re-measures the textarea at its new width. Desktop CSS ignores the classes.
 function chatComposerShape(host, ta) {
   const hasFiles = !!host.querySelector(".chat-attachment-card");
-  const text = ta.value.length > 0 || hasFiles;
+  // while a send is being confirmed the field reads as empty (its text is
+  // kept underneath until acceptance, and comes back if the send is refused)
+  const text = !host.classList.contains("is-sending") && (ta.value.length > 0 || hasFiles);
   const was = host.className;
   if(hasFiles)host.classList.add("is-wrapped");
   host.classList.toggle("has-text", text);
@@ -180,7 +182,13 @@ function chatComposerShape(host, ta) {
   // an empty phone field whose hint is wider than the compact row (a run-state
   // note: "Can't steer; messages queue…", 205px, in 146px at 390) takes the
   // field's own row, so the hint reads whole instead of clipping mid-word
-  host.classList.toggle("has-long-hint", !text && chatHintOverflows(host, ta));
+  // A hint never reshapes the composer (owner 2026-10-10: after a send the
+  // box shrank, then grew again when the hint turned into "Can't steer;
+  // messages queue…", and the conversation above jumped). A long hint is cut
+  // with an ellipsis on the one row; the whole hint is the field's tooltip and
+  // the run-state line under the transcript says the same thing in full.
+  host.classList.remove("has-long-hint");
+  ta.title = !text && chatHintOverflows(host, ta) ? ta.placeholder : "";
   // with the field on its own row the controls row holds only + · mic · send:
   // the chips join it when they fit whole (pass 3: a third row took the
   // composer to 148px at 390), else they keep their own row
@@ -686,7 +694,7 @@ async function renderTaskChat(taskID, refetch) {
   }
   host.scrollTop = following ? host.scrollHeight : oldScroll;
   chatStick = following;
-  if (restoreReading) chatRestoreReadingPosition(host, chatReadingStates.get(readKey)?.value);
+  if (restoreReading) chatLandLatest(host);
   if (chatPendingWorkspace?.task === taskID) { const spec=chatPendingWorkspace;chatPendingWorkspace=null;chatOpenWorkingArtifact(spec); }
 }
 
@@ -2215,7 +2223,16 @@ function chatNoteViewAnchor(host) {
 }
 function chatTrackStageVisibility(host) {
   if (typeof ResizeObserver !== "function") return;
+  // Anchored to the latest message like a frontier chat (owner 2026-10-10):
+  // while the reader is at the bottom, anything that changes the transcript's
+  // size — the composer growing or shrinking around a send, a late layout, a
+  // turn arriving — keeps the latest message where it is instead of sliding
+  // the text. Scrolling up to read releases it (chatStick).
+  const keepPinned = () => { if (chatStick && host.clientHeight > 0 && host.scrollHeight - host.scrollTop - host.clientHeight > 1) { host.scrollTop = host.scrollHeight; chatLastY = host.scrollTop; } };
+  if (typeof MutationObserver === "function") new MutationObserver(keepPinned).observe(host, { childList: true, subtree: true, characterData: true });
+  host.addEventListener("load", keepPinned, true); // images and previews that size late
   new ResizeObserver(() => {
+    keepPinned();
     const shown = host.clientHeight > 0;
     if (shown && !chatStageShown && chatViewAnchor && chatViewAnchor.key === (host.dataset.readKey || "")) {
       if (chatViewAnchor.value.following) { host.scrollTop = host.scrollHeight; chatStick = true; }
@@ -2225,6 +2242,9 @@ function chatTrackStageVisibility(host) {
     if (shown) chatNoteViewAnchor(host);
   }).observe(host);
 }
+// a conversation opens on its latest message (owner 2026-10-10, as in Codex):
+// the reading bookmark no longer moves the reader on open
+function chatLandLatest(host) { host.scrollTop = host.scrollHeight; chatLastY = host.scrollTop; chatStick = true; }
 function chatPin() {
   const host = document.getElementById("chatTranscript");
   if (host && chatStick) host.scrollTop = host.scrollHeight;
@@ -2713,7 +2733,7 @@ function renderChatTranscript(d) {
   chatStick = !keepPosition;
   if (keepPosition) host.scrollTop = previousY;
   chatPin();
-  if (changedConversation) chatRestoreReadingPosition(host, chatReadingStates.get(readKey)?.value);
+  if (changedConversation) chatLandLatest(host);
   if (typeof chatStatusPaint === "function") chatStatusPaint();
 }
 
@@ -2879,7 +2899,7 @@ function renderChatComposer(session) {
   ta.setAttribute("aria-label", "Message");
   // Measure offscreen; change the live height only when content needs it,
   // clamped so a long paste scrolls inside instead of shoving the transcript.
-  const grow = () => { const size = () => { const measured = textareaContentHeight(ta); if (!measured) return; const height = Math.min(measured, Math.max(56,Math.min(220,(window.visualViewport?.height||window.innerHeight)*0.3))) + "px"; if (ta.style.height !== height) ta.style.height = height; }; size(); if (chatComposerShape(host, ta)) size(); };
+  const grow = () => { const size = () => { if (host.classList.contains("is-sending")) { ta.style.height = ""; return; } const measured = textareaContentHeight(ta); if (!measured) return; const height = Math.min(measured, Math.max(56,Math.min(220,(window.visualViewport?.height||window.innerHeight)*0.3))) + "px"; if (ta.style.height !== height) ta.style.height = height; }; size(); if (chatComposerShape(host, ta)) size(); };
   ta._grow=grow;
   ta.addEventListener("input", grow);
   ta.addEventListener("input", chatSaveDraft);
@@ -3072,6 +3092,11 @@ function renderChatComposer(session) {
     // Enter → on screen at once: the message paints as a pending line while
     // the server acknowledges (Phase C 2026-09-26: 1.2 s of nothing but a
     // "…" button); acceptance says so, a refusal takes it away.
+    // the field collapses to its resting row in the same frame the message
+    // appears above (owner 2026-10-10: box shrank, regrew and the text above
+    // jumped); renderChatComposer rebuilds it after acceptance or refusal
+    const box=ta.closest(".chat-composer");
+    if(box){box.classList.add("is-sending");grow();}
     const echo=chatIsTerm()?{accept(){},settle(){}}:chatSendEcho(text); // terminal threads echo via chatTermEcho
     // Keep the submitted draft visible until acceptance. Navigation or a lost
     // acknowledgement must not save an empty replacement on another device.
@@ -3657,7 +3682,7 @@ async function loadChatTermSession(id) {
   const painted=chatTermOpen;
   await preparation;
   if(!current()||chatTermOpen!==painted)return;
-  if(!onStage && readingGestureBefore===chatReadingGestureUntil){const host=document.getElementById("chatTranscript");if(host)chatRestoreReadingPosition(host,chatReadingStates.get(d.conversation?.key)?.value);}
+  // opens on the latest message (no bookmark restore on open; owner 2026-10-10)
   renderChatComposer(chatTermComposerSession());
   // the CLI's own title names a row still wearing its minted placeholder
   // (the autoName path — an owner-typed name is never overwritten)
@@ -3974,7 +3999,7 @@ function renderChatTermTranscript() {
   chatTermPaintStrip();
   chatStick = true;
   chatPin();
-  if(restoreReading)chatRestoreReadingPosition(host,chatReadingStates.get(readKey)?.value);
+  if(restoreReading)chatLandLatest(host);
 }
 
 function chatTermPaintTurns() {
@@ -4102,7 +4127,12 @@ function chatTermCmdLine(t) {
   const cmdText = el("span", "chat-term-cmd-text", text);
   line.append(cmdText);
   if (typeof chatCollapseLong === "function") chatCollapseLong(line, text, cmdText);
-  if (t.pending) { line.classList.add("pending"); line.append(el("span", "chat-term-meta", t.sending ? "sending…" : "delivered · waiting for the agent")); }
+  if (t.pending) {
+    line.classList.add("pending");
+    const state=chatTermOpen?.se?.agentState;
+    const label=t.sending ? "sending…" : state === "working" ? "delivered · agent working" : state === "blocked" ? "delivered · agent needs input" : "delivered · waiting for the agent";
+    line.append(el("span", "chat-term-meta", label));
+  }
   else if (t.ts) line.append(el("span", "chat-term-meta", fmtWhen(t.ts)));
   return line;
 }

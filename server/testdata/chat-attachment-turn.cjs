@@ -17,7 +17,7 @@ let fetches=[];
 const ctx=vm.createContext({
  el:(tag,cls,text)=>{const e=node(tag);e.className=cls||'';if(text!==undefined)e._text=text;return e;},
  document:{createElement:tag=>node(tag)},chatFileHref:h=>'/attach/'+h,chatOpenAttachment(){},chatQuestionReplyDisplay:t=>t,
- chatTermPromptGlyph:'❯',fmtWhen:()=>'12:30 PM',chatCurSession:null,
+  chatTermPromptGlyph:'❯',fmtWhen:()=>'12:30 PM',chatCurSession:null,chatTermOpen:{se:{agentState:'working'}},
  fetch:async url=>{fetches.push(url);return {ok:true,status:200,json:async()=>({id:'e81896adb9df2b7d33f54b26d2364b33',name:'IMG_4505.png',size:239705,type:'image/png'})};},
 });
 vm.runInContext(slice('const chatFileTokenRe','\n// chatHead — the thread head'),ctx);
@@ -41,6 +41,11 @@ const sent='[Image #5]Small bug here where a message looks double sent\n[context
  assert.equal(line.textContent.includes('manifest-chat-attachment-context'),false,'the context block never reaches the reader');
  assert.equal(line.textContent.includes('[Image #5]'),false);
  assert.equal(line.children[1].className,'chat-attach-chips','previews sit ahead of the text');
+ const workingLine=ctx.chatTermCmdLine({text:'still running',pending:true});
+ assert.equal(workingLine.textContent.includes('delivered · agent working'),true,'pending echo reflects an active agent');
+ ctx.chatTermOpen.se.agentState='blocked';
+ const blockedLine=ctx.chatTermCmdLine({text:'needs answer',pending:true});
+ assert.equal(blockedLine.textContent.includes('delivered · agent needs input'),true,'pending echo reflects an agent question');
  await new Promise(r=>setTimeout(r,0));
  const card=line.find('chat-attachment-card')[0];
  assert.equal(card.find('chat-attachment-name')[0].textContent,'IMG_4505.png','the card takes the file name from metadata');
