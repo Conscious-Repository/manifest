@@ -1,0 +1,19 @@
+# Liber — Olga's assistant (Manifest plan 2026-10-07-olga-chat). Sol with memory
+# and the web (search + page reading); no file or terminal tools, so it can read
+# nothing on this machine.
+model:
+  default: gpt-5.6-sol
+  provider: openai-codex
+platform_toolsets:
+  cli:
+  - memory
+  - web
+web:
+  backend: ddgs
+  use_gateway: false
+# Research turns search in batches; Hermes's default per-turn cap (50) halts
+# the turn with a note to the operator instead of an answer. Manifest bounds
+# each turn at 10 minutes instead.
+tool_loop_guardrails:
+  loop_caps:
+    max_web_searches: 0

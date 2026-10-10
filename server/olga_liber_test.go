@@ -356,3 +356,12 @@ func TestLiberTaskChatAppChangeAndPhotos(t *testing.T) {
 		t.Fatalf("unknown photo accepted: %d", w.Code)
 	}
 }
+
+func TestHermesHaltNote(t *testing.T) {
+	if !hermesHaltNote("I stopped retrying web_search because it hit the tool-call guardrail (loop_web_search_cap) after 50 attempts.") {
+		t.Fatal("halt note not caught")
+	}
+	if hermesHaltNote("Menards has it for $52.59 a sheet.") {
+		t.Fatal("ordinary answer flagged")
+	}
+}

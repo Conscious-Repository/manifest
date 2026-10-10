@@ -280,8 +280,18 @@ func (h *hermesVoice) Ask(ctx context.Context, prompt string, images []string) (
 	if res.Usage != nil {
 		tokens = int(res.Usage.TotalTokens)
 	}
+	if err == nil && hermesHaltNote(res.Reply) {
+		err = fmt.Errorf("hermes halted the turn: %s", clipLine(res.Reply, 200))
+	}
 	return olgachat.VoiceAnswer{Text: res.Reply, Model: firstNonEmptyStr(res.Model, h.model), Tokens: tokens}, err
 }
+
+// hermesHaltNote spots Hermes stopping a turn with a note meant for the
+// operator ("…hit the tool-call guardrail (loop_web_search_cap)…"); she gets
+// the calm can't-right-now line and the note goes to the log.
+var hermesHaltRe = regexp.MustCompile(`(?i)tool-call guardrail|\bloop_[a-z_]+_cap\b`)
+
+func hermesHaltNote(reply string) bool { return hermesHaltRe.MatchString(reply) }
 
 // askWithPhotos runs the embedded shim with Hermes's own Python, in the same
 // profile, with the photos as image parts of her message.
@@ -327,6 +337,9 @@ func (h *hermesVoice) askWithPhotos(ctx context.Context, prompt string, images [
 	}
 	if runErr != nil {
 		return ans, fmt.Errorf("hermes (photos): %v: %s", runErr, clipLine(errb.String(), 300))
+	}
+	if hermesHaltNote(ans.Text) {
+		return ans, fmt.Errorf("hermes halted the turn: %s", clipLine(ans.Text, 200))
 	}
 	return ans, nil
 }
