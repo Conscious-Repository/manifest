@@ -38,7 +38,7 @@ function showToast(message) {
 }
 async function postJSONOk(path,body){
  const r=await fetch(path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
- if(!r.ok)throw new Error(await r.text());return r.json();
+ if(!r.ok)throw new Error(olgaErrorText(r.status,await r.text()));return r.json();
 }
 function ensureTodoPanelPoll(){}
 function setCrumbMeta(text){els.crumbMeta.textContent=text;}
@@ -235,7 +235,7 @@ renderTodosToolbar=function(){
 };
 // Surface errors instead of reporting a rejected save as successful.
 goalsApi=async function(method,path,body){
- setSaveState('saving');try{const r=await fetch(path,{method,headers:{'Content-Type':'application/json'},body:body?JSON.stringify(body):undefined});if(!r.ok)throw new Error(await r.text());setSaveState('saved');await loadGoals();}catch(e){setSaveState('error');showToast(e.message);}
+ setSaveState('saving');try{const r=await fetch(path,{method,headers:{'Content-Type':'application/json'},body:body?JSON.stringify(body):undefined});if(!r.ok)throw new Error(olgaErrorText(r.status,await r.text()));setSaveState('saved');await loadGoals();}catch(e){setSaveState('error');showToast(e.message);}
 };
 const pendingDaySaves=new Map();
 let daySaveChain=Promise.resolve();
@@ -324,3 +324,6 @@ renderTodosBoard=function(host){
  }
  host.append(board);
 };
+
+// a gateway's HTML error page (her app restarting) is never shown as a message
+function olgaErrorText(status,t){t=(t||'').trim();if(status>=502&&status<=504)return 'The app is restarting — try again in a moment.';return !t||t.startsWith('<')?'Something went wrong — try again.':t}

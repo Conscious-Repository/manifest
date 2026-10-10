@@ -5,10 +5,23 @@ const liber = { threads: [], open: null, stop: null, listStamp: 0, taskThreads: 
 const LIBER_STARTERS_APP = ['Make the text bigger', 'Change the colours', 'How does the timeline work?'];
 const LIBER_STARTERS_TASK = ['What should we decide first?', 'What could this cost?', 'What’s the next step?'];
 
+// Her app restarts for a few seconds after Liber ships a change; meanwhile
+// Cloudflare answers with its own HTML error page. Reads wait that out, and a
+// page of HTML is never shown as a message.
 async function liberApi(path, body) {
-  const r = await fetch(path, body ? { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) } : {});
-  if (!r.ok) throw new Error((await r.text()).trim() || 'Something went wrong — try again.');
-  return r.json();
+  for (let tries = 0; ; tries++) {
+    let r = null;
+    try { r = await fetch(path, body ? { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) } : {}); } catch (e) {}
+    if (r && r.ok) return r.json();
+    const restarting = !r || r.status === 502 || r.status === 503 || r.status === 504;
+    if (restarting && !body && tries < 6) { await new Promise(go => setTimeout(go, 1500 + tries * 1000)); continue; }
+    if (restarting) throw new Error('Liber is restarting — try again in a moment.');
+    throw new Error(liberErrorText(await r.text()));
+  }
+}
+function liberErrorText(t) {
+  t = (t || '').trim();
+  return !t || t.startsWith('<') ? 'Something went wrong — try again.' : t;
 }
 
 function liberRef(th) { return th.kind === 'task' ? { task: th.taskId } : { id: th.id }; }
@@ -184,7 +197,7 @@ function liberComposer(placeholder, onSend, scope) {
       try {
         const blob = await liberShrink(f);
         const r = await fetch('/api/liber/upload' + (scope && scope.task ? '?task=' + encodeURIComponent(scope.task) : ''), { method: 'POST', headers: { 'Content-Type': blob.type || 'application/octet-stream' }, body: blob });
-        if (!r.ok) throw new Error((await r.text()).trim() || 'That photo didn’t upload');
+        if (!r.ok) throw new Error(r.status >= 502 ? 'Liber is restarting — try again in a moment.' : liberErrorText(await r.text()).replace('Something went wrong — try again.', 'That photo didn’t upload'));
         p.id = (await r.json()).id; p.state = 'ok'; chip.classList.remove('is-up');
       } catch (e) { p.state = 'bad'; chip.classList.remove('is-up'); chip.classList.add('is-bad'); chip.title = e.message; showToast(e.message); }
       ready();
