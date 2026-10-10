@@ -291,6 +291,11 @@ func TestFixtureApprovalsScreen(t *testing.T) {
 	runFixture(t, "approvals-screen.cjs", true, false)
 }
 
+// Olga's requests arrive in Approvals with Done / Won't do (olga-request-approval.cjs).
+func TestFixtureOlgaRequestApproval(t *testing.T) {
+	runFixture(t, "olga-request-approval.cjs", true, false)
+}
+
 // Add Excalibur retirement authority and observability (phase1-agents.cjs).
 func TestFixturePhase1Agents(t *testing.T) { runFixture(t, "phase1-agents.cjs", false, false) }
 

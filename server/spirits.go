@@ -300,6 +300,8 @@ func (s *Server) harnessApprovalRowsMatching(h Harness, exclude map[string]bool,
 					rr.Current = cur
 				}
 			}
+		} else if p.Type == approvals.TypeOlgaRequest {
+			rr.Allowed = true // Done only records the decision
 		} else if p.Type == approvals.TypePortalProposal {
 			// No ApplyPath: the effect is a team-store Decide, not a file write.
 			// Allowed asks whether Confirm can actually do anything, so it turns

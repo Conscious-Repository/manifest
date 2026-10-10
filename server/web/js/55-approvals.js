@@ -270,7 +270,10 @@ function approvalCardEl(a) {
   if (blocked && blockMsg) card.append(el("div", "appr-blocked", "⚠ " + blockMsg));
 
   const actions = cardActions([]);
-  const confirmBtn = pill(actionable ? "Confirm & apply" : "Confirm",
+  // Olga's request (approvals.TypeOlgaRequest) is something to do, not a write to
+  // approve: Done records that it's handled, Won't do asks why like Reject
+  const isOlgaRequest = a.type === "olga-request";
+  const confirmBtn = pill(isOlgaRequest ? "Done" : actionable ? "Confirm & apply" : "Confirm",
     async () => {
       // aion/re payload editors: whatever is in the form RIDES the confirm —
       // an unsaved owner/rock edit must never silently drop (2026-08-12 bug:
@@ -285,7 +288,7 @@ function approvalCardEl(a) {
         isNewNote ? { attendees, title: titleRef.value, categories, visibility: visRef.shown() ? visRef.value : null } : null);
     });
   if (blocked) { confirmBtn.disabled = true; confirmBtn.classList.add("disabled"); }
-  actions.append(confirmBtn, pillLight("Reject", () => spiritApprovalAct(a.id, "reject")));
+  actions.append(confirmBtn, pillLight(isOlgaRequest ? "Won’t do" : "Reject", () => spiritApprovalAct(a.id, "reject")));
   // a payload editor's "save edit" sits with the verdicts, not under its
   // caption: one row of everything the owner can do with the card
   if (a.__saveEdit) { a.__saveEdit.classList.add("appr-save"); actions.append(a.__saveEdit); }

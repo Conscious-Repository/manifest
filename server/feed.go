@@ -32,6 +32,7 @@ import (
 // kind's contribution (§5 registry: findings inbox + signals + notices +
 // receipts) + the pending-proposals lane (the same set that renders as cards).
 func (s *Server) feedInboxCount(now time.Time) int {
+	s.syncOlgaRequests()
 	return s.attentionRegistry().Badge(now) + len(s.approvalRows(nil))
 }
 
@@ -144,6 +145,7 @@ func (s *Server) artifactRefsIn(h Harness, it feed.Item, lib libraryFn) (string,
 // atomically on decision because pending/ is the only source of truth. Nothing
 // is ever written to the engine's feed dir for these.
 func (s *Server) feedProposals() []approvalRow {
+	s.syncOlgaRequests()
 	return s.approvalRows(nil)
 }
 
