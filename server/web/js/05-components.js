@@ -182,10 +182,14 @@ function fmtWhen(iso) {
   if (isNaN(d)) return String(iso).slice(0, 16).replace("T", " ");
   const now = new Date();
   if (Math.abs(d - now) < 86400000 && d.toDateString() === now.toDateString()) {
-    return d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+    return fmtWhenTime.format(d);
   }
-  return d.toLocaleDateString([], { month: "short", day: "numeric" });
+  return fmtWhenDay.format(d);
 }
+// built once: toLocale*String builds a formatter per call, and a long chat
+// thread formats hundreds of stamps on every repaint (30 ms of 125, 2026-10-10)
+const fmtWhenTime = new Intl.DateTimeFormat([], { hour: "numeric", minute: "2-digit" });
+const fmtWhenDay = new Intl.DateTimeFormat([], { month: "short", day: "numeric" });
 
 // ---- cardShell: THE card factory (A1). Every FEED-rendered card is
 // .feed-card + a kind modifier, built through this one function. Anatomy in
@@ -399,7 +403,14 @@ function makeDirtyBar(host, onSave, onDiscard) {
     clear() { count = 0; bar.hidden = true; },
     get dirty() { return count > 0; },
   };
-  save.onclick = async () => { save.disabled = true; try { await onSave(); api.clear(); } finally { save.disabled = false; } };
+  // a refused save keeps the bar marked AND says why — it used to reject
+  // unhandled, so the bar just sat there looking like nothing happened
+  save.onclick = async () => {
+    save.disabled = true;
+    try { await onSave(); api.clear(); }
+    catch (e) { showToast("Not saved — " + String((e && e.message) || e).slice(0, 140), null, "error"); }
+    finally { save.disabled = false; }
+  };
   discard.onclick = () => { api.clear(); onDiscard(); };
   return api;
 }

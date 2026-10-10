@@ -29,12 +29,17 @@ const {makeStub}=require('./chat-stub-api.cjs');
    const ta=page.locator('#chatComposer textarea');await ta.click();
    await ta.fill('A long enough draft '+w+' to wrap the field onto more than one line at phone width, so it grows.');await page.waitForTimeout(200);
    const rest=mob?54:null;
+   await new Promise(r=>require('http').get(base+'/__delay?ms=400',res=>{res.resume();res.on('end',r);}));
+   await page.evaluate(()=>{window.__lt=[];const tick=()=>{const t=document.getElementById('chatTranscript'),u=[...t.querySelectorAll(':scope > .chat-user')].pop();if(u)window.__lt.push(Math.round(u.getBoundingClientRect().top));if(window.__lt.length<400)requestAnimationFrame(tick);};requestAnimationFrame(tick);});
    const sendF=await frames(()=>page.locator('#chatComposer .chat-send').first().click(),1500);
    const comps=[...new Set(sendF.map(x=>x.comp))];
    const after=sendF.slice(sendF.findIndex(x=>x.comp!==sendF[0].comp)>=0?sendF.findIndex(x=>x.comp!==sendF[0].comp):0);
    assert.ok(new Set(after.map(x=>x.comp)).size===1,w+': the composer changes height once on send, never regrows: '+JSON.stringify(comps));
    if(rest)assert.equal(after[0].comp,rest,w+': back to its resting height');
    assert.ok(sendF.slice(-1)[0].fromBottom<=1,w+': pinned after the send');
+   // the confirmed message lands exactly where its echo was: one move, then still
+   const lt=await page.evaluate(()=>window.__lt);const moves=lt.filter((v,i)=>i&&Math.abs(v-lt[i-1])>2).length;
+   assert.ok(moves<=1,w+': your message moves '+moves+' times after sending: '+JSON.stringify([...new Set(lt)]));
    // once the send is answered the field is itself again: what you type shows
    await page.waitForFunction(()=>!document.getElementById('chatComposer').classList.contains('is-sending'));
    await ta.fill('next words');

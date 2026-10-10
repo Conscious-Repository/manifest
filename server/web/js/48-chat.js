@@ -2743,13 +2743,24 @@ function renderChatTranscript(d) {
 function chatSendEcho(text) {
   const area = document.getElementById("chatLiveArea");
   if (!area || chatLive || !text) return { accept() {}, settle() {} };
-  const turn = chatUserTurn(text);turn.classList.add("chat-queued", "chat-send-echo");
-  const status = el("div", "chat-run-state chat-send-echo", "Sending…");
-  status.dataset.execution = "sending";status.setAttribute("role", "status");
-  area.append(turn, status);chatStick = true;chatPin();
+  // The echo is shaped like the turn that replaces it (owner 2026-10-10: the
+  // swap moved the conversation 34px on a phone): a queued user turn placed
+  // in the transcript itself, so the same rhythm applies, with its "To …" line
+  // when the recipient changes, and a receipt-shaped row under it.
+  const turn = chatUserTurn(text);turn.classList.add("is-queued", "chat-send-echo");
+  if (chatAgent) {
+    const to = "To " + chatAgentLabel(chatAgent);
+    const seen = [...area.parentElement.querySelectorAll(":scope > .chat-user .chat-context-attribution")].pop();
+    if (!seen || seen.textContent.split(" · ")[0] !== to) turn.append(el("div", "chat-context-attribution", to));
+  }
+  const status = el("div", "chat-turn-receipt chat-send-echo");
+  const line = el("span", "chat-run-state", "Sending…");
+  line.dataset.execution = "sending";line.setAttribute("role", "status");
+  status.append(line);
+  area.before(turn, status);chatStick = true;chatPin();
   let accepted = false;
   return {
-    accept() { accepted = true;status.dataset.execution = "accepted";status.textContent = "Accepted · not started yet"; },
+    accept() { accepted = true;line.dataset.execution = "accepted";line.textContent = "Queued · accepted, not started"; },
     settle() { if (!accepted) { turn.remove();status.remove(); } },
   };
 }
@@ -2818,7 +2829,9 @@ function renderChatComposer(session) {
   if (!host) return;
   host.classList.add("input-surface");
   // a send has been answered (accepted or refused): the field is itself again
-  if (host.classList.contains("is-sending")) { host.classList.remove("is-sending"); const t = host.querySelector("textarea"); if (t && t._grow) t._grow(); }
+  // (only once it is answered: a repaint mid-send — the receipt landing — must
+  // not let the field regrow with its text for a frame before it is cleared)
+  if (host.classList.contains("is-sending") && !chatSending) { host.classList.remove("is-sending"); const t = host.querySelector("textarea"); if (t && t._grow) t._grow(); }
   if(session?.sharing && session.sharing.state!=="shared"){host.dataset.built="";host.classList.add("closed");host.replaceChildren(el("p","chat-load-error","Sharing is awaiting recovery. Use Recover sharing above to finish, then continue in the team conversation."));return;}
   // a closed composer (failed load, sharing recovery) rebuilds from the draft
   if(host.classList.contains("closed")){host.classList.remove("closed");host.removeAttribute("aria-disabled");host.replaceChildren();host.dataset.built="";if(typeof mountMics==="function")setTimeout(mountMics,0);}

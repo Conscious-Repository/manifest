@@ -109,9 +109,13 @@ const {makeStub}=require('./chat-stub-api.cjs');
    await s.hook('/__delay?ms=900');
    const ta=page.locator('#chatComposer textarea');await ta.fill('hello there');await ta.press(w<700?'Control+Enter':'Enter');
    await page.waitForTimeout(120);
-   assert.match(await live(page),/hello there\s*Sending…/,w+': Enter paints the message and "Sending…" at once');
+   // the echo stands where the queued turn will land (before the live area),
+   // shaped like it, so acceptance swaps it without moving anything
+   assert.match(await page.evaluate(()=>[...document.querySelectorAll('#chatTranscript > .chat-send-echo')].map(e=>e.innerText.trim()).join('\n')),/hello there[\s\S]*Sending…/,w+': Enter paints the message and "Sending…" at once');
    await page.locator('.chat-run-state',{hasText:'Queued · accepted, not started'}).waitFor({timeout:4000});
+   await page.waitForFunction(()=>!document.querySelector('.chat-send-echo'),null,{timeout:4000}).catch(()=>{});
    assert.equal(await page.locator('.chat-send-echo').count(),0,w+': the refetch replaced the echo');
+   assert.equal(await page.locator('.chat-run-state',{hasText:'Queued · accepted, not started'}).count(),1,w+': one queued line after the swap');
    assert.equal(await ta.inputValue(),'','draft cleared on acceptance');
    await s.hook('/__delay?ms=0');
    const state=async(patch,want)=>{await s.hook('/__set?id=b&patch='+encodeURIComponent(JSON.stringify(patch)));await page.evaluate(()=>refetchChatSession(chatOpenId));await page.waitForTimeout(250);assert.equal(await live(page),want,w+' '+JSON.stringify(patch.supervision?.state));};

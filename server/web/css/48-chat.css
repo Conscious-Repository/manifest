@@ -1267,3 +1267,12 @@ label.chat-artifact-handoff{display:flex;flex-direction:row;align-items:flex-sta
 /* a send being confirmed: the field is at rest, its words hidden (they return if refused) */
 .chat-composer.is-sending textarea.chat-input { color: transparent; caret-color: transparent; }
 .chat-composer.is-sending textarea.chat-input::placeholder { color: transparent; }
+/* the send echo's receipt row holds the height of the real receipt's 44px controls (2026-10-10) */
+.chat-turn-receipt.chat-send-echo { min-height: var(--control-height); }
+@media (max-width: 860px) { .chat-turn-receipt.chat-send-echo { min-height: var(--control-touch); } }
+/* long threads: messages off screen are not laid out until they come near
+   the viewport (a 200-turn thread spent ~100 ms in layout on every repaint,
+   2026-10-10); the browser remembers each one's measured size */
+/* never the newest dozen: they are on screen, and a new turn must paint at its
+   real height in its first frame (an estimate made it bounce once) */
+.chat-transcript > .chat-turn:not(:nth-last-child(-n+16)) { content-visibility: auto; contain-intrinsic-size: auto 120px; }
